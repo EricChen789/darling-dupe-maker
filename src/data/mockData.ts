@@ -1,0 +1,133 @@
+import { Company, Person, Form, Invoice } from '@/types';
+
+export const mockCompanies: Company[] = [
+  {
+    id: '1',
+    name: 'TEST COMPANY – OBVIOUS TEST NAME',
+    brNumber: '51241231',
+    tradingName: 'asdasdadasdasdasd',
+    businessNature: '總管理層經營服務',
+    directors: [
+      { id: 'd1', nameChinese: '測試董事', nameEnglish: 'TEST DIRECTOR', email: 'test.director@test.com', identity: 'natural', role: 'director', companies: [], createdAt: '2025/11/17', updatedAt: '2025/11/17' },
+      { id: 'd2', nameChinese: '測試法人公司', nameEnglish: 'TEST CORPORATE DIRECTOR', email: 'test.corporate@test.com', identity: 'corporate', role: 'director', companies: [], createdAt: '2025/11/17', updatedAt: '2025/11/17' },
+      { id: 'd3', nameChinese: '第三董事', nameEnglish: 'THIRD DIRECTOR', email: 'third.director@test.com', identity: 'natural', role: 'director', companies: [], createdAt: '2025/11/17', updatedAt: '2025/11/17' },
+    ],
+    secretaries: [
+      { id: 's1', nameChinese: '測試秘書', nameEnglish: 'TEST SECRETARY', email: 'test.secretary@test.com', identity: 'natural', role: 'secretary', companies: [], createdAt: '2025/11/17', updatedAt: '2025/11/17' },
+      { id: 's2', nameChinese: '測試法人秘書公司', nameEnglish: 'TEST CORPORATE SECRETARY LIMITED', email: 'test.corp.sec@test.com', identity: 'corporate', role: 'secretary', companies: [], createdAt: '2025/11/17', updatedAt: '2025/11/17' },
+      { id: 's3', nameChinese: '李美玲', nameEnglish: 'LEE Mei Ling', email: 'lee.meiling@random.com', identity: 'natural', role: 'secretary', companies: [], createdAt: '2025/11/18', updatedAt: '2025/11/18' },
+    ],
+    shareholders: [
+      { id: 'sh1', name: '測試股東 TEST SHAREHOLDER', shares: 1000 },
+    ],
+    companyType: '私人公司 Private company',
+    businessCode: '70100',
+    updatedAt: '2025/11/18',
+  },
+  {
+    id: '2',
+    name: 'TEST COMPANY 2 – not FULLY FILLED',
+    brNumber: '00000002',
+    tradingName: 'Test Company 2 Trading Name',
+    businessNature: '其他工商服務 asdasdasd',
+    directors: [],
+    secretaries: [],
+    shareholders: [],
+    companyType: '私人公司 Private company',
+    businessCode: '82990',
+    updatedAt: '2025/11/18',
+  },
+  {
+    id: '3',
+    name: '3 company',
+    brNumber: '00000003',
+    tradingName: '3 Company Business',
+    businessNature: 'General management and administrative services',
+    directors: [
+      { id: 'd4', nameChinese: '陳偉明', nameEnglish: 'CHAN Wai Ming', email: 'chan.waiming@random.com', identity: 'natural', role: 'director', companies: [], createdAt: '2025/11/18', updatedAt: '2025/11/18' },
+    ],
+    secretaries: [],
+    shareholders: [],
+    companyType: '私人公司 Private company',
+    businessCode: '70100',
+    updatedAt: '2025/11/18',
+  },
+  {
+    id: '4',
+    name: 'AAA Co Limited',
+    brNumber: '12345854',
+    tradingName: 'Trading',
+    businessNature: '其他專門批發',
+    directors: [
+      { id: 'd5', nameChinese: '測試法人公司', nameEnglish: 'TEST CORPORATE DIRECTOR', email: 'test.corporate@test.com', identity: 'corporate', role: 'director', companies: [], createdAt: '2025/11/17', updatedAt: '2025/11/17' },
+      { id: 'd6', nameChinese: '鍾浩仁', nameEnglish: 'CHUNG HO YAN', email: 'ac@vinco.com.hk', identity: 'natural', role: 'director', companies: [], createdAt: '2025/11/21', updatedAt: '2025/11/21' },
+    ],
+    secretaries: [
+      { id: 's4', nameChinese: '測試法人秘書公司', nameEnglish: 'TEST CORPORATE SECRETARY LIMITED', email: 'test.corp.sec@test.com', identity: 'corporate', role: 'secretary', companies: [], createdAt: '2025/11/17', updatedAt: '2025/11/17' },
+    ],
+    shareholders: [],
+    companyType: '私人公司 Private company',
+    businessCode: '46900',
+    updatedAt: '2025/11/18',
+  },
+  {
+    id: '5',
+    name: 'Test Company Continue Test',
+    brNumber: '87654321',
+    tradingName: 'Test Business Continue',
+    businessNature: 'Test business description continue',
+    directors: [
+      { id: 'd7', nameChinese: '測試董事三', nameEnglish: 'TEST DIRECTOR THREE', email: 'test_director_three@example.com', identity: 'natural', role: 'director', companies: [], createdAt: '2025/11/23', updatedAt: '2025/11/23' },
+      { id: 'd8', nameChinese: '測試董事四', nameEnglish: 'TEST DIRECTOR FOUR', email: 'fourth.director@test.com', identity: 'natural', role: 'director', companies: [], createdAt: '2025/11/17', updatedAt: '2025/11/17' },
+      { id: 'd9', nameChinese: '測試法人公司', nameEnglish: 'TEST CORPORATE DIRECTOR', email: 'test.corporate@test.com', identity: 'corporate', role: 'director', companies: [], createdAt: '2025/11/17', updatedAt: '2025/11/17' },
+    ],
+    secretaries: [
+      { id: 's5', nameChinese: '測試秘書三', nameEnglish: 'TEST SECRETARY THREE', email: 'third.secretary@test.com', identity: 'natural', role: 'secretary', companies: [], createdAt: '2025/11/17', updatedAt: '2025/11/17' },
+      { id: 's6', nameChinese: '測試秘書四', nameEnglish: 'TEST SECRETARY FOUR', email: 'fourth.secretary@test.com', identity: 'natural', role: 'secretary', companies: [], createdAt: '2025/11/17', updatedAt: '2025/11/17' },
+    ],
+    shareholders: [
+      { id: 'sh2', name: '測試股東三 TEST SHAREHOLDER THREE', shares: 1000 },
+      { id: 'sh3', name: '測試股東 TEST SHAREHOLDER FOUR', shares: 2000 },
+    ],
+    companyType: '私人公司 Private company',
+    businessCode: '70100',
+    updatedAt: '2025/11/23',
+  },
+];
+
+export const mockPeople: Person[] = [
+  { id: 'p1', nameChinese: '測試董事', nameEnglish: 'TEST DIRECTOR', email: 'test.director@test.com', identity: 'natural', role: 'director', companies: [{ id: '1', name: 'TEST COMPANY – OBVIOUS TEST NAME', brNumber: '51241231' }], createdAt: '2025/11/17', updatedAt: '2025/11/17' },
+  { id: 'p2', nameChinese: '測試秘書', nameEnglish: 'TEST SECRETARY', email: 'test.secretary@test.com', identity: 'natural', role: 'secretary', companies: [{ id: '1', name: 'TEST COMPANY – OBVIOUS TEST NAME', brNumber: '51241231' }], createdAt: '2025/11/17', updatedAt: '2025/11/17' },
+  { id: 'p3', nameChinese: '測試法人公司', nameEnglish: 'TEST CORPORATE DIRECTOR', email: 'test.corporate@test.com', identity: 'corporate', role: 'director', brNumber: '87654321', companies: [{ id: '1', name: 'TEST COMPANY – OBVIOUS TEST NAME', brNumber: '51241231' }, { id: '4', name: 'AAA Co Limited', brNumber: '12345854' }, { id: '5', name: 'Test Company Continue Test', brNumber: '87654321' }], createdAt: '2025/11/17', updatedAt: '2025/11/17' },
+  { id: 'p4', nameChinese: '測試法人秘書公司', nameEnglish: 'TEST CORPORATE SECRETARY LIMITED', email: 'test.corp.sec@test.com', identity: 'corporate', role: 'secretary', brNumber: '11223344', companies: [{ id: '1', name: 'TEST COMPANY – OBVIOUS TEST NAME', brNumber: '51241231' }, { id: '4', name: 'AAA Co Limited', brNumber: '12345854' }], createdAt: '2025/11/17', updatedAt: '2025/11/17' },
+  { id: 'p5', nameChinese: '第三董事', nameEnglish: 'THIRD DIRECTOR', email: 'third.director@test.com', identity: 'natural', role: 'director', companies: [{ id: '1', name: 'TEST COMPANY – OBVIOUS TEST NAME', brNumber: '51241231' }], createdAt: '2025/11/17', updatedAt: '2025/11/17' },
+  { id: 'p6', nameChinese: '第四董事', nameEnglish: 'FOURTH DIRECTOR', email: 'fourth.director@test.com', identity: 'natural', role: 'director', companies: [{ id: '1', name: 'TEST COMPANY – OBVIOUS TEST NAME', brNumber: '51241231' }], createdAt: '2025/11/17', updatedAt: '2025/11/17' },
+  { id: 'p7', nameChinese: '第一董事', nameEnglish: 'FIRST DIRECTOR', email: 'first.director@test.com', identity: 'natural', role: 'director', companies: [{ id: '1', name: 'TEST COMPANY – OBVIOUS TEST NAME', brNumber: '51241231' }], createdAt: '2025/11/17', updatedAt: '2025/11/17' },
+  { id: 'p8', nameChinese: '第五董事', nameEnglish: 'FIFTH DIRECTOR', email: 'fifth.director@test.com', identity: 'natural', role: 'director', companies: [{ id: '1', name: 'TEST COMPANY – OBVIOUS TEST NAME', brNumber: '51241231' }], createdAt: '2025/11/17', updatedAt: '2025/11/17' },
+  { id: 'p9', nameChinese: '陳偉明', nameEnglish: 'CHAN Wai Ming', email: 'chan.waiming@random.com', identity: 'natural', role: 'director', companies: [{ id: '3', name: '3 company', brNumber: '00000003' }], createdAt: '2025/11/18', updatedAt: '2025/11/18' },
+  { id: 'p10', nameChinese: '李美玲', nameEnglish: 'LEE Mei Ling', email: 'lee.meiling@random.com', identity: 'natural', role: 'secretary', companies: [{ id: '1', name: 'TEST COMPANY – OBVIOUS TEST NAME', brNumber: '51241231' }], createdAt: '2025/11/18', updatedAt: '2025/11/18' },
+  { id: 'p11', nameChinese: '測試股東', nameEnglish: 'TEST SHAREHOLDER', email: 'test.shareholder@test.com', identity: 'natural', role: 'shareholder', companies: [{ id: '1', name: 'TEST COMPANY – OBVIOUS TEST NAME', brNumber: '51241231' }], createdAt: '2025/11/20', updatedAt: '2025/11/20' },
+  { id: 'p12', nameChinese: '鍾浩仁', nameEnglish: 'CHUNG HO YAN', email: 'ac@vinco.com.hk', identity: 'natural', role: 'director', companies: [{ id: '4', name: 'AAA Co Limited', brNumber: '12345854' }], createdAt: '2025/11/21', updatedAt: '2025/11/21' },
+  { id: 'p13', nameChinese: '測試董事三', nameEnglish: 'TEST DIRECTOR THREE', email: 'test_director_three@example.com', identity: 'natural', role: 'director', companies: [{ id: '5', name: 'Test Company Continue Test', brNumber: '87654321' }], createdAt: '2025/11/23', updatedAt: '2025/11/23' },
+];
+
+export const mockForms: Form[] = [
+  { id: 'nar1', name: 'NAR1', description: '周年申報表', year: 2025, version: 2, isHelper: true },
+];
+
+export const mockInvoices: Invoice[] = [
+  { id: 'inv1', invoiceNumber: 'INV-710585', description: '培訓費發票 – 一次性服務費', companyId: '1', companyName: 'TEST COMPANY – OBVIOUS TEST NAME', companyBrNumber: '51241231', amount: 94596.11, currency: 'HKD', status: 'paid', issueDate: '2025/10/16', dueDate: '2026/1/4' },
+  { id: 'inv2', invoiceNumber: 'INV-901638', description: '諮詢費發票 – 一次性服務費', companyId: '1', companyName: 'TEST COMPANY – OBVIOUS TEST NAME', companyBrNumber: '51241231', amount: 57958.92, currency: 'HKD', status: 'overdue', issueDate: '2025/6/27', dueDate: '2025/9/16' },
+  { id: 'inv3', invoiceNumber: 'INV-604211', description: '管理費發票 – 月費', companyId: '1', companyName: 'TEST COMPANY – OBVIOUS TEST NAME', companyBrNumber: '51241231', amount: 61733.68, currency: 'HKD', status: 'overdue', issueDate: '2024/12/16', dueDate: '2025/3/6' },
+  { id: 'inv4', invoiceNumber: 'INV-172087', description: '租賃費發票 – 季費', companyId: '1', companyName: 'TEST COMPANY – OBVIOUS TEST NAME', companyBrNumber: '51241231', amount: 80521.75, currency: 'HKD', status: 'overdue', issueDate: '2025/7/24', dueDate: '2025/10/14' },
+  { id: 'inv5', invoiceNumber: 'INV-938032', description: '培訓費發票 – 季費', companyId: '1', companyName: 'TEST COMPANY – OBVIOUS TEST NAME', companyBrNumber: '51241231', amount: 12557.23, currency: 'HKD', status: 'paid', issueDate: '2025/5/1', dueDate: '2025/6/1' },
+  { id: 'inv6', invoiceNumber: 'INV-357920', description: '項目費發票 – 年費 備註: 包含稅項', companyId: '1', companyName: 'TEST COMPANY – OBVIOUS TEST NAME', companyBrNumber: '51241231', amount: 95564.84, currency: 'HKD', status: 'overdue', issueDate: '2025/1/10', dueDate: '2025/4/4' },
+  { id: 'inv7', invoiceNumber: 'INV-106986', description: '諮詢費發票 – 季費', companyId: '1', companyName: 'TEST COMPANY – OBVIOUS TEST NAME', companyBrNumber: '51241231', amount: 30499.28, currency: 'HKD', status: 'paid', issueDate: '2024/12/7', dueDate: '2025/2/23' },
+  { id: 'inv8', invoiceNumber: 'INV-249775', description: '技術支援費發票 – 專案費用 備註: 需要收據', companyId: '1', companyName: 'TEST COMPANY – OBVIOUS TEST NAME', companyBrNumber: '51241231', amount: 95296.98, currency: 'HKD', status: 'pending', issueDate: '2025/10/27', dueDate: '2025/12/2' },
+  { id: 'inv9', invoiceNumber: 'INV-635629', description: '管理費發票 – 月費', companyId: '1', companyName: 'TEST COMPANY – OBVIOUS TEST NAME', companyBrNumber: '51241231', amount: 22914.41, currency: 'HKD', status: 'paid', issueDate: '2025/3/7', dueDate: '2025/4/14' },
+  { id: 'inv10', invoiceNumber: 'INV-963206', description: '技術支援費發票 – 年費', companyId: '1', companyName: 'TEST COMPANY – OBVIOUS TEST NAME', companyBrNumber: '51241231', amount: 27751.57, currency: 'HKD', status: 'paid', issueDate: '2025/4/15', dueDate: '2025/6/30' },
+  { id: 'inv11', invoiceNumber: 'INV-892322', description: '租賃費發票 – 月費', companyId: '1', companyName: 'TEST COMPANY – OBVIOUS TEST NAME', companyBrNumber: '51241231', amount: 2336.30, currency: 'HKD', status: 'paid', issueDate: '2025/6/18', dueDate: '2025/7/19' },
+  { id: 'inv12', invoiceNumber: 'INV-918162', description: '服務費發票 – 季費 備註: 需要收據', companyId: '1', companyName: 'TEST COMPANY – OBVIOUS TEST NAME', companyBrNumber: '51241231', amount: 99181.59, currency: 'HKD', status: 'paid', issueDate: '2024/12/5', dueDate: '2025/2/27' },
+  { id: 'inv13', invoiceNumber: 'INV-472698', description: '稅金發票 – 月費', companyId: '1', companyName: 'TEST COMPANY – OBVIOUS TEST NAME', companyBrNumber: '51241231', amount: 5987.43, currency: 'HKD', status: 'paid', issueDate: '2025/2/12', dueDate: '2025/4/1' },
+  { id: 'inv14', invoiceNumber: 'INV-740315', description: '管理費發票 – 季費', companyId: '1', companyName: 'TEST COMPANY – OBVIOUS TEST NAME', companyBrNumber: '51241231', amount: 72532.78, currency: 'HKD', status: 'overdue', issueDate: '2025/5/15', dueDate: '2025/7/7' },
+];

@@ -2,8 +2,20 @@ import { PageHeader } from '@/components/ui/page-header';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { toast } from '@/hooks/use-toast';
+import { useState } from 'react';
 
 const Settings = () => {
+  const [companyName, setCompanyName] = useState('Muselabs');
+  const [email, setEmail] = useState('admin@muselabs.com');
+
+  const handleSave = () => {
+    toast({
+      title: '設定已儲存',
+      description: '您的變更已成功儲存',
+    });
+  };
+
   return (
     <div>
       <PageHeader
@@ -17,15 +29,29 @@ const Settings = () => {
         <div className="space-y-4">
           <div>
             <Label htmlFor="companyName">公司名稱</Label>
-            <Input id="companyName" defaultValue="Muselabs" className="mt-2" />
+            <Input 
+              id="companyName" 
+              value={companyName}
+              onChange={(e) => setCompanyName(e.target.value)}
+              className="mt-2" 
+            />
           </div>
           
           <div>
             <Label htmlFor="email">電郵地址</Label>
-            <Input id="email" type="email" defaultValue="admin@muselabs.com" className="mt-2" />
+            <Input 
+              id="email" 
+              type="email" 
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="mt-2" 
+            />
           </div>
 
-          <Button className="bg-primary text-primary-foreground hover:bg-primary/90">
+          <Button 
+            className="bg-primary text-primary-foreground hover:bg-primary/90"
+            onClick={handleSave}
+          >
             儲存變更
           </Button>
         </div>

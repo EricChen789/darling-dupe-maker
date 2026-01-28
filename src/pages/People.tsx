@@ -11,13 +11,31 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Search, RefreshCw, Plus, Edit, Trash2, X } from 'lucide-react';
-import { mockPeople } from '@/data/mockData';
+import { mockPeople as initialPeople } from '@/data/mockData';
+import { Person } from '@/types';
+import { PersonDialog } from '@/components/dialogs/PersonDialogs';
+import { DeleteConfirmDialog } from '@/components/dialogs/CompanyDialogs';
+import { toast } from '@/hooks/use-toast';
 
 const People = () => {
+  const [people, setPeople] = useState<Person[]>(initialPeople);
   const [searchTerm, setSearchTerm] = useState('');
   
-  const filteredPeople = mockPeople.filter(person =>
+  // Dialog states
+  const [personDialogOpen, setPersonDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [selectedPerson, setSelectedPerson] = useState<Person | null>(null);
+  const [personToDelete, setPersonToDelete] = useState<Person | null>(null);
+  
+  const filteredPeople = people.filter(person =>
     person.nameChinese.toLowerCase().includes(searchTerm.toLowerCase()) ||
     person.nameEnglish.toLowerCase().includes(searchTerm.toLowerCase()) ||
     person.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -37,6 +55,80 @@ const People = () => {
     }
   };
 
+  const handleRefresh = () => {
+    setPeople([...initialPeople]);
+    setSearchTerm('');
+    toast({
+      title: '已重新整理',
+      description: '人員列表已更新',
+    });
+  };
+
+  const handleAddPerson = () => {
+    setSelectedPerson(null);
+    setPersonDialogOpen(true);
+  };
+
+  const handleEditPerson = (person: Person) => {
+    setSelectedPerson(person);
+    setPersonDialogOpen(true);
+  };
+
+  const handleDeleteClick = (person: Person) => {
+    setPersonToDelete(person);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleSavePerson = (personData: Partial<Person>) => {
+    const now = new Date().toLocaleDateString('zh-TW').replace(/\//g, '/');
+    if (selectedPerson) {
+      // Edit existing
+      setPeople(people.map(p =>
+        p.id === selectedPerson.id
+          ? { ...p, ...personData, updatedAt: now }
+          : p
+      ));
+    } else {
+      // Add new
+      const newPerson: Person = {
+        id: `p${Date.now()}`,
+        nameChinese: personData.nameChinese || '',
+        nameEnglish: personData.nameEnglish || '',
+        email: personData.email || '',
+        identity: personData.identity || 'natural',
+        role: personData.role || 'director',
+        brNumber: personData.brNumber,
+        companies: [],
+        createdAt: now,
+        updatedAt: now,
+      };
+      setPeople([...people, newPerson]);
+    }
+  };
+
+  const handleConfirmDelete = () => {
+    if (personToDelete) {
+      setPeople(people.filter(p => p.id !== personToDelete.id));
+      toast({
+        title: '人員已刪除',
+        description: `${personToDelete.nameChinese || personToDelete.nameEnglish} 已成功刪除`,
+      });
+      setDeleteDialogOpen(false);
+      setPersonToDelete(null);
+    }
+  };
+
+  const handleClearSearch = () => {
+    setSearchTerm('');
+  };
+
+  const handleSearch = () => {
+    toast({
+      title: '搜尋完成',
+      description: `找到 ${filteredPeople.length} 筆結果`,
+    });
+  };
+
   return (
     <div>
       <PageHeader
@@ -44,15 +136,19 @@ const People = () => {
         description="管理公司人員資料"
         actions={
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm">
+            <Button variant="outline" size="sm" onClick={handleSearch}>
               <Search className="h-4 w-4 mr-2" />
               搜尋
             </Button>
-            <Button variant="outline" size="sm">
+            <Button variant="outline" size="sm" onClick={handleRefresh}>
               <RefreshCw className="h-4 w-4 mr-2" />
               重新整理
             </Button>
-            <Button size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90">
+            <Button 
+              size="sm" 
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
+              onClick={handleAddPerson}
+            >
               <Plus className="h-4 w-4 mr-2" />
               新增人員
             </Button>
@@ -78,11 +174,15 @@ const People = () => {
           />
         </div>
         <div className="flex justify-end gap-2">
-          <Button variant="outline" size="sm" onClick={() => setSearchTerm('')}>
+          <Button variant="outline" size="sm" onClick={handleClearSearch}>
             <X className="h-4 w-4 mr-1" />
             清除
           </Button>
-          <Button size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90">
+          <Button 
+            size="sm" 
+            className="bg-primary text-primary-foreground hover:bg-primary/90"
+            onClick={handleSearch}
+          >
             <Search className="h-4 w-4 mr-1" />
             搜尋
           </Button>
@@ -130,22 +230,36 @@ const People = () => {
                 </TableCell>
                 <TableCell className="max-w-[300px]">
                   <div className="text-xs space-y-0.5">
-                    {person.companies.map((c, i) => (
-                      <div key={i} className="truncate">
-                        {c.name} ({c.brNumber})
-                      </div>
-                    ))}
+                    {person.companies.length > 0 ? (
+                      person.companies.map((c, i) => (
+                        <div key={i} className="truncate">
+                          {c.name} ({c.brNumber})
+                        </div>
+                      ))
+                    ) : (
+                      <span className="text-muted-foreground">-</span>
+                    )}
                   </div>
                 </TableCell>
                 <TableCell className="text-sm">{person.createdAt}</TableCell>
                 <TableCell className="text-sm">{person.updatedAt}</TableCell>
                 <TableCell>
                   <div className="flex items-center gap-1">
-                    <Button variant="ghost" size="sm" className="h-8 px-2">
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      className="h-8 px-2"
+                      onClick={() => handleEditPerson(person)}
+                    >
                       <Edit className="h-4 w-4" />
                       <span className="ml-1">編輯</span>
                     </Button>
-                    <Button variant="ghost" size="sm" className="h-8 px-2 text-destructive hover:text-destructive">
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      className="h-8 px-2 text-destructive hover:text-destructive"
+                      onClick={() => handleDeleteClick(person)}
+                    >
                       <Trash2 className="h-4 w-4" />
                       <span className="ml-1">刪除</span>
                     </Button>
@@ -155,7 +269,46 @@ const People = () => {
             ))}
           </TableBody>
         </Table>
+
+        {/* Pagination */}
+        <div className="flex items-center justify-between px-4 py-3 border-t border-border">
+          <div className="text-sm text-muted-foreground">
+            共 {people.length} 位人員
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">每頁:</span>
+            <Select defaultValue="20">
+              <SelectTrigger className="w-20 h-8">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="10">10 筆</SelectItem>
+                <SelectItem value="20">20 筆</SelectItem>
+                <SelectItem value="50">50 筆</SelectItem>
+              </SelectContent>
+            </Select>
+            <span className="text-sm text-muted-foreground ml-2">
+              顯示 1 到 {filteredPeople.length} 筆，共 {filteredPeople.length} 筆資料
+            </span>
+          </div>
+        </div>
       </div>
+
+      {/* Dialogs */}
+      <PersonDialog
+        open={personDialogOpen}
+        onOpenChange={setPersonDialogOpen}
+        person={selectedPerson}
+        onSave={handleSavePerson}
+      />
+
+      <DeleteConfirmDialog
+        open={deleteDialogOpen}
+        onOpenChange={setDeleteDialogOpen}
+        title="確認刪除人員"
+        description={`您確定要刪除「${personToDelete?.nameChinese || personToDelete?.nameEnglish}」嗎？此操作無法復原。`}
+        onConfirm={handleConfirmDelete}
+      />
     </div>
   );
 };

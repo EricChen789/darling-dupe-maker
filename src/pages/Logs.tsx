@@ -20,6 +20,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Search, RefreshCw, X, Calendar, ArrowUpDown } from 'lucide-react';
+import { toast } from '@/hooks/use-toast';
 
 interface LogEntry {
   id: string;
@@ -31,7 +32,7 @@ interface LogEntry {
   companyName?: string;
 }
 
-const mockLogs: LogEntry[] = [
+const allLogs: LogEntry[] = [
   { id: '1', timestamp: '2025/11/18 14:30:00', operation: '新增公司', type: '公司', content: '新增公司 TEST COMPANY – OBVIOUS TEST NAME', companyId: '1', companyName: 'TEST COMPANY' },
   { id: '2', timestamp: '2025/11/18 14:25:00', operation: '更新人員', type: '人員', content: '更新董事資料：測試董事', companyId: '1', companyName: 'TEST COMPANY' },
   { id: '3', timestamp: '2025/11/18 14:20:00', operation: '建立發票', type: '發票', content: '建立發票 INV-710585，金額 HK$94,596.11', companyId: '1', companyName: 'TEST COMPANY' },
@@ -55,9 +56,10 @@ const Logs = () => {
   const [endDate, setEndDate] = useState('');
   const [filteredLogs, setFilteredLogs] = useState<LogEntry[]>([]);
   const [hasSearched, setHasSearched] = useState(false);
+  const [sortNewest, setSortNewest] = useState(true);
 
   const handleSearch = () => {
-    let results = [...mockLogs];
+    let results = [...allLogs];
     
     if (searchCompany) {
       results = results.filter(log => 
@@ -74,9 +76,21 @@ const Logs = () => {
       };
       results = results.filter(log => log.type === typeMap[operationType]);
     }
+
+    // Sort by timestamp
+    results.sort((a, b) => {
+      const dateA = new Date(a.timestamp.replace(/\//g, '-'));
+      const dateB = new Date(b.timestamp.replace(/\//g, '-'));
+      return sortNewest ? dateB.getTime() - dateA.getTime() : dateA.getTime() - dateB.getTime();
+    });
     
     setFilteredLogs(results);
     setHasSearched(true);
+
+    toast({
+      title: '搜尋完成',
+      description: `找到 ${results.length} 筆記錄`,
+    });
   };
 
   const handleClear = () => {
@@ -86,14 +100,44 @@ const Logs = () => {
     setEndDate('');
     setFilteredLogs([]);
     setHasSearched(false);
+    toast({
+      title: '已清除',
+      description: '搜尋條件已重設',
+    });
+  };
+
+  const handleRefresh = () => {
+    if (hasSearched) {
+      handleSearch();
+    }
+    toast({
+      title: '已重新整理',
+      description: '日誌列表已更新',
+    });
+  };
+
+  const handleToggleSort = () => {
+    setSortNewest(!sortNewest);
+    if (hasSearched) {
+      const sorted = [...filteredLogs].sort((a, b) => {
+        const dateA = new Date(a.timestamp.replace(/\//g, '-'));
+        const dateB = new Date(b.timestamp.replace(/\//g, '-'));
+        return !sortNewest ? dateB.getTime() - dateA.getTime() : dateA.getTime() - dateB.getTime();
+      });
+      setFilteredLogs(sorted);
+    }
+    toast({
+      title: sortNewest ? '舊到新排序' : '新到舊排序',
+      description: '已切換排序方式',
+    });
   };
 
   const displayLogs = hasSearched ? filteredLogs : [];
 
   // Calculate stats based on selected company
   const currentCompany = searchCompany || '-';
-  const directorsCount = hasSearched && filteredLogs.length > 0 ? '有' : '無';
-  const secretariesCount = hasSearched && filteredLogs.length > 0 ? '有' : '無';
+  const directorsCount = hasSearched && filteredLogs.some(l => l.type === '人員' && l.content.includes('董事')) ? '有' : '無';
+  const secretariesCount = hasSearched && filteredLogs.some(l => l.type === '人員' && l.content.includes('秘書')) ? '有' : '無';
 
   return (
     <div>
@@ -102,15 +146,15 @@ const Logs = () => {
         description="查看所有公司相關操作記錄和系統活動"
         actions={
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm">
+            <Button variant="outline" size="sm" onClick={handleSearch}>
               <Search className="h-4 w-4 mr-2" />
               搜尋
             </Button>
-            <Button variant="outline" size="sm">
+            <Button variant="outline" size="sm" onClick={handleToggleSort}>
               <ArrowUpDown className="h-4 w-4 mr-2" />
-              最新優先
+              {sortNewest ? '最新優先' : '最舊優先'}
             </Button>
-            <Button variant="outline" size="sm">
+            <Button variant="outline" size="sm" onClick={handleRefresh}>
               <RefreshCw className="h-4 w-4 mr-2" />
               重新整理
             </Button>

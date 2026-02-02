@@ -303,28 +303,16 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
     console.log(`Filled Director (Corporate): ${dir.nameChinese || dir.nameEnglish}`);
   }
 
-  // ============ Pages 7-15 - Fill BR Number on ALL pages ============
-  // Page 7 - Reserve Director
+  // ============ Pages 7-8 - Fill BR Number (full 8 digits) ============
+  // Page 7 - Reserve Director (fill_1_P.7 is BR number header)
   safeSetText("fill_1_P.7", br8);
-  // Page 8 - Service Agent
+  // Page 8 - Service Agent (fill_1_P.8 is BR number header)
   safeSetText("fill_1_P.8", br8);
-  // Page 9 - Schedule 1
-  safeSetText("fill_1_P.9", br8);
-  // Page 10 - Schedule 2
-  safeSetText("fill_1_P.10", br8);
-  // Page 11
-  safeSetText("fill_1_P.11", br8);
-  // Page 12
-  safeSetText("fill_1_P.12", br8);
-  // Page 13
-  safeSetText("fill_1_P.13", br8);
-  // Page 14 - Declaration
-  safeSetText("fill_1_P.14", br8);
-  // Page 15 - Contact
-  safeSetText("fill_1_P.15", br8);
 
-  // Schedule pages (9-15) also have split BR number fields (fill_4 to fill_7)
-  // These are 2-digit segments of the BR number
+  // ============ Pages 9-15 - Schedule Pages ============
+  // IMPORTANT: On schedule pages (9-15), fill_1 is the DATE field (DD), NOT the BR number!
+  // The BR number on schedule pages is ONLY in the split fields on the right side of the header
+  // These are 4 pairs of 2-digit fields
   for (let page = 9; page <= 15; page++) {
     safeSetText(`fill_4_P.${page}`, br8.substring(0, 2));
     safeSetText(`fill_5_P.${page}`, br8.substring(2, 4));

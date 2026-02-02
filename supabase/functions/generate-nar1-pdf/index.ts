@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { encode as base64Encode } from "https://deno.land/std@0.168.0/encoding/base64.ts";
 import { PDFDocument } from "https://esm.sh/pdf-lib@1.17.1";
 import fontkit from "https://esm.sh/@pdf-lib/fontkit@1.1.1";
 
@@ -161,6 +162,35 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
       return false;
     }
   };
+
+  // Debug mode: fill all fields with short identifiers (skip radio/dropdown to avoid invalid values)
+  if (debugMode) {
+    console.log("Debug mode enabled: filling all text fields and checking all checkboxes (skipping radios/dropdowns)");
+    const fields = form.getFields();
+    for (const field of fields) {
+      const name = field.getName();
+      const type = field.constructor.name;
+
+      if (type === "PDFTextField") {
+        safeSetText(name, "");
+      } else if (type === "PDFCheckBox") {
+        safeCheck(name, true);
+      } else if (type === "PDFRadioGroup") {
+        // Requested: do not fill radio buttons in debug output
+        console.log(`↷ Skipped radio group: ${name}`);
+      }
+    }
+
+    // Ensure Chinese renders in form field appearances before flattening
+    form.updateFieldAppearances(chineseFont);
+    form.flatten();
+    console.log("Form flattened (debug)");
+
+    console.log("PDF filled (debug), serializing...");
+    const pdfBytes = await pdfDoc.save();
+    console.log(`Final PDF size (debug): ${pdfBytes.byteLength} bytes`);
+    return pdfBytes;
+  }
 
   const parseEnglishName = (fullName: string) => {
     const parts = (fullName || "").trim().split(/\s+/).filter(Boolean);
@@ -347,8 +377,9 @@ serve(async (req: Request) => {
     
     // For debug mode or when explicitly requested, return as base64 JSON
     if (debugMode) {
-      // Convert Uint8Array to base64
-      const base64 = btoa(String.fromCharCode(...pdfBytes));
+      // Convert Uint8Array to base64 safely (avoid stack overflow)
+      const ab = pdfBytes.buffer.slice(pdfBytes.byteOffset, pdfBytes.byteOffset + pdfBytes.byteLength);
+      const base64 = base64Encode(ab as ArrayBuffer);
       return new Response(JSON.stringify({ pdf: base64 }), {
         headers: {
           ...corsHeaders,

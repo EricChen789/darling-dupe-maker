@@ -309,18 +309,23 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
   // Page 8 - Service Agent (fill_1_P.8 is BR number header)
   safeSetText("fill_1_P.8", br8);
 
-  // ============ Pages 9-15 - Schedule Pages ============
-  // IMPORTANT: On schedule pages (9-15), fill_1 is the DATE field (DD), NOT the BR number!
-  // The BR number on schedule pages is ONLY in the split fields on the right side of the header
-  // These are 4 pairs of 2-digit fields
-  for (let page = 9; page <= 15; page++) {
+  // ============ Pages 14-15 - BR Number headers (not schedule pages) ============
+  // These pages still have a BR header field in fill_1
+  safeSetText("fill_1_P.14", br8);
+  safeSetText("fill_1_P.15", br8);
+
+  // ============ Pages 9-13 - Schedule Pages (split BR fields) ============
+  // IMPORTANT: On schedule/continuation pages, fill_1 is NOT a BR field.
+  // BR is displayed as 4x 2-digit fields (fill_4..fill_7) on the header.
+  // Only pages 9-13 use this structure. Pages 14-15 are declaration/contact pages.
+  for (let page = 9; page <= 13; page++) {
     safeSetText(`fill_4_P.${page}`, br8.substring(0, 2));
     safeSetText(`fill_5_P.${page}`, br8.substring(2, 4));
     safeSetText(`fill_6_P.${page}`, br8.substring(4, 6));
     safeSetText(`fill_7_P.${page}`, br8.substring(6, 8));
   }
   
-  console.log("Filled BR number on ALL pages (1-15) including split fields on schedule pages");
+  console.log("Filled BR number headers (1-8,14-15) and split BR fields (9-13)");
 
   // Key fix: ensure Chinese renders in form field appearances before flattening
   form.updateFieldAppearances(chineseFont);

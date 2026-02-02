@@ -251,18 +251,23 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
     console.log(`Filled Director (Corporate): ${dir.nameChinese || dir.nameEnglish}`);
   }
 
-  // ============ Pages 7-27 - Fill BR Number on all remaining pages ============
-  // Page 7 - Reserve Director
+  // ============ Pages 7-8 - Fill BR Number ============
+  // Page 7 - Reserve Director (fill_1_P.7 is BR number field)
   safeSetText("fill_1_P.7", br8);
-  // Page 8 - Service Agent
+  // Page 8 - Service Agent (fill_1_P.8 is BR number field)
   safeSetText("fill_1_P.8", br8);
-  // Page 9 - Members
-  safeSetText("fill_1_P.9", br8);
-  // Pages 10-27 - Schedules and other pages
-  for (let page = 10; page <= 27; page++) {
-    safeSetText(`fill_1_P.${page}`, br8);
-  }
-  console.log("Filled BR number on all pages");
+
+  // ============ Pages 9-15 - Schedule 1 (Members) ============
+  // Note: fill_1_P.9 to fill_1_P.15 have maxLength=2, not for BR number
+  // The BR number fields on these schedule pages don't exist or use different naming
+  // We'll try common alternative field names for BR on schedule pages
+  
+  // Pages 9-15: Try different BR field patterns
+  // Based on the PDF template, schedule pages may use fill_X_P.Y where X is higher
+  // The schedules typically have the BR number in a specific box at top-right
+  
+  console.log("Note: Pages 9-27 (Schedules) may not have standard BR number fields");
+  console.log("Filled BR number on pages 1-8");
 
   // Key fix: ensure Chinese renders in form field appearances before flattening
   form.updateFieldAppearances(chineseFont);

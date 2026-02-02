@@ -205,54 +205,78 @@ export const page8Fields: FieldMapping[] = [
 ];
 
 // ============ Page 9 - 成員詳情 (附表一：非上市公司) ============
+// 注意：附表頁 (9-15) 的 fill_1 是日期欄位 (DD)，不是 BR 號碼！
+// BR 號碼在右側分成 4 個 2 位數欄位
 export const page9Fields: FieldMapping[] = [
-  { field: 'fill_1_P.9', description: '頁頭商業登記號碼', dataSource: 'brNumber' },
-  { field: 'fill_2_P.9', description: 'BR 號碼字段 2', dataSource: 'brNumber.slice(0,2)' },
-  { field: 'fill_3_P.9', description: 'BR 號碼字段 3', dataSource: 'brNumber.slice(2,4)' },
-  { field: 'fill_4_P.9', description: 'BR 號碼字段 4', dataSource: 'brNumber.slice(4,6)' },
-  { field: 'fill_5_P.9', description: 'BR 號碼字段 5', dataSource: 'brNumber.slice(6,8)' },
-  { field: 'fill_6_P.9', description: '成員資料 6', dataSource: 'members[0].name' },
-  { field: 'fill_7_P.9', description: '成員資料 7', dataSource: 'members[0].shares' },
+  { field: 'fill_1_P.9', description: '申報日期 - 日 (DD)', dataSource: 'returnDate.day' },
+  { field: 'fill_2_P.9', description: '申報日期 - 月 (MM)', dataSource: 'returnDate.month' },
+  { field: 'fill_3_P.9', description: '申報日期 - 年 (YYYY)', dataSource: 'returnDate.year' },
+  { field: 'fill_4_P.9', description: 'BR 號碼分段 1 (第1-2位)', dataSource: 'brNumber.slice(0,2)' },
+  { field: 'fill_5_P.9', description: 'BR 號碼分段 2 (第3-4位)', dataSource: 'brNumber.slice(2,4)' },
+  { field: 'fill_6_P.9', description: 'BR 號碼分段 3 (第5-6位)', dataSource: 'brNumber.slice(4,6)' },
+  { field: 'fill_7_P.9', description: 'BR 號碼分段 4 (第7-8位)', dataSource: 'brNumber.slice(6,8)' },
   { field: 'cb_1_P.9', description: '成員勾選項 1', dataSource: '(如適用)' },
   { field: 'cb_2_P.9', description: '成員勾選項 2', dataSource: '(如適用)' },
 ];
 
 // ============ Pages 10-13 - 附表一：非上市公司成員 (多頁) ============
+// 注意：所有附表頁的 fill_1~3 是日期欄位，fill_4~7 是 BR 號碼分段
 export const page10Fields: FieldMapping[] = [
-  { field: 'fill_1_P.10', description: '頁頭商業登記號碼', dataSource: 'brNumber' },
-  { field: 'fill_2_P.10 ~ fill_32_P.10', description: '成員詳情欄位 (多筆)', dataSource: 'members[] 詳細列表' },
+  { field: 'fill_1_P.10', description: '申報日期 - 日 (DD)', dataSource: 'returnDate.day' },
+  { field: 'fill_2_P.10', description: '申報日期 - 月 (MM)', dataSource: 'returnDate.month' },
+  { field: 'fill_3_P.10', description: '申報日期 - 年 (YYYY)', dataSource: 'returnDate.year' },
+  { field: 'fill_4_P.10', description: 'BR 號碼分段 1 (第1-2位)', dataSource: 'brNumber.slice(0,2)' },
+  { field: 'fill_5_P.10', description: 'BR 號碼分段 2 (第3-4位)', dataSource: 'brNumber.slice(2,4)' },
+  { field: 'fill_6_P.10', description: 'BR 號碼分段 3 (第5-6位)', dataSource: 'brNumber.slice(4,6)' },
+  { field: 'fill_7_P.10', description: 'BR 號碼分段 4 (第7-8位)', dataSource: 'brNumber.slice(6,8)' },
   { field: 'cb_1_P.10', description: '勾選項 1', dataSource: '(如適用)' },
   { field: 'cb_2_P.10', description: '勾選項 2', dataSource: '(如適用)' },
 ];
 
 export const page11Fields: FieldMapping[] = [
-  { field: 'fill_1_P.11', description: '頁頭商業登記號碼', dataSource: 'brNumber' },
-  { field: 'fill_2_P.11 ~ fill_21_P.11', description: '成員詳情欄位', dataSource: 'members[] 續' },
+  { field: 'fill_1_P.11', description: '申報日期 - 日 (DD)', dataSource: 'returnDate.day' },
+  { field: 'fill_2_P.11', description: '申報日期 - 月 (MM)', dataSource: 'returnDate.month' },
+  { field: 'fill_3_P.11', description: '申報日期 - 年 (YYYY)', dataSource: 'returnDate.year' },
+  { field: 'fill_4_P.11', description: 'BR 號碼分段 1 (第1-2位)', dataSource: 'brNumber.slice(0,2)' },
+  { field: 'fill_5_P.11', description: 'BR 號碼分段 2 (第3-4位)', dataSource: 'brNumber.slice(2,4)' },
+  { field: 'fill_6_P.11', description: 'BR 號碼分段 3 (第5-6位)', dataSource: 'brNumber.slice(4,6)' },
+  { field: 'fill_7_P.11', description: 'BR 號碼分段 4 (第7-8位)', dataSource: 'brNumber.slice(6,8)' },
   { field: 'cb_1_P.11', description: '勾選項 1', dataSource: '(如適用)' },
 ];
 
 export const page12Fields: FieldMapping[] = [
-  { field: 'fill_1_P.12', description: '頁頭商業登記號碼', dataSource: 'brNumber' },
-  { field: 'fill_2_P.12 ~ fill_14_P.12', description: '成員詳情欄位', dataSource: 'members[] 續' },
+  { field: 'fill_1_P.12', description: '申報日期 - 日 (DD)', dataSource: 'returnDate.day' },
+  { field: 'fill_2_P.12', description: '申報日期 - 月 (MM)', dataSource: 'returnDate.month' },
+  { field: 'fill_3_P.12', description: '申報日期 - 年 (YYYY)', dataSource: 'returnDate.year' },
+  { field: 'fill_4_P.12', description: 'BR 號碼分段 1 (第1-2位)', dataSource: 'brNumber.slice(0,2)' },
+  { field: 'fill_5_P.12', description: 'BR 號碼分段 2 (第3-4位)', dataSource: 'brNumber.slice(2,4)' },
+  { field: 'fill_6_P.12', description: 'BR 號碼分段 3 (第5-6位)', dataSource: 'brNumber.slice(4,6)' },
+  { field: 'fill_7_P.12', description: 'BR 號碼分段 4 (第7-8位)', dataSource: 'brNumber.slice(6,8)' },
   { field: 'cb_1_P.12', description: '勾選項 1', dataSource: '(如適用)' },
 ];
 
 export const page13Fields: FieldMapping[] = [
-  { field: 'fill_1_P.13', description: '頁頭商業登記號碼', dataSource: 'brNumber' },
-  { field: 'fill_2_P.13 ~ fill_17_P.13', description: '成員詳情欄位', dataSource: 'members[] 續' },
+  { field: 'fill_1_P.13', description: '申報日期 - 日 (DD)', dataSource: 'returnDate.day' },
+  { field: 'fill_2_P.13', description: '申報日期 - 月 (MM)', dataSource: 'returnDate.month' },
+  { field: 'fill_3_P.13', description: '申報日期 - 年 (YYYY)', dataSource: 'returnDate.year' },
+  { field: 'fill_4_P.13', description: 'BR 號碼分段 1 (第1-2位)', dataSource: 'brNumber.slice(0,2)' },
+  { field: 'fill_5_P.13', description: 'BR 號碼分段 2 (第3-4位)', dataSource: 'brNumber.slice(2,4)' },
+  { field: 'fill_6_P.13', description: 'BR 號碼分段 3 (第5-6位)', dataSource: 'brNumber.slice(4,6)' },
+  { field: 'fill_7_P.13', description: 'BR 號碼分段 4 (第7-8位)', dataSource: 'brNumber.slice(6,8)' },
   { field: 'cb_1_P.13', description: '勾選項 1', dataSource: '(如適用)' },
   { field: 'cb_2_P.13', description: '勾選項 2', dataSource: '(如適用)' },
 ];
 
 // ============ Pages 14-15 - 聲明及簽署 ============
+// 注意：附表頁的 fill_1~3 是日期，fill_4~7 是 BR 分段
 export const page14Fields: FieldMapping[] = [
-  { field: 'fill_1_P.14', description: '頁頭商業登記號碼', dataSource: 'brNumber' },
-  { field: 'fill_2_P.14', description: '聲明人姓名', dataSource: 'declarant.name' },
-  { field: 'fill_3_P.14', description: '聲明人身分', dataSource: 'declarant.capacity' },
-  { field: 'fill_4_P.14', description: '簽署日期 - 日', dataSource: 'signatureDate.day' },
-  { field: 'fill_5_P.14', description: '簽署日期 - 月', dataSource: 'signatureDate.month' },
-  { field: 'fill_6_P.14', description: '簽署日期 - 年', dataSource: 'signatureDate.year' },
-  { field: 'fill_7_P.14 ~ fill_24_P.14', description: '額外欄位', dataSource: '(待確認)' },
+  { field: 'fill_1_P.14', description: '申報日期 - 日 (DD)', dataSource: 'returnDate.day' },
+  { field: 'fill_2_P.14', description: '申報日期 - 月 (MM)', dataSource: 'returnDate.month' },
+  { field: 'fill_3_P.14', description: '申報日期 - 年 (YYYY)', dataSource: 'returnDate.year' },
+  { field: 'fill_4_P.14', description: 'BR 號碼分段 1 (第1-2位)', dataSource: 'brNumber.slice(0,2)' },
+  { field: 'fill_5_P.14', description: 'BR 號碼分段 2 (第3-4位)', dataSource: 'brNumber.slice(2,4)' },
+  { field: 'fill_6_P.14', description: 'BR 號碼分段 3 (第5-6位)', dataSource: 'brNumber.slice(4,6)' },
+  { field: 'fill_7_P.14', description: 'BR 號碼分段 4 (第7-8位)', dataSource: 'brNumber.slice(6,8)' },
   { field: 'cb_1_P.14', description: '聲明確認勾選', dataSource: '(必須勾選)' },
   { field: 'cb_2_P.14', description: '勾選項 2', dataSource: '(如適用)' },
   { field: 'cb_3_P.14', description: '勾選項 3', dataSource: '(如適用)' },
@@ -260,12 +284,13 @@ export const page14Fields: FieldMapping[] = [
 ];
 
 export const page15Fields: FieldMapping[] = [
-  { field: 'fill_1_P.15', description: '頁頭商業登記號碼', dataSource: 'brNumber' },
-  { field: 'fill_2_P.15', description: '聯絡人姓名', dataSource: 'contact.name' },
-  { field: 'fill_3_P.15', description: '聯絡電話', dataSource: 'contact.phone' },
-  { field: 'fill_4_P.15', description: '聯絡電郵', dataSource: 'contact.email' },
-  { field: 'fill_5_P.15', description: '額外欄位 5', dataSource: '(待確認)' },
-  { field: 'fill_6_P.15', description: '額外欄位 6', dataSource: '(待確認)' },
+  { field: 'fill_1_P.15', description: '申報日期 - 日 (DD)', dataSource: 'returnDate.day' },
+  { field: 'fill_2_P.15', description: '申報日期 - 月 (MM)', dataSource: 'returnDate.month' },
+  { field: 'fill_3_P.15', description: '申報日期 - 年 (YYYY)', dataSource: 'returnDate.year' },
+  { field: 'fill_4_P.15', description: 'BR 號碼分段 1 (第1-2位)', dataSource: 'brNumber.slice(0,2)' },
+  { field: 'fill_5_P.15', description: 'BR 號碼分段 2 (第3-4位)', dataSource: 'brNumber.slice(2,4)' },
+  { field: 'fill_6_P.15', description: 'BR 號碼分段 3 (第5-6位)', dataSource: 'brNumber.slice(4,6)' },
+  // Note: fill_7_P.15 does not exist in the template
 ];
 
 // All page field mappings for easy iteration

@@ -314,18 +314,15 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
   safeSetText("fill_1_P.14", br8);
   safeSetText("fill_1_P.15", br8);
 
-  // ============ Pages 9-13 - Schedule Pages (split BR fields) ============
-  // IMPORTANT: On schedule/continuation pages, fill_1 is NOT a BR field.
-  // BR is displayed as 4x 2-digit fields (fill_4..fill_7) on the header.
-  // Only pages 9-13 use this structure. Pages 14-15 are declaration/contact pages.
+  // ============ Pages 9-13 - Schedule Pages (single BR field) ============
+  // IMPORTANT: On schedule/continuation pages, fill_1..fill_3 are DATE fields (DD/MM/YYYY).
+  // The BR number is a SINGLE field labeled "4.xx" (e.g. 4.9) which maps to fill_4_P.xx.
+  // Do NOT write BR into fill_5..fill_7 because those are other fields on the page (5.xx, 6.xx, 7.xx).
   for (let page = 9; page <= 13; page++) {
-    safeSetText(`fill_4_P.${page}`, br8.substring(0, 2));
-    safeSetText(`fill_5_P.${page}`, br8.substring(2, 4));
-    safeSetText(`fill_6_P.${page}`, br8.substring(4, 6));
-    safeSetText(`fill_7_P.${page}`, br8.substring(6, 8));
+    safeSetText(`fill_4_P.${page}`, br8);
   }
-  
-  console.log("Filled BR number headers (1-8,14-15) and split BR fields (9-13)");
+
+  console.log("Filled BR number headers (1-8,14-15) and schedule BR field (9-13: fill_4)");
 
   // Key fix: ensure Chinese renders in form field appearances before flattening
   form.updateFieldAppearances(chineseFont);

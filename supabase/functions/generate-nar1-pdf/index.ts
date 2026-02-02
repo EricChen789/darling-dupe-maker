@@ -70,7 +70,29 @@ async function loadPdfTemplate(): Promise<ArrayBuffer> {
   return pdfBytes;
 }
 
-async function fillPdfTemplate(data: CompanyData): Promise<Uint8Array> {
+async function listAllFormFields(): Promise<{ fields: Array<{name: string; type: string}> }> {
+  const templateBytes = await loadPdfTemplate();
+  const pdfDoc = await PDFDocument.load(templateBytes);
+  const form = pdfDoc.getForm();
+  const allFields = form.getFields();
+  
+  const fields: Array<{name: string; type: string}> = [];
+  
+  for (const field of allFields) {
+    const name = field.getName();
+    const type = field.constructor.name;
+    fields.push({ name, type });
+    console.log(`Field: ${name} (${type})`);
+  }
+  
+  // Sort by field name for easier reading
+  fields.sort((a, b) => a.name.localeCompare(b.name));
+  
+  console.log(`Total fields found: ${fields.length}`);
+  return { fields };
+}
+
+async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Uint8Array> {
   console.log("Loading and filling PDF template...");
 
   const templateBytes = await loadPdfTemplate();
@@ -92,8 +114,9 @@ async function fillPdfTemplate(data: CompanyData): Promise<Uint8Array> {
   const safeSetText = (fieldName: string, value: string) => {
     try {
       const field = form.getTextField(fieldName);
-      field.setText(value ?? "");
-      console.log(`✓ ${fieldName} = ${JSON.stringify(value)}`);
+      // In debug mode, fill with the field name itself
+      field.setText(debugMode ? fieldName : (value ?? ""));
+      console.log(`✓ ${fieldName} = ${JSON.stringify(debugMode ? fieldName : value)}`);
       return true;
     } catch (e) {
       console.warn(`⚠ Missing text field: ${fieldName}`, e);
@@ -102,10 +125,10 @@ async function fillPdfTemplate(data: CompanyData): Promise<Uint8Array> {
   };
 
   const safeCheck = (fieldName: string, shouldCheck: boolean) => {
-    if (!shouldCheck) return false;
+    if (!shouldCheck && !debugMode) return false;
     try {
       const field = form.getCheckBox(fieldName);
-      field.check();
+      if (debugMode || shouldCheck) field.check();
       console.log(`✓ Checked ${fieldName}`);
       return true;
     } catch (e) {
@@ -123,57 +146,109 @@ async function fillPdfTemplate(data: CompanyData): Promise<Uint8Array> {
 
   const br8 = (data.brNumber || "").replace(/[^0-9A-Za-z]/g, "").slice(0, 8);
 
-  // Page 1
+  // ============ Page 1 - Company Info / Business Nature / Return Date / Address ============
+  // Header BR number (8 chars max)
   safeSetText("fill_1_P.1", br8);
-  safeSetText("fill_2_P.1", data.brNumber || "");
-  safeSetText("fill_3_P.1", data.name || "");
-  safeSetText("fill_4_P.1", data.tradingName || "");
-  safeCheck(
-    "cb_1_P.1",
-    data.companyType?.includes("私人") || data.companyType?.toLowerCase().includes("private") || false,
-  );
-  safeCheck(
-    "cb_2_P.1",
-    data.companyType?.includes("公眾") || data.companyType?.toLowerCase().includes("public") || false,
-  );
+  // 1. Company Name
+  safeSetText("fill_2_P.1", data.name || "");
+  // 2. Business Name (if any)
+  safeSetText("fill_3_P.1", data.tradingName || "");
+  // 3. Company Type checkboxes
+  safeCheck("cb_1_P.1", data.companyType?.includes("私人") || data.companyType?.toLowerCase().includes("private") || false);
+  safeCheck("cb_2_P.1", data.companyType?.includes("公眾") || data.companyType?.toLowerCase().includes("public") || false);
   safeCheck("cb_3_P.1", data.companyType?.includes("擔保") || false);
+  // 9. Business Nature - Code
+  safeSetText("fill_4_P.1", data.businessCode || "");
+  // 9. Business Nature - Description
+  safeSetText("fill_5_P.1", data.businessNature || "");
+  // 4. Return Date - Day
+  safeSetText("fill_6_P.1", day || "");
+  // 4. Return Date - Month
+  safeSetText("fill_7_P.1", month || "");
+  // 4. Return Date - Year
+  safeSetText("fill_8_P.1", year || "");
+  // 6. Registered Office Address
+  safeSetText("fill_15_P.1", office.flat || "");
+  safeSetText("fill_16_P.1", office.building || "");
+  safeSetText("fill_17_P.1", office.street || "");
+  safeSetText("fill_18_P.1", office.district || "");
 
-  // Page 2 (date + business nature)
-  safeSetText("fill_1_P.2", day || "");
-  safeSetText("fill_2_P.2", month || "");
-  safeSetText("fill_3_P.2", year || "");
-  safeSetText("fill_4_P.2", data.businessCode || "");
-  safeSetText("fill_5_P.2", data.businessNature || "");
+  // ============ Page 2 - Mortgages / Members / Share Capital ============
+  // BR Number header
+  safeSetText("fill_1_P.2", br8);
 
-  // Page 3 (registered office)
-  safeSetText("fill_1_P.3", office.flat || "");
-  safeSetText("fill_2_P.3", office.building || "");
-  safeSetText("fill_3_P.3", office.street || "");
-  safeSetText("fill_4_P.3", office.district || "");
-
-  // Page 4 (company secretary - natural person) - first natural
+  // ============ Page 3 - Company Secretary (Natural Person) 12A ============
+  // BR Number header
+  safeSetText("fill_1_P.3", br8);
   const naturalSecretaries = (data.secretaries || []).filter((s) => s.identity === "natural");
-  if (naturalSecretaries.length > 0) {
-    const sec = naturalSecretaries[0];
+  if (naturalSecretaries.length > 0 || debugMode) {
+    const sec = naturalSecretaries[0] || { nameChinese: "", nameEnglish: "", email: "" };
     const { surname, otherNames } = parseEnglishName(sec.nameEnglish);
-    safeSetText("fill_1_P.4", sec.nameChinese || "");
-    safeSetText("fill_2_P.4", surname);
-    safeSetText("fill_3_P.4", otherNames);
-    safeSetText("fill_5_P.4", sec.email || "");
-    console.log(`Filled Secretary: ${sec.nameChinese}`);
+    // 15. Chinese Name
+    safeSetText("fill_2_P.3", sec.nameChinese || "");
+    // 15. English Name - Surname
+    safeSetText("fill_3_P.3", surname);
+    // 15. English Name - Other Names
+    safeSetText("fill_4_P.3", otherNames);
+    // 17. Email Address
+    safeSetText("fill_13_P.3", sec.email || "");
+    console.log(`Filled Secretary (Natural): ${sec.nameChinese}`);
   }
 
-  // Page 6 (director - natural person) - first natural
+  // ============ Page 4 - Company Secretary (Body Corporate) 12B ============
+  // BR Number header
+  safeSetText("fill_1_P.4", br8);
+  const corporateSecretaries = (data.secretaries || []).filter((s) => s.identity === "corporate");
+  if (corporateSecretaries.length > 0 || debugMode) {
+    const sec = corporateSecretaries[0] || { nameChinese: "", nameEnglish: "", email: "", brNumber: "" };
+    // 21. Chinese Name
+    safeSetText("fill_2_P.4", sec.nameChinese || "");
+    // 21. English Name
+    safeSetText("fill_3_P.4", sec.nameEnglish || "");
+    // 17. Email Address
+    safeSetText("fill_8_P.4", sec.email || "");
+    // 19. BR Number
+    safeSetText("fill_9_P.4", sec.brNumber || "");
+    console.log(`Filled Secretary (Corporate): ${sec.nameChinese || sec.nameEnglish}`);
+  }
+
+  // ============ Page 5 - Director (Natural Person) 13A ============
+  // BR Number header
+  safeSetText("fill_1_P.5", br8);
   const naturalDirectors = (data.directors || []).filter((d) => d.identity === "natural");
-  if (naturalDirectors.length > 0) {
-    const dir = naturalDirectors[0];
+  if (naturalDirectors.length > 0 || debugMode) {
+    const dir = naturalDirectors[0] || { nameChinese: "", nameEnglish: "", email: "" };
     const { surname, otherNames } = parseEnglishName(dir.nameEnglish);
+    // 23. Capacity - Director checkbox
+    safeCheck("cb_1_P.5", true);
+    // 24. Chinese Name
+    safeSetText("fill_2_P.5", dir.nameChinese || "");
+    // 24. English Name - Surname
+    safeSetText("fill_3_P.5", surname);
+    // 24. English Name - Other Names
+    safeSetText("fill_4_P.5", otherNames);
+    // 26. Email Address
+    safeSetText("fill_14_P.5", dir.email || "");
+    console.log(`Filled Director (Natural): ${dir.nameChinese}`);
+  }
+
+  // ============ Page 6 - Director (Body Corporate) 13B ============
+  // BR Number header
+  safeSetText("fill_1_P.6", br8);
+  const corporateDirectors = (data.directors || []).filter((d) => d.identity === "corporate");
+  if (corporateDirectors.length > 0 || debugMode) {
+    const dir = corporateDirectors[0] || { nameChinese: "", nameEnglish: "", email: "", brNumber: "" };
+    // 23. Capacity - Director checkbox
     safeCheck("cb_1_P.6", true);
-    safeSetText("fill_1_P.6", dir.nameChinese || "");
-    safeSetText("fill_2_P.6", surname);
-    safeSetText("fill_3_P.6", otherNames);
-    safeSetText("fill_5_P.6", dir.email || "");
-    console.log(`Filled Director: ${dir.nameChinese}`);
+    // Chinese Name
+    safeSetText("fill_2_P.6", dir.nameChinese || "");
+    // English Name
+    safeSetText("fill_3_P.6", dir.nameEnglish || "");
+    // Email Address
+    safeSetText("fill_8_P.6", dir.email || "");
+    // BR Number
+    safeSetText("fill_9_P.6", dir.brNumber || "");
+    console.log(`Filled Director (Corporate): ${dir.nameChinese || dir.nameEnglish}`);
   }
 
   // Key fix: ensure Chinese renders in form field appearances before flattening
@@ -196,11 +271,23 @@ serve(async (req: Request) => {
   }
 
   try {
-    const companyData: CompanyData = await req.json();
-    console.log(`Generating PDF for company: ${companyData.name} (BR: ${companyData.brNumber})`);
+    const requestBody = await req.json();
+    
+    // List fields mode - return JSON with all field names
+    if (requestBody.listFields === true) {
+      console.log("Listing all form fields...");
+      const fields = await listAllFormFields();
+      return new Response(JSON.stringify(fields, null, 2), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    
+    const companyData: CompanyData = requestBody;
+    const debugMode = requestBody.debugMode === true;
+    console.log(`Generating PDF for company: ${companyData.name} (BR: ${companyData.brNumber}) debugMode: ${debugMode}`);
     
     // Fill the NAR1 PDF template
-    const pdfBytes = await fillPdfTemplate(companyData);
+    const pdfBytes = await fillPdfTemplate(companyData, debugMode);
     
     // Return PDF as download
     return new Response(pdfBytes.buffer as ArrayBuffer, {

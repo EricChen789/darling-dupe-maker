@@ -6,7 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
-import { RefreshCw, FileText, CheckSquare, Loader2 } from 'lucide-react';
+import { RefreshCw, FileText, CheckSquare, Loader2, Download } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 
 interface FieldInfo {
@@ -166,6 +166,7 @@ const page14to15Fields = [
 const FieldMapping = () => {
   const [allFields, setAllFields] = useState<FieldInfo[]>([]);
   const [loading, setLoading] = useState(false);
+  const [generatingDebug, setGeneratingDebug] = useState(false);
 
   const fetchAllFields = async () => {
     setLoading(true);
@@ -190,6 +191,51 @@ const FieldMapping = () => {
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const generateDebugPdf = async () => {
+    setGeneratingDebug(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('generate-nar1-pdf', {
+        body: { debugMode: true },
+      });
+
+      if (error) throw error;
+
+      if (data?.pdf) {
+        // Convert base64 to blob and download
+        const byteCharacters = atob(data.pdf);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        const blob = new Blob([byteArray], { type: 'application/pdf' });
+        
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'NAR1-debug-fields.pdf';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+
+        toast({
+          title: '測試 PDF 已生成',
+          description: '所有欄位已填入其欄位編號',
+        });
+      }
+    } catch (error) {
+      console.error('Error generating debug PDF:', error);
+      toast({
+        title: '生成失敗',
+        description: '無法生成測試 PDF',
+        variant: 'destructive',
+      });
+    } finally {
+      setGeneratingDebug(false);
     }
   };
 
@@ -220,6 +266,16 @@ const FieldMapping = () => {
         </TabsList>
 
         <TabsContent value="mapping" className="space-y-4">
+          <div className="flex justify-end">
+            <Button onClick={generateDebugPdf} disabled={generatingDebug}>
+              {generatingDebug ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Download className="h-4 w-4 mr-2" />
+              )}
+              {generatingDebug ? '生成中...' : '生成測試 PDF'}
+            </Button>
+          </div>
           <FieldMappingCard title="第 1 頁 - 公司基本資料 / 業務性質 / 結算日期 / 註冊地址" fields={page1Fields} />
           <FieldMappingCard title="第 2 頁 - 按揭及押記 / 成員人數 / 股本" fields={page2Fields} />
           <FieldMappingCard title="第 3 頁 - 公司秘書 (自然人) 12A" fields={page3Fields} />

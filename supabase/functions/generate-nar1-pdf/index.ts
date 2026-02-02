@@ -179,15 +179,16 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
     const fields = form.getFields();
     for (const field of fields) {
       const name = field.getName();
-      const type = field.constructor.name;
 
-      if (type === "PDFTextField") {
+      // NOTE: In the bundled edge runtime, pdf-lib class names may be minified (e.g. constructor.name === 't').
+      // So we detect by naming convention instead of type.
+      if (name.startsWith("fill_")) {
         safeSetText(name, "");
-      } else if (type === "PDFCheckBox") {
+      } else if (name.startsWith("cb_")) {
         safeCheck(name, true);
-      } else if (type === "PDFRadioGroup") {
-        // Requested: do not fill radio buttons in debug output
-        console.log(`↷ Skipped radio group: ${name}`);
+      } else {
+        // e.g. Dropdown_*, radio groups, option lists... requested to skip these.
+        console.log(`↷ Skipped non-text/checkbox field: ${name}`);
       }
     }
 

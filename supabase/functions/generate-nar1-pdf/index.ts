@@ -114,17 +114,32 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
   const safeSetText = (fieldName: string, value: string) => {
     try {
       const field = form.getTextField(fieldName);
+      // Get the field's maxLength to ensure we don't exceed it
+      const maxLength = field.getMaxLength();
+      
       // In debug mode, fill with a shortened field identifier that fits the field's maxLength
       let textToSet = value ?? "";
       if (debugMode) {
-        // Extract the field number and page, e.g., "fill_1_P.1" -> "1-1"
+        // Extract the field number and page, e.g., "fill_1_P.1" -> "1.1" or just "1" if space is limited
         const match = fieldName.match(/fill_(\d+)_P\.(\d+)/);
         if (match) {
-          textToSet = `${match[1]}-${match[2]}`; // e.g., "1-1" for fill_1_P.1
+          const fullId = `${match[1]}.${match[2]}`; // e.g., "1.1" for fill_1_P.1
+          // If maxLength is too small, just use the field number
+          if (maxLength && maxLength < fullId.length) {
+            textToSet = match[1]; // Just the field number, e.g., "7"
+          } else {
+            textToSet = fullId;
+          }
         } else {
-          textToSet = fieldName.slice(0, 8); // Fallback: first 8 chars
+          textToSet = fieldName.slice(0, maxLength || 8); // Fallback: respect maxLength
         }
       }
+      
+      // Ensure text fits within maxLength
+      if (maxLength && textToSet.length > maxLength) {
+        textToSet = textToSet.slice(0, maxLength);
+      }
+      
       field.setText(textToSet);
       console.log(`✓ ${fieldName} = ${JSON.stringify(textToSet)}`);
       return true;

@@ -18,10 +18,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Search, RefreshCw, Plus, Edit, Trash2 } from 'lucide-react';
+import { Search, RefreshCw, Plus, Edit, Trash2, FileText } from 'lucide-react';
 import { mockCompanies as initialCompanies } from '@/data/mockData';
 import { Company } from '@/types';
 import { CompanyDialog, DeleteConfirmDialog } from '@/components/dialogs/CompanyDialogs';
+import { NAR1Generator } from '@/components/nar1/NAR1Generator';
 import { toast } from '@/hooks/use-toast';
 
 const Companies = () => {
@@ -32,8 +33,10 @@ const Companies = () => {
   // Dialog states
   const [companyDialogOpen, setCompanyDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [nar1DialogOpen, setNar1DialogOpen] = useState(false);
   const [selectedCompany, setSelectedCompany] = useState<Company | null>(null);
   const [companyToDelete, setCompanyToDelete] = useState<Company | null>(null);
+  const [companyForNar1, setCompanyForNar1] = useState<Company | null>(null);
   
   const filteredCompanies = companies.filter(company =>
     company.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -63,6 +66,11 @@ const Companies = () => {
   const handleDeleteClick = (company: Company) => {
     setCompanyToDelete(company);
     setDeleteDialogOpen(true);
+  };
+
+  const handleGenerateNar1 = (company: Company) => {
+    setCompanyForNar1(company);
+    setNar1DialogOpen(true);
   };
 
   const handleSaveCompany = (companyData: Partial<Company>) => {
@@ -248,6 +256,16 @@ const Companies = () => {
                       variant="ghost" 
                       size="sm" 
                       className="h-8 px-2"
+                      onClick={() => handleGenerateNar1(company)}
+                      title="生成 NAR1"
+                    >
+                      <FileText className="h-4 w-4" />
+                      <span className="ml-1">NAR1</span>
+                    </Button>
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      className="h-8 px-2"
                       onClick={() => handleEditCompany(company)}
                     >
                       <Edit className="h-4 w-4" />
@@ -307,6 +325,12 @@ const Companies = () => {
         title="確認刪除公司"
         description={`您確定要刪除「${companyToDelete?.name}」嗎？此操作無法復原。`}
         onConfirm={handleConfirmDelete}
+      />
+
+      <NAR1Generator
+        open={nar1DialogOpen}
+        onOpenChange={setNar1DialogOpen}
+        company={companyForNar1}
       />
     </div>
   );

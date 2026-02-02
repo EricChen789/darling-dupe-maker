@@ -303,36 +303,36 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
     console.log(`Filled Director (Corporate): ${dir.nameChinese || dir.nameEnglish}`);
   }
 
-  // ============ Pages 7-8 - Fill BR Number ============
-  // Page 7 - Reserve Director (fill_1_P.7 is BR number field)
+  // ============ Pages 7-15 - Fill BR Number on ALL pages ============
+  // Page 7 - Reserve Director
   safeSetText("fill_1_P.7", br8);
-  // Page 8 - Service Agent (fill_1_P.8 is BR number field)
+  // Page 8 - Service Agent
   safeSetText("fill_1_P.8", br8);
+  // Page 9 - Schedule 1
+  safeSetText("fill_1_P.9", br8);
+  // Page 10 - Schedule 2
+  safeSetText("fill_1_P.10", br8);
+  // Page 11
+  safeSetText("fill_1_P.11", br8);
+  // Page 12
+  safeSetText("fill_1_P.12", br8);
+  // Page 13
+  safeSetText("fill_1_P.13", br8);
+  // Page 14 - Declaration
+  safeSetText("fill_1_P.14", br8);
+  // Page 15 - Contact
+  safeSetText("fill_1_P.15", br8);
 
-  // ============ Pages 9-15 - Schedule Pages with BR Number ============
-  // Schedule 1 (Page 9): BR number field is fill_7_P.9 based on template analysis
-  // The first 3 fields (fill_1-3) are for the date, fields 4-7 are for BR number
-  // Pages 9: Schedule 1 - Non-listed company members
-  safeSetText("fill_4_P.9", br8.substring(0, 2));  // First 2 chars of BR
-  safeSetText("fill_5_P.9", br8.substring(2, 4));  // Chars 3-4
-  safeSetText("fill_6_P.9", br8.substring(4, 6));  // Chars 5-6
-  safeSetText("fill_7_P.9", br8.substring(6, 8));  // Last 2 chars
-  
-  // Page 10: Schedule 2 - Listed company members
-  safeSetText("fill_4_P.10", br8.substring(0, 2));
-  safeSetText("fill_5_P.10", br8.substring(2, 4));
-  safeSetText("fill_6_P.10", br8.substring(4, 6));
-  safeSetText("fill_7_P.10", br8.substring(6, 8));
-  
-  // Pages 11-15: Additional schedule pages with similar structure
-  for (let page = 11; page <= 15; page++) {
+  // Schedule pages (9-15) also have split BR number fields (fill_4 to fill_7)
+  // These are 2-digit segments of the BR number
+  for (let page = 9; page <= 15; page++) {
     safeSetText(`fill_4_P.${page}`, br8.substring(0, 2));
     safeSetText(`fill_5_P.${page}`, br8.substring(2, 4));
     safeSetText(`fill_6_P.${page}`, br8.substring(4, 6));
     safeSetText(`fill_7_P.${page}`, br8.substring(6, 8));
   }
   
-  console.log("Filled BR number on all pages including schedules (9-15)");
+  console.log("Filled BR number on ALL pages (1-15) including split fields on schedule pages");
 
   // Key fix: ensure Chinese renders in form field appearances before flattening
   form.updateFieldAppearances(chineseFont);

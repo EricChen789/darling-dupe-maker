@@ -11,6 +11,7 @@ import Forms from "./pages/Forms";
 import Invoices from "./pages/Invoices";
 import Logs from "./pages/Logs";
 import Settings from "./pages/Settings";
+import FieldMapping from "./pages/FieldMapping";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -29,6 +30,7 @@ const App = () => (
             <Route path="forms" element={<Forms />} />
             <Route path="invoices" element={<Invoices />} />
             <Route path="logs" element={<Logs />} />
+            <Route path="field-mapping" element={<FieldMapping />} />
             <Route path="settings" element={<Settings />} />
           </Route>
           <Route path="*" element={<NotFound />} />

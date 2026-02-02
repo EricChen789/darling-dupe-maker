@@ -1,6 +1,6 @@
 import { Link, useLocation } from 'react-router-dom';
 import { cn } from '@/lib/utils';
-import { Building2, Users, FileText, Receipt, ClipboardList, Settings, LogOut, LayoutGrid } from 'lucide-react';
+import { Building2, Users, FileText, Receipt, ClipboardList, Settings, LogOut, LayoutGrid, Table } from 'lucide-react';
 
 interface SidebarProps {
   collapsed: boolean;
@@ -13,6 +13,7 @@ const navItems = [
   { path: '/forms', label: '表單管理', icon: FileText },
   { path: '/invoices', label: '發票管理', icon: Receipt },
   { path: '/logs', label: '公司日誌', icon: ClipboardList },
+  { path: '/field-mapping', label: '欄位對照表', icon: Table },
 ];
 
 const bottomNavItems = [

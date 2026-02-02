@@ -45,41 +45,26 @@ interface CompanyData {
 // NAR1 PDF Template URL from Supabase Storage
 const TEMPLATE_URL = "https://uqcsgmmsrgtlcqutaomg.supabase.co/storage/v1/object/public/pdf-templates/NAR1-template.pdf";
 
-// Chinese font URLs
-const CHINESE_FONT_URLS = [
-  "https://fonts.gstatic.com/ea/notosanstc/v1/NotoSansTC-Regular.otf",
-  "https://fonts.gstatic.com/ea/notosanssc/v1/NotoSansSC-Regular.otf",
-];
+// Chinese font URL
+const CHINESE_FONT_URL = "https://fonts.gstatic.com/ea/notosanstc/v1/NotoSansTC-Regular.otf";
 
 async function loadChineseFont(): Promise<ArrayBuffer> {
   console.log("Loading Chinese font...");
-  
-  for (const url of CHINESE_FONT_URLS) {
-    try {
-      console.log(`Trying font URL: ${url}`);
-      const response = await fetch(url, { headers: { 'Accept': '*/*' } });
-      
-      if (response.ok) {
-        const fontBytes = await response.arrayBuffer();
-        console.log(`Font loaded successfully, size: ${fontBytes.byteLength} bytes`);
-        return fontBytes;
-      }
-    } catch (e) {
-      console.log(`Font URL ${url} failed: ${e}`);
-    }
+  const response = await fetch(CHINESE_FONT_URL, { headers: { 'Accept': '*/*' } });
+  if (!response.ok) {
+    throw new Error(`Failed to load font: ${response.status}`);
   }
-  
-  throw new Error("Failed to load Chinese font");
+  const fontBytes = await response.arrayBuffer();
+  console.log(`Font loaded, size: ${fontBytes.byteLength} bytes`);
+  return fontBytes;
 }
 
 async function loadPdfTemplate(): Promise<ArrayBuffer> {
   console.log("Loading NAR1 PDF template...");
-  
   const response = await fetch(TEMPLATE_URL);
   if (!response.ok) {
     throw new Error(`Failed to load PDF template: ${response.status}`);
   }
-  
   const pdfBytes = await response.arrayBuffer();
   console.log(`Template loaded, size: ${pdfBytes.byteLength} bytes`);
   return pdfBytes;
@@ -97,283 +82,334 @@ async function fillPdfTemplate(data: CompanyData): Promise<Uint8Array> {
   const chineseFontBytes = await loadChineseFont();
   const chineseFont = await pdfDoc.embedFont(chineseFontBytes);
   
-  // Try to get form fields
-  const form = pdfDoc.getForm();
-  const fields = form.getFields();
+  const pages = pdfDoc.getPages();
+  console.log(`PDF has ${pages.length} pages`);
   
-  console.log(`Found ${fields.length} form fields in template`);
-  
-  // Log all field names for debugging
-  fields.forEach((field, index) => {
-    console.log(`Field ${index}: ${field.getName()} (${field.constructor.name})`);
-  });
-  
-  // If the PDF has form fields, try to fill them
-  if (fields.length > 0) {
-    console.log("PDF has form fields, attempting to fill...");
+  const returnDate = data.returnDate || new Date().toISOString().split('T')[0];
+  const [year, month, day] = returnDate.split('-');
+  const office = data.registeredOffice || {};
+
+  // Page 1 - Main company info
+  if (pages.length >= 1) {
+    const page1 = pages[0];
+    const { height, width } = page1.getSize();
+    console.log(`Page 1 size: ${width} x ${height}`);
     
-    // Try to fill common field patterns
-    try {
-      // Update field appearances with Chinese font
-      form.updateFieldAppearances(chineseFont);
-    } catch (e) {
-      console.log("Could not update field appearances:", e);
+    // Business Registration Number (top right)
+    page1.drawText(data.brNumber, {
+      x: 420,
+      y: height - 88,
+      size: 10,
+      font: chineseFont,
+      color: rgb(0, 0, 0),
+    });
+    console.log(`Drew BR Number: ${data.brNumber}`);
+    
+    // 1. Company Name (公司名稱)
+    page1.drawText(data.name, {
+      x: 95,
+      y: height - 168,
+      size: 9,
+      font: chineseFont,
+      color: rgb(0, 0, 0),
+    });
+    console.log(`Drew Company Name: ${data.name}`);
+    
+    // 2. Business Name (商業名稱)
+    if (data.tradingName) {
+      page1.drawText(data.tradingName, {
+        x: 95,
+        y: height - 210,
+        size: 9,
+        font: chineseFont,
+        color: rgb(0, 0, 0),
+      });
     }
     
-    // Try to flatten the form after filling
-    try {
-      form.flatten();
-    } catch (e) {
-      console.log("Could not flatten form:", e);
+    // 3. Type of Company - checkboxes
+    // 私人公司 checkbox at approximately x=95
+    // 公眾公司 checkbox at approximately x=218
+    // 擔保有限公司 checkbox at approximately x=330
+    const companyTypeY = height - 265;
+    if (data.companyType?.includes('私人') || data.companyType?.toLowerCase().includes('private')) {
+      page1.drawText('✓', { x: 95, y: companyTypeY, size: 14, font: chineseFont, color: rgb(0, 0, 0) });
+    } else if (data.companyType?.includes('公眾') || data.companyType?.toLowerCase().includes('public')) {
+      page1.drawText('✓', { x: 218, y: companyTypeY, size: 14, font: chineseFont, color: rgb(0, 0, 0) });
+    } else if (data.companyType?.includes('擔保')) {
+      page1.drawText('✓', { x: 330, y: companyTypeY, size: 14, font: chineseFont, color: rgb(0, 0, 0) });
     }
-  } else {
-    // No form fields - we need to draw text directly on the PDF
-    console.log("No form fields found, drawing text directly on PDF pages...");
     
-    const pages = pdfDoc.getPages();
-    const returnDate = data.returnDate || new Date().toISOString().split('T')[0];
-    const [year, month, day] = returnDate.split('-');
+    // 經營業務性質 - Business Nature
+    // Code field
+    page1.drawText(data.businessCode || '', {
+      x: 140,
+      y: height - 315,
+      size: 9,
+      font: chineseFont,
+      color: rgb(0, 0, 0),
+    });
     
-    // Page 1 - Main company info
-    if (pages.length >= 1) {
-      const page1 = pages[0];
-      const { height } = page1.getSize();
+    // Description field
+    page1.drawText(data.businessNature || '', {
+      x: 290,
+      y: height - 315,
+      size: 8,
+      font: chineseFont,
+      color: rgb(0, 0, 0),
+    });
+    
+    // 4. Return Date (本申報表的結算日期)
+    // DD MM YYYY format
+    page1.drawText(day, { x: 398, y: height - 358, size: 10, font: chineseFont, color: rgb(0, 0, 0) });
+    page1.drawText(month, { x: 445, y: height - 358, size: 10, font: chineseFont, color: rgb(0, 0, 0) });
+    page1.drawText(year, { x: 498, y: height - 358, size: 10, font: chineseFont, color: rgb(0, 0, 0) });
+    
+    // 6. Registered Office Address (在香港的註冊辦事處地址)
+    // 室／樓／座等
+    page1.drawText(office.flat || '', {
+      x: 300,
+      y: height - 468,
+      size: 9,
+      font: chineseFont,
+      color: rgb(0, 0, 0),
+    });
+    
+    // 大廈
+    page1.drawText(office.building || '', {
+      x: 300,
+      y: height - 496,
+      size: 9,
+      font: chineseFont,
+      color: rgb(0, 0, 0),
+    });
+    
+    // 街道／屋苑／地段／村等
+    page1.drawText(office.street || '', {
+      x: 300,
+      y: height - 524,
+      size: 9,
+      font: chineseFont,
+      color: rgb(0, 0, 0),
+    });
+    
+    // 區
+    page1.drawText(office.district || '', {
+      x: 300,
+      y: height - 552,
+      size: 9,
+      font: chineseFont,
+      color: rgb(0, 0, 0),
+    });
+  }
+  
+  // Page 2 - BR number header
+  if (pages.length >= 2) {
+    const page2 = pages[1];
+    const { height } = page2.getSize();
+    
+    page2.drawText(data.brNumber, {
+      x: 420,
+      y: height - 48,
+      size: 10,
+      font: chineseFont,
+      color: rgb(0, 0, 0),
+    });
+  }
+  
+  // Page 3 - Company Secretary (Natural Person)
+  if (pages.length >= 3 && data.secretaries.length > 0) {
+    const page3 = pages[2];
+    const { height } = page3.getSize();
+    
+    // BR Number header
+    page3.drawText(data.brNumber, {
+      x: 420,
+      y: height - 48,
+      size: 10,
+      font: chineseFont,
+      color: rgb(0, 0, 0),
+    });
+    
+    const naturalSecretaries = data.secretaries.filter(s => s.identity === 'natural');
+    if (naturalSecretaries.length > 0) {
+      const sec = naturalSecretaries[0];
       
-      // Business Registration Number (top right area)
-      page1.drawText(data.brNumber, {
-        x: 460,
-        y: height - 85,
-        size: 11,
-        font: chineseFont,
-        color: rgb(0, 0, 0),
-      });
+      // Parse English name - format: "FirstName LASTNAME"
+      const nameParts = sec.nameEnglish.split(' ');
+      const surname = nameParts[nameParts.length - 1] || '';
+      const otherNames = nameParts.slice(0, -1).join(' ') || '';
       
-      // 1. Company Name
-      page1.drawText(data.name, {
-        x: 100,
-        y: height - 165,
-        size: 10,
-        font: chineseFont,
-        color: rgb(0, 0, 0),
-      });
-      
-      // 2. Business Name
-      page1.drawText(data.tradingName || '', {
-        x: 100,
-        y: height - 215,
-        size: 10,
-        font: chineseFont,
-        color: rgb(0, 0, 0),
-      });
-      
-      // 3. Type of Company - draw a checkmark
-      const companyTypeY = height - 275;
-      if (data.companyType?.includes('私人') || data.companyType?.toLowerCase().includes('private')) {
-        page1.drawText('✓', { x: 100, y: companyTypeY, size: 14, font: chineseFont, color: rgb(0, 0, 0) });
-      } else if (data.companyType?.includes('公眾') || data.companyType?.toLowerCase().includes('public')) {
-        page1.drawText('✓', { x: 205, y: companyTypeY, size: 14, font: chineseFont, color: rgb(0, 0, 0) });
-      } else if (data.companyType?.includes('擔保')) {
-        page1.drawText('✓', { x: 318, y: companyTypeY, size: 14, font: chineseFont, color: rgb(0, 0, 0) });
-      }
-      
-      // Business Nature - Code and Description
-      page1.drawText(data.businessCode || '', {
-        x: 158,
-        y: height - 330,
-        size: 10,
-        font: chineseFont,
-        color: rgb(0, 0, 0),
-      });
-      
-      page1.drawText(data.businessNature || '', {
-        x: 290,
-        y: height - 330,
+      // 中文姓名
+      page3.drawText(sec.nameChinese, {
+        x: 170,
+        y: height - 135,
         size: 9,
         font: chineseFont,
         color: rgb(0, 0, 0),
       });
       
-      // 4. Return Date (DD MM YYYY)
-      page1.drawText(day, { x: 430, y: height - 370, size: 10, font: chineseFont, color: rgb(0, 0, 0) });
-      page1.drawText(month, { x: 475, y: height - 370, size: 10, font: chineseFont, color: rgb(0, 0, 0) });
-      page1.drawText(year, { x: 520, y: height - 370, size: 10, font: chineseFont, color: rgb(0, 0, 0) });
-      
-      // 6. Registered Office Address
-      const office = data.registeredOffice || {};
-      const officeStartY = height - 500;
-      
-      if (office.flat) {
-        page1.drawText(office.flat, { x: 170, y: officeStartY, size: 10, font: chineseFont, color: rgb(0, 0, 0) });
-      }
-      if (office.building) {
-        page1.drawText(office.building, { x: 170, y: officeStartY - 30, size: 10, font: chineseFont, color: rgb(0, 0, 0) });
-      }
-      if (office.street) {
-        page1.drawText(office.street, { x: 170, y: officeStartY - 60, size: 10, font: chineseFont, color: rgb(0, 0, 0) });
-      }
-      if (office.district) {
-        page1.drawText(office.district, { x: 170, y: officeStartY - 90, size: 10, font: chineseFont, color: rgb(0, 0, 0) });
-      }
-    }
-    
-    // Page 2 - Continue with BR number at top
-    if (pages.length >= 2) {
-      const page2 = pages[1];
-      const { height } = page2.getSize();
-      
-      // BR Number at top
-      page2.drawText(data.brNumber, {
-        x: 460,
-        y: height - 48,
-        size: 11,
-        font: chineseFont,
-        color: rgb(0, 0, 0),
-      });
-    }
-    
-    // Page 3 - Company Secretary (Natural Person)
-    if (pages.length >= 3 && data.secretaries.length > 0) {
-      const page3 = pages[2];
-      const { height } = page3.getSize();
-      
-      // BR Number at top
-      page3.drawText(data.brNumber, {
-        x: 460,
-        y: height - 48,
-        size: 11,
+      // 英文姓氏 (Surname)
+      page3.drawText(surname, {
+        x: 350,
+        y: height - 135,
+        size: 9,
         font: chineseFont,
         color: rgb(0, 0, 0),
       });
       
-      const naturalSecretaries = data.secretaries.filter(s => s.identity === 'natural');
-      if (naturalSecretaries.length > 0) {
-        const sec = naturalSecretaries[0];
-        
-        // Chinese name
-        page3.drawText(sec.nameChinese, {
-          x: 180,
-          y: height - 145,
-          size: 10,
-          font: chineseFont,
-          color: rgb(0, 0, 0),
-        });
-        
-        // English name - split into surname and other names
-        const nameParts = sec.nameEnglish.split(' ');
-        const surname = nameParts[nameParts.length - 1] || '';
-        const otherNames = nameParts.slice(0, -1).join(' ') || '';
-        
-        page3.drawText(surname, {
-          x: 350,
-          y: height - 145,
-          size: 10,
-          font: chineseFont,
-          color: rgb(0, 0, 0),
-        });
-        
-        page3.drawText(otherNames, {
-          x: 180,
-          y: height - 170,
-          size: 10,
-          font: chineseFont,
-          color: rgb(0, 0, 0),
-        });
-        
-        // Email
-        page3.drawText(sec.email, {
-          x: 180,
-          y: height - 320,
+      // 其他英文名字 (Other Names)
+      page3.drawText(otherNames, {
+        x: 170,
+        y: height - 162,
+        size: 9,
+        font: chineseFont,
+        color: rgb(0, 0, 0),
+      });
+      
+      // 電郵
+      page3.drawText(sec.email, {
+        x: 170,
+        y: height - 310,
+        size: 8,
+        font: chineseFont,
+        color: rgb(0, 0, 0),
+      });
+      
+      console.log(`Drew Secretary: ${sec.nameChinese}`);
+    }
+  }
+  
+  // Page 4 - Company Secretary (Corporate)
+  if (pages.length >= 4) {
+    const page4 = pages[3];
+    const { height } = page4.getSize();
+    
+    page4.drawText(data.brNumber, {
+      x: 420,
+      y: height - 48,
+      size: 10,
+      font: chineseFont,
+      color: rgb(0, 0, 0),
+    });
+    
+    const corporateSecretaries = data.secretaries.filter(s => s.identity === 'corporate');
+    if (corporateSecretaries.length > 0) {
+      const sec = corporateSecretaries[0];
+      
+      // 公司秘書名稱 (中文)
+      page4.drawText(sec.nameChinese, {
+        x: 170,
+        y: height - 130,
+        size: 9,
+        font: chineseFont,
+        color: rgb(0, 0, 0),
+      });
+      
+      // 公司秘書名稱 (英文)
+      page4.drawText(sec.nameEnglish, {
+        x: 170,
+        y: height - 157,
+        size: 9,
+        font: chineseFont,
+        color: rgb(0, 0, 0),
+      });
+      
+      // 商業登記號碼
+      if (sec.brNumber) {
+        page4.drawText(sec.brNumber, {
+          x: 170,
+          y: height - 240,
           size: 9,
           font: chineseFont,
           color: rgb(0, 0, 0),
         });
       }
     }
+  }
+  
+  // Page 5 - Directors (Natural Person)
+  if (pages.length >= 5 && data.directors.length > 0) {
+    const page5 = pages[4];
+    const { height } = page5.getSize();
     
-    // Page 5 - Directors (Natural Person)
-    if (pages.length >= 5 && data.directors.length > 0) {
-      const page5 = pages[4];
-      const { height } = page5.getSize();
+    // BR Number header
+    page5.drawText(data.brNumber, {
+      x: 420,
+      y: height - 48,
+      size: 10,
+      font: chineseFont,
+      color: rgb(0, 0, 0),
+    });
+    
+    const naturalDirectors = data.directors.filter(d => d.identity === 'natural');
+    if (naturalDirectors.length > 0) {
+      const dir = naturalDirectors[0];
       
-      // BR Number at top
-      page5.drawText(data.brNumber, {
-        x: 460,
-        y: height - 48,
-        size: 11,
+      // 董事 checkbox
+      page5.drawText('✓', {
+        x: 178,
+        y: height - 105,
+        size: 14,
         font: chineseFont,
         color: rgb(0, 0, 0),
       });
       
-      const naturalDirectors = data.directors.filter(d => d.identity === 'natural');
-      if (naturalDirectors.length > 0) {
-        const dir = naturalDirectors[0];
-        
-        // Check "董事" box
-        page5.drawText('✓', {
-          x: 185,
-          y: height - 115,
-          size: 14,
-          font: chineseFont,
-          color: rgb(0, 0, 0),
-        });
-        
-        // Chinese name
-        page5.drawText(dir.nameChinese, {
-          x: 180,
-          y: height - 145,
-          size: 10,
-          font: chineseFont,
-          color: rgb(0, 0, 0),
-        });
-        
-        // English name
-        const nameParts = dir.nameEnglish.split(' ');
-        const surname = nameParts[nameParts.length - 1] || '';
-        const otherNames = nameParts.slice(0, -1).join(' ') || '';
-        
-        page5.drawText(surname, {
-          x: 350,
-          y: height - 145,
-          size: 10,
-          font: chineseFont,
-          color: rgb(0, 0, 0),
-        });
-        
-        page5.drawText(otherNames, {
-          x: 180,
-          y: height - 170,
-          size: 10,
-          font: chineseFont,
-          color: rgb(0, 0, 0),
-        });
-        
-        // Email
-        page5.drawText(dir.email, {
-          x: 180,
-          y: height - 320,
-          size: 9,
-          font: chineseFont,
-          color: rgb(0, 0, 0),
-        });
-      }
-    }
-    
-    // Add BR number to remaining pages
-    for (let i = 1; i < pages.length; i++) {
-      const page = pages[i];
-      const { height } = page.getSize();
+      const nameParts = dir.nameEnglish.split(' ');
+      const surname = nameParts[nameParts.length - 1] || '';
+      const otherNames = nameParts.slice(0, -1).join(' ') || '';
       
-      // Most pages have BR number at top right
-      if (i !== 0) {
-        page.drawText(data.brNumber, {
-          x: 460,
-          y: height - 48,
-          size: 11,
-          font: chineseFont,
-          color: rgb(0, 0, 0),
-        });
-      }
+      // 中文姓名
+      page5.drawText(dir.nameChinese, {
+        x: 170,
+        y: height - 135,
+        size: 9,
+        font: chineseFont,
+        color: rgb(0, 0, 0),
+      });
+      
+      // 英文姓氏
+      page5.drawText(surname, {
+        x: 350,
+        y: height - 135,
+        size: 9,
+        font: chineseFont,
+        color: rgb(0, 0, 0),
+      });
+      
+      // 其他英文名字
+      page5.drawText(otherNames, {
+        x: 170,
+        y: height - 162,
+        size: 9,
+        font: chineseFont,
+        color: rgb(0, 0, 0),
+      });
+      
+      // 電郵
+      page5.drawText(dir.email, {
+        x: 170,
+        y: height - 310,
+        size: 8,
+        font: chineseFont,
+        color: rgb(0, 0, 0),
+      });
+      
+      console.log(`Drew Director: ${dir.nameChinese}`);
     }
+  }
+  
+  // Add BR number to all remaining pages
+  for (let i = 5; i < pages.length; i++) {
+    const page = pages[i];
+    const { height } = page.getSize();
+    
+    page.drawText(data.brNumber, {
+      x: 420,
+      y: height - 48,
+      size: 10,
+      font: chineseFont,
+      color: rgb(0, 0, 0),
+    });
   }
   
   console.log("PDF filled, serializing...");

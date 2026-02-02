@@ -108,15 +108,52 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
 
   const templateBytes = await loadPdfTemplate();
   const pdfDoc = await PDFDocument.load(templateBytes);
-  pdfDoc.registerFontkit(fontkit);
-
-  const chineseFontBytes = await loadChineseFont();
-  const chineseFont = await pdfDoc.embedFont(chineseFontBytes);
 
   const pages = pdfDoc.getPages();
   console.log(`PDF has ${pages.length} pages`);
 
   const form = pdfDoc.getForm();
+
+  // Debug mode: lightweight version - no font embedding, no flattening
+  if (debugMode) {
+    console.log("Debug mode: filling all text fields with identifiers (no font, no flatten for speed)");
+    const fields = form.getFields();
+    for (const field of fields) {
+      const name = field.getName();
+
+      if (name.startsWith("fill_")) {
+        try {
+          const textField = form.getTextField(name);
+          const maxLength = textField.getMaxLength();
+          const match = name.match(/fill_(\d+)_P\.(\d+)/);
+          let textToSet = match ? `${match[1]}.${match[2]}` : name.slice(0, 8);
+          if (maxLength && textToSet.length > maxLength) {
+            textToSet = match ? match[1] : textToSet.slice(0, maxLength);
+          }
+          textField.setText(textToSet);
+        } catch (e) {
+          console.warn(`⚠ ${name}`, e);
+        }
+      } else if (name.startsWith("cb_")) {
+        try {
+          form.getCheckBox(name).check();
+        } catch (e) {
+          console.warn(`⚠ ${name}`, e);
+        }
+      }
+      // Skip radio/dropdown
+    }
+
+    console.log("Debug PDF ready, saving (no flatten)...");
+    const pdfBytes = await pdfDoc.save();
+    console.log(`Debug PDF size: ${pdfBytes.byteLength} bytes`);
+    return pdfBytes;
+  }
+
+  // Normal mode: load Chinese font
+  pdfDoc.registerFontkit(fontkit);
+  const chineseFontBytes = await loadChineseFont();
+  const chineseFont = await pdfDoc.embedFont(chineseFontBytes);
 
   const returnDate = data.returnDate || new Date().toISOString().split("T")[0];
   const [year, month, day] = returnDate.split("-");
@@ -125,32 +162,11 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
   const safeSetText = (fieldName: string, value: string) => {
     try {
       const field = form.getTextField(fieldName);
-      // Get the field's maxLength to ensure we don't exceed it
       const maxLength = field.getMaxLength();
-      
-      // In debug mode, fill with a shortened field identifier that fits the field's maxLength
       let textToSet = value ?? "";
-      if (debugMode) {
-        // Extract the field number and page, e.g., "fill_1_P.1" -> "1.1" or just "1" if space is limited
-        const match = fieldName.match(/fill_(\d+)_P\.(\d+)/);
-        if (match) {
-          const fullId = `${match[1]}.${match[2]}`; // e.g., "1.1" for fill_1_P.1
-          // If maxLength is too small, just use the field number
-          if (maxLength && maxLength < fullId.length) {
-            textToSet = match[1]; // Just the field number, e.g., "7"
-          } else {
-            textToSet = fullId;
-          }
-        } else {
-          textToSet = fieldName.slice(0, maxLength || 8); // Fallback: respect maxLength
-        }
-      }
-      
-      // Ensure text fits within maxLength
       if (maxLength && textToSet.length > maxLength) {
         textToSet = textToSet.slice(0, maxLength);
       }
-      
       field.setText(textToSet);
       console.log(`✓ ${fieldName} = ${JSON.stringify(textToSet)}`);
       return true;
@@ -161,10 +177,10 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
   };
 
   const safeCheck = (fieldName: string, shouldCheck: boolean) => {
-    if (!shouldCheck && !debugMode) return false;
+    if (!shouldCheck) return false;
     try {
       const field = form.getCheckBox(fieldName);
-      if (debugMode || shouldCheck) field.check();
+      field.check();
       console.log(`✓ Checked ${fieldName}`);
       return true;
     } catch (e) {
@@ -172,36 +188,6 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
       return false;
     }
   };
-
-  // Debug mode: fill all fields with short identifiers (skip radio/dropdown to avoid invalid values)
-  if (debugMode) {
-    console.log("Debug mode enabled: filling all text fields and checking all checkboxes (skipping radios/dropdowns)");
-    const fields = form.getFields();
-    for (const field of fields) {
-      const name = field.getName();
-
-      // NOTE: In the bundled edge runtime, pdf-lib class names may be minified (e.g. constructor.name === 't').
-      // So we detect by naming convention instead of type.
-      if (name.startsWith("fill_")) {
-        safeSetText(name, "");
-      } else if (name.startsWith("cb_")) {
-        safeCheck(name, true);
-      } else {
-        // e.g. Dropdown_*, radio groups, option lists... requested to skip these.
-        console.log(`↷ Skipped non-text/checkbox field: ${name}`);
-      }
-    }
-
-    // Ensure Chinese renders in form field appearances before flattening
-    form.updateFieldAppearances(chineseFont);
-    form.flatten();
-    console.log("Form flattened (debug)");
-
-    console.log("PDF filled (debug), serializing...");
-    const pdfBytes = await pdfDoc.save();
-    console.log(`Final PDF size (debug): ${pdfBytes.byteLength} bytes`);
-    return pdfBytes;
-  }
 
   const parseEnglishName = (fullName: string) => {
     const parts = (fullName || "").trim().split(/\s+/).filter(Boolean);

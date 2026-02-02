@@ -251,6 +251,19 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
     console.log(`Filled Director (Corporate): ${dir.nameChinese || dir.nameEnglish}`);
   }
 
+  // ============ Pages 7-27 - Fill BR Number on all remaining pages ============
+  // Page 7 - Reserve Director
+  safeSetText("fill_1_P.7", br8);
+  // Page 8 - Service Agent
+  safeSetText("fill_1_P.8", br8);
+  // Page 9 - Members
+  safeSetText("fill_1_P.9", br8);
+  // Pages 10-27 - Schedules and other pages
+  for (let page = 10; page <= 27; page++) {
+    safeSetText(`fill_1_P.${page}`, br8);
+  }
+  console.log("Filled BR number on all pages");
+
   // Key fix: ensure Chinese renders in form field appearances before flattening
   form.updateFieldAppearances(chineseFont);
   form.flatten();

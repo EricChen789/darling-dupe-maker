@@ -114,9 +114,19 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
   const safeSetText = (fieldName: string, value: string) => {
     try {
       const field = form.getTextField(fieldName);
-      // In debug mode, fill with the field name itself
-      field.setText(debugMode ? fieldName : (value ?? ""));
-      console.log(`✓ ${fieldName} = ${JSON.stringify(debugMode ? fieldName : value)}`);
+      // In debug mode, fill with a shortened field identifier that fits the field's maxLength
+      let textToSet = value ?? "";
+      if (debugMode) {
+        // Extract the field number and page, e.g., "fill_1_P.1" -> "1-1"
+        const match = fieldName.match(/fill_(\d+)_P\.(\d+)/);
+        if (match) {
+          textToSet = `${match[1]}-${match[2]}`; // e.g., "1-1" for fill_1_P.1
+        } else {
+          textToSet = fieldName.slice(0, 8); // Fallback: first 8 chars
+        }
+      }
+      field.setText(textToSet);
+      console.log(`✓ ${fieldName} = ${JSON.stringify(textToSet)}`);
       return true;
     } catch (e) {
       console.warn(`⚠ Missing text field: ${fieldName}`, e);

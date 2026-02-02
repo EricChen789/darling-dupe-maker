@@ -1,6 +1,7 @@
 import { Link, useLocation } from 'react-router-dom';
 import { cn } from '@/lib/utils';
-import { Building2, Users, FileText, Receipt, ClipboardList, Settings, LogOut, LayoutGrid, Table } from 'lucide-react';
+import { Building2, Users, FileText, Receipt, ClipboardList, Settings, LogOut, Table, PanelLeftClose, PanelLeft } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface SidebarProps {
   collapsed: boolean;
@@ -25,73 +26,113 @@ const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {
   const location = useLocation();
 
   return (
-    <aside className={cn(
-      "flex flex-col bg-sidebar border-r border-sidebar-border transition-all duration-300",
-      collapsed ? "w-16" : "w-56"
-    )}>
-      {/* Logo */}
-      <div className="flex items-center gap-2 p-4 border-b border-sidebar-border">
-        <button onClick={onToggle} className="p-1 hover:bg-muted rounded">
-          <LayoutGrid className="h-5 w-5 text-muted-foreground" />
-        </button>
-        {!collapsed && (
-          <div className="flex flex-col">
-            <span className="font-semibold text-sm">Muselabs</span>
-            <span className="text-xs text-muted-foreground">秘書公司管理系統</span>
-          </div>
-        )}
-      </div>
+    <TooltipProvider delayDuration={0}>
+      <aside className={cn(
+        "flex flex-col bg-sidebar border-r border-sidebar-border transition-all duration-300 relative",
+        collapsed ? "w-16" : "w-56"
+      )}>
+        {/* Logo */}
+        <div className={cn(
+          "flex items-center p-4 border-b border-sidebar-border",
+          collapsed ? "justify-center" : "gap-3"
+        )}>
+          {!collapsed && (
+            <div className="flex flex-col flex-1 min-w-0">
+              <span className="font-semibold text-sm">Muselabs</span>
+              <span className="text-xs text-muted-foreground truncate">秘書公司管理系統</span>
+            </div>
+          )}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button 
+                onClick={onToggle} 
+                className="p-1.5 hover:bg-muted rounded-md transition-colors shrink-0"
+                aria-label={collapsed ? "展開側邊欄" : "收起側邊欄"}
+              >
+                {collapsed ? (
+                  <PanelLeft className="h-5 w-5 text-muted-foreground" />
+                ) : (
+                  <PanelLeftClose className="h-5 w-5 text-muted-foreground" />
+                )}
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right">
+              {collapsed ? "展開側邊欄" : "收起側邊欄"}
+            </TooltipContent>
+          </Tooltip>
+        </div>
 
-      {/* Navigation */}
-      <nav className="flex-1 py-4">
-        <ul className="space-y-1 px-2">
-          {navItems.map((item) => {
-            const isActive = location.pathname === item.path || location.pathname.startsWith(item.path + '/');
-            return (
-              <li key={item.path}>
+        {/* Navigation */}
+        <nav className="flex-1 py-4">
+          <ul className="space-y-1 px-2">
+            {navItems.map((item) => {
+              const isActive = location.pathname === item.path || location.pathname.startsWith(item.path + '/');
+              const linkContent = (
                 <Link
                   to={item.path}
                   className={cn(
                     "flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors",
                     isActive
                       ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
-                      : "text-sidebar-foreground hover:bg-muted"
+                      : "text-sidebar-foreground hover:bg-muted",
+                    collapsed && "justify-center"
                   )}
                 >
                   <item.icon className="h-4 w-4 shrink-0" />
                   {!collapsed && <span>{item.label}</span>}
                 </Link>
-              </li>
-            );
-          })}
-        </ul>
-      </nav>
+              );
+              
+              return (
+                <li key={item.path}>
+                  {collapsed ? (
+                    <Tooltip>
+                      <TooltipTrigger asChild>{linkContent}</TooltipTrigger>
+                      <TooltipContent side="right">{item.label}</TooltipContent>
+                    </Tooltip>
+                  ) : linkContent}
+                </li>
+              );
+            })}
+          </ul>
+        </nav>
 
-      {/* Bottom Navigation */}
-      <div className="border-t border-sidebar-border py-4">
-        <ul className="space-y-1 px-2">
-          {bottomNavItems.map((item) => {
-            const isActive = location.pathname === item.path;
-            return (
-              <li key={item.path}>
+        {/* Bottom Navigation */}
+        <div className="border-t border-sidebar-border py-4">
+          <ul className="space-y-1 px-2">
+            {bottomNavItems.map((item) => {
+              const isActive = location.pathname === item.path;
+              const linkContent = (
                 <Link
                   to={item.path}
                   className={cn(
                     "flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors",
                     isActive
                       ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
-                      : "text-sidebar-foreground hover:bg-muted"
+                      : "text-sidebar-foreground hover:bg-muted",
+                    collapsed && "justify-center"
                   )}
                 >
                   <item.icon className="h-4 w-4 shrink-0" />
                   {!collapsed && <span>{item.label}</span>}
                 </Link>
-              </li>
-            );
-          })}
-        </ul>
-      </div>
-    </aside>
+              );
+              
+              return (
+                <li key={item.path}>
+                  {collapsed ? (
+                    <Tooltip>
+                      <TooltipTrigger asChild>{linkContent}</TooltipTrigger>
+                      <TooltipContent side="right">{item.label}</TooltipContent>
+                    </Tooltip>
+                  ) : linkContent}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      </aside>
+    </TooltipProvider>
   );
 };
 

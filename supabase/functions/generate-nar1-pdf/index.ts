@@ -1,7 +1,17 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { encode as base64Encode } from "https://deno.land/std@0.168.0/encoding/base64.ts";
 import { PDFDocument } from "https://esm.sh/pdf-lib@1.17.1";
 import fontkit from "https://esm.sh/@pdf-lib/fontkit@1.1.1";
+
+function uint8ToBase64(bytes: Uint8Array): string {
+  // Avoid call stack overflow by chunking.
+  let binary = "";
+  const chunkSize = 0x8000; // 32768
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+  return btoa(binary);
+}
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -378,8 +388,7 @@ serve(async (req: Request) => {
     // For debug mode or when explicitly requested, return as base64 JSON
     if (debugMode) {
       // Convert Uint8Array to base64 safely (avoid stack overflow)
-      const ab = pdfBytes.buffer.slice(pdfBytes.byteOffset, pdfBytes.byteOffset + pdfBytes.byteLength);
-      const base64 = base64Encode(ab as ArrayBuffer);
+      const base64 = uint8ToBase64(pdfBytes);
       return new Response(JSON.stringify({ pdf: base64 }), {
         headers: {
           ...corsHeaders,

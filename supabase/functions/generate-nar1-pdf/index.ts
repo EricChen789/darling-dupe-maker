@@ -42,8 +42,8 @@ interface CompanyData {
   returnDate?: string;
 }
 
-// NAR1 PDF Template URL from Supabase Storage
-const TEMPLATE_URL = "https://uqcsgmmsrgtlcqutaomg.supabase.co/storage/v1/object/public/pdf-templates/NAR1-template.pdf";
+// NAR1 PDF Template URL from Supabase Storage (v2 has BR number fields on all pages)
+const TEMPLATE_URL = "https://uqcsgmmsrgtlcqutaomg.supabase.co/storage/v1/object/public/pdf-templates/NAR1-template-v2.pdf";
 
 // Chinese font URL
 const CHINESE_FONT_URL = "https://fonts.gstatic.com/ea/notosanstc/v1/NotoSansTC-Regular.otf";
@@ -257,17 +257,30 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
   // Page 8 - Service Agent (fill_1_P.8 is BR number field)
   safeSetText("fill_1_P.8", br8);
 
-  // ============ Pages 9-15 - Schedule 1 (Members) ============
-  // Note: fill_1_P.9 to fill_1_P.15 have maxLength=2, not for BR number
-  // The BR number fields on these schedule pages don't exist or use different naming
-  // We'll try common alternative field names for BR on schedule pages
+  // ============ Pages 9-15 - Schedule Pages with BR Number ============
+  // Schedule 1 (Page 9): BR number field is fill_7_P.9 based on template analysis
+  // The first 3 fields (fill_1-3) are for the date, fields 4-7 are for BR number
+  // Pages 9: Schedule 1 - Non-listed company members
+  safeSetText("fill_4_P.9", br8.substring(0, 2));  // First 2 chars of BR
+  safeSetText("fill_5_P.9", br8.substring(2, 4));  // Chars 3-4
+  safeSetText("fill_6_P.9", br8.substring(4, 6));  // Chars 5-6
+  safeSetText("fill_7_P.9", br8.substring(6, 8));  // Last 2 chars
   
-  // Pages 9-15: Try different BR field patterns
-  // Based on the PDF template, schedule pages may use fill_X_P.Y where X is higher
-  // The schedules typically have the BR number in a specific box at top-right
+  // Page 10: Schedule 2 - Listed company members
+  safeSetText("fill_4_P.10", br8.substring(0, 2));
+  safeSetText("fill_5_P.10", br8.substring(2, 4));
+  safeSetText("fill_6_P.10", br8.substring(4, 6));
+  safeSetText("fill_7_P.10", br8.substring(6, 8));
   
-  console.log("Note: Pages 9-27 (Schedules) may not have standard BR number fields");
-  console.log("Filled BR number on pages 1-8");
+  // Pages 11-15: Additional schedule pages with similar structure
+  for (let page = 11; page <= 15; page++) {
+    safeSetText(`fill_4_P.${page}`, br8.substring(0, 2));
+    safeSetText(`fill_5_P.${page}`, br8.substring(2, 4));
+    safeSetText(`fill_6_P.${page}`, br8.substring(4, 6));
+    safeSetText(`fill_7_P.${page}`, br8.substring(6, 8));
+  }
+  
+  console.log("Filled BR number on all pages including schedules (9-15)");
 
   // Key fix: ensure Chinese renders in form field appearances before flattening
   form.updateFieldAppearances(chineseFont);

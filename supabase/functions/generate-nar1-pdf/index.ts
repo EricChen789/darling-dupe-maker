@@ -345,6 +345,18 @@ serve(async (req: Request) => {
     // Fill the NAR1 PDF template
     const pdfBytes = await fillPdfTemplate(companyData, debugMode);
     
+    // For debug mode or when explicitly requested, return as base64 JSON
+    if (debugMode) {
+      // Convert Uint8Array to base64
+      const base64 = btoa(String.fromCharCode(...pdfBytes));
+      return new Response(JSON.stringify({ pdf: base64 }), {
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json",
+        },
+      });
+    }
+    
     // Return PDF as download
     return new Response(pdfBytes.buffer as ArrayBuffer, {
       headers: {

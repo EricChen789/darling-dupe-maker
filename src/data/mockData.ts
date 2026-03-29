@@ -93,6 +93,64 @@ export const mockCompanies: Company[] = [
     businessCode: '70100',
     updatedAt: '2025/11/23',
   },
+  {
+    id: '6',
+    name: 'ABLELAND INVESTMENT LIMITED',
+    brNumber: '00667527',
+    tradingName: 'ABLELAND INVESTMENT LIMITED',
+    businessNature: 'Investment holding',
+    directors: [
+      { id: 'd10', nameChinese: '', nameEnglish: 'WORLDSHINE LIMITED 環昇有限公司', email: '', identity: 'corporate', role: 'director', companies: [], createdAt: '2024/03/22', updatedAt: '2024/03/22' },
+    ],
+    secretaries: [
+      { id: 's7', nameChinese: '環球創業網絡有限公司', nameEnglish: 'WORLDWIDE INCORPORATION NETWORK LIMITED', email: '', identity: 'corporate', role: 'secretary', companies: [], createdAt: '2024/03/22', updatedAt: '2024/03/22' },
+    ],
+    shareholders: [
+      { id: 'sh4', name: 'TWINSAIL LIMITED (Company No: 83154)', shares: 50000 },
+    ],
+    companyType: '私人公司 Private company',
+    businessCode: '64200',
+    updatedAt: '2024/03/22',
+  },
+  {
+    id: '7',
+    name: 'AGF LIMITED',
+    brNumber: '02030762',
+    tradingName: 'AGF LIMITED',
+    businessNature: 'Investment holding',
+    directors: [
+      { id: 'd11', nameChinese: '', nameEnglish: 'HASAN AZIZ, SHAHRIL ANAS', email: '', identity: 'natural', role: 'director', companies: [], createdAt: '2024/03/22', updatedAt: '2024/03/22' },
+      { id: 'd12', nameChinese: '雷志強', nameEnglish: 'LUI, CHI KEUNG', email: '', identity: 'natural', role: 'director', companies: [], createdAt: '2024/03/22', updatedAt: '2024/03/22' },
+      { id: 'd13', nameChinese: '魏明德', nameEnglish: 'NGAI, MING TAK', email: '', identity: 'natural', role: 'director', companies: [], createdAt: '2024/03/22', updatedAt: '2024/03/22' },
+      { id: 'd14', nameChinese: '朱張金', nameEnglish: 'ZHU, ZHANGJIN', email: '', identity: 'natural', role: 'director', companies: [], createdAt: '2024/03/22', updatedAt: '2024/03/22' },
+    ],
+    secretaries: [],
+    shareholders: [
+      { id: 'sh5', name: 'CARDINA INTERNATIONAL COMPANY LIMITED 凯迪纳国际有限公司', shares: 30 },
+      { id: 'sh6', name: 'MALAYSIA VENTURE CAPITAL MANAGEMENT BERHAD', shares: 30 },
+      { id: 'sh7', name: 'RP PARTNERS LIMITED', shares: 40 },
+    ],
+    companyType: '私人公司 Private company',
+    businessCode: '64200',
+    updatedAt: '2024/03/22',
+  },
+  {
+    id: '8',
+    name: 'ALPHA BLOOM LIMITED 德瑞投資集團有限公司',
+    brNumber: '01792490',
+    tradingName: 'ALPHA BLOOM LIMITED',
+    businessNature: 'Investment holding',
+    directors: [
+      { id: 'd15', nameChinese: '朱世恩', nameEnglish: 'CHU, SAI YAN', email: '', identity: 'natural', role: 'director', companies: [], createdAt: '2024/03/22', updatedAt: '2024/03/22' },
+    ],
+    secretaries: [],
+    shareholders: [
+      { id: 'sh8', name: '朱世恩 CHU, SAI YAN', shares: 1 },
+    ],
+    companyType: '私人公司 Private company',
+    businessCode: '64200',
+    updatedAt: '2024/03/22',
+  },
 ];
 
 export const mockPeople: Person[] = [

@@ -29,7 +29,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="w-[98vw] max-w-[98vw] h-[98vh] max-h-[98vh] overflow-hidden p-0 flex flex-col">
+      <DialogContent className="!grid-none flex flex-col w-[98vw] max-w-[98vw] h-[98vh] max-h-[98vh] overflow-hidden p-0">
         <DialogHeader className="px-6 pt-6 pb-2 shrink-0">
           <DialogTitle className="flex items-center gap-2 text-xl">
             <Building2 className="h-5 w-5 text-primary" />

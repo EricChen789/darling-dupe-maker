@@ -85,13 +85,28 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
   const handleOpenChange = (v: boolean) => {
     if (!v) {
       setSelectedPerson(null);
+      setSelectedSh(null);
       setEditingCompany(false);
       setEditingPerson(false);
+      setEditingShDetail(false);
       setAddingOfficer(null);
       setAddingShareholder(false);
       setEditingShareholder(null);
     }
     onOpenChange(v);
+  };
+
+  const selectPerson = (p: Person, roleLabel: string) => {
+    setSelectedSh(null);
+    setEditingShDetail(false);
+    setSelectedPerson({ ...p, roleLabel });
+  };
+
+  const selectShareholder = (sh: Shareholder) => {
+    setSelectedPerson(null);
+    setEditingPerson(false);
+    setSelectedSh(sh);
+    setShForm({ name: sh.name, shares: sh.shares });
   };
 
   const handleSaveCompany = () => {

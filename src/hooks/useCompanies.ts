@@ -93,7 +93,8 @@ export function useCompanies() {
       const { data: companies, error: cErr } = await supabase
         .from('companies')
         .select('*')
-        .order('name');
+        .order('name')
+        .limit(2000);
 
       if (cErr) throw cErr;
       if (!companies || companies.length === 0) return [];

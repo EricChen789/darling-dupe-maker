@@ -261,7 +261,7 @@ export function useAddShareholder() {
 export function useUpdateShareholder() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: { name?: string; shares?: number } }) => {
+    mutationFn: async ({ id, data }: { id: string; data: { name?: string; name_english?: string; name_chinese?: string; shares?: number; identity?: string; id_number?: string; address?: string; email?: string } }) => {
       const { error } = await supabase.from('shareholders').update(data).eq('id', id);
       if (error) throw error;
     },

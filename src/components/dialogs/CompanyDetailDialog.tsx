@@ -282,7 +282,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
             {/* Shareholders */}
             <div className="flex items-center justify-between mb-2">
               <SectionHeader icon={<Briefcase className="h-4 w-4 text-primary" />} title="股東" count={company.shareholders.length} />
-              <Button variant="ghost" size="sm" onClick={() => { setAddingShareholder(true); setShForm({ name: '', shares: 0 }); }}>
+              <Button variant="ghost" size="sm" onClick={() => { setAddingShareholder(true); setShForm({ name: '', nameEnglish: '', nameChinese: '', shares: 0, identity: 'natural', idNumber: '', address: '', email: '' }); }}>
                 <Plus className="h-3.5 w-3.5 mr-1" /> 新增
               </Button>
             </div>
@@ -320,7 +320,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                       <div className="flex items-center gap-2">
                         <Badge variant="secondary">{sh.shares.toLocaleString()} 股</Badge>
                         <div className="hidden group-hover:flex gap-1">
-                          <Button variant="ghost" size="sm" className="h-6 px-1.5" onClick={e => { e.stopPropagation(); setEditingShareholder(sh.id); setShForm({ name: sh.name, shares: sh.shares }); }}>
+                          <Button variant="ghost" size="sm" className="h-6 px-1.5" onClick={e => { e.stopPropagation(); setEditingShareholder(sh.id); setShForm({ name: sh.name, nameEnglish: sh.nameEnglish, nameChinese: sh.nameChinese, shares: sh.shares, identity: sh.identity, idNumber: sh.idNumber, address: sh.address, email: sh.email }); }}>
                             <Edit className="h-3 w-3" />
                           </Button>
                           <Button variant="ghost" size="sm" className="h-6 px-1.5 text-destructive" onClick={e => { e.stopPropagation(); handleDeleteShareholder(sh); }}>

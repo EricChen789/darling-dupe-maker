@@ -52,7 +52,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
   // New officer form
   const [newOfficerForm, setNewOfficerForm] = useState({ nameEnglish: '', nameChinese: '', identity: 'natural', idNumber: '' });
   // Shareholder edit form
-  const [shForm, setShForm] = useState({ name: '', shares: 0 });
+  const [shForm, setShForm] = useState({ name: '', nameEnglish: '', nameChinese: '', shares: 0, identity: 'natural', idNumber: '', address: '', email: '' });
 
   const updateCompany = useUpdateCompany();
   const addOfficer = useAddOfficer();
@@ -106,7 +106,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
     setSelectedPerson(null);
     setEditingPerson(false);
     setSelectedSh(sh);
-    setShForm({ name: sh.name, shares: sh.shares });
+    setShForm({ name: sh.name, nameEnglish: sh.nameEnglish, nameChinese: sh.nameChinese, shares: sh.shares, identity: sh.identity, idNumber: sh.idNumber, address: sh.address, email: sh.email });
   };
 
   const handleSaveCompany = () => {
@@ -153,7 +153,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
   };
 
   const handleSaveShareholder = (id: string) => {
-    updateShareholder.mutate({ id, data: { name: shForm.name, shares: shForm.shares } }, {
+    updateShareholder.mutate({ id, data: { name: shForm.name, name_english: shForm.nameEnglish, name_chinese: shForm.nameChinese, shares: shForm.shares, identity: shForm.identity, id_number: shForm.idNumber, address: shForm.address, email: shForm.email } }, {
       onSuccess: () => { toast({ title: '股東已更新' }); setEditingShareholder(null); },
       onError: () => toast({ title: '更新失敗', variant: 'destructive' }),
     });
@@ -165,7 +165,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
       onSuccess: () => {
         toast({ title: '股東已新增' });
         setAddingShareholder(false);
-        setShForm({ name: '', shares: 0 });
+        setShForm({ name: '', nameEnglish: '', nameChinese: '', shares: 0, identity: 'natural', idNumber: '', address: '', email: '' });
       },
       onError: () => toast({ title: '新增失敗', variant: 'destructive' }),
     });

@@ -14,7 +14,121 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      companies: {
+        Row: {
+          business_code: string | null
+          business_nature: string | null
+          chinese_name: string | null
+          company_group: string | null
+          company_number: string | null
+          company_type: string | null
+          created_at: string
+          id: string
+          name: string
+          trading_name: string | null
+          updated_at: string
+        }
+        Insert: {
+          business_code?: string | null
+          business_nature?: string | null
+          chinese_name?: string | null
+          company_group?: string | null
+          company_number?: string | null
+          company_type?: string | null
+          created_at?: string
+          id?: string
+          name: string
+          trading_name?: string | null
+          updated_at?: string
+        }
+        Update: {
+          business_code?: string | null
+          business_nature?: string | null
+          chinese_name?: string | null
+          company_group?: string | null
+          company_number?: string | null
+          company_type?: string | null
+          created_at?: string
+          id?: string
+          name?: string
+          trading_name?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      officers: {
+        Row: {
+          company_id: string
+          created_at: string
+          id: string
+          id_number: string | null
+          identity: string
+          name_chinese: string | null
+          name_english: string
+          role: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          id?: string
+          id_number?: string | null
+          identity?: string
+          name_chinese?: string | null
+          name_english?: string
+          role: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          id?: string
+          id_number?: string | null
+          identity?: string
+          name_chinese?: string | null
+          name_english?: string
+          role?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "officers_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      shareholders: {
+        Row: {
+          company_id: string
+          created_at: string
+          id: string
+          name: string
+          shares: number
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          id?: string
+          name?: string
+          shares?: number
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          id?: string
+          name?: string
+          shares?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shareholders_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never

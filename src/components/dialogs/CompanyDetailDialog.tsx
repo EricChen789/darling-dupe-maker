@@ -425,13 +425,32 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
 
               {!editingShDetail ? (
                 <div className="grid grid-cols-2 gap-4 text-sm">
-                  <InfoItem label="股東名稱" value={selectedSh.name} />
+                  <InfoItem label="英文名稱" value={selectedSh.nameEnglish} />
+                  <InfoItem label="中文名稱" value={selectedSh.nameChinese} />
+                  <InfoItem label="身份類型" value={selectedSh.identity === 'natural' ? '自然人' : '法人'} />
+                  <InfoItem label="身份證號碼" value={selectedSh.idNumber} />
                   <InfoItem label="持股數量" value={selectedSh.shares.toLocaleString() + ' 股'} />
+                  <InfoItem label="地址" value={selectedSh.address} />
+                  <InfoItem label="電郵" value={selectedSh.email} />
                 </div>
               ) : (
                 <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div className="space-y-1"><Label className="text-xs">股東名稱</Label><Input value={shForm.name} onChange={e => setShForm({ ...shForm, name: e.target.value })} /></div>
+                  <div className="space-y-1"><Label className="text-xs">英文名稱</Label><Input value={shForm.nameEnglish} onChange={e => setShForm({ ...shForm, nameEnglish: e.target.value })} /></div>
+                  <div className="space-y-1"><Label className="text-xs">中文名稱</Label><Input value={shForm.nameChinese} onChange={e => setShForm({ ...shForm, nameChinese: e.target.value })} /></div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">身份類型</Label>
+                    <Select value={shForm.identity} onValueChange={v => setShForm({ ...shForm, identity: v })}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="natural">自然人</SelectItem>
+                        <SelectItem value="corporate">法人</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1"><Label className="text-xs">身份證號碼</Label><Input value={shForm.idNumber} onChange={e => setShForm({ ...shForm, idNumber: e.target.value })} /></div>
                   <div className="space-y-1"><Label className="text-xs">持股數量</Label><Input type="number" value={shForm.shares} onChange={e => setShForm({ ...shForm, shares: parseInt(e.target.value) || 0 })} /></div>
+                  <div className="space-y-1"><Label className="text-xs">地址</Label><Input value={shForm.address} onChange={e => setShForm({ ...shForm, address: e.target.value })} /></div>
+                  <div className="space-y-1"><Label className="text-xs">電郵</Label><Input value={shForm.email} onChange={e => setShForm({ ...shForm, email: e.target.value })} /></div>
                 </div>
               )}
             </div>

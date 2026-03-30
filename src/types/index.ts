@@ -28,7 +28,13 @@ export interface Person {
 export interface Shareholder {
   id: string;
   name: string;
+  nameEnglish: string;
+  nameChinese: string;
   shares: number;
+  identity: 'natural' | 'corporate';
+  idNumber: string;
+  address: string;
+  email: string;
 }
 
 export interface Form {

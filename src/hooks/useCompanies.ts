@@ -29,7 +29,13 @@ interface DbShareholder {
   id: string;
   company_id: string;
   name: string;
+  name_english: string;
+  name_chinese: string;
   shares: number;
+  identity: string;
+  id_number: string;
+  address: string;
+  email: string;
 }
 
 function mapToCompany(
@@ -68,7 +74,13 @@ function mapToCompany(
   const shs: Shareholder[] = shareholders.map(s => ({
     id: s.id,
     name: s.name,
+    nameEnglish: s.name_english || '',
+    nameChinese: s.name_chinese || '',
     shares: s.shares,
+    identity: (s.identity as 'natural' | 'corporate') || 'natural',
+    idNumber: s.id_number || '',
+    address: s.address || '',
+    email: s.email || '',
   }));
 
   return {

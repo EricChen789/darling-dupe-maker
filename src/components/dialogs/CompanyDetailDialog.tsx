@@ -37,9 +37,11 @@ interface CompanyDetailDialogProps {
 
 export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDetailDialogProps) => {
   const [selectedPerson, setSelectedPerson] = useState<(Person & { roleLabel: string }) | null>(null);
+  const [selectedSh, setSelectedSh] = useState<Shareholder | null>(null);
   const [editingCompany, setEditingCompany] = useState(false);
   const [editingPerson, setEditingPerson] = useState(false);
   const [editingShareholder, setEditingShareholder] = useState<string | null>(null);
+  const [editingShDetail, setEditingShDetail] = useState(false);
   const [addingOfficer, setAddingOfficer] = useState<'director' | 'secretary' | null>(null);
   const [addingShareholder, setAddingShareholder] = useState(false);
 

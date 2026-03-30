@@ -12,6 +12,7 @@ import {
 import { Search, RefreshCw, Plus, Edit, Trash2, FileText, Loader2 } from 'lucide-react';
 import { Company } from '@/types';
 import { CompanyDialog, DeleteConfirmDialog } from '@/components/dialogs/CompanyDialogs';
+import { CompanyDetailDialog } from '@/components/dialogs/CompanyDetailDialog';
 import { NAR1Generator } from '@/components/nar1/NAR1Generator';
 import { toast } from '@/hooks/use-toast';
 import { useCompanies, useDeleteCompany, useAddCompany, useUpdateCompany } from '@/hooks/useCompanies';
@@ -25,6 +26,8 @@ const Companies = () => {
   const [selectedCompany, setSelectedCompany] = useState<Company | null>(null);
   const [companyToDelete, setCompanyToDelete] = useState<Company | null>(null);
   const [companyForNar1, setCompanyForNar1] = useState<Company | null>(null);
+  const [detailDialogOpen, setDetailDialogOpen] = useState(false);
+  const [companyForDetail, setCompanyForDetail] = useState<Company | null>(null);
 
   const { data: companies = [], isLoading, refetch } = useCompanies();
   const deleteCompany = useDeleteCompany();
@@ -130,7 +133,8 @@ const Companies = () => {
           </TableHeader>
           <TableBody>
             {filteredCompanies.map((company) => (
-              <TableRow key={company.id} className="hover:bg-muted/30">
+              <TableRow key={company.id} className="hover:bg-muted/30 cursor-pointer"
+                onClick={() => { setCompanyForDetail(company); setDetailDialogOpen(true); }}>
                 <TableCell className="font-medium max-w-[200px]">
                   <div className="truncate">{company.name}</div>
                   {company.tradingName && (
@@ -176,7 +180,7 @@ const Companies = () => {
                     )}
                   </div>
                 </TableCell>
-                <TableCell>
+                <TableCell onClick={(e) => e.stopPropagation()}>
                   <div className="flex items-center gap-1">
                     <Button variant="ghost" size="sm" className="h-8 px-2"
                       onClick={() => { setCompanyForNar1(company); setNar1DialogOpen(true); }} title="生成 NAR1">
@@ -213,6 +217,7 @@ const Companies = () => {
         title="確認刪除公司" description={`您確定要刪除「${companyToDelete?.name}」嗎？此操作無法復原。`}
         onConfirm={handleConfirmDelete} />
       <NAR1Generator open={nar1DialogOpen} onOpenChange={setNar1DialogOpen} company={companyForNar1} />
+      <CompanyDetailDialog open={detailDialogOpen} onOpenChange={setDetailDialogOpen} company={companyForDetail} />
     </div>
   );
 };

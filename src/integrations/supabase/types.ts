@@ -25,6 +25,8 @@ export type Database = {
           created_at: string
           id: string
           name: string
+          quorum: string | null
+          register_date: string | null
           trading_name: string | null
           updated_at: string
         }
@@ -38,6 +40,8 @@ export type Database = {
           created_at?: string
           id?: string
           name: string
+          quorum?: string | null
+          register_date?: string | null
           trading_name?: string | null
           updated_at?: string
         }
@@ -51,6 +55,8 @@ export type Database = {
           created_at?: string
           id?: string
           name?: string
+          quorum?: string | null
+          register_date?: string | null
           trading_name?: string | null
           updated_at?: string
         }
@@ -58,33 +64,48 @@ export type Database = {
       }
       officers: {
         Row: {
+          address: string | null
           company_id: string
+          company_number_ref: string | null
           created_at: string
+          date_appointed: string | null
+          date_ceased: string | null
           id: string
           id_number: string | null
           identity: string
           name_chinese: string | null
           name_english: string
+          place_incorporated: string | null
           role: string
         }
         Insert: {
+          address?: string | null
           company_id: string
+          company_number_ref?: string | null
           created_at?: string
+          date_appointed?: string | null
+          date_ceased?: string | null
           id?: string
           id_number?: string | null
           identity?: string
           name_chinese?: string | null
           name_english?: string
+          place_incorporated?: string | null
           role: string
         }
         Update: {
+          address?: string | null
           company_id?: string
+          company_number_ref?: string | null
           created_at?: string
+          date_appointed?: string | null
+          date_ceased?: string | null
           id?: string
           id_number?: string | null
           identity?: string
           name_chinese?: string | null
           name_english?: string
+          place_incorporated?: string | null
           role?: string
         }
         Relationships: [
@@ -133,6 +154,7 @@ export type Database = {
           name: string
           name_chinese: string | null
           name_english: string | null
+          share_type: string | null
           shares: number
         }
         Insert: {
@@ -146,6 +168,7 @@ export type Database = {
           name?: string
           name_chinese?: string | null
           name_english?: string | null
+          share_type?: string | null
           shares?: number
         }
         Update: {
@@ -159,6 +182,7 @@ export type Database = {
           name?: string
           name_chinese?: string | null
           name_english?: string | null
+          share_type?: string | null
           shares?: number
         }
         Relationships: [

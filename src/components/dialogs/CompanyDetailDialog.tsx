@@ -316,7 +316,8 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                     <div key={i} className={`flex items-center justify-between rounded-md border px-3 py-2 text-sm cursor-pointer transition-colors group ${
                       selectedSh?.id === sh.id ? 'border-primary bg-primary/10' : 'border-border bg-muted/30 hover:bg-muted/60'
                     }`} onClick={() => selectShareholder(sh)}>
-                      <span className="font-medium">{sh.name}</span>
+                       <span className="font-medium">{sh.nameEnglish || sh.nameChinese || sh.name}</span>
+                       {sh.nameEnglish && sh.nameChinese && <span className="ml-2 text-muted-foreground">{sh.nameChinese}</span>}
                       <div className="flex items-center gap-2">
                         <Badge variant="secondary">{sh.shares.toLocaleString()} 股</Badge>
                         <div className="hidden group-hover:flex gap-1">

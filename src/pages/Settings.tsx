@@ -4,6 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from '@/hooks/use-toast';
 import { useState } from 'react';
+import { UserManagement } from '@/components/settings/UserManagement';
 
 const Settings = () => {
   const [companyName, setCompanyName] = useState('Muselabs');
@@ -17,7 +18,7 @@ const Settings = () => {
   };
 
   return (
-    <div>
+    <div className="space-y-6">
       <PageHeader
         title="設定"
         description="管理系統設定"
@@ -48,14 +49,13 @@ const Settings = () => {
             />
           </div>
 
-          <Button 
-            className="bg-primary text-primary-foreground hover:bg-primary/90"
-            onClick={handleSave}
-          >
+          <Button onClick={handleSave}>
             儲存變更
           </Button>
         </div>
       </div>
+
+      <UserManagement />
     </div>
   );
 };

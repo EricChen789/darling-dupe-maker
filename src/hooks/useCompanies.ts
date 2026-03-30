@@ -98,12 +98,10 @@ export function useCompanies() {
       if (cErr) throw cErr;
       if (!companies || companies.length === 0) return [];
 
-      const companyIds = companies.map(c => c.id);
-
-      // Fetch officers and shareholders in parallel
+      // Fetch all officers and shareholders (no filtering needed, just get all)
       const [officersRes, shareholdersRes] = await Promise.all([
-        supabase.from('officers').select('*').in('company_id', companyIds),
-        supabase.from('shareholders').select('*').in('company_id', companyIds),
+        supabase.from('officers').select('*').limit(5000),
+        supabase.from('shareholders').select('*').limit(5000),
       ]);
 
       if (officersRes.error) throw officersRes.error;

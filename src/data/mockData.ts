@@ -18,7 +18,7 @@ export const mockCompanies: Company[] = [
       { id: 's3', nameChinese: '李美玲', nameEnglish: 'LEE Mei Ling', email: 'lee.meiling@random.com', identity: 'natural', role: 'secretary', companies: [], createdAt: '2025/11/18', updatedAt: '2025/11/18' },
     ],
     shareholders: [
-      { id: 'sh1', name: '測試股東 TEST SHAREHOLDER', shares: 1000 },
+      { id: 'sh1', name: '測試股東 TEST SHAREHOLDER', nameEnglish: '', nameChinese: '', shares: 1000, identity: 'natural' as const, idNumber: '', address: '', email: '' },
     ],
     companyType: '私人公司 Private company',
     businessCode: '70100',
@@ -86,8 +86,8 @@ export const mockCompanies: Company[] = [
       { id: 's6', nameChinese: '測試秘書四', nameEnglish: 'TEST SECRETARY FOUR', email: 'fourth.secretary@test.com', identity: 'natural', role: 'secretary', companies: [], createdAt: '2025/11/17', updatedAt: '2025/11/17' },
     ],
     shareholders: [
-      { id: 'sh2', name: '測試股東三 TEST SHAREHOLDER THREE', shares: 1000 },
-      { id: 'sh3', name: '測試股東 TEST SHAREHOLDER FOUR', shares: 2000 },
+      { id: 'sh2', name: '測試股東三 TEST SHAREHOLDER THREE', nameEnglish: '', nameChinese: '', shares: 1000, identity: 'natural' as const, idNumber: '', address: '', email: '' },
+      { id: 'sh3', name: '測試股東 TEST SHAREHOLDER FOUR', nameEnglish: '', nameChinese: '', shares: 2000, identity: 'natural' as const, idNumber: '', address: '', email: '' },
     ],
     companyType: '私人公司 Private company',
     businessCode: '70100',
@@ -106,7 +106,7 @@ export const mockCompanies: Company[] = [
       { id: 's7', nameChinese: '環球創業網絡有限公司', nameEnglish: 'WORLDWIDE INCORPORATION NETWORK LIMITED', email: '', identity: 'corporate', role: 'secretary', companies: [], createdAt: '2024/03/22', updatedAt: '2024/03/22' },
     ],
     shareholders: [
-      { id: 'sh4', name: 'TWINSAIL LIMITED (Company No: 83154)', shares: 50000 },
+      { id: 'sh4', name: 'TWINSAIL LIMITED (Company No: 83154)', nameEnglish: '', nameChinese: '', shares: 50000, identity: 'natural' as const, idNumber: '', address: '', email: '' },
     ],
     companyType: '私人公司 Private company',
     businessCode: '64200',
@@ -126,9 +126,9 @@ export const mockCompanies: Company[] = [
     ],
     secretaries: [],
     shareholders: [
-      { id: 'sh5', name: 'CARDINA INTERNATIONAL COMPANY LIMITED 凯迪纳国际有限公司', shares: 30 },
-      { id: 'sh6', name: 'MALAYSIA VENTURE CAPITAL MANAGEMENT BERHAD', shares: 30 },
-      { id: 'sh7', name: 'RP PARTNERS LIMITED', shares: 40 },
+      { id: 'sh5', name: 'CARDINA INTERNATIONAL COMPANY LIMITED 凯迪纳国际有限公司', nameEnglish: '', nameChinese: '', shares: 30, identity: 'natural' as const, idNumber: '', address: '', email: '' },
+      { id: 'sh6', name: 'MALAYSIA VENTURE CAPITAL MANAGEMENT BERHAD', nameEnglish: '', nameChinese: '', shares: 30, identity: 'natural' as const, idNumber: '', address: '', email: '' },
+      { id: 'sh7', name: 'RP PARTNERS LIMITED', nameEnglish: '', nameChinese: '', shares: 40, identity: 'natural' as const, idNumber: '', address: '', email: '' },
     ],
     companyType: '私人公司 Private company',
     businessCode: '64200',
@@ -145,7 +145,7 @@ export const mockCompanies: Company[] = [
     ],
     secretaries: [],
     shareholders: [
-      { id: 'sh8', name: '朱世恩 CHU, SAI YAN', shares: 1 },
+      { id: 'sh8', name: '朱世恩 CHU, SAI YAN', nameEnglish: '', nameChinese: '', shares: 1, identity: 'natural' as const, idNumber: '', address: '', email: '' },
     ],
     companyType: '私人公司 Private company',
     businessCode: '64200',

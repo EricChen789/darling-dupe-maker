@@ -123,24 +123,42 @@ export type Database = {
       }
       shareholders: {
         Row: {
+          address: string | null
           company_id: string
           created_at: string
+          email: string | null
           id: string
+          id_number: string | null
+          identity: string
           name: string
+          name_chinese: string | null
+          name_english: string | null
           shares: number
         }
         Insert: {
+          address?: string | null
           company_id: string
           created_at?: string
+          email?: string | null
           id?: string
+          id_number?: string | null
+          identity?: string
           name?: string
+          name_chinese?: string | null
+          name_english?: string | null
           shares?: number
         }
         Update: {
+          address?: string | null
           company_id?: string
           created_at?: string
+          email?: string | null
           id?: string
+          id_number?: string | null
+          identity?: string
           name?: string
+          name_chinese?: string | null
+          name_english?: string | null
           shares?: number
         }
         Relationships: [

@@ -37,9 +37,11 @@ interface CompanyDetailDialogProps {
 
 export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDetailDialogProps) => {
   const [selectedPerson, setSelectedPerson] = useState<(Person & { roleLabel: string }) | null>(null);
+  const [selectedSh, setSelectedSh] = useState<Shareholder | null>(null);
   const [editingCompany, setEditingCompany] = useState(false);
   const [editingPerson, setEditingPerson] = useState(false);
   const [editingShareholder, setEditingShareholder] = useState<string | null>(null);
+  const [editingShDetail, setEditingShDetail] = useState(false);
   const [addingOfficer, setAddingOfficer] = useState<'director' | 'secretary' | null>(null);
   const [addingShareholder, setAddingShareholder] = useState(false);
 
@@ -83,13 +85,28 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
   const handleOpenChange = (v: boolean) => {
     if (!v) {
       setSelectedPerson(null);
+      setSelectedSh(null);
       setEditingCompany(false);
       setEditingPerson(false);
+      setEditingShDetail(false);
       setAddingOfficer(null);
       setAddingShareholder(false);
       setEditingShareholder(null);
     }
     onOpenChange(v);
+  };
+
+  const selectPerson = (p: Person, roleLabel: string) => {
+    setSelectedSh(null);
+    setEditingShDetail(false);
+    setSelectedPerson({ ...p, roleLabel });
+  };
+
+  const selectShareholder = (sh: Shareholder) => {
+    setSelectedPerson(null);
+    setEditingPerson(false);
+    setSelectedSh(sh);
+    setShForm({ name: sh.name, shares: sh.shares });
   };
 
   const handleSaveCompany = () => {
@@ -173,7 +190,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
 
         <div className="flex-1 overflow-hidden flex">
           {/* Left: Company info */}
-          <div className={`overflow-y-auto p-6 pt-2 transition-all ${selectedPerson ? 'w-1/2 border-r border-border' : 'w-full'}`}>
+          <div className={`overflow-y-auto p-6 pt-2 transition-all ${(selectedPerson || selectedSh) ? 'w-1/2 border-r border-border' : 'w-full'}`}>
 
             {/* Company basic info */}
             <div className="flex items-center justify-between mb-2">
@@ -234,7 +251,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
               <div className="grid gap-2">
                 {company.directors.map((d, i) => (
                   <PersonRow key={i} person={d} isSelected={selectedPerson?.id === d.id}
-                    onClick={() => setSelectedPerson({ ...d, roleLabel: '董事' })}
+                    onClick={() => selectPerson(d, '董事')}
                     onDelete={() => handleDeleteOfficer(d, '董事')} />
                 ))}
               </div>
@@ -254,7 +271,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
               <div className="grid gap-2">
                 {company.secretaries.map((s, i) => (
                   <PersonRow key={i} person={s} isSelected={selectedPerson?.id === s.id}
-                    onClick={() => setSelectedPerson({ ...s, roleLabel: '秘書' })}
+                    onClick={() => selectPerson(s, '秘書')}
                     onDelete={() => handleDeleteOfficer(s, '秘書')} />
                 ))}
               </div>
@@ -296,15 +313,17 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                       </div>
                     </div>
                   ) : (
-                    <div key={i} className="flex items-center justify-between rounded-md border border-border bg-muted/30 px-3 py-2 text-sm group">
+                    <div key={i} className={`flex items-center justify-between rounded-md border px-3 py-2 text-sm cursor-pointer transition-colors group ${
+                      selectedSh?.id === sh.id ? 'border-primary bg-primary/10' : 'border-border bg-muted/30 hover:bg-muted/60'
+                    }`} onClick={() => selectShareholder(sh)}>
                       <span className="font-medium">{sh.name}</span>
                       <div className="flex items-center gap-2">
                         <Badge variant="secondary">{sh.shares.toLocaleString()} 股</Badge>
                         <div className="hidden group-hover:flex gap-1">
-                          <Button variant="ghost" size="sm" className="h-6 px-1.5" onClick={() => { setEditingShareholder(sh.id); setShForm({ name: sh.name, shares: sh.shares }); }}>
+                          <Button variant="ghost" size="sm" className="h-6 px-1.5" onClick={e => { e.stopPropagation(); setEditingShareholder(sh.id); setShForm({ name: sh.name, shares: sh.shares }); }}>
                             <Edit className="h-3 w-3" />
                           </Button>
-                          <Button variant="ghost" size="sm" className="h-6 px-1.5 text-destructive" onClick={() => handleDeleteShareholder(sh)}>
+                          <Button variant="ghost" size="sm" className="h-6 px-1.5 text-destructive" onClick={e => { e.stopPropagation(); handleDeleteShareholder(sh); }}>
                             <Trash2 className="h-3 w-3" />
                           </Button>
                         </div>
@@ -370,6 +389,49 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                       </SelectContent>
                     </Select>
                   </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Right: Shareholder detail panel */}
+          {selectedSh && (
+            <div className="w-1/2 overflow-y-auto p-6 pt-2 bg-muted/10">
+              <div className="flex items-center justify-between mb-4">
+                <Button variant="ghost" size="sm" className="-ml-2" onClick={() => { setSelectedSh(null); setEditingShDetail(false); }}>
+                  <ArrowLeft className="h-4 w-4 mr-1" /> 返回
+                </Button>
+                {!editingShDetail ? (
+                  <Button variant="ghost" size="sm" onClick={() => setEditingShDetail(true)}>
+                    <Edit className="h-3.5 w-3.5 mr-1" /> 編輯
+                  </Button>
+                ) : (
+                  <div className="flex gap-1">
+                    <Button variant="ghost" size="sm" onClick={() => setEditingShDetail(false)}><X className="h-3.5 w-3.5 mr-1" /> 取消</Button>
+                    <Button size="sm" onClick={() => { handleSaveShareholder(selectedSh.id); setEditingShDetail(false); }} className="bg-primary text-primary-foreground"><Save className="h-3.5 w-3.5 mr-1" /> 儲存</Button>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-center gap-3 mb-6">
+                <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center">
+                  <Briefcase className="h-6 w-6 text-primary" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold">{selectedSh.name}</h2>
+                  <p className="text-sm text-muted-foreground">股東</p>
+                </div>
+              </div>
+
+              {!editingShDetail ? (
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <InfoItem label="股東名稱" value={selectedSh.name} />
+                  <InfoItem label="持股數量" value={selectedSh.shares.toLocaleString() + ' 股'} />
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div className="space-y-1"><Label className="text-xs">股東名稱</Label><Input value={shForm.name} onChange={e => setShForm({ ...shForm, name: e.target.value })} /></div>
+                  <div className="space-y-1"><Label className="text-xs">持股數量</Label><Input type="number" value={shForm.shares} onChange={e => setShForm({ ...shForm, shares: parseInt(e.target.value) || 0 })} /></div>
                 </div>
               )}
             </div>

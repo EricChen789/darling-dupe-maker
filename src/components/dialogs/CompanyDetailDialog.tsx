@@ -251,7 +251,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
               <div className="grid gap-2">
                 {company.directors.map((d, i) => (
                   <PersonRow key={i} person={d} isSelected={selectedPerson?.id === d.id}
-                    onClick={() => setSelectedPerson({ ...d, roleLabel: '董事' })}
+                    onClick={() => selectPerson(d, '董事')}
                     onDelete={() => handleDeleteOfficer(d, '董事')} />
                 ))}
               </div>

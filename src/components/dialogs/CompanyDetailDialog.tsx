@@ -190,7 +190,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
 
         <div className="flex-1 overflow-hidden flex">
           {/* Left: Company info */}
-          <div className={`overflow-y-auto p-6 pt-2 transition-all ${selectedPerson ? 'w-1/2 border-r border-border' : 'w-full'}`}>
+          <div className={`overflow-y-auto p-6 pt-2 transition-all ${(selectedPerson || selectedSh) ? 'w-1/2 border-r border-border' : 'w-full'}`}>
 
             {/* Company basic info */}
             <div className="flex items-center justify-between mb-2">

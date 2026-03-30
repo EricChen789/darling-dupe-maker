@@ -194,3 +194,76 @@ export function useUpdateCompany() {
     },
   });
 }
+
+export function useAddOfficer() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: { company_id: string; name_english: string; name_chinese?: string; role: string; identity?: string; id_number?: string }) => {
+      const { error } = await supabase.from('officers').insert({
+        company_id: data.company_id,
+        name_english: data.name_english,
+        name_chinese: data.name_chinese || '',
+        role: data.role,
+        identity: data.identity || 'natural',
+        id_number: data.id_number || '',
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['companies'] }),
+  });
+}
+
+export function useUpdateOfficer() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: { name_english?: string; name_chinese?: string; identity?: string; id_number?: string } }) => {
+      const { error } = await supabase.from('officers').update(data).eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['companies'] }),
+  });
+}
+
+export function useDeleteOfficer() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('officers').delete().eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['companies'] }),
+  });
+}
+
+export function useAddShareholder() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: { company_id: string; name: string; shares: number }) => {
+      const { error } = await supabase.from('shareholders').insert(data);
+      if (error) throw error;
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['companies'] }),
+  });
+}
+
+export function useUpdateShareholder() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: { name?: string; shares?: number } }) => {
+      const { error } = await supabase.from('shareholders').update(data).eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['companies'] }),
+  });
+}
+
+export function useDeleteShareholder() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('shareholders').delete().eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['companies'] }),
+  });
+}

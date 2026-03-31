@@ -10,6 +10,7 @@ import { Separator } from '@/components/ui/separator';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Select,
   SelectContent,
@@ -35,6 +36,9 @@ interface CompanyDetailDialogProps {
   company: Company | null;
 }
 
+const emptyOfficerForm = () => ({ nameEnglish: '', nameChinese: '', identity: 'natural', idNumber: '', address: '', dateAppointed: '', dateCeased: '', placeIncorporated: '', companyNumberRef: '' });
+const emptyShForm = () => ({ name: '', nameEnglish: '', nameChinese: '', shares: 0, identity: 'natural', idNumber: '', address: '', email: '', shareType: '' });
+
 export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDetailDialogProps) => {
   const [selectedPerson, setSelectedPerson] = useState<(Person & { roleLabel: string }) | null>(null);
   const [selectedSh, setSelectedSh] = useState<Shareholder | null>(null);
@@ -45,14 +49,10 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
   const [addingOfficer, setAddingOfficer] = useState<'director' | 'secretary' | null>(null);
   const [addingShareholder, setAddingShareholder] = useState(false);
 
-  // Company edit form
   const [companyForm, setCompanyForm] = useState({ name: '', brNumber: '', tradingName: '', businessNature: '', companyType: '', businessCode: '' });
-  // Person edit form
-  const [personForm, setPersonForm] = useState({ nameEnglish: '', nameChinese: '', identity: 'natural' as string, idNumber: '', address: '', dateAppointed: '', dateCeased: '', placeIncorporated: '', companyNumberRef: '' });
-  // New officer form
-  const [newOfficerForm, setNewOfficerForm] = useState({ nameEnglish: '', nameChinese: '', identity: 'natural', idNumber: '', address: '', dateAppointed: '', dateCeased: '', placeIncorporated: '', companyNumberRef: '' });
-  // Shareholder edit form
-  const [shForm, setShForm] = useState({ name: '', nameEnglish: '', nameChinese: '', shares: 0, identity: 'natural', idNumber: '', address: '', email: '', shareType: '' });
+  const [personForm, setPersonForm] = useState(emptyOfficerForm());
+  const [newOfficerForm, setNewOfficerForm] = useState(emptyOfficerForm());
+  const [shForm, setShForm] = useState(emptyShForm());
 
   const updateCompany = useUpdateCompany();
   const addOfficer = useAddOfficer();
@@ -71,9 +71,6 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
     }
   }, [company]);
 
-  const emptyOfficerForm = { nameEnglish: '', nameChinese: '', identity: 'natural', idNumber: '', address: '', dateAppointed: '', dateCeased: '', placeIncorporated: '', companyNumberRef: '' };
-  const emptyShForm = { name: '', nameEnglish: '', nameChinese: '', shares: 0, identity: 'natural', idNumber: '', address: '', email: '', shareType: '' };
-
   useEffect(() => {
     if (selectedPerson) {
       setPersonForm({
@@ -90,30 +87,22 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
 
   const handleOpenChange = (v: boolean) => {
     if (!v) {
-      setSelectedPerson(null);
-      setSelectedSh(null);
-      setEditingCompany(false);
-      setEditingPerson(false);
-      setEditingShDetail(false);
-      setAddingOfficer(null);
-      setAddingShareholder(false);
-      setEditingShareholder(null);
+      setSelectedPerson(null); setSelectedSh(null); setEditingCompany(false);
+      setEditingPerson(false); setEditingShDetail(false); setAddingOfficer(null);
+      setAddingShareholder(false); setEditingShareholder(null);
     }
     onOpenChange(v);
   };
 
   const selectPerson = (p: Person, roleLabel: string) => {
-    setSelectedSh(null);
-    setEditingShDetail(false);
-    setSelectedPerson({ ...p, roleLabel });
-    setEditingPerson(true);
+    setSelectedSh(null); setEditingShDetail(false);
+    setSelectedPerson({ ...p, roleLabel }); setEditingPerson(true);
   };
 
   const selectShareholder = (sh: Shareholder) => {
-    setSelectedPerson(null);
-    setEditingPerson(false);
+    setSelectedPerson(null); setEditingPerson(false);
     setSelectedSh(sh);
-    setShForm({ name: sh.name, nameEnglish: sh.nameEnglish, nameChinese: sh.nameChinese, shares: sh.shares, identity: sh.identity, idNumber: sh.idNumber, address: sh.address, email: sh.email });
+    setShForm({ name: sh.name, nameEnglish: sh.nameEnglish, nameChinese: sh.nameChinese, shares: sh.shares, identity: sh.identity, idNumber: sh.idNumber, address: sh.address, email: sh.email, shareType: sh.shareType || '' });
     setEditingShDetail(true);
   };
 
@@ -126,7 +115,13 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
 
   const handleSavePerson = () => {
     if (!selectedPerson) return;
-    updateOfficer.mutate({ id: selectedPerson.id, data: { name_english: personForm.nameEnglish, name_chinese: personForm.nameChinese, identity: personForm.identity } }, {
+    updateOfficer.mutate({ id: selectedPerson.id, data: {
+      name_english: personForm.nameEnglish, name_chinese: personForm.nameChinese,
+      identity: personForm.identity, id_number: personForm.idNumber,
+      address: personForm.address, date_appointed: personForm.dateAppointed || undefined,
+      date_ceased: personForm.dateCeased || undefined,
+      place_incorporated: personForm.placeIncorporated, company_number_ref: personForm.companyNumberRef,
+    }}, {
       onSuccess: () => { toast({ title: '人員資料已更新' }); setEditingPerson(false); },
       onError: () => toast({ title: '更新失敗', variant: 'destructive' }),
     });
@@ -150,30 +145,36 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
       company_id: company.id, name_english: newOfficerForm.nameEnglish,
       name_chinese: newOfficerForm.nameChinese, role: addingOfficer,
       identity: newOfficerForm.identity, id_number: newOfficerForm.idNumber,
+      address: newOfficerForm.address, date_appointed: newOfficerForm.dateAppointed || undefined,
+      date_ceased: newOfficerForm.dateCeased || undefined,
+      place_incorporated: newOfficerForm.placeIncorporated, company_number_ref: newOfficerForm.companyNumberRef,
     }, {
       onSuccess: () => {
         toast({ title: `${addingOfficer === 'director' ? '董事' : '秘書'}已新增` });
-        setAddingOfficer(null);
-        setNewOfficerForm({ nameEnglish: '', nameChinese: '', identity: 'natural', idNumber: '' });
+        setAddingOfficer(null); setNewOfficerForm(emptyOfficerForm());
       },
       onError: () => toast({ title: '新增失敗', variant: 'destructive' }),
     });
   };
 
   const handleSaveShareholder = (id: string) => {
-    updateShareholder.mutate({ id, data: { name: shForm.name, name_english: shForm.nameEnglish, name_chinese: shForm.nameChinese, shares: shForm.shares, identity: shForm.identity, id_number: shForm.idNumber, address: shForm.address, email: shForm.email } }, {
+    updateShareholder.mutate({ id, data: { name: shForm.name, name_english: shForm.nameEnglish, name_chinese: shForm.nameChinese, shares: shForm.shares, identity: shForm.identity, id_number: shForm.idNumber, address: shForm.address, email: shForm.email, share_type: shForm.shareType } }, {
       onSuccess: () => { toast({ title: '股東已更新' }); setEditingShareholder(null); },
       onError: () => toast({ title: '更新失敗', variant: 'destructive' }),
     });
   };
 
   const handleAddShareholder = () => {
-    if (!shForm.name) { toast({ title: '請填寫股東名稱', variant: 'destructive' }); return; }
-    addShareholder.mutate({ company_id: company.id, name: shForm.name, shares: shForm.shares }, {
+    if (!shForm.name && !shForm.nameEnglish) { toast({ title: '請填寫股東名稱', variant: 'destructive' }); return; }
+    addShareholder.mutate({
+      company_id: company.id, name: shForm.name || shForm.nameEnglish,
+      name_english: shForm.nameEnglish, name_chinese: shForm.nameChinese,
+      shares: shForm.shares, identity: shForm.identity, id_number: shForm.idNumber,
+      address: shForm.address, email: shForm.email, share_type: shForm.shareType,
+    }, {
       onSuccess: () => {
         toast({ title: '股東已新增' });
-        setAddingShareholder(false);
-        setShForm({ name: '', nameEnglish: '', nameChinese: '', shares: 0, identity: 'natural', idNumber: '', address: '', email: '' });
+        setAddingShareholder(false); setShForm(emptyShForm());
       },
       onError: () => toast({ title: '新增失敗', variant: 'destructive' }),
     });
@@ -250,7 +251,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
             {/* Directors */}
             <div className="flex items-center justify-between mb-2">
               <SectionHeader icon={<Users className="h-4 w-4 text-primary" />} title="董事" count={company.directors.length} />
-              <Button variant="ghost" size="sm" onClick={() => { setAddingOfficer('director'); setNewOfficerForm({ nameEnglish: '', nameChinese: '', identity: 'natural', idNumber: '' }); }}>
+              <Button variant="ghost" size="sm" onClick={() => { setAddingOfficer('director'); setNewOfficerForm(emptyOfficerForm()); }}>
                 <Plus className="h-3.5 w-3.5 mr-1" /> 新增
               </Button>
             </div>
@@ -270,7 +271,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
             {/* Secretaries */}
             <div className="flex items-center justify-between mb-2">
               <SectionHeader icon={<UserCheck className="h-4 w-4 text-primary" />} title="秘書" count={company.secretaries.length} />
-              <Button variant="ghost" size="sm" onClick={() => { setAddingOfficer('secretary'); setNewOfficerForm({ nameEnglish: '', nameChinese: '', identity: 'natural', idNumber: '' }); }}>
+              <Button variant="ghost" size="sm" onClick={() => { setAddingOfficer('secretary'); setNewOfficerForm(emptyOfficerForm()); }}>
                 <Plus className="h-3.5 w-3.5 mr-1" /> 新增
               </Button>
             </div>
@@ -290,36 +291,17 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
             {/* Shareholders */}
             <div className="flex items-center justify-between mb-2">
               <SectionHeader icon={<Briefcase className="h-4 w-4 text-primary" />} title="股東" count={company.shareholders.length} />
-              <Button variant="ghost" size="sm" onClick={() => { setAddingShareholder(true); setShForm({ name: '', nameEnglish: '', nameChinese: '', shares: 0, identity: 'natural', idNumber: '', address: '', email: '' }); }}>
+              <Button variant="ghost" size="sm" onClick={() => { setAddingShareholder(true); setShForm(emptyShForm()); }}>
                 <Plus className="h-3.5 w-3.5 mr-1" /> 新增
               </Button>
             </div>
-            {addingShareholder && (
-              <div className="rounded-md border border-primary/50 bg-primary/5 p-3 mb-2 space-y-2">
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="space-y-1"><Label className="text-xs">股東名稱</Label><Input value={shForm.name} onChange={e => setShForm({ ...shForm, name: e.target.value })} placeholder="輸入股東名稱" /></div>
-                  <div className="space-y-1"><Label className="text-xs">股數</Label><Input type="number" value={shForm.shares} onChange={e => setShForm({ ...shForm, shares: parseInt(e.target.value) || 0 })} /></div>
-                </div>
-                <div className="flex gap-1 justify-end">
-                  <Button variant="ghost" size="sm" onClick={() => setAddingShareholder(false)}><X className="h-3.5 w-3.5 mr-1" /> 取消</Button>
-                  <Button size="sm" onClick={handleAddShareholder} className="bg-primary text-primary-foreground"><Save className="h-3.5 w-3.5 mr-1" /> 新增</Button>
-                </div>
-              </div>
-            )}
+            {addingShareholder && <NewShareholderForm form={shForm} setForm={setShForm} onSave={handleAddShareholder} onCancel={() => setAddingShareholder(false)} />}
             {company.shareholders.length > 0 ? (
               <div className="grid gap-2">
                 {company.shareholders.map((sh, i) => (
                   editingShareholder === sh.id ? (
-                    <div key={i} className="rounded-md border border-primary/50 bg-primary/5 p-3 space-y-2">
-                      <div className="grid grid-cols-2 gap-2">
-                        <div className="space-y-1"><Label className="text-xs">股東名稱</Label><Input value={shForm.name} onChange={e => setShForm({ ...shForm, name: e.target.value })} /></div>
-                        <div className="space-y-1"><Label className="text-xs">股數</Label><Input type="number" value={shForm.shares} onChange={e => setShForm({ ...shForm, shares: parseInt(e.target.value) || 0 })} /></div>
-                      </div>
-                      <div className="flex gap-1 justify-end">
-                        <Button variant="ghost" size="sm" onClick={() => setEditingShareholder(null)}><X className="h-3.5 w-3.5 mr-1" /> 取消</Button>
-                        <Button size="sm" onClick={() => handleSaveShareholder(sh.id)} className="bg-primary text-primary-foreground"><Save className="h-3.5 w-3.5 mr-1" /> 儲存</Button>
-                      </div>
-                    </div>
+                    <InlineShEdit key={i} shForm={shForm} setShForm={setShForm}
+                      onSave={() => handleSaveShareholder(sh.id)} onCancel={() => setEditingShareholder(null)} />
                   ) : (
                     <div key={i} className={`flex items-center justify-between rounded-md border px-3 py-2 text-sm cursor-pointer transition-colors group ${
                       selectedSh?.id === sh.id ? 'border-primary bg-primary/10' : 'border-border bg-muted/30 hover:bg-muted/60'
@@ -329,7 +311,10 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                       <div className="flex items-center gap-2">
                         <Badge variant="secondary">{sh.shares.toLocaleString()} 股</Badge>
                         <div className="hidden group-hover:flex gap-1">
-                          <Button variant="ghost" size="sm" className="h-6 px-1.5" onClick={e => { e.stopPropagation(); setEditingShareholder(sh.id); setShForm({ name: sh.name, nameEnglish: sh.nameEnglish, nameChinese: sh.nameChinese, shares: sh.shares, identity: sh.identity, idNumber: sh.idNumber, address: sh.address, email: sh.email }); }}>
+                          <Button variant="ghost" size="sm" className="h-6 px-1.5" onClick={e => {
+                            e.stopPropagation(); setEditingShareholder(sh.id);
+                            setShForm({ name: sh.name, nameEnglish: sh.nameEnglish, nameChinese: sh.nameChinese, shares: sh.shares, identity: sh.identity, idNumber: sh.idNumber, address: sh.address, email: sh.email, shareType: sh.shareType || '' });
+                          }}>
                             <Edit className="h-3 w-3" />
                           </Button>
                           <Button variant="ghost" size="sm" className="h-6 px-1.5 text-destructive" onClick={e => { e.stopPropagation(); handleDeleteShareholder(sh); }}>
@@ -407,6 +392,16 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                       </SelectContent>
                     </Select>
                   </div>
+                  <div className="space-y-1"><Label className="text-xs">證件號碼</Label><Input value={personForm.idNumber} onChange={e => setPersonForm({ ...personForm, idNumber: e.target.value })} /></div>
+                  <div className="space-y-1"><Label className="text-xs">委任日期</Label><Input value={personForm.dateAppointed} onChange={e => setPersonForm({ ...personForm, dateAppointed: e.target.value })} placeholder="DD/MM/YYYY" /></div>
+                  <div className="space-y-1"><Label className="text-xs">辭任日期</Label><Input value={personForm.dateCeased} onChange={e => setPersonForm({ ...personForm, dateCeased: e.target.value })} placeholder="DD/MM/YYYY" /></div>
+                  <div className="col-span-2 space-y-1"><Label className="text-xs">地址</Label><Textarea value={personForm.address} onChange={e => setPersonForm({ ...personForm, address: e.target.value })} rows={2} /></div>
+                  {personForm.identity === 'corporate' && (
+                    <>
+                      <div className="space-y-1"><Label className="text-xs">成立地點</Label><Input value={personForm.placeIncorporated} onChange={e => setPersonForm({ ...personForm, placeIncorporated: e.target.value })} /></div>
+                      <div className="space-y-1"><Label className="text-xs">公司編號</Label><Input value={personForm.companyNumberRef} onChange={e => setPersonForm({ ...personForm, companyNumberRef: e.target.value })} /></div>
+                    </>
+                  )}
                 </div>
               )}
             </div>
@@ -448,6 +443,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                   <InfoItem label="身份類型" value={selectedSh.identity === 'natural' ? '自然人' : '法人'} />
                   <InfoItem label="身份證號碼" value={selectedSh.idNumber} />
                   <InfoItem label="持股數量" value={selectedSh.shares.toLocaleString() + ' 股'} />
+                  <InfoItem label="股份類別" value={selectedSh.shareType || ''} />
                   <InfoItem label="地址" value={selectedSh.address} />
                   <InfoItem label="電郵" value={selectedSh.email} />
                 </div>
@@ -467,7 +463,8 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                   </div>
                   <div className="space-y-1"><Label className="text-xs">身份證號碼</Label><Input value={shForm.idNumber} onChange={e => setShForm({ ...shForm, idNumber: e.target.value })} /></div>
                   <div className="space-y-1"><Label className="text-xs">持股數量</Label><Input type="number" value={shForm.shares} onChange={e => setShForm({ ...shForm, shares: parseInt(e.target.value) || 0 })} /></div>
-                  <div className="space-y-1"><Label className="text-xs">地址</Label><Input value={shForm.address} onChange={e => setShForm({ ...shForm, address: e.target.value })} /></div>
+                  <div className="space-y-1"><Label className="text-xs">股份類別</Label><Input value={shForm.shareType} onChange={e => setShForm({ ...shForm, shareType: e.target.value })} placeholder="e.g. Ordinary 普通股" /></div>
+                  <div className="col-span-2 space-y-1"><Label className="text-xs">地址</Label><Textarea value={shForm.address} onChange={e => setShForm({ ...shForm, address: e.target.value })} rows={2} /></div>
                   <div className="space-y-1"><Label className="text-xs">電郵</Label><Input value={shForm.email} onChange={e => setShForm({ ...shForm, email: e.target.value })} /></div>
                 </div>
               )}
@@ -506,9 +503,11 @@ function PersonRow({ person, isSelected, onClick, onDelete }: { person: Person; 
   );
 }
 
+type OfficerFormType = { nameEnglish: string; nameChinese: string; identity: string; idNumber: string; address: string; dateAppointed: string; dateCeased: string; placeIncorporated: string; companyNumberRef: string };
+
 function NewOfficerForm({ form, setForm, onSave, onCancel }: {
-  form: { nameEnglish: string; nameChinese: string; identity: string; idNumber: string };
-  setForm: (f: any) => void; onSave: () => void; onCancel: () => void;
+  form: OfficerFormType;
+  setForm: (f: OfficerFormType) => void; onSave: () => void; onCancel: () => void;
 }) {
   return (
     <div className="rounded-md border border-primary/50 bg-primary/5 p-3 mb-2 space-y-2">
@@ -525,11 +524,74 @@ function NewOfficerForm({ form, setForm, onSave, onCancel }: {
             </SelectContent>
           </Select>
         </div>
-        <div className="space-y-1"><Label className="text-xs">身份證號碼</Label><Input value={form.idNumber} onChange={e => setForm({ ...form, idNumber: e.target.value })} placeholder="ID Number" /></div>
+        <div className="space-y-1"><Label className="text-xs">證件號碼</Label><Input value={form.idNumber} onChange={e => setForm({ ...form, idNumber: e.target.value })} placeholder="ID / Passport No." /></div>
+        <div className="space-y-1"><Label className="text-xs">委任日期</Label><Input value={form.dateAppointed} onChange={e => setForm({ ...form, dateAppointed: e.target.value })} placeholder="DD/MM/YYYY" /></div>
+        <div className="space-y-1"><Label className="text-xs">辭任日期</Label><Input value={form.dateCeased} onChange={e => setForm({ ...form, dateCeased: e.target.value })} placeholder="DD/MM/YYYY" /></div>
+        <div className="col-span-2 space-y-1"><Label className="text-xs">地址</Label><Textarea value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} rows={2} placeholder="地址 Address" /></div>
+        {form.identity === 'corporate' && (
+          <>
+            <div className="space-y-1"><Label className="text-xs">成立地點</Label><Input value={form.placeIncorporated} onChange={e => setForm({ ...form, placeIncorporated: e.target.value })} /></div>
+            <div className="space-y-1"><Label className="text-xs">公司編號</Label><Input value={form.companyNumberRef} onChange={e => setForm({ ...form, companyNumberRef: e.target.value })} /></div>
+          </>
+        )}
       </div>
       <div className="flex gap-1 justify-end">
         <Button variant="ghost" size="sm" onClick={onCancel}><X className="h-3.5 w-3.5 mr-1" /> 取消</Button>
         <Button size="sm" onClick={onSave} className="bg-primary text-primary-foreground"><Save className="h-3.5 w-3.5 mr-1" /> 新增</Button>
+      </div>
+    </div>
+  );
+}
+
+type ShFormType = { name: string; nameEnglish: string; nameChinese: string; shares: number; identity: string; idNumber: string; address: string; email: string; shareType: string };
+
+function NewShareholderForm({ form, setForm, onSave, onCancel }: {
+  form: ShFormType; setForm: (f: ShFormType) => void; onSave: () => void; onCancel: () => void;
+}) {
+  return (
+    <div className="rounded-md border border-primary/50 bg-primary/5 p-3 mb-2 space-y-2">
+      <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-1"><Label className="text-xs">英文名稱</Label><Input value={form.nameEnglish} onChange={e => setForm({ ...form, nameEnglish: e.target.value })} placeholder="English name" /></div>
+        <div className="space-y-1"><Label className="text-xs">中文名稱</Label><Input value={form.nameChinese} onChange={e => setForm({ ...form, nameChinese: e.target.value })} placeholder="中文名稱" /></div>
+        <div className="space-y-1"><Label className="text-xs">顯示名稱</Label><Input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Display name" /></div>
+        <div className="space-y-1">
+          <Label className="text-xs">身份類型</Label>
+          <Select value={form.identity} onValueChange={v => setForm({ ...form, identity: v })}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="natural">自然人</SelectItem>
+              <SelectItem value="corporate">法人</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1"><Label className="text-xs">證件號碼</Label><Input value={form.idNumber} onChange={e => setForm({ ...form, idNumber: e.target.value })} placeholder="ID / Passport No." /></div>
+        <div className="space-y-1"><Label className="text-xs">股數</Label><Input type="number" value={form.shares} onChange={e => setForm({ ...form, shares: parseInt(e.target.value) || 0 })} /></div>
+        <div className="space-y-1"><Label className="text-xs">股份類別</Label><Input value={form.shareType} onChange={e => setForm({ ...form, shareType: e.target.value })} placeholder="e.g. Ordinary 普通股" /></div>
+        <div className="space-y-1"><Label className="text-xs">電郵</Label><Input value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></div>
+        <div className="col-span-2 space-y-1"><Label className="text-xs">地址</Label><Textarea value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} rows={2} placeholder="地址 Address" /></div>
+      </div>
+      <div className="flex gap-1 justify-end">
+        <Button variant="ghost" size="sm" onClick={onCancel}><X className="h-3.5 w-3.5 mr-1" /> 取消</Button>
+        <Button size="sm" onClick={onSave} className="bg-primary text-primary-foreground"><Save className="h-3.5 w-3.5 mr-1" /> 新增</Button>
+      </div>
+    </div>
+  );
+}
+
+function InlineShEdit({ shForm, setShForm, onSave, onCancel }: {
+  shForm: ShFormType; setShForm: (f: ShFormType) => void; onSave: () => void; onCancel: () => void;
+}) {
+  return (
+    <div className="rounded-md border border-primary/50 bg-primary/5 p-3 space-y-2">
+      <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-1"><Label className="text-xs">英文名稱</Label><Input value={shForm.nameEnglish} onChange={e => setShForm({ ...shForm, nameEnglish: e.target.value })} /></div>
+        <div className="space-y-1"><Label className="text-xs">中文名稱</Label><Input value={shForm.nameChinese} onChange={e => setShForm({ ...shForm, nameChinese: e.target.value })} /></div>
+        <div className="space-y-1"><Label className="text-xs">股數</Label><Input type="number" value={shForm.shares} onChange={e => setShForm({ ...shForm, shares: parseInt(e.target.value) || 0 })} /></div>
+        <div className="space-y-1"><Label className="text-xs">股份類別</Label><Input value={shForm.shareType} onChange={e => setShForm({ ...shForm, shareType: e.target.value })} /></div>
+      </div>
+      <div className="flex gap-1 justify-end">
+        <Button variant="ghost" size="sm" onClick={onCancel}><X className="h-3.5 w-3.5 mr-1" /> 取消</Button>
+        <Button size="sm" onClick={onSave} className="bg-primary text-primary-foreground"><Save className="h-3.5 w-3.5 mr-1" /> 儲存</Button>
       </div>
     </div>
   );

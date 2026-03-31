@@ -41,6 +41,7 @@ export interface Shareholder {
   idNumber: string;
   address: string;
   email: string;
+  shareType?: string;
 }
 
 export interface Form {

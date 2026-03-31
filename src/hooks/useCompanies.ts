@@ -252,7 +252,7 @@ export function useAddOfficer() {
 export function useUpdateOfficer() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: { name_english?: string; name_chinese?: string; identity?: string; id_number?: string } }) => {
+    mutationFn: async ({ id, data }: { id: string; data: { name_english?: string; name_chinese?: string; identity?: string; id_number?: string; address?: string; date_appointed?: string; date_ceased?: string; place_incorporated?: string; company_number_ref?: string } }) => {
       const { error } = await supabase.from('officers').update(data).eq('id', id);
       if (error) throw error;
     },

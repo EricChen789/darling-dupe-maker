@@ -229,7 +229,7 @@ export function useUpdateCompany() {
 export function useAddOfficer() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (data: { company_id: string; name_english: string; name_chinese?: string; role: string; identity?: string; id_number?: string }) => {
+    mutationFn: async (data: { company_id: string; name_english: string; name_chinese?: string; role: string; identity?: string; id_number?: string; address?: string; date_appointed?: string; date_ceased?: string; place_incorporated?: string; company_number_ref?: string }) => {
       const { error } = await supabase.from('officers').insert({
         company_id: data.company_id,
         name_english: data.name_english,
@@ -237,6 +237,11 @@ export function useAddOfficer() {
         role: data.role,
         identity: data.identity || 'natural',
         id_number: data.id_number || '',
+        address: data.address || '',
+        date_appointed: data.date_appointed || null,
+        date_ceased: data.date_ceased || null,
+        place_incorporated: data.place_incorporated || '',
+        company_number_ref: data.company_number_ref || '',
       });
       if (error) throw error;
     },

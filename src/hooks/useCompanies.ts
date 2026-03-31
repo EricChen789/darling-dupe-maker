@@ -58,6 +58,12 @@ function mapToCompany(
       email: '',
       identity: o.identity as 'natural' | 'corporate',
       role: 'director' as const,
+      address: o.address || '',
+      idNumber: o.id_number || '',
+      dateAppointed: o.date_appointed || '',
+      dateCeased: o.date_ceased || '',
+      placeIncorporated: o.place_incorporated || '',
+      companyNumberRef: o.company_number_ref || '',
       companies: [],
       createdAt: '',
       updatedAt: '',
@@ -72,6 +78,12 @@ function mapToCompany(
       email: '',
       identity: o.identity as 'natural' | 'corporate',
       role: 'secretary' as const,
+      address: o.address || '',
+      idNumber: o.id_number || '',
+      dateAppointed: o.date_appointed || '',
+      dateCeased: o.date_ceased || '',
+      placeIncorporated: o.place_incorporated || '',
+      companyNumberRef: o.company_number_ref || '',
       companies: [],
       createdAt: '',
       updatedAt: '',
@@ -87,6 +99,7 @@ function mapToCompany(
     idNumber: s.id_number || '',
     address: s.address || '',
     email: s.email || '',
+    shareType: s.share_type || '',
   }));
 
   return {

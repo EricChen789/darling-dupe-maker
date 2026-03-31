@@ -274,7 +274,7 @@ export function useDeleteOfficer() {
 export function useAddShareholder() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (data: { company_id: string; name: string; shares: number }) => {
+    mutationFn: async (data: { company_id: string; name: string; name_english?: string; name_chinese?: string; shares: number; identity?: string; id_number?: string; address?: string; email?: string; share_type?: string }) => {
       const { error } = await supabase.from('shareholders').insert(data);
       if (error) throw error;
     },

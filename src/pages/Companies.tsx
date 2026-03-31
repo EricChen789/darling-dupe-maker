@@ -115,7 +115,7 @@ const Companies = () => {
           <div className="flex items-center gap-4">
             <div className="flex-1">
               <Input placeholder="搜尋公司名稱、商業登記號碼或商業名稱..." value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)} />
+                onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }} />
             </div>
             <Button variant="outline" size="sm" onClick={() => setSearchTerm('')}>清除</Button>
           </div>

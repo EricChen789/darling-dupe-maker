@@ -100,6 +100,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
     setSelectedSh(null);
     setEditingShDetail(false);
     setSelectedPerson({ ...p, roleLabel });
+    setEditingPerson(true);
   };
 
   const selectShareholder = (sh: Shareholder) => {
@@ -107,6 +108,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
     setEditingPerson(false);
     setSelectedSh(sh);
     setShForm({ name: sh.name, nameEnglish: sh.nameEnglish, nameChinese: sh.nameChinese, shares: sh.shares, identity: sh.identity, idNumber: sh.idNumber, address: sh.address, email: sh.email });
+    setEditingShDetail(true);
   };
 
   const handleSaveCompany = () => {

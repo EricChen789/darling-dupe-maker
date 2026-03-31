@@ -41,6 +41,7 @@ interface DbShareholder {
   id_number: string;
   address: string;
   email: string;
+  share_type: string;
 }
 
 function mapToCompany(

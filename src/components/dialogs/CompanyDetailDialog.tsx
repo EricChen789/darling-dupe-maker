@@ -48,11 +48,11 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
   // Company edit form
   const [companyForm, setCompanyForm] = useState({ name: '', brNumber: '', tradingName: '', businessNature: '', companyType: '', businessCode: '' });
   // Person edit form
-  const [personForm, setPersonForm] = useState({ nameEnglish: '', nameChinese: '', identity: 'natural' as string, idNumber: '' });
+  const [personForm, setPersonForm] = useState({ nameEnglish: '', nameChinese: '', identity: 'natural' as string, idNumber: '', address: '', dateAppointed: '', dateCeased: '', placeIncorporated: '', companyNumberRef: '' });
   // New officer form
-  const [newOfficerForm, setNewOfficerForm] = useState({ nameEnglish: '', nameChinese: '', identity: 'natural', idNumber: '' });
+  const [newOfficerForm, setNewOfficerForm] = useState({ nameEnglish: '', nameChinese: '', identity: 'natural', idNumber: '', address: '', dateAppointed: '', dateCeased: '', placeIncorporated: '', companyNumberRef: '' });
   // Shareholder edit form
-  const [shForm, setShForm] = useState({ name: '', nameEnglish: '', nameChinese: '', shares: 0, identity: 'natural', idNumber: '', address: '', email: '' });
+  const [shForm, setShForm] = useState({ name: '', nameEnglish: '', nameChinese: '', shares: 0, identity: 'natural', idNumber: '', address: '', email: '', shareType: '' });
 
   const updateCompany = useUpdateCompany();
   const addOfficer = useAddOfficer();

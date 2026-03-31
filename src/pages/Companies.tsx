@@ -28,6 +28,8 @@ const Companies = () => {
   const [companyForNar1, setCompanyForNar1] = useState<Company | null>(null);
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const [companyForDetail, setCompanyForDetail] = useState<Company | null>(null);
+  const [pageSize, setPageSize] = useState(20);
+  const [currentPage, setCurrentPage] = useState(1);
 
   const { data: companies = [], isLoading, refetch } = useCompanies();
   const deleteCompany = useDeleteCompany();
@@ -39,6 +41,13 @@ const Companies = () => {
     company.brNumber.includes(searchTerm) ||
     company.tradingName.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  const totalPages = Math.max(1, Math.ceil(filteredCompanies.length / pageSize));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const paginatedCompanies = useMemo(() => {
+    const start = (safeCurrentPage - 1) * pageSize;
+    return filteredCompanies.slice(start, start + pageSize);
+  }, [filteredCompanies, safeCurrentPage, pageSize]);
 
   const handleRefresh = () => {
     refetch();

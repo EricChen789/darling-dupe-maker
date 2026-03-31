@@ -375,8 +375,17 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                   <InfoItem label="身份類型" value={selectedPerson.identity === 'natural' ? '自然人' : '法人'} />
                   <InfoItem label="英文名稱" value={selectedPerson.nameEnglish} />
                   <InfoItem label="中文名稱" value={selectedPerson.nameChinese} />
+                  <InfoItem label="證件號碼" value={selectedPerson.idNumber || ''} />
+                  <InfoItem label="委任日期" value={selectedPerson.dateAppointed || ''} />
+                  <InfoItem label="辭任日期" value={selectedPerson.dateCeased || ''} />
+                  <InfoItem label="地址" value={selectedPerson.address || ''} />
+                  {selectedPerson.identity === 'corporate' && (
+                    <>
+                      <InfoItem label="成立地點" value={selectedPerson.placeIncorporated || ''} />
+                      <InfoItem label="公司編號" value={selectedPerson.companyNumberRef || ''} />
+                    </>
+                  )}
                   <InfoItem label="電郵" value={selectedPerson.email} />
-                  <InfoItem label="商業登記號碼" value={selectedPerson.brNumber || ''} />
                 </div>
               ) : (
                 <div className="grid grid-cols-2 gap-3 text-sm">

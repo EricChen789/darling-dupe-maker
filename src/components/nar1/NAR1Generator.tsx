@@ -66,6 +66,11 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
           email: d.email,
           identity: d.identity,
           brNumber: d.brNumber,
+          address: d.address || '',
+          idNumber: d.idNumber || '',
+          dateAppointed: d.dateAppointed || '',
+          placeIncorporated: d.placeIncorporated || '',
+          companyNumberRef: d.companyNumberRef || '',
         })),
         secretaries: company.secretaries.map(s => ({
           nameChinese: s.nameChinese,
@@ -73,10 +78,21 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
           email: s.email,
           identity: s.identity,
           brNumber: s.brNumber,
+          address: s.address || '',
+          idNumber: s.idNumber || '',
+          dateAppointed: s.dateAppointed || '',
+          placeIncorporated: s.placeIncorporated || '',
+          companyNumberRef: s.companyNumberRef || '',
         })),
         shareholders: company.shareholders.map(sh => ({
           name: sh.name,
+          nameEnglish: sh.nameEnglish,
+          nameChinese: sh.nameChinese,
           shares: sh.shares,
+          identity: sh.identity,
+          idNumber: sh.idNumber || '',
+          address: sh.address || '',
+          shareType: sh.shareType || '',
         })),
         returnDate: formData.returnDate,
       };
@@ -159,15 +175,24 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
           {company.directors.length > 0 && (
             <div className="space-y-2">
               <h4 className="font-medium text-sm">董事資料</h4>
-              <div className="bg-muted/30 rounded-lg p-3 space-y-2 text-sm">
+              <div className="bg-muted/30 rounded-lg p-3 space-y-3 text-sm">
                 {company.directors.map((dir, i) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <span className="text-muted-foreground w-6">{i + 1}.</span>
-                    <span className="font-medium">{dir.nameChinese}</span>
-                    <span className="text-muted-foreground">{dir.nameEnglish}</span>
-                    <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">
-                      {dir.identity === 'natural' ? '自然人' : '法人'}
-                    </span>
+                  <div key={i} className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-muted-foreground w-6">{i + 1}.</span>
+                      <span className="font-medium">{dir.nameEnglish || dir.nameChinese}</span>
+                      {dir.nameEnglish && dir.nameChinese && <span className="text-muted-foreground">{dir.nameChinese}</span>}
+                      <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">
+                        {dir.identity === 'natural' ? '自然人' : '法人'}
+                      </span>
+                    </div>
+                    <div className="ml-8 text-xs text-muted-foreground space-y-0.5">
+                      {dir.idNumber && <div>證件號碼：{dir.idNumber}</div>}
+                      {dir.address && <div>地址：{dir.address}</div>}
+                      {dir.dateAppointed && <div>委任日期：{dir.dateAppointed}</div>}
+                      {dir.identity === 'corporate' && dir.placeIncorporated && <div>成立地點：{dir.placeIncorporated}</div>}
+                      {dir.identity === 'corporate' && dir.companyNumberRef && <div>公司編號：{dir.companyNumberRef}</div>}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -178,15 +203,47 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
           {company.secretaries.length > 0 && (
             <div className="space-y-2">
               <h4 className="font-medium text-sm">秘書資料</h4>
-              <div className="bg-muted/30 rounded-lg p-3 space-y-2 text-sm">
+              <div className="bg-muted/30 rounded-lg p-3 space-y-3 text-sm">
                 {company.secretaries.map((sec, i) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <span className="text-muted-foreground w-6">{i + 1}.</span>
-                    <span className="font-medium">{sec.nameChinese}</span>
-                    <span className="text-muted-foreground">{sec.nameEnglish}</span>
-                    <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">
-                      {sec.identity === 'natural' ? '自然人' : '法人'}
-                    </span>
+                  <div key={i} className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-muted-foreground w-6">{i + 1}.</span>
+                      <span className="font-medium">{sec.nameEnglish || sec.nameChinese}</span>
+                      {sec.nameEnglish && sec.nameChinese && <span className="text-muted-foreground">{sec.nameChinese}</span>}
+                      <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">
+                        {sec.identity === 'natural' ? '自然人' : '法人'}
+                      </span>
+                    </div>
+                    <div className="ml-8 text-xs text-muted-foreground space-y-0.5">
+                      {sec.idNumber && <div>證件號碼：{sec.idNumber}</div>}
+                      {sec.address && <div>地址：{sec.address}</div>}
+                      {sec.identity === 'corporate' && sec.companyNumberRef && <div>公司編號：{sec.companyNumberRef}</div>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Shareholders Preview */}
+          {company.shareholders.length > 0 && (
+            <div className="space-y-2">
+              <h4 className="font-medium text-sm">股東資料</h4>
+              <div className="bg-muted/30 rounded-lg p-3 space-y-3 text-sm">
+                {company.shareholders.map((sh, i) => (
+                  <div key={i} className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-muted-foreground w-6">{i + 1}.</span>
+                      <span className="font-medium">{sh.nameEnglish || sh.nameChinese || sh.name}</span>
+                      <span className="text-xs bg-secondary text-secondary-foreground px-2 py-0.5 rounded-full">
+                        {sh.shares.toLocaleString()} 股
+                      </span>
+                    </div>
+                    <div className="ml-8 text-xs text-muted-foreground space-y-0.5">
+                      {sh.address && <div>地址：{sh.address}</div>}
+                      {sh.shareType && <div>股份類別：{sh.shareType}</div>}
+                      {sh.idNumber && <div>證件號碼：{sh.idNumber}</div>}
+                    </div>
                   </div>
                 ))}
               </div>

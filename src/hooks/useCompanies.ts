@@ -23,6 +23,11 @@ interface DbOfficer {
   identity: string;
   role: string;
   id_number: string;
+  address: string;
+  date_appointed: string;
+  date_ceased: string;
+  place_incorporated: string;
+  company_number_ref: string;
 }
 
 interface DbShareholder {
@@ -36,6 +41,7 @@ interface DbShareholder {
   id_number: string;
   address: string;
   email: string;
+  share_type: string;
 }
 
 function mapToCompany(
@@ -52,6 +58,12 @@ function mapToCompany(
       email: '',
       identity: o.identity as 'natural' | 'corporate',
       role: 'director' as const,
+      address: o.address || '',
+      idNumber: o.id_number || '',
+      dateAppointed: o.date_appointed || '',
+      dateCeased: o.date_ceased || '',
+      placeIncorporated: o.place_incorporated || '',
+      companyNumberRef: o.company_number_ref || '',
       companies: [],
       createdAt: '',
       updatedAt: '',
@@ -66,6 +78,12 @@ function mapToCompany(
       email: '',
       identity: o.identity as 'natural' | 'corporate',
       role: 'secretary' as const,
+      address: o.address || '',
+      idNumber: o.id_number || '',
+      dateAppointed: o.date_appointed || '',
+      dateCeased: o.date_ceased || '',
+      placeIncorporated: o.place_incorporated || '',
+      companyNumberRef: o.company_number_ref || '',
       companies: [],
       createdAt: '',
       updatedAt: '',
@@ -81,6 +99,7 @@ function mapToCompany(
     idNumber: s.id_number || '',
     address: s.address || '',
     email: s.email || '',
+    shareType: s.share_type || '',
   }));
 
   return {

@@ -20,6 +20,12 @@ export interface Person {
   identity: 'natural' | 'corporate';
   role: 'director' | 'secretary' | 'shareholder';
   brNumber?: string;
+  address?: string;
+  idNumber?: string;
+  dateAppointed?: string;
+  dateCeased?: string;
+  placeIncorporated?: string;
+  companyNumberRef?: string;
   companies: { id: string; name: string; brNumber: string }[];
   createdAt: string;
   updatedAt: string;
@@ -35,6 +41,7 @@ export interface Shareholder {
   idNumber: string;
   address: string;
   email: string;
+  shareType?: string;
 }
 
 export interface Form {

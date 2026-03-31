@@ -100,6 +100,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
     setSelectedSh(null);
     setEditingShDetail(false);
     setSelectedPerson({ ...p, roleLabel });
+    setEditingPerson(true);
   };
 
   const selectShareholder = (sh: Shareholder) => {

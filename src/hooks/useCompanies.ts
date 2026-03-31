@@ -23,6 +23,11 @@ interface DbOfficer {
   identity: string;
   role: string;
   id_number: string;
+  address: string;
+  date_appointed: string;
+  date_ceased: string;
+  place_incorporated: string;
+  company_number_ref: string;
 }
 
 interface DbShareholder {

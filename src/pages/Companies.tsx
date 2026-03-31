@@ -141,7 +141,7 @@ const Companies = () => {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filteredCompanies.map((company) => (
+            {paginatedCompanies.map((company) => (
               <TableRow key={company.id} className="hover:bg-muted/30 cursor-pointer"
                 onClick={() => { setCompanyForDetail(company); setDetailDialogOpen(true); }}>
                 <TableCell className="font-medium max-w-[200px]">
@@ -211,11 +211,50 @@ const Companies = () => {
         </Table>
 
         <div className="flex items-center justify-between px-4 py-3 border-t border-border">
-          <div className="text-sm text-muted-foreground">共 {companies.length} 間公司</div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-muted-foreground">每頁顯示</span>
+            <Select value={String(pageSize)} onValueChange={(v) => { setPageSize(Number(v)); setCurrentPage(1); }}>
+              <SelectTrigger className="w-[80px] h-8">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="20">20</SelectItem>
+                <SelectItem value="50">50</SelectItem>
+                <SelectItem value="100">100</SelectItem>
+                <SelectItem value="200">200</SelectItem>
+              </SelectContent>
+            </Select>
             <span className="text-sm text-muted-foreground">
-              顯示 1 到 {filteredCompanies.length} 筆，共 {filteredCompanies.length} 筆資料
+              顯示第 {(safeCurrentPage - 1) * pageSize + 1} - {Math.min(safeCurrentPage * pageSize, filteredCompanies.length)} 筆，共 {filteredCompanies.length} 筆
             </span>
+          </div>
+          <div className="flex items-center gap-1">
+            <Button variant="outline" size="sm" className="h-8 px-2" disabled={safeCurrentPage <= 1}
+              onClick={() => setCurrentPage(p => p - 1)}>
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+              let page: number;
+              if (totalPages <= 5) {
+                page = i + 1;
+              } else if (safeCurrentPage <= 3) {
+                page = i + 1;
+              } else if (safeCurrentPage >= totalPages - 2) {
+                page = totalPages - 4 + i;
+              } else {
+                page = safeCurrentPage - 2 + i;
+              }
+              return (
+                <Button key={page} variant={page === safeCurrentPage ? "default" : "outline"} size="sm"
+                  className="h-8 w-8 px-0" onClick={() => setCurrentPage(page)}>
+                  {page}
+                </Button>
+              );
+            })}
+            <Button variant="outline" size="sm" className="h-8 px-2" disabled={safeCurrentPage >= totalPages}
+              onClick={() => setCurrentPage(p => p + 1)}>
+              <ChevronRight className="h-4 w-4" />
+            </Button>
           </div>
         </div>
       </div>

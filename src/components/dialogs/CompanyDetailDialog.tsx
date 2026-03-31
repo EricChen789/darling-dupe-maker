@@ -71,11 +71,17 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
     }
   }, [company]);
 
+  const emptyOfficerForm = { nameEnglish: '', nameChinese: '', identity: 'natural', idNumber: '', address: '', dateAppointed: '', dateCeased: '', placeIncorporated: '', companyNumberRef: '' };
+  const emptyShForm = { name: '', nameEnglish: '', nameChinese: '', shares: 0, identity: 'natural', idNumber: '', address: '', email: '', shareType: '' };
+
   useEffect(() => {
     if (selectedPerson) {
       setPersonForm({
         nameEnglish: selectedPerson.nameEnglish, nameChinese: selectedPerson.nameChinese,
-        identity: selectedPerson.identity, idNumber: '',
+        identity: selectedPerson.identity, idNumber: selectedPerson.idNumber || '',
+        address: selectedPerson.address || '', dateAppointed: selectedPerson.dateAppointed || '',
+        dateCeased: selectedPerson.dateCeased || '', placeIncorporated: selectedPerson.placeIncorporated || '',
+        companyNumberRef: selectedPerson.companyNumberRef || '',
       });
     }
   }, [selectedPerson]);

@@ -89,10 +89,7 @@ export default function NR1GeneratorForm({ onBack }: NR1GeneratorFormProps) {
       for (let i = 0; i < byteChars.length; i++) byteArray[i] = byteChars.charCodeAt(i);
       const blob = new Blob([byteArray], { type: 'application/pdf' });
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `NR1_${formData.brNumber}_${formData.companyName.replace(/\s+/g, '_')}.pdf`;
-      a.click();
+      window.open(url, '_blank');
       URL.revokeObjectURL(url);
       toast({ title: '生成成功', description: 'NR1 表格已下載' });
     } catch (err: any) {

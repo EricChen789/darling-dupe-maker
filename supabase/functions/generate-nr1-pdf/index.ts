@@ -133,6 +133,7 @@ serve(async (req) => {
           } catch (e) {
             console.warn(`Field ${fieldName} not found or error:`, e);
           }
+        }
       }
 
       // Handle region dropdown

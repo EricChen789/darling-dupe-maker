@@ -61,13 +61,6 @@ interface CompanyData {
 }
 
 const TEMPLATE_URL = "https://uqcsgmmsrgtlcqutaomg.supabase.co/storage/v1/object/public/pdf-templates/NAR1-template-v2.pdf";
-const CHINESE_FONT_URL = "https://fonts.gstatic.com/ea/notosanstc/v1/NotoSansTC-Regular.otf";
-
-async function loadChineseFont(): Promise<ArrayBuffer> {
-  console.log("Loading Chinese font...");
-  const response = await fetch(CHINESE_FONT_URL, { headers: { 'Accept': '*/*' } });
-  if (!response.ok) throw new Error(`Failed to load font: ${response.status}`);
-  return await response.arrayBuffer();
 }
 
 async function loadPdfTemplate(): Promise<ArrayBuffer> {

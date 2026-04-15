@@ -2,6 +2,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { Building2, Users, FileText, Receipt, ClipboardList, Settings, LogOut, Table, PanelLeftClose, PanelLeft } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { useAuth } from '@/hooks/useAuth';
 
 interface SidebarProps {
   collapsed: boolean;
@@ -19,11 +20,11 @@ const navItems = [
 
 const bottomNavItems = [
   { path: '/settings', label: '設定', icon: Settings },
-  { path: '/logout', label: '登出', icon: LogOut },
 ];
 
 const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {
   const location = useLocation();
+  const { signOut } = useAuth();
 
   return (
     <TooltipProvider delayDuration={0}>
@@ -129,6 +130,30 @@ const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {
                 </li>
               );
             })}
+            {/* Logout button */}
+            <li>
+              {collapsed ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      onClick={signOut}
+                      className="flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors text-sidebar-foreground hover:bg-muted w-full justify-center"
+                    >
+                      <LogOut className="h-4 w-4 shrink-0" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="right">登出</TooltipContent>
+                </Tooltip>
+              ) : (
+                <button
+                  onClick={signOut}
+                  className="flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors text-sidebar-foreground hover:bg-muted w-full"
+                >
+                  <LogOut className="h-4 w-4 shrink-0" />
+                  <span>登出</span>
+                </button>
+              )}
+            </li>
           </ul>
         </div>
       </aside>

@@ -131,7 +131,7 @@ serve(async (req) => {
       }
     }
 
-    form.flatten();
+    // Do NOT flatten — let PDF viewer render CJK text with system fonts
     const pdfBytes = await pdfDoc.save();
     const base64 = uint8ToBase64(new Uint8Array(pdfBytes));
 

@@ -1,5 +1,14 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { PDFDocument } from "https://esm.sh/pdf-lib@1.17.1";
+import fontkit from "https://esm.sh/@pdf-lib/fontkit@1.1.1";
+
+const CHINESE_FONT_URL = "https://fonts.gstatic.com/ea/notosanstc/v1/NotoSansTC-Regular.otf";
+
+async function loadChineseFont(): Promise<ArrayBuffer> {
+  const response = await fetch(CHINESE_FONT_URL);
+  if (!response.ok) throw new Error(`Failed to load font: ${response.status}`);
+  return response.arrayBuffer();
+}
 
 function uint8ToBase64(bytes: Uint8Array): string {
   let binary = "";

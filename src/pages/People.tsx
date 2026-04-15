@@ -1,4 +1,10 @@
 import { useState } from 'react';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import { ChevronDown } from 'lucide-react';
 import { PageHeader } from '@/components/ui/page-header';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Button } from '@/components/ui/button';
@@ -227,17 +233,32 @@ const People = () => {
                     {person.brNumber || <span className="text-muted-foreground">-</span>}
                   </TableCell>
                   <TableCell className="max-w-[300px]">
-                    <div className="text-xs space-y-0.5">
-                      {person.companies.length > 0 ? (
-                        person.companies.map((c, i) => (
-                          <div key={i} className="truncate">
-                            {c.name} ({c.brNumber})
+                    {person.companies.length > 0 ? (
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button variant="ghost" size="sm" className="h-auto py-1 px-2 text-xs font-normal">
+                            <span className="truncate max-w-[200px]">{person.companies[0].name}</span>
+                            {person.companies.length > 1 && (
+                              <span className="ml-1 text-muted-foreground">+{person.companies.length - 1}</span>
+                            )}
+                            <ChevronDown className="h-3 w-3 ml-1 text-muted-foreground" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-80 p-2" align="start">
+                          <div className="text-xs font-medium text-muted-foreground mb-2">關聯公司 ({person.companies.length})</div>
+                          <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                            {person.companies.map((c, i) => (
+                              <div key={i} className="rounded-md border border-border p-2 text-xs">
+                                <div className="font-medium">{c.name}</div>
+                                {c.brNumber && <div className="text-muted-foreground">BR: {c.brNumber}</div>}
+                              </div>
+                            ))}
                           </div>
-                        ))
-                      ) : (
-                        <span className="text-muted-foreground">-</span>
-                      )}
-                    </div>
+                        </PopoverContent>
+                      </Popover>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">-</span>
+                    )}
                   </TableCell>
                   <TableCell className="text-sm">{person.createdAt}</TableCell>
                   <TableCell>

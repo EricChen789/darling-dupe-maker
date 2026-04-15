@@ -90,7 +90,7 @@ serve(async (req) => {
         } catch {}
       }
     } else {
-      // Field mapping based on NR1 specimen
+      // Field mapping based on NR1 template
       const fieldMap: Record<string, string> = {
         "fill_1_P.1": data.brNumber,
         "fill_2_P.1": data.companyName,
@@ -99,30 +99,30 @@ serve(async (req) => {
         "fill_4_P.1": data.building,
         "fill_5_P.1": data.street,
         "fill_6_P.1": data.district,
-        "fill_7_P.1": data.region,
+        // Region is Dropdown1_P.1 (handled separately)
         // Address effective date
-        "fill_8_P.1": data.addressEffectiveDay,
-        "fill_9_P.1": data.addressEffectiveMonth,
-        "fill_10_P.1": data.addressEffectiveYear,
+        "fill_7_P.1": data.addressEffectiveDay,
+        "fill_8_P.1": data.addressEffectiveMonth,
+        "fill_9_P.1": data.addressEffectiveYear,
         // Email
-        "fill_11_P.1": data.email,
-        "fill_12_P.1": data.emailEffectiveDay,
-        "fill_13_P.1": data.emailEffectiveMonth,
-        "fill_14_P.1": data.emailEffectiveYear,
+        "fill_10_P.1": data.email,
+        "fill_11_P.1": data.emailEffectiveDay,
+        "fill_12_P.1": data.emailEffectiveMonth,
+        "fill_13_P.1": data.emailEffectiveYear,
         // Phone
-        "fill_15_P.1": data.phone,
-        "fill_16_P.1": data.phoneEffectiveDay,
-        "fill_17_P.1": data.phoneEffectiveMonth,
-        "fill_18_P.1": data.phoneEffectiveYear,
+        "fill_14_P.1": data.phone,
+        "fill_15_P.1": data.phoneEffectiveDay,
+        "fill_16_P.1": data.phoneEffectiveMonth,
+        "fill_17_P.1": data.phoneEffectiveYear,
         // Signer
-        "fill_19_P.1": data.signerName,
-        "fill_20_P.1": data.signDateDay,
-        "fill_21_P.1": data.signDateMonth,
-        "fill_22_P.1": data.signDateYear,
+        "fill_18_P.1": data.signerName,
+        "fill_19_P.1": data.signDateDay,
+        "fill_20_P.1": data.signDateMonth,
+        "fill_21_P.1": data.signDateYear,
         // Presentor
-        "fill_23_P.1": data.presentorName,
-        "fill_24_P.1": data.presentorAddress,
-        "fill_25_P.1": data.presentorContact,
+        "fill_22_P.1": data.presentorName,
+        "fill_23_P.1": data.presentorAddress,
+        "fill_24_P.1": data.presentorContact,
       };
 
       for (const [fieldName, value] of Object.entries(fieldMap)) {

@@ -18,16 +18,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Search, RefreshCw, Plus, Edit, Trash2, X } from 'lucide-react';
-import { mockPeople as initialPeople } from '@/data/mockData';
+import { Search, RefreshCw, Plus, Edit, Trash2, X, Loader2 } from 'lucide-react';
 import { Person } from '@/types';
 import { PersonDialog } from '@/components/dialogs/PersonDialogs';
 import { DeleteConfirmDialog } from '@/components/dialogs/CompanyDialogs';
 import ND2BGeneratorForm from '@/components/forms/ND2BGeneratorForm';
 import { toast } from '@/hooks/use-toast';
+import { useOfficers } from '@/hooks/useOfficers';
 
 const People = () => {
-  const [people, setPeople] = useState<Person[]>(initialPeople);
+  const { officers, isLoading, refetch, deleteOfficer, upsertOfficer } = useOfficers();
   const [searchTerm, setSearchTerm] = useState('');
   
   // Dialog states
@@ -40,7 +40,7 @@ const People = () => {
   const [nd2bPerson, setNd2bPerson] = useState<Person | null>(null);
   const [nd2bNewAddress, setNd2bNewAddress] = useState('');
   
-  const filteredPeople = people.filter(person =>
+  const filteredPeople = officers.filter(person =>
     person.nameChinese.toLowerCase().includes(searchTerm.toLowerCase()) ||
     person.nameEnglish.toLowerCase().includes(searchTerm.toLowerCase()) ||
     person.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -61,7 +61,7 @@ const People = () => {
   };
 
   const handleRefresh = () => {
-    setPeople([...initialPeople]);
+    refetch();
     setSearchTerm('');
     toast({ title: '已重新整理', description: '人員列表已更新' });
   };
@@ -81,29 +81,15 @@ const People = () => {
     setDeleteDialogOpen(true);
   };
 
-  const handleSavePerson = (personData: Partial<Person>) => {
-    const now = new Date().toLocaleDateString('zh-TW').replace(/\//g, '/');
-    if (selectedPerson) {
-      setPeople(people.map(p =>
-        p.id === selectedPerson.id
-          ? { ...p, ...personData, updatedAt: now }
-          : p
-      ));
-    } else {
-      const newPerson: Person = {
-        id: `p${Date.now()}`,
-        nameChinese: personData.nameChinese || '',
-        nameEnglish: personData.nameEnglish || '',
-        email: personData.email || '',
-        identity: personData.identity || 'natural',
-        role: personData.role || 'director',
-        brNumber: personData.brNumber,
-        address: personData.address,
-        companies: [],
-        createdAt: now,
-        updatedAt: now,
-      };
-      setPeople([...people, newPerson]);
+  const handleSavePerson = async (personData: Partial<Person>) => {
+    try {
+      await upsertOfficer({ personData, existingPerson: selectedPerson });
+      toast({
+        title: selectedPerson ? '人員已更新' : '人員已新增',
+        description: `${personData.nameChinese || personData.nameEnglish} 已成功${selectedPerson ? '更新' : '新增'}`,
+      });
+    } catch (err) {
+      // Error toast already shown in hook for new person case
     }
   };
 
@@ -112,13 +98,17 @@ const People = () => {
     setNd2bNewAddress(newAddress);
   };
 
-  const handleConfirmDelete = () => {
+  const handleConfirmDelete = async () => {
     if (personToDelete) {
-      setPeople(prev => prev.filter(p => p.id !== personToDelete.id));
-      toast({
-        title: '人員已刪除',
-        description: `${personToDelete.nameChinese || personToDelete.nameEnglish} 已成功刪除`,
-      });
+      try {
+        await deleteOfficer(personToDelete.id);
+        toast({
+          title: '人員已刪除',
+          description: `${personToDelete.nameChinese || personToDelete.nameEnglish} 已成功刪除`,
+        });
+      } catch (err) {
+        toast({ title: '刪除失敗', description: '無法刪除人員，請稍後再試', variant: 'destructive' });
+      }
       setDeleteDialogOpen(false);
       setPersonToDelete(null);
     }
@@ -192,82 +182,85 @@ const People = () => {
 
       {/* Table */}
       <div className="bg-card border border-border rounded-lg overflow-hidden">
-        <Table>
-          <TableHeader>
-            <TableRow className="bg-muted/50">
-              <TableHead className="font-medium">姓名</TableHead>
-              <TableHead className="font-medium">電郵</TableHead>
-              <TableHead className="font-medium">身分</TableHead>
-              <TableHead className="font-medium">類型</TableHead>
-              <TableHead className="font-medium">住址</TableHead>
-              <TableHead className="font-medium">商業登記號碼</TableHead>
-              <TableHead className="font-medium">關聯公司</TableHead>
-              <TableHead className="font-medium">建立日期</TableHead>
-              <TableHead className="font-medium">更新日期</TableHead>
-              <TableHead className="font-medium">操作</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filteredPeople.map((person) => (
-              <TableRow key={person.id} className="hover:bg-muted/30">
-                <TableCell className="font-medium">
-                  <div>
-                    <div>{person.nameChinese}</div>
-                    <div className="text-xs text-muted-foreground">({person.nameEnglish})</div>
-                  </div>
-                </TableCell>
-                <TableCell className="text-sm">{person.email}</TableCell>
-                <TableCell>
-                  <StatusBadge variant={person.identity}>
-                    {getIdentityLabel(person.identity)}
-                  </StatusBadge>
-                </TableCell>
-                <TableCell>
-                  <StatusBadge variant={person.role}>
-                    {getRoleLabel(person.role)}
-                  </StatusBadge>
-                </TableCell>
-                <TableCell className="text-sm max-w-[200px] truncate">
-                  {person.address || <span className="text-muted-foreground">-</span>}
-                </TableCell>
-                <TableCell className="text-sm">
-                  {person.brNumber || <span className="text-muted-foreground">-</span>}
-                </TableCell>
-                <TableCell className="max-w-[300px]">
-                  <div className="text-xs space-y-0.5">
-                    {person.companies.length > 0 ? (
-                      person.companies.map((c, i) => (
-                        <div key={i} className="truncate">
-                          {c.name} ({c.brNumber})
-                        </div>
-                      ))
-                    ) : (
-                      <span className="text-muted-foreground">-</span>
-                    )}
-                  </div>
-                </TableCell>
-                <TableCell className="text-sm">{person.createdAt}</TableCell>
-                <TableCell className="text-sm">{person.updatedAt}</TableCell>
-                <TableCell>
-                  <div className="flex items-center gap-1">
-                    <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => handleEditPerson(person)}>
-                      <Edit className="h-4 w-4" />
-                      <span className="ml-1">編輯</span>
-                    </Button>
-                    <Button variant="ghost" size="sm" className="h-8 px-2 text-destructive hover:text-destructive" onClick={() => handleDeleteClick(person)}>
-                      <Trash2 className="h-4 w-4" />
-                      <span className="ml-1">刪除</span>
-                    </Button>
-                  </div>
-                </TableCell>
+        {isLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            <span className="ml-2 text-muted-foreground">載入中...</span>
+          </div>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-muted/50">
+                <TableHead className="font-medium">姓名</TableHead>
+                <TableHead className="font-medium">身分</TableHead>
+                <TableHead className="font-medium">類型</TableHead>
+                <TableHead className="font-medium">住址</TableHead>
+                <TableHead className="font-medium">商業登記號碼</TableHead>
+                <TableHead className="font-medium">關聯公司</TableHead>
+                <TableHead className="font-medium">建立日期</TableHead>
+                <TableHead className="font-medium">操作</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {filteredPeople.map((person) => (
+                <TableRow key={person.id} className="hover:bg-muted/30">
+                  <TableCell className="font-medium">
+                    <div>
+                      <div>{person.nameChinese}</div>
+                      <div className="text-xs text-muted-foreground">({person.nameEnglish})</div>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <StatusBadge variant={person.identity}>
+                      {getIdentityLabel(person.identity)}
+                    </StatusBadge>
+                  </TableCell>
+                  <TableCell>
+                    <StatusBadge variant={person.role}>
+                      {getRoleLabel(person.role)}
+                    </StatusBadge>
+                  </TableCell>
+                  <TableCell className="text-sm max-w-[200px] truncate">
+                    {person.address || <span className="text-muted-foreground">-</span>}
+                  </TableCell>
+                  <TableCell className="text-sm">
+                    {person.brNumber || <span className="text-muted-foreground">-</span>}
+                  </TableCell>
+                  <TableCell className="max-w-[300px]">
+                    <div className="text-xs space-y-0.5">
+                      {person.companies.length > 0 ? (
+                        person.companies.map((c, i) => (
+                          <div key={i} className="truncate">
+                            {c.name} ({c.brNumber})
+                          </div>
+                        ))
+                      ) : (
+                        <span className="text-muted-foreground">-</span>
+                      )}
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-sm">{person.createdAt}</TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-1">
+                      <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => handleEditPerson(person)}>
+                        <Edit className="h-4 w-4" />
+                        <span className="ml-1">編輯</span>
+                      </Button>
+                      <Button variant="ghost" size="sm" className="h-8 px-2 text-destructive hover:text-destructive" onClick={() => handleDeleteClick(person)}>
+                        <Trash2 className="h-4 w-4" />
+                        <span className="ml-1">刪除</span>
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
 
         {/* Pagination */}
         <div className="flex items-center justify-between px-4 py-3 border-t border-border">
-          <div className="text-sm text-muted-foreground">共 {people.length} 位人員</div>
+          <div className="text-sm text-muted-foreground">共 {officers.length} 位人員</div>
           <div className="flex items-center gap-2">
             <span className="text-sm text-muted-foreground">每頁:</span>
             <Select defaultValue="20">

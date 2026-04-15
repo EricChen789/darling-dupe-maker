@@ -77,6 +77,8 @@ serve(async (req) => {
       // Debug mode: fill all text fields with their names
       for (const field of fields) {
         const name = field.getName();
+        const type = field.constructor.name;
+        console.log(`Field: ${name} (${type})`);
         try {
           if (name.startsWith("fill_")) {
             const tf = form.getTextField(name);

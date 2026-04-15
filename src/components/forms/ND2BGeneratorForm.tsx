@@ -91,7 +91,7 @@ export default function ND2BGeneratorForm({ onBack, prefillPerson, prefillNewAdd
       const blob = new Blob([byteArray], { type: 'application/pdf' });
       const url = URL.createObjectURL(blob);
       window.open(url, '_blank');
-      URL.revokeObjectURL(url);
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
       toast({ title: '生成成功', description: 'ND2B 表格已開啟' });
     } catch (err: any) {
       toast({ title: '生成失敗', description: err.message, variant: 'destructive' });

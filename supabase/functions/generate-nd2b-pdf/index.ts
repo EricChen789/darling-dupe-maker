@@ -18,7 +18,7 @@ const corsHeaders = {
 };
 
 const ND2B_TEMPLATE_URL = "https://uqcsgmmsrgtlcqutaomg.supabase.co/storage/v1/object/public/pdf-templates/ND2B-template.pdf";
-const CHINESE_FONT_URL = "https://fonts.gstatic.com/ea/notosanstc/v1/NotoSansTC-Regular.otf";
+const CHINESE_FONT_URL = "https://cdn.jsdelivr.net/gh/notofonts/noto-cjk@main/Sans/OTF/TraditionalChinese/NotoSansCJKtc-Regular.otf";
 
 interface ND2BData {
   brNumber: string;

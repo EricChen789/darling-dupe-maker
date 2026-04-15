@@ -75,10 +75,6 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave, onGenerateND2
       toast({ title: '錯誤', description: '請填寫姓名', variant: 'destructive' });
       return;
     }
-    if (!formData.email) {
-      toast({ title: '錯誤', description: '請填寫電郵地址', variant: 'destructive' });
-      return;
-    }
     onSave(formData);
     onOpenChange(false);
     toast({
@@ -91,10 +87,6 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave, onGenerateND2
     e.preventDefault();
     if (!formData.nameChinese && !formData.nameEnglish) {
       toast({ title: '錯誤', description: '請填寫姓名', variant: 'destructive' });
-      return;
-    }
-    if (!formData.email) {
-      toast({ title: '錯誤', description: '請填寫電郵地址', variant: 'destructive' });
       return;
     }
     onSave(formData);
@@ -134,9 +126,7 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave, onGenerateND2
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="email">
-                電郵地址 <span className="text-destructive">*</span>
-              </Label>
+              <Label htmlFor="email">電郵地址</Label>
               <Input
                 id="email"
                 type="email"

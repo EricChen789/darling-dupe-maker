@@ -24,6 +24,7 @@ const bottomNavItems = [
 
 const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {
   const location = useLocation();
+  const { signOut } = useAuth();
 
   return (
     <TooltipProvider delayDuration={0}>

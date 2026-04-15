@@ -1,6 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { PDFDocument } from "https://esm.sh/pdf-lib@1.17.1";
-import fontkit from "https://esm.sh/@pdf-lib/fontkit@1.1.1";
 
 function uint8ToBase64(bytes: Uint8Array): string {
   let binary = "";
@@ -18,23 +17,19 @@ const corsHeaders = {
 };
 
 const ND2B_TEMPLATE_URL = "https://uqcsgmmsrgtlcqutaomg.supabase.co/storage/v1/object/public/pdf-templates/ND2B-template.pdf";
-const CHINESE_FONT_URL = "https://cdn.jsdelivr.net/gh/notofonts/noto-cjk@main/Sans/OTF/TraditionalChinese/NotoSansCJKtc-Regular.otf";
 
 interface ND2BData {
   brNumber: string;
   companyName: string;
-  // Officer whose details changed
   role: 'secretary' | 'director';
   identity: 'natural' | 'corporate';
   nameEnglish: string;
   nameChinese: string;
   idNumber: string;
-  // Change details
   changeType: 'address' | 'name' | 'other';
   previousAddress: string;
   newAddress: string;
   effectiveDate: string;
-  // Signature
   signerName: string;
   signDate: string;
   presentorName: string;
@@ -52,27 +47,11 @@ serve(async (req) => {
     const data: ND2BData = await req.json();
     console.log("Generating ND2B PDF for:", data.companyName);
 
-    const [templateResponse, fontResponse] = await Promise.all([
-      fetch(ND2B_TEMPLATE_URL),
-      fetch(CHINESE_FONT_URL, { headers: { Accept: "*/*" } }),
-    ]);
-
+    const templateResponse = await fetch(ND2B_TEMPLATE_URL);
     if (!templateResponse.ok) throw new Error("Failed to load ND2B template");
-    if (!fontResponse.ok) throw new Error("Failed to load Chinese font");
 
-    const [templateBytes, fontBytes] = await Promise.all([
-      templateResponse.arrayBuffer(),
-      fontResponse.arrayBuffer(),
-    ]);
-
+    const templateBytes = await templateResponse.arrayBuffer();
     const pdfDoc = await PDFDocument.load(templateBytes);
-    pdfDoc.registerFontkit(fontkit);
-
-    let customFont;
-    if (!data.debug) {
-      customFont = await pdfDoc.embedFont(fontBytes);
-    }
-
     const form = pdfDoc.getForm();
 
     if (data.debug) {
@@ -90,35 +69,16 @@ serve(async (req) => {
     } else {
       // Page 1: Company info
       try { form.getTextField("fill_1_P.1").setText(data.brNumber); } catch {}
-      try {
-        const tf = form.getTextField("fill_2_P.1");
-        tf.setText(data.companyName);
-        if (customFont) tf.updateAppearances(customFont);
-      } catch {}
+      try { form.getTextField("fill_2_P.1").setText(data.companyName); } catch {}
 
-      // Officer info - Page 2 (natural person) or Page 3 (corporate)
+      // Officer info - Page 2 (natural person)
       if (data.identity === 'natural') {
         const p = ".2";
-        try {
-          const f = form.getTextField(`fill_3_P${p}`);
-          f.setText(data.nameEnglish);
-          if (customFont) f.updateAppearances(customFont);
-        } catch {}
-        try {
-          const f = form.getTextField(`fill_4_P${p}`);
-          f.setText(data.nameChinese);
-          if (customFont) f.updateAppearances(customFont);
-        } catch {}
+        try { form.getTextField(`fill_3_P${p}`).setText(data.nameEnglish); } catch {}
+        try { form.getTextField(`fill_4_P${p}`).setText(data.nameChinese); } catch {}
         try { form.getTextField(`fill_7_P${p}`).setText(data.idNumber); } catch {}
-        
-        // New address
-        try {
-          const f = form.getTextField(`fill_8_P${p}`);
-          f.setText(data.newAddress);
-          if (customFont) f.updateAppearances(customFont);
-        } catch {}
+        try { form.getTextField(`fill_8_P${p}`).setText(data.newAddress); } catch {}
 
-        // Effective date
         if (data.effectiveDate) {
           const parts = data.effectiveDate.split(/[-/]/);
           if (parts.length >= 3) {
@@ -128,7 +88,6 @@ serve(async (req) => {
           }
         }
 
-        // Role checkbox
         if (data.role === 'secretary') {
           try { form.getCheckBox(`cb_1_P${p}`).check(); } catch {}
         } else {
@@ -137,23 +96,11 @@ serve(async (req) => {
       }
 
       // Signature page
-      try {
-        const sf = form.getTextField("fill_1_P.5");
-        sf.setText(data.signerName);
-        if (customFont) sf.updateAppearances(customFont);
-      } catch {}
+      try { form.getTextField("fill_1_P.5").setText(data.signerName); } catch {}
 
       // Presentor
-      try {
-        const pf = form.getTextField("fill_1_P.6");
-        pf.setText(data.presentorName);
-        if (customFont) pf.updateAppearances(customFont);
-      } catch {}
-      try {
-        const af = form.getTextField("fill_2_P.6");
-        af.setText(data.presentorAddress);
-        if (customFont) af.updateAppearances(customFont);
-      } catch {}
+      try { form.getTextField("fill_1_P.6").setText(data.presentorName); } catch {}
+      try { form.getTextField("fill_2_P.6").setText(data.presentorAddress); } catch {}
     }
 
     form.flatten();

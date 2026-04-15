@@ -171,6 +171,10 @@ export const mockPeople: Person[] = [
 
 export const mockForms: Form[] = [
   { id: 'nar1', name: 'NAR1', description: '周年申報表', year: 2025, version: 2, isHelper: true },
+  { id: 'nr1', name: 'NR1', description: '註冊辦事處地址更改通知書', year: 2025, version: 1, isHelper: true },
+  { id: 'nd2a', name: 'ND2A', description: '出任/停任董事及公司秘書通知書', year: 2025, version: 1, isHelper: true },
+  { id: 'nd2b', name: 'ND2B', description: '更改董事及公司秘書詳情通知書', year: 2025, version: 1, isHelper: true },
+  { id: 'irc3111a', name: 'IRC 3111A', description: '通知更改業務地址（稅務局）', year: 2025, version: 1, isHelper: false },
 ];
 
 export const mockInvoices: Invoice[] = [

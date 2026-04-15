@@ -15,7 +15,13 @@ interface ND2BGeneratorFormProps {
 }
 
 export default function ND2BGeneratorForm({ onBack, prefillPerson, prefillNewAddress }: ND2BGeneratorFormProps) {
-  const { data: companies = [] } = useCompanies();
+  const { data: allCompanies = [] } = useCompanies();
+  
+  // If prefillPerson has associated companies, only show those
+  const companies = prefillPerson?.companies?.length
+    ? allCompanies.filter(c => prefillPerson.companies.some(pc => pc.id === c.id))
+    : allCompanies;
+  
   const [selectedCompanyId, setSelectedCompanyId] = useState('');
   const [generating, setGenerating] = useState(false);
 

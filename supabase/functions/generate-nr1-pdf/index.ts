@@ -129,9 +129,6 @@ serve(async (req) => {
           try {
             const tf = form.getTextField(fieldName);
             tf.setText(value);
-            if (customFont) {
-              tf.updateAppearances(customFont);
-            }
           } catch (e) {
             console.warn(`Field ${fieldName} not found or error:`, e);
           }

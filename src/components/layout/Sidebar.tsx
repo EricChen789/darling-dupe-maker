@@ -130,6 +130,30 @@ const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {
                 </li>
               );
             })}
+            {/* Logout button */}
+            <li>
+              {collapsed ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      onClick={signOut}
+                      className="flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors text-sidebar-foreground hover:bg-muted w-full justify-center"
+                    >
+                      <LogOut className="h-4 w-4 shrink-0" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="right">登出</TooltipContent>
+                </Tooltip>
+              ) : (
+                <button
+                  onClick={signOut}
+                  className="flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors text-sidebar-foreground hover:bg-muted w-full"
+                >
+                  <LogOut className="h-4 w-4 shrink-0" />
+                  <span>登出</span>
+                </button>
+              )}
+            </li>
           </ul>
         </div>
       </aside>

@@ -90,7 +90,12 @@ export default function ND2BGeneratorForm({ onBack, prefillPerson, prefillNewAdd
       for (let i = 0; i < byteChars.length; i++) byteArray[i] = byteChars.charCodeAt(i);
       const blob = new Blob([byteArray], { type: 'application/pdf' });
       const url = URL.createObjectURL(blob);
-      window.open(url, '_blank');
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `ND2B-${formData.companyName || 'form'}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
       setTimeout(() => URL.revokeObjectURL(url), 10000);
       toast({ title: '生成成功', description: 'ND2B 表格已開啟' });
     } catch (err: any) {

@@ -77,7 +77,7 @@ serve(async (req) => {
         try { form.getTextField(`fill_3_P${p}`).setText(data.nameEnglish); } catch {}
         try { form.getTextField(`fill_4_P${p}`).setText(data.nameChinese); } catch {}
         try { form.getTextField(`fill_7_P${p}`).setText(data.idNumber); } catch {}
-        try { form.getTextField(`fill_8_P${p}`).setText(data.newAddress); } catch {}
+        try { form.getTextField(`fill_8_P${p}`).setText(data.previousAddress); } catch {}
 
         if (data.effectiveDate) {
           const parts = data.effectiveDate.split(/[-/]/);

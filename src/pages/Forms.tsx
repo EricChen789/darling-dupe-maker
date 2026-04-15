@@ -6,6 +6,7 @@ import { mockForms } from '@/data/mockData';
 import FormWizard from '@/components/forms/FormWizard';
 import NR1GeneratorForm from '@/components/forms/NR1GeneratorForm';
 import ND2AGeneratorForm from '@/components/forms/ND2AGeneratorForm';
+import ND2BGeneratorForm from '@/components/forms/ND2BGeneratorForm';
 import { toast } from '@/hooks/use-toast';
 
 const Forms = () => {
@@ -24,12 +25,15 @@ const Forms = () => {
   if (selectedForm === 'nd2a') {
     return <ND2AGeneratorForm onBack={() => setSelectedForm(null)} />;
   }
+  if (selectedForm === 'nd2b') {
+    return <ND2BGeneratorForm onBack={() => setSelectedForm(null)} />;
+  }
 
   // Group forms by category
   const crForms = mockForms.filter(f => ['nar1', 'nr1', 'nd2a', 'nd2b'].includes(f.id));
   const irdForms = mockForms.filter(f => ['irc3111a'].includes(f.id));
 
-  const isReady = (id: string) => ['nar1', 'nr1', 'nd2a'].includes(id);
+  const isReady = (id: string) => ['nar1', 'nr1', 'nd2a', 'nd2b'].includes(id);
 
   return (
     <div>

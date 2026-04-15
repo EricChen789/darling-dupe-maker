@@ -86,8 +86,10 @@ serve(async (req) => {
         } else {
           try { form.getCheckBox("cb_2_P.1").check(); } catch {}
         }
-        // Chinese Name
-        try { form.getTextField("fill_3_P.1").setText(data.nameChinese); } catch {}
+        // Chinese Name - skip if contains non-ASCII (no font embedded)
+        if (data.nameChinese && !/[^\x00-\x7F]/.test(data.nameChinese)) {
+          try { form.getTextField("fill_3_P.1").setText(data.nameChinese); } catch {}
+        }
         // English Surname
         try { form.getTextField("fill_4_P.1").setText(surname); } catch {}
         // English Other Names

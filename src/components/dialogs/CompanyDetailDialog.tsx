@@ -18,6 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Company, Person, Shareholder } from '@/types';
 import {
   Building2, Users, UserCheck, Briefcase, ArrowLeft, User,

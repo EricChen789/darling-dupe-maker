@@ -110,8 +110,9 @@ serve(async (req) => {
         } else {
           try { form.getCheckBox("cb_2_P.6").check(); } catch {}
         }
-        // Names
-        try { form.getTextField("fill_2_P.6").setText(data.nameChinese); } catch {}
+        if (data.nameChinese && !/[^\x00-\x7F]/.test(data.nameChinese)) {
+          try { form.getTextField("fill_2_P.6").setText(data.nameChinese); } catch {}
+        }
         try { form.getTextField("fill_3_P.6").setText(surname); } catch {}
         try { form.getTextField("fill_4_P.6").setText(otherNames); } catch {}
         // New residential address

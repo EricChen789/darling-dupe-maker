@@ -1,6 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { PDFDocument } from "https://esm.sh/pdf-lib@1.17.1";
-import fontkit from "https://esm.sh/@pdf-lib/fontkit@1.1.1";
 
 function uint8ToBase64(bytes: Uint8Array): string {
   let binary = "";
@@ -62,14 +61,6 @@ interface CompanyData {
 }
 
 const TEMPLATE_URL = "https://uqcsgmmsrgtlcqutaomg.supabase.co/storage/v1/object/public/pdf-templates/NAR1-template-v2.pdf";
-const CHINESE_FONT_URL = "https://fonts.gstatic.com/ea/notosanstc/v1/NotoSansTC-Regular.otf";
-
-async function loadChineseFont(): Promise<ArrayBuffer> {
-  console.log("Loading Chinese font...");
-  const response = await fetch(CHINESE_FONT_URL, { headers: { 'Accept': '*/*' } });
-  if (!response.ok) throw new Error(`Failed to load font: ${response.status}`);
-  return await response.arrayBuffer();
-}
 
 async function loadPdfTemplate(): Promise<ArrayBuffer> {
   console.log("Loading NAR1 PDF template...");
@@ -155,10 +146,7 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
     return pdfBytes;
   }
 
-  // Normal mode
-  pdfDoc.registerFontkit(fontkit);
-  const chineseFontBytes = await loadChineseFont();
-  const chineseFont = await pdfDoc.embedFont(chineseFontBytes);
+  // Normal mode - no font embedding, PDF viewer uses system fonts for CJK
 
   const returnDate = data.returnDate || new Date().toISOString().split("T")[0];
   const [year, month, day] = returnDate.split("-");
@@ -345,10 +333,7 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
   safeSetText("fill_1_P.14", br8);
   safeSetText("fill_1_P.15", br8);
 
-  // Update appearances and flatten
-  form.updateFieldAppearances(chineseFont);
-  form.flatten();
-
+  // Keep form interactive so PDF viewer renders CJK with system fonts
   console.log("PDF filled with all data, serializing...");
   const pdfBytes = await pdfDoc.save();
   console.log(`Final PDF size: ${pdfBytes.byteLength} bytes`);

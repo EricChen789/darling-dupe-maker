@@ -18,7 +18,7 @@ const corsHeaders = {
 };
 
 const TEMPLATE_URL = "https://uqcsgmmsrgtlcqutaomg.supabase.co/storage/v1/object/public/pdf-templates/NR1-template.pdf";
-const CHINESE_FONT_URL = "https://cdn.jsdelivr.net/fontsource/fonts/noto-sans-tc@latest/chinese-traditional-400-normal.woff2";
+const CHINESE_FONT_URL = "https://cdn.jsdelivr.net/gh/notofonts/noto-cjk/Sans/OTF/TraditionalChinese/NotoSansCJKtc-Regular.otf";
 
 interface NR1Data {
   brNumber: string;

@@ -64,27 +64,12 @@ serve(async (req) => {
     const data: NR1Data = await req.json();
     console.log("Generating NR1 PDF for:", data.companyName);
 
-    // Load template and font in parallel
-    const [templateResponse, fontResponse] = await Promise.all([
-      fetch(TEMPLATE_URL),
-      fetch(CHINESE_FONT_URL, { headers: { Accept: "*/*" } }),
-    ]);
-
+    // Load template
+    const templateResponse = await fetch(TEMPLATE_URL);
     if (!templateResponse.ok) throw new Error("Failed to load NR1 template");
-    if (!fontResponse.ok) throw new Error("Failed to load Chinese font");
-
-    const [templateBytes, fontBytes] = await Promise.all([
-      templateResponse.arrayBuffer(),
-      fontResponse.arrayBuffer(),
-    ]);
+    const templateBytes = await templateResponse.arrayBuffer();
 
     const pdfDoc = await PDFDocument.load(templateBytes);
-    pdfDoc.registerFontkit(fontkit);
-
-    let customFont;
-    if (!data.debug) {
-      customFont = await pdfDoc.embedFont(fontBytes);
-    }
 
     const form = pdfDoc.getForm();
     const fields = form.getFields();

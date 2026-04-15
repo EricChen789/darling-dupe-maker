@@ -67,40 +67,68 @@ serve(async (req) => {
         } catch {}
       }
     } else {
-      // Page 1: Company info
+      // Split English name into surname + other names
+      const nameParts = (data.nameEnglish || '').trim().split(/\s+/);
+      const surname = nameParts.length > 1 ? nameParts[nameParts.length - 1] : nameParts[0] || '';
+      const otherNames = nameParts.length > 1 ? nameParts.slice(0, -1).join(' ') : '';
+
+      // === PAGE 1 (P.1) ===
+      // BR Number
       try { form.getTextField("fill_1_P.1").setText(data.brNumber); } catch {}
+      // Section 1: Company Name
       try { form.getTextField("fill_2_P.1").setText(data.companyName); } catch {}
 
-      // Officer info - Page 2 (natural person)
       if (data.identity === 'natural') {
-        const p = ".2";
-        try { form.getTextField(`fill_3_P${p}`).setText(data.nameEnglish); } catch {}
-        try { form.getTextField(`fill_4_P${p}`).setText(data.nameChinese); } catch {}
-        try { form.getTextField(`fill_7_P${p}`).setText(data.idNumber); } catch {}
-        try { form.getTextField(`fill_8_P${p}`).setText(data.previousAddress); } catch {}
-
-        if (data.effectiveDate) {
-          const parts = data.effectiveDate.split(/[-/]/);
-          if (parts.length >= 3) {
-            try { form.getTextField(`fill_9_P${p}`).setText(parts[2]); } catch {}
-            try { form.getTextField(`fill_10_P${p}`).setText(parts[1]); } catch {}
-            try { form.getTextField(`fill_11_P${p}`).setText(parts[0]); } catch {}
-          }
-        }
-
+        // Section 2A: Currently Registered Particulars (原本資料)
+        // Capacity checkbox
         if (data.role === 'secretary') {
-          try { form.getCheckBox(`cb_1_P${p}`).check(); } catch {}
+          try { form.getCheckBox("cb_1_P.1").check(); } catch {}
         } else {
-          try { form.getCheckBox(`cb_2_P${p}`).check(); } catch {}
+          try { form.getCheckBox("cb_2_P.1").check(); } catch {}
         }
+        // Chinese Name - skip if contains non-ASCII (no font embedded)
+        if (data.nameChinese && !/[^\x00-\x7F]/.test(data.nameChinese)) {
+          try { form.getTextField("fill_3_P.1").setText(data.nameChinese); } catch {}
+        }
+        // English Surname
+        try { form.getTextField("fill_4_P.1").setText(surname); } catch {}
+        // English Other Names
+        try { form.getTextField("fill_5_P.1").setText(otherNames); } catch {}
+        // ID Number (passport partial)
+        try { form.getTextField("fill_7_P.1").setText(data.idNumber); } catch {}
+
+        // === PAGE 2 (P.2) — Section B: Details of Changes ===
+        // For address change, fill correspondence address (e) with new address
+        if (data.changeType === 'address' && data.newAddress) {
+          try { form.getTextField("fill_19_P.2").setText(data.newAddress); } catch {}
+        }
+
+        // === PAGE 6 (P.6) — PI-ND2B: Protected Information ===
+        // Capacity checkbox
+        if (data.role === 'secretary') {
+          try { form.getCheckBox("cb_1_P.6").check(); } catch {}
+        } else {
+          try { form.getCheckBox("cb_2_P.6").check(); } catch {}
+        }
+        if (data.nameChinese && !/[^\x00-\x7F]/.test(data.nameChinese)) {
+          try { form.getTextField("fill_2_P.6").setText(data.nameChinese); } catch {}
+        }
+        try { form.getTextField("fill_3_P.6").setText(surname); } catch {}
+        try { form.getTextField("fill_4_P.6").setText(otherNames); } catch {}
+        // New residential address
+        try { form.getTextField("fill_9_P.6").setText(data.newAddress); } catch {}
       }
 
-      // Signature page
-      try { form.getTextField("fill_1_P.5").setText(data.signerName); } catch {}
+      // === Presentor (bottom of Page 1) ===
+      try { form.getTextField("fill_8_P.1").setText(data.presentorName); } catch {}
+      try { form.getTextField("fill_9_P.1").setText(data.presentorAddress); } catch {}
+      try { form.getTextField("fill_10_P.1").setText(data.presentorContact); } catch {}
 
-      // Presentor
-      try { form.getTextField("fill_1_P.6").setText(data.presentorName); } catch {}
-      try { form.getTextField("fill_2_P.6").setText(data.presentorAddress); } catch {}
+      // === PAGE 3 (P.3) — Signature ===
+      try { form.getTextField("fill_30_P.3").setText(data.signerName); } catch {}
+      if (data.signDate) {
+        try { form.getTextField("fill_31_P.3").setText(data.signDate); } catch {}
+      }
     }
 
     form.flatten();

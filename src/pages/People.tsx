@@ -114,7 +114,7 @@ const People = () => {
 
   const handleConfirmDelete = () => {
     if (personToDelete) {
-      setPeople(people.filter(p => p.id !== personToDelete.id));
+      setPeople(prev => prev.filter(p => p.id !== personToDelete.id));
       toast({
         title: '人員已刪除',
         description: `${personToDelete.nameChinese || personToDelete.nameEnglish} 已成功刪除`,

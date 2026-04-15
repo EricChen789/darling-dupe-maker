@@ -134,6 +134,20 @@ serve(async (req) => {
             console.warn(`Field ${fieldName} not found or error:`, e);
           }
         }
+
+
+      // Handle region dropdown
+      if (data.region) {
+        try {
+          const dropdown = form.getDropdown("Dropdown1_P.1");
+          const options = dropdown.getOptions();
+          console.log("Region dropdown options:", options);
+          // Try to select matching option
+          const match = options.find((o: string) => data.region.includes(o) || o.includes(data.region));
+          if (match) dropdown.select(match);
+        } catch (e) {
+          console.warn("Region dropdown error:", e);
+        }
       }
     }
 

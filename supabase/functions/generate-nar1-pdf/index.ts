@@ -61,7 +61,6 @@ interface CompanyData {
 }
 
 const TEMPLATE_URL = "https://uqcsgmmsrgtlcqutaomg.supabase.co/storage/v1/object/public/pdf-templates/NAR1-template-v2.pdf";
-}
 
 async function loadPdfTemplate(): Promise<ArrayBuffer> {
   console.log("Loading NAR1 PDF template...");

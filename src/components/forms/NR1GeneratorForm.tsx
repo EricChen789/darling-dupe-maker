@@ -89,8 +89,13 @@ export default function NR1GeneratorForm({ onBack }: NR1GeneratorFormProps) {
       for (let i = 0; i < byteChars.length; i++) byteArray[i] = byteChars.charCodeAt(i);
       const blob = new Blob([byteArray], { type: 'application/pdf' });
       const url = URL.createObjectURL(blob);
-      window.open(url, '_blank');
-      URL.revokeObjectURL(url);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `NR1-form.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
       toast({ title: '生成成功', description: 'NR1 表格已下載' });
     } catch (err: any) {
       toast({ title: '生成失敗', description: err.message, variant: 'destructive' });

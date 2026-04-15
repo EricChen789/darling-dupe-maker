@@ -128,7 +128,6 @@ serve(async (req) => {
       }
     }
 
-    form.updateFieldAppearances(chineseFont);
     form.flatten();
     const pdfBytes = await pdfDoc.save();
     const base64 = uint8ToBase64(new Uint8Array(pdfBytes));

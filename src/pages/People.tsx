@@ -23,6 +23,7 @@ import { mockPeople as initialPeople } from '@/data/mockData';
 import { Person } from '@/types';
 import { PersonDialog } from '@/components/dialogs/PersonDialogs';
 import { DeleteConfirmDialog } from '@/components/dialogs/CompanyDialogs';
+import ND2BGeneratorForm from '@/components/forms/ND2BGeneratorForm';
 import { toast } from '@/hooks/use-toast';
 
 const People = () => {
@@ -34,6 +35,10 @@ const People = () => {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedPerson, setSelectedPerson] = useState<Person | null>(null);
   const [personToDelete, setPersonToDelete] = useState<Person | null>(null);
+
+  // ND2B generation state
+  const [nd2bPerson, setNd2bPerson] = useState<Person | null>(null);
+  const [nd2bNewAddress, setNd2bNewAddress] = useState('');
   
   const filteredPeople = people.filter(person =>
     person.nameChinese.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -58,10 +63,7 @@ const People = () => {
   const handleRefresh = () => {
     setPeople([...initialPeople]);
     setSearchTerm('');
-    toast({
-      title: '已重新整理',
-      description: '人員列表已更新',
-    });
+    toast({ title: '已重新整理', description: '人員列表已更新' });
   };
 
   const handleAddPerson = () => {
@@ -82,14 +84,12 @@ const People = () => {
   const handleSavePerson = (personData: Partial<Person>) => {
     const now = new Date().toLocaleDateString('zh-TW').replace(/\//g, '/');
     if (selectedPerson) {
-      // Edit existing
       setPeople(people.map(p =>
         p.id === selectedPerson.id
           ? { ...p, ...personData, updatedAt: now }
           : p
       ));
     } else {
-      // Add new
       const newPerson: Person = {
         id: `p${Date.now()}`,
         nameChinese: personData.nameChinese || '',
@@ -98,12 +98,18 @@ const People = () => {
         identity: personData.identity || 'natural',
         role: personData.role || 'director',
         brNumber: personData.brNumber,
+        address: personData.address,
         companies: [],
         createdAt: now,
         updatedAt: now,
       };
       setPeople([...people, newPerson]);
     }
+  };
+
+  const handleGenerateND2B = (person: Person, newAddress: string) => {
+    setNd2bPerson(person);
+    setNd2bNewAddress(newAddress);
   };
 
   const handleConfirmDelete = () => {
@@ -123,11 +129,19 @@ const People = () => {
   };
 
   const handleSearch = () => {
-    toast({
-      title: '搜尋完成',
-      description: `找到 ${filteredPeople.length} 筆結果`,
-    });
+    toast({ title: '搜尋完成', description: `找到 ${filteredPeople.length} 筆結果` });
   };
+
+  // Show ND2B form if triggered
+  if (nd2bPerson) {
+    return (
+      <ND2BGeneratorForm
+        onBack={() => { setNd2bPerson(null); setNd2bNewAddress(''); }}
+        prefillPerson={nd2bPerson}
+        prefillNewAddress={nd2bNewAddress}
+      />
+    );
+  }
 
   return (
     <div>
@@ -137,20 +151,13 @@ const People = () => {
         actions={
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={handleSearch}>
-              <Search className="h-4 w-4 mr-2" />
-              搜尋
+              <Search className="h-4 w-4 mr-2" />搜尋
             </Button>
             <Button variant="outline" size="sm" onClick={handleRefresh}>
-              <RefreshCw className="h-4 w-4 mr-2" />
-              重新整理
+              <RefreshCw className="h-4 w-4 mr-2" />重新整理
             </Button>
-            <Button 
-              size="sm" 
-              className="bg-primary text-primary-foreground hover:bg-primary/90"
-              onClick={handleAddPerson}
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              新增人員
+            <Button size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90" onClick={handleAddPerson}>
+              <Plus className="h-4 w-4 mr-2" />新增人員
             </Button>
           </div>
         }
@@ -175,16 +182,10 @@ const People = () => {
         </div>
         <div className="flex justify-end gap-2">
           <Button variant="outline" size="sm" onClick={handleClearSearch}>
-            <X className="h-4 w-4 mr-1" />
-            清除
+            <X className="h-4 w-4 mr-1" />清除
           </Button>
-          <Button 
-            size="sm" 
-            className="bg-primary text-primary-foreground hover:bg-primary/90"
-            onClick={handleSearch}
-          >
-            <Search className="h-4 w-4 mr-1" />
-            搜尋
+          <Button size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90" onClick={handleSearch}>
+            <Search className="h-4 w-4 mr-1" />搜尋
           </Button>
         </div>
       </div>
@@ -249,21 +250,11 @@ const People = () => {
                 <TableCell className="text-sm">{person.updatedAt}</TableCell>
                 <TableCell>
                   <div className="flex items-center gap-1">
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
-                      className="h-8 px-2"
-                      onClick={() => handleEditPerson(person)}
-                    >
+                    <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => handleEditPerson(person)}>
                       <Edit className="h-4 w-4" />
                       <span className="ml-1">編輯</span>
                     </Button>
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
-                      className="h-8 px-2 text-destructive hover:text-destructive"
-                      onClick={() => handleDeleteClick(person)}
-                    >
+                    <Button variant="ghost" size="sm" className="h-8 px-2 text-destructive hover:text-destructive" onClick={() => handleDeleteClick(person)}>
                       <Trash2 className="h-4 w-4" />
                       <span className="ml-1">刪除</span>
                     </Button>
@@ -276,15 +267,11 @@ const People = () => {
 
         {/* Pagination */}
         <div className="flex items-center justify-between px-4 py-3 border-t border-border">
-          <div className="text-sm text-muted-foreground">
-            共 {people.length} 位人員
-          </div>
+          <div className="text-sm text-muted-foreground">共 {people.length} 位人員</div>
           <div className="flex items-center gap-2">
             <span className="text-sm text-muted-foreground">每頁:</span>
             <Select defaultValue="20">
-              <SelectTrigger className="w-20 h-8">
-                <SelectValue />
-              </SelectTrigger>
+              <SelectTrigger className="w-20 h-8"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="10">10 筆</SelectItem>
                 <SelectItem value="20">20 筆</SelectItem>
@@ -304,6 +291,7 @@ const People = () => {
         onOpenChange={setPersonDialogOpen}
         person={selectedPerson}
         onSave={handleSavePerson}
+        onGenerateND2B={handleGenerateND2B}
       />
 
       <DeleteConfirmDialog

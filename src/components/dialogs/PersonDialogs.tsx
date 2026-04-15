@@ -17,6 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { FileText } from 'lucide-react';
 import { Person } from '@/types';
 import { toast } from '@/hooks/use-toast';
 
@@ -25,9 +26,10 @@ interface PersonDialogProps {
   onOpenChange: (open: boolean) => void;
   person?: Person | null;
   onSave: (person: Partial<Person>) => void;
+  onGenerateND2B?: (person: Person, newAddress: string) => void;
 }
 
-export const PersonDialog = ({ open, onOpenChange, person, onSave }: PersonDialogProps) => {
+export const PersonDialog = ({ open, onOpenChange, person, onSave, onGenerateND2B }: PersonDialogProps) => {
   const [formData, setFormData] = useState({
     nameChinese: '',
     nameEnglish: '',
@@ -37,6 +39,8 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave }: PersonDialo
     brNumber: '',
     address: '',
   });
+
+  const originalAddress = person?.address || '';
 
   useEffect(() => {
     if (person) {
@@ -62,22 +66,17 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave }: PersonDialo
     }
   }, [person, open]);
 
+  const addressChanged = person && formData.address !== originalAddress && formData.address.trim() !== '';
+  const isOfficer = formData.role === 'director' || formData.role === 'secretary';
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.nameChinese && !formData.nameEnglish) {
-      toast({
-        title: '錯誤',
-        description: '請填寫姓名',
-        variant: 'destructive',
-      });
+      toast({ title: '錯誤', description: '請填寫姓名', variant: 'destructive' });
       return;
     }
     if (!formData.email) {
-      toast({
-        title: '錯誤',
-        description: '請填寫電郵地址',
-        variant: 'destructive',
-      });
+      toast({ title: '錯誤', description: '請填寫電郵地址', variant: 'destructive' });
       return;
     }
     onSave(formData);
@@ -86,6 +85,23 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave }: PersonDialo
       title: person ? '人員已更新' : '人員已新增',
       description: `${formData.nameChinese || formData.nameEnglish} 已成功${person ? '更新' : '新增'}`,
     });
+  };
+
+  const handleSaveAndGenerateND2B = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formData.nameChinese && !formData.nameEnglish) {
+      toast({ title: '錯誤', description: '請填寫姓名', variant: 'destructive' });
+      return;
+    }
+    if (!formData.email) {
+      toast({ title: '錯誤', description: '請填寫電郵地址', variant: 'destructive' });
+      return;
+    }
+    onSave(formData);
+    onOpenChange(false);
+    if (person && onGenerateND2B) {
+      onGenerateND2B({ ...person, ...formData }, formData.address);
+    }
   };
 
   return (
@@ -172,6 +188,12 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave }: PersonDialo
                 onChange={(e) => setFormData({ ...formData, address: e.target.value })}
                 placeholder="輸入住址"
               />
+              {addressChanged && isOfficer && (
+                <p className="text-xs text-primary flex items-center gap-1 mt-1">
+                  <FileText className="h-3 w-3" />
+                  住址已變更，儲存後可自動生成 ND2B 表格
+                </p>
+              )}
             </div>
             {formData.identity === 'corporate' && (
               <div className="space-y-2">
@@ -185,10 +207,21 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave }: PersonDialo
               </div>
             )}
           </div>
-          <DialogFooter>
+          <DialogFooter className="gap-2">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               取消
             </Button>
+            {addressChanged && isOfficer && onGenerateND2B && (
+              <Button
+                type="button"
+                variant="outline"
+                className="text-primary border-primary hover:bg-primary/10"
+                onClick={handleSaveAndGenerateND2B}
+              >
+                <FileText className="h-4 w-4 mr-1" />
+                儲存並生成 ND2B
+              </Button>
+            )}
             <Button type="submit" className="bg-primary text-primary-foreground">
               {person ? '儲存變更' : '新增人員'}
             </Button>

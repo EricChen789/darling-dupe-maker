@@ -116,13 +116,11 @@ serve(async (req) => {
         "fill_17_P.1": data.phoneEffectiveYear,
         // Signer
         "fill_18_P.1": data.signerName,
-        "fill_19_P.1": data.signDateDay,
-        "fill_20_P.1": data.signDateMonth,
-        "fill_21_P.1": data.signDateYear,
+        "fill_19_P.1": `${data.signDateDay}/${data.signDateMonth}/${data.signDateYear}`,
         // Presentor
-        "fill_22_P.1": data.presentorName,
-        "fill_23_P.1": data.presentorAddress,
-        "fill_24_P.1": data.presentorContact,
+        "fill_20_P.1": data.presentorName,
+        "fill_21_P.1": data.presentorAddress,
+        "fill_22_P.1": data.presentorContact,
       };
 
       for (const [fieldName, value] of Object.entries(fieldMap)) {

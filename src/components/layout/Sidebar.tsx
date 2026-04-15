@@ -20,7 +20,6 @@ const navItems = [
 
 const bottomNavItems = [
   { path: '/settings', label: '設定', icon: Settings },
-  { path: '/logout', label: '登出', icon: LogOut },
 ];
 
 const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {

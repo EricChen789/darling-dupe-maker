@@ -199,135 +199,155 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
         </DialogHeader>
 
         <div className="flex-1 overflow-hidden flex">
-          {/* Left: Company info */}
+          {/* Left: Tabbed content */}
           <div className={`overflow-y-auto p-6 pt-2 transition-all ${(selectedPerson || selectedSh) ? 'w-1/2 border-r border-border' : 'w-full'}`}>
 
-            {/* Company basic info */}
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="font-semibold text-sm">基本資料</h3>
-              {!editingCompany ? (
-                <Button variant="ghost" size="sm" onClick={() => setEditingCompany(true)}>
-                  <Edit className="h-3.5 w-3.5 mr-1" /> 編輯
-                </Button>
-              ) : (
-                <div className="flex gap-1">
-                  <Button variant="ghost" size="sm" onClick={() => setEditingCompany(false)}><X className="h-3.5 w-3.5 mr-1" /> 取消</Button>
-                  <Button size="sm" onClick={handleSaveCompany} className="bg-primary text-primary-foreground"><Save className="h-3.5 w-3.5 mr-1" /> 儲存</Button>
-                </div>
-              )}
-            </div>
+            <Tabs defaultValue="info" className="w-full">
+              <TabsList className="mb-4">
+                <TabsTrigger value="info" className="gap-1.5">
+                  <Building2 className="h-3.5 w-3.5" /> 基本資料
+                </TabsTrigger>
+                <TabsTrigger value="officers" className="gap-1.5">
+                  <Users className="h-3.5 w-3.5" /> 董事/秘書
+                  <Badge variant="secondary" className="text-xs ml-1">{company.directors.length + company.secretaries.length}</Badge>
+                </TabsTrigger>
+                <TabsTrigger value="shareholders" className="gap-1.5">
+                  <Briefcase className="h-3.5 w-3.5" /> 股東
+                  <Badge variant="secondary" className="text-xs ml-1">{company.shareholders.length}</Badge>
+                </TabsTrigger>
+              </TabsList>
 
-            {!editingCompany ? (
-              <div className="grid grid-cols-2 gap-4 text-sm mb-4">
-                <InfoItem label="商業登記號碼" value={company.brNumber} />
-                <InfoItem label="商業名稱" value={company.tradingName} />
-                <InfoItem label="公司類型" value={company.companyType} />
-                <InfoItem label="業務性質" value={company.businessNature} />
-                <InfoItem label="業務代碼" value={company.businessCode} />
-                <InfoItem label="最後更新" value={company.updatedAt} />
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 gap-3 text-sm mb-4">
-                <div className="space-y-1"><Label className="text-xs">公司名稱</Label><Input value={companyForm.name} onChange={e => setCompanyForm({ ...companyForm, name: e.target.value })} /></div>
-                <div className="space-y-1"><Label className="text-xs">商業登記號碼</Label><Input value={companyForm.brNumber} onChange={e => setCompanyForm({ ...companyForm, brNumber: e.target.value })} /></div>
-                <div className="space-y-1"><Label className="text-xs">商業名稱</Label><Input value={companyForm.tradingName} onChange={e => setCompanyForm({ ...companyForm, tradingName: e.target.value })} /></div>
-                <div className="space-y-1"><Label className="text-xs">業務性質</Label><Input value={companyForm.businessNature} onChange={e => setCompanyForm({ ...companyForm, businessNature: e.target.value })} /></div>
-                <div className="space-y-1">
-                  <Label className="text-xs">公司類型</Label>
-                  <Select value={companyForm.companyType} onValueChange={v => setCompanyForm({ ...companyForm, companyType: v })}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="私人公司 Private company">私人公司 Private company</SelectItem>
-                      <SelectItem value="公眾公司 Public company">公眾公司 Public company</SelectItem>
-                      <SelectItem value="擔保有限公司 Company limited by guarantee">擔保有限公司</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1"><Label className="text-xs">業務代碼</Label><Input value={companyForm.businessCode} onChange={e => setCompanyForm({ ...companyForm, businessCode: e.target.value })} /></div>
-              </div>
-            )}
-
-            <Separator className="my-4" />
-
-            {/* Directors */}
-            <div className="flex items-center justify-between mb-2">
-              <SectionHeader icon={<Users className="h-4 w-4 text-primary" />} title="董事" count={company.directors.length} />
-              <Button variant="ghost" size="sm" onClick={() => { setAddingOfficer('director'); setNewOfficerForm(emptyOfficerForm()); }}>
-                <Plus className="h-3.5 w-3.5 mr-1" /> 新增
-              </Button>
-            </div>
-            {addingOfficer === 'director' && <NewOfficerForm form={newOfficerForm} setForm={setNewOfficerForm} onSave={handleAddOfficer} onCancel={() => setAddingOfficer(null)} />}
-            {company.directors.length > 0 ? (
-              <div className="grid gap-2">
-                {company.directors.map((d, i) => (
-                  <PersonRow key={i} person={d} isSelected={selectedPerson?.id === d.id}
-                    onClick={() => selectPerson(d, '董事')}
-                    onDelete={() => handleDeleteOfficer(d, '董事')} />
-                ))}
-              </div>
-            ) : !addingOfficer && <p className="text-muted-foreground text-sm">無董事記錄</p>}
-
-            <Separator className="my-4" />
-
-            {/* Secretaries */}
-            <div className="flex items-center justify-between mb-2">
-              <SectionHeader icon={<UserCheck className="h-4 w-4 text-primary" />} title="秘書" count={company.secretaries.length} />
-              <Button variant="ghost" size="sm" onClick={() => { setAddingOfficer('secretary'); setNewOfficerForm(emptyOfficerForm()); }}>
-                <Plus className="h-3.5 w-3.5 mr-1" /> 新增
-              </Button>
-            </div>
-            {addingOfficer === 'secretary' && <NewOfficerForm form={newOfficerForm} setForm={setNewOfficerForm} onSave={handleAddOfficer} onCancel={() => setAddingOfficer(null)} />}
-            {company.secretaries.length > 0 ? (
-              <div className="grid gap-2">
-                {company.secretaries.map((s, i) => (
-                  <PersonRow key={i} person={s} isSelected={selectedPerson?.id === s.id}
-                    onClick={() => selectPerson(s, '秘書')}
-                    onDelete={() => handleDeleteOfficer(s, '秘書')} />
-                ))}
-              </div>
-            ) : !addingOfficer && <p className="text-muted-foreground text-sm">無秘書記錄</p>}
-
-            <Separator className="my-4" />
-
-            {/* Shareholders */}
-            <div className="flex items-center justify-between mb-2">
-              <SectionHeader icon={<Briefcase className="h-4 w-4 text-primary" />} title="股東" count={company.shareholders.length} />
-              <Button variant="ghost" size="sm" onClick={() => { setAddingShareholder(true); setShForm(emptyShForm()); }}>
-                <Plus className="h-3.5 w-3.5 mr-1" /> 新增
-              </Button>
-            </div>
-            {addingShareholder && <NewShareholderForm form={shForm} setForm={setShForm} onSave={handleAddShareholder} onCancel={() => setAddingShareholder(false)} />}
-            {company.shareholders.length > 0 ? (
-              <div className="grid gap-2">
-                {company.shareholders.map((sh, i) => (
-                  editingShareholder === sh.id ? (
-                    <InlineShEdit key={i} shForm={shForm} setShForm={setShForm}
-                      onSave={() => handleSaveShareholder(sh.id)} onCancel={() => setEditingShareholder(null)} />
+              {/* Tab: 基本資料 */}
+              <TabsContent value="info">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="font-semibold text-sm">基本資料</h3>
+                  {!editingCompany ? (
+                    <Button variant="ghost" size="sm" onClick={() => setEditingCompany(true)}>
+                      <Edit className="h-3.5 w-3.5 mr-1" /> 編輯
+                    </Button>
                   ) : (
-                    <div key={i} className={`flex items-center justify-between rounded-md border px-3 py-2 text-sm cursor-pointer transition-colors group ${
-                      selectedSh?.id === sh.id ? 'border-primary bg-primary/10' : 'border-border bg-muted/30 hover:bg-muted/60'
-                    }`} onClick={() => selectShareholder(sh)}>
-                       <span className="font-medium">{sh.nameEnglish || sh.nameChinese || sh.name}</span>
-                       {sh.nameEnglish && sh.nameChinese && <span className="ml-2 text-muted-foreground">{sh.nameChinese}</span>}
-                      <div className="flex items-center gap-2">
-                        <Badge variant="secondary">{sh.shares.toLocaleString()} 股</Badge>
-                        <div className="hidden group-hover:flex gap-1">
-                          <Button variant="ghost" size="sm" className="h-6 px-1.5" onClick={e => {
-                            e.stopPropagation(); setEditingShareholder(sh.id);
-                            setShForm({ name: sh.name, nameEnglish: sh.nameEnglish, nameChinese: sh.nameChinese, shares: sh.shares, identity: sh.identity, idNumber: sh.idNumber, address: sh.address, email: sh.email, shareType: sh.shareType || '' });
-                          }}>
-                            <Edit className="h-3 w-3" />
-                          </Button>
-                          <Button variant="ghost" size="sm" className="h-6 px-1.5 text-destructive" onClick={e => { e.stopPropagation(); handleDeleteShareholder(sh); }}>
-                            <Trash2 className="h-3 w-3" />
-                          </Button>
-                        </div>
-                      </div>
+                    <div className="flex gap-1">
+                      <Button variant="ghost" size="sm" onClick={() => setEditingCompany(false)}><X className="h-3.5 w-3.5 mr-1" /> 取消</Button>
+                      <Button size="sm" onClick={handleSaveCompany} className="bg-primary text-primary-foreground"><Save className="h-3.5 w-3.5 mr-1" /> 儲存</Button>
                     </div>
-                  )
-                ))}
-              </div>
-            ) : !addingShareholder && <p className="text-muted-foreground text-sm">無股東記錄</p>}
+                  )}
+                </div>
+
+                {!editingCompany ? (
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <InfoItem label="商業登記號碼" value={company.brNumber} />
+                    <InfoItem label="商業名稱" value={company.tradingName} />
+                    <InfoItem label="公司類型" value={company.companyType} />
+                    <InfoItem label="業務性質" value={company.businessNature} />
+                    <InfoItem label="業務代碼" value={company.businessCode} />
+                    <InfoItem label="最後更新" value={company.updatedAt} />
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div className="space-y-1"><Label className="text-xs">公司名稱</Label><Input value={companyForm.name} onChange={e => setCompanyForm({ ...companyForm, name: e.target.value })} /></div>
+                    <div className="space-y-1"><Label className="text-xs">商業登記號碼</Label><Input value={companyForm.brNumber} onChange={e => setCompanyForm({ ...companyForm, brNumber: e.target.value })} /></div>
+                    <div className="space-y-1"><Label className="text-xs">商業名稱</Label><Input value={companyForm.tradingName} onChange={e => setCompanyForm({ ...companyForm, tradingName: e.target.value })} /></div>
+                    <div className="space-y-1"><Label className="text-xs">業務性質</Label><Input value={companyForm.businessNature} onChange={e => setCompanyForm({ ...companyForm, businessNature: e.target.value })} /></div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">公司類型</Label>
+                      <Select value={companyForm.companyType} onValueChange={v => setCompanyForm({ ...companyForm, companyType: v })}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="私人公司 Private company">私人公司 Private company</SelectItem>
+                          <SelectItem value="公眾公司 Public company">公眾公司 Public company</SelectItem>
+                          <SelectItem value="擔保有限公司 Company limited by guarantee">擔保有限公司</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1"><Label className="text-xs">業務代碼</Label><Input value={companyForm.businessCode} onChange={e => setCompanyForm({ ...companyForm, businessCode: e.target.value })} /></div>
+                  </div>
+                )}
+              </TabsContent>
+
+              {/* Tab: 董事/秘書 */}
+              <TabsContent value="officers">
+                {/* Directors */}
+                <div className="flex items-center justify-between mb-2">
+                  <SectionHeader icon={<Users className="h-4 w-4 text-primary" />} title="董事" count={company.directors.length} />
+                  <Button variant="ghost" size="sm" onClick={() => { setAddingOfficer('director'); setNewOfficerForm(emptyOfficerForm()); }}>
+                    <Plus className="h-3.5 w-3.5 mr-1" /> 新增
+                  </Button>
+                </div>
+                {addingOfficer === 'director' && <NewOfficerForm form={newOfficerForm} setForm={setNewOfficerForm} onSave={handleAddOfficer} onCancel={() => setAddingOfficer(null)} />}
+                {company.directors.length > 0 ? (
+                  <div className="grid gap-2">
+                    {company.directors.map((d, i) => (
+                      <PersonRow key={i} person={d} isSelected={selectedPerson?.id === d.id}
+                        onClick={() => selectPerson(d, '董事')}
+                        onDelete={() => handleDeleteOfficer(d, '董事')} />
+                    ))}
+                  </div>
+                ) : !addingOfficer && <p className="text-muted-foreground text-sm">無董事記錄</p>}
+
+                <Separator className="my-4" />
+
+                {/* Secretaries */}
+                <div className="flex items-center justify-between mb-2">
+                  <SectionHeader icon={<UserCheck className="h-4 w-4 text-primary" />} title="秘書" count={company.secretaries.length} />
+                  <Button variant="ghost" size="sm" onClick={() => { setAddingOfficer('secretary'); setNewOfficerForm(emptyOfficerForm()); }}>
+                    <Plus className="h-3.5 w-3.5 mr-1" /> 新增
+                  </Button>
+                </div>
+                {addingOfficer === 'secretary' && <NewOfficerForm form={newOfficerForm} setForm={setNewOfficerForm} onSave={handleAddOfficer} onCancel={() => setAddingOfficer(null)} />}
+                {company.secretaries.length > 0 ? (
+                  <div className="grid gap-2">
+                    {company.secretaries.map((s, i) => (
+                      <PersonRow key={i} person={s} isSelected={selectedPerson?.id === s.id}
+                        onClick={() => selectPerson(s, '秘書')}
+                        onDelete={() => handleDeleteOfficer(s, '秘書')} />
+                    ))}
+                  </div>
+                ) : !addingOfficer && <p className="text-muted-foreground text-sm">無秘書記錄</p>}
+              </TabsContent>
+
+              {/* Tab: 股東 */}
+              <TabsContent value="shareholders">
+                <div className="flex items-center justify-between mb-2">
+                  <SectionHeader icon={<Briefcase className="h-4 w-4 text-primary" />} title="股東" count={company.shareholders.length} />
+                  <Button variant="ghost" size="sm" onClick={() => { setAddingShareholder(true); setShForm(emptyShForm()); }}>
+                    <Plus className="h-3.5 w-3.5 mr-1" /> 新增
+                  </Button>
+                </div>
+                {addingShareholder && <NewShareholderForm form={shForm} setForm={setShForm} onSave={handleAddShareholder} onCancel={() => setAddingShareholder(false)} />}
+                {company.shareholders.length > 0 ? (
+                  <div className="grid gap-2">
+                    {company.shareholders.map((sh, i) => (
+                      editingShareholder === sh.id ? (
+                        <InlineShEdit key={i} shForm={shForm} setShForm={setShForm}
+                          onSave={() => handleSaveShareholder(sh.id)} onCancel={() => setEditingShareholder(null)} />
+                      ) : (
+                        <div key={i} className={`flex items-center justify-between rounded-md border px-3 py-2 text-sm cursor-pointer transition-colors group ${
+                          selectedSh?.id === sh.id ? 'border-primary bg-primary/10' : 'border-border bg-muted/30 hover:bg-muted/60'
+                        }`} onClick={() => selectShareholder(sh)}>
+                           <span className="font-medium">{sh.nameEnglish || sh.nameChinese || sh.name}</span>
+                           {sh.nameEnglish && sh.nameChinese && <span className="ml-2 text-muted-foreground">{sh.nameChinese}</span>}
+                          <div className="flex items-center gap-2">
+                            <Badge variant="secondary">{sh.shares.toLocaleString()} 股</Badge>
+                            {sh.shareType && <Badge variant="outline" className="text-xs">{sh.shareType}</Badge>}
+                            <div className="hidden group-hover:flex gap-1">
+                              <Button variant="ghost" size="sm" className="h-6 px-1.5" onClick={e => {
+                                e.stopPropagation(); setEditingShareholder(sh.id);
+                                setShForm({ name: sh.name, nameEnglish: sh.nameEnglish, nameChinese: sh.nameChinese, shares: sh.shares, identity: sh.identity, idNumber: sh.idNumber, address: sh.address, email: sh.email, shareType: sh.shareType || '' });
+                              }}>
+                                <Edit className="h-3 w-3" />
+                              </Button>
+                              <Button variant="ghost" size="sm" className="h-6 px-1.5 text-destructive" onClick={e => { e.stopPropagation(); handleDeleteShareholder(sh); }}>
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    ))}
+                  </div>
+                ) : !addingShareholder && <p className="text-muted-foreground text-sm">無股東記錄</p>}
+              </TabsContent>
+            </Tabs>
           </div>
 
           {/* Right: Person detail panel */}

@@ -35,6 +35,7 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave }: PersonDialo
     identity: 'natural' as 'natural' | 'corporate',
     role: 'director' as 'director' | 'secretary' | 'shareholder',
     brNumber: '',
+    address: '',
   });
 
   useEffect(() => {
@@ -46,6 +47,7 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave }: PersonDialo
         identity: person.identity,
         role: person.role,
         brNumber: person.brNumber || '',
+        address: person.address || '',
       });
     } else {
       setFormData({
@@ -55,6 +57,7 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave }: PersonDialo
         identity: 'natural',
         role: 'director',
         brNumber: '',
+        address: '',
       });
     }
   }, [person, open]);
@@ -160,6 +163,15 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave }: PersonDialo
                   <SelectItem value="shareholder">股東</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div className="space-y-2 col-span-2">
+              <Label htmlFor="address">住址</Label>
+              <Input
+                id="address"
+                value={formData.address}
+                onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                placeholder="輸入住址"
+              />
             </div>
             {formData.identity === 'corporate' && (
               <div className="space-y-2">

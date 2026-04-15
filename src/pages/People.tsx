@@ -198,6 +198,7 @@ const People = () => {
               <TableHead className="font-medium">電郵</TableHead>
               <TableHead className="font-medium">身分</TableHead>
               <TableHead className="font-medium">類型</TableHead>
+              <TableHead className="font-medium">住址</TableHead>
               <TableHead className="font-medium">商業登記號碼</TableHead>
               <TableHead className="font-medium">關聯公司</TableHead>
               <TableHead className="font-medium">建立日期</TableHead>
@@ -224,6 +225,9 @@ const People = () => {
                   <StatusBadge variant={person.role}>
                     {getRoleLabel(person.role)}
                   </StatusBadge>
+                </TableCell>
+                <TableCell className="text-sm max-w-[200px] truncate">
+                  {person.address || <span className="text-muted-foreground">-</span>}
                 </TableCell>
                 <TableCell className="text-sm">
                   {person.brNumber || <span className="text-muted-foreground">-</span>}

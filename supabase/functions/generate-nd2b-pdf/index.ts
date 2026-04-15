@@ -86,8 +86,8 @@ serve(async (req) => {
         } else {
           try { form.getCheckBox("cb_2_P.1").check(); } catch {}
         }
-        // Chinese Name - skip if contains non-ASCII (no font embedded)
-        if (data.nameChinese && !/[^\x00-\x7F]/.test(data.nameChinese)) {
+        // Chinese Name - fill without embedded font, PDF viewer uses system font
+        if (data.nameChinese) {
           try { form.getTextField("fill_3_P.1").setText(data.nameChinese); } catch {}
         }
         // English Surname
@@ -110,7 +110,7 @@ serve(async (req) => {
         } else {
           try { form.getCheckBox("cb_2_P.6").check(); } catch {}
         }
-        if (data.nameChinese && !/[^\x00-\x7F]/.test(data.nameChinese)) {
+        if (data.nameChinese) {
           try { form.getTextField("fill_2_P.6").setText(data.nameChinese); } catch {}
         }
         try { form.getTextField("fill_3_P.6").setText(surname); } catch {}
@@ -131,7 +131,7 @@ serve(async (req) => {
       }
     }
 
-    form.flatten();
+    // Do NOT flatten — let PDF viewer render CJK text with system fonts
     const pdfBytes = await pdfDoc.save();
     const base64 = uint8ToBase64(new Uint8Array(pdfBytes));
 

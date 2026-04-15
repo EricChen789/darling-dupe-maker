@@ -56,11 +56,16 @@ serve(async (req) => {
     const data: ND2BData = await req.json();
     console.log("Generating ND2B PDF for:", data.companyName);
 
-    const templateResponse = await fetch(ND2B_TEMPLATE_URL);
+    const [templateResponse, chineseFontBytes] = await Promise.all([
+      fetch(ND2B_TEMPLATE_URL),
+      loadChineseFont(),
+    ]);
     if (!templateResponse.ok) throw new Error("Failed to load ND2B template");
 
     const templateBytes = await templateResponse.arrayBuffer();
     const pdfDoc = await PDFDocument.load(templateBytes);
+    pdfDoc.registerFontkit(fontkit);
+    const chineseFont = await pdfDoc.embedFont(chineseFontBytes);
     const form = pdfDoc.getForm();
 
     if (data.debug) {

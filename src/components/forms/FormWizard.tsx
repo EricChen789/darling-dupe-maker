@@ -37,6 +37,11 @@ function companyToFormData(company: Company): NAR1FormData {
   base.tradingName = company.tradingName;
   base.businessCode = company.businessCode;
   base.businessNature = company.businessNature;
+  base.regFlat = company.regFlat || '';
+  base.regBuilding = company.regBuilding || '';
+  base.regStreet = company.regStreet || '';
+  base.regDistrict = company.regDistrict || '';
+  base.regRegion = company.regRegion || '香港 Hong Kong';
 
   if (company.companyType?.includes('私人') || company.companyType?.includes('Private')) {
     base.companyType = 'private';

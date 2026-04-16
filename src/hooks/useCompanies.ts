@@ -225,6 +225,11 @@ export function useUpdateCompany() {
           business_nature: data.businessNature,
           company_type: data.companyType,
           business_code: data.businessCode,
+          reg_flat: data.regFlat,
+          reg_building: data.regBuilding,
+          reg_street: data.regStreet,
+          reg_district: data.regDistrict,
+          reg_region: data.regRegion,
           updated_at: new Date().toISOString(),
         })
         .eq('id', id);

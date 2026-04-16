@@ -13,6 +13,7 @@ import Invoices from "./pages/Invoices";
 import Logs from "./pages/Logs";
 import Settings from "./pages/Settings";
 import FieldMapping from "./pages/FieldMapping";
+import Repair from "./pages/Repair";
 import Auth from "./pages/Auth";
 import ResetPassword from "./pages/ResetPassword";
 import NotFound from "./pages/NotFound";
@@ -63,6 +64,7 @@ const App = () => (
               <Route path="invoices" element={<Invoices />} />
               <Route path="logs" element={<Logs />} />
               <Route path="field-mapping" element={<FieldMapping />} />
+              <Route path="repair" element={<Repair />} />
               <Route path="settings" element={<Settings />} />
             </Route>
             <Route path="*" element={<NotFound />} />

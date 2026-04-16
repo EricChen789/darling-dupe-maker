@@ -1,6 +1,6 @@
 import { Link, useLocation } from 'react-router-dom';
 import { cn } from '@/lib/utils';
-import { Download } from 'lucide-react';
+import { Download, Wrench } from 'lucide-react';
 import { Building2, Users, FileText, Receipt, ClipboardList, Settings, LogOut, Table, PanelLeftClose, PanelLeft } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAuth } from '@/hooks/useAuth';
@@ -17,6 +17,7 @@ const navItems: { path: string; label: string; icon: any; external?: boolean }[]
   { path: '/invoices', label: '發票管理', icon: Receipt },
   { path: '/logs', label: '公司日誌', icon: ClipboardList },
   { path: '/field-mapping', label: '欄位對照表', icon: Table },
+  { path: '/repair', label: '數據修復', icon: Wrench },
   { path: '/import-data-skill-guide.md', label: 'API 導入指南', icon: Download, external: true },
 ];
 

@@ -90,14 +90,12 @@ const Repair = () => {
       const { data: officerRows, error } = await supabase
         .from('officers')
         .select('*')
-        .order('created_at', { ascending: false })
-        .limit(5000);
+        .order('created_at', { ascending: false });
       if (error) throw error;
 
       const { data: companyRows, error: companyError } = await supabase
         .from('companies')
-        .select('id, name, company_number')
-        .limit(5000);
+        .select('id, name, company_number');
       if (companyError) throw companyError;
 
       const companyMap = new Map(

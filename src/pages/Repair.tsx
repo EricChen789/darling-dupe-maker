@@ -83,26 +83,47 @@ const Repair = () => {
   const [editForm, setEditForm] = useState<{ name_english: string; name_chinese: string; address: string }>({ name_english: '', name_chinese: '', address: '' });
   const [deleteTarget, setDeleteTarget] = useState<OfficerRecord | null>(null);
 
-  // Fetch all officers + companies
+  // Fetch all officers + companies (paginated to bypass 1000-row default)
   const { data: officers = [], isLoading } = useQuery({
     queryKey: ['repair-officers'],
     queryFn: async () => {
-      const { data: officerRows, error } = await supabase
-        .from('officers')
-        .select('*')
-        .order('created_at', { ascending: false });
-      if (error) throw error;
+      // Paginate officers
+      const allOfficers: any[] = [];
+      let from = 0;
+      const pageSize = 1000;
+      while (true) {
+        const { data, error } = await supabase
+          .from('officers')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .range(from, from + pageSize - 1);
+        if (error) throw error;
+        if (!data || data.length === 0) break;
+        allOfficers.push(...data);
+        if (data.length < pageSize) break;
+        from += pageSize;
+      }
 
-      const { data: companyRows, error: companyError } = await supabase
-        .from('companies')
-        .select('id, name, company_number');
-      if (companyError) throw companyError;
+      // Paginate companies
+      const allCompanies: any[] = [];
+      from = 0;
+      while (true) {
+        const { data, error } = await supabase
+          .from('companies')
+          .select('id, name, company_number')
+          .range(from, from + pageSize - 1);
+        if (error) throw error;
+        if (!data || data.length === 0) break;
+        allCompanies.push(...data);
+        if (data.length < pageSize) break;
+        from += pageSize;
+      }
 
       const companyMap = new Map(
-        (companyRows || []).map(c => [c.id, { name: c.name, number: c.company_number }])
+        allCompanies.map(c => [c.id, { name: c.name, number: c.company_number }])
       );
 
-      return (officerRows || []).map(o => {
+      return allOfficers.map(o => {
         const company = companyMap.get(o.company_id);
         return {
           ...o,

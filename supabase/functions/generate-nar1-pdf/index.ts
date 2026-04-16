@@ -339,7 +339,8 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
 
   // Keep form interactive so PDF viewer renders CJK with system fonts
   console.log("PDF filled with all data, serializing...");
-  const pdfBytes = await pdfDoc.save();
+  // Prevent auto updateFieldAppearances during save (would fail on CJK)
+  const pdfBytes = await pdfDoc.save({ updateFieldAppearances: false });
   console.log(`Final PDF size: ${pdfBytes.byteLength} bytes`);
   return pdfBytes;
 }

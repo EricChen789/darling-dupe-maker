@@ -10,7 +10,7 @@ interface SidebarProps {
   onToggle: () => void;
 }
 
-const navItems = [
+const navItems: { path: string; label: string; icon: any; external?: boolean }[] = [
   { path: '/companies', label: '公司管理', icon: Building2 },
   { path: '/people', label: '人員管理', icon: Users },
   { path: '/forms', label: '表單管理', icon: FileText },

@@ -283,6 +283,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                         </div>
                       </div>
                     </div>
+                  </div>
                 )}
               </TabsContent>
 

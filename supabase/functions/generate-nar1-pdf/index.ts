@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { PDFDocument } from "https://esm.sh/pdf-lib@1.17.1";
+import { PDFDocument, PDFName, PDFString, PDFHexString } from "https://esm.sh/pdf-lib@1.17.1";
 
 function uint8ToBase64(bytes: Uint8Array): string {
   let binary = "";
@@ -155,13 +155,17 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
   const safeSetText = (fieldName: string, value: string) => {
     try {
       const field = form.getTextField(fieldName);
-      const maxLength = field.getMaxLength();
       let textToSet = value ?? "";
+      const maxLength = field.getMaxLength();
       if (maxLength && textToSet.length > maxLength) textToSet = textToSet.slice(0, maxLength);
-      field.setText(textToSet);
+      // Always set value via raw dict to avoid WinAnsi encoding issues with CJK
+      const dict = field.acroField.dict;
+      dict.set(PDFName.of('V'), PDFHexString.fromText(textToSet));
+      // Remove appearance stream so PDF viewer regenerates using system fonts
+      dict.delete(PDFName.of('AP'));
       return true;
     } catch (e) {
-      console.warn(`⚠ Missing: ${fieldName}`);
+      console.warn(`⚠ Missing: ${fieldName}`, e);
       return false;
     }
   };
@@ -335,7 +339,8 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
 
   // Keep form interactive so PDF viewer renders CJK with system fonts
   console.log("PDF filled with all data, serializing...");
-  const pdfBytes = await pdfDoc.save();
+  // Prevent auto updateFieldAppearances during save (would fail on CJK)
+  const pdfBytes = await pdfDoc.save({ updateFieldAppearances: false });
   console.log(`Final PDF size: ${pdfBytes.byteLength} bytes`);
   return pdfBytes;
 }

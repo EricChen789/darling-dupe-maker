@@ -152,24 +152,17 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
   const [year, month, day] = returnDate.split("-");
   const office = data.registeredOffice || {};
 
-  // Check if string contains non-ASCII (CJK) characters
-  const hasNonAscii = (s: string) => /[^\x00-\x7F]/.test(s);
-
   const safeSetText = (fieldName: string, value: string) => {
     try {
       const field = form.getTextField(fieldName);
       let textToSet = value ?? "";
       const maxLength = field.getMaxLength();
       if (maxLength && textToSet.length > maxLength) textToSet = textToSet.slice(0, maxLength);
-      
-      if (hasNonAscii(textToSet)) {
-        // For CJK text: set the value directly without appearance streams
-        const dict = field.acroField.dict;
-        dict.set(PDFName.of('V'), PDFHexString.fromText(textToSet));
-        dict.delete(PDFName.of('AP'));
-      } else {
-        field.setText(textToSet);
-      }
+      // Always set value via raw dict to avoid WinAnsi encoding issues with CJK
+      const dict = field.acroField.dict;
+      dict.set(PDFName.of('V'), PDFHexString.fromText(textToSet));
+      // Remove appearance stream so PDF viewer regenerates using system fonts
+      dict.delete(PDFName.of('AP'));
       return true;
     } catch (e) {
       console.warn(`⚠ Missing: ${fieldName}`, e);

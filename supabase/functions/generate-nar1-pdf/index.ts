@@ -162,17 +162,12 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
       const maxLength = field.getMaxLength();
       if (maxLength && textToSet.length > maxLength) textToSet = textToSet.slice(0, maxLength);
       
-      if (hasNonAscii(textToSet)) {
-        // For CJK text: set the value directly on the PDF object without generating
-        // appearance streams (which would fail with WinAnsi encoding).
-        // The PDF viewer will render using system fonts.
-        const widget = field.acroField;
-        widget.dict.set(
-          pdfDoc.context.obj('V'),
-          pdfDoc.context.obj(textToSet)
-        );
-        // Remove existing appearance to force PDF viewer to regenerate
-        widget.dict.delete(pdfDoc.context.obj('AP'));
+        // For CJK text: set the value directly without appearance streams
+        // (WinAnsi encoding can't handle CJK). PDF viewer renders with system fonts.
+        const dict = field.acroField.dict;
+        dict.set(PDFName.of('V'), PDFHexString.fromText(textToSet));
+        // Remove existing appearance so PDF viewer regenerates it
+        dict.delete(PDFName.of('AP'));
       } else {
         field.setText(textToSet);
       }

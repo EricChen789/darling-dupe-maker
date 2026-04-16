@@ -215,9 +215,6 @@ const FormWizard = ({ formId, onBack }: FormWizardProps) => {
     <div>
       {/* Header */}
       <div className="mb-6">
-        <Button variant="ghost" size="sm" onClick={onBack} className="mb-4">
-          <ArrowLeft className="h-4 w-4 mr-2" /> 返回
-        </Button>
         <h1 className="text-xl font-semibold">建立 NAR1 周年申報表</h1>
         <p className="text-sm text-muted-foreground">填寫完整 NAR1 表格資料並生成 PDF</p>
       </div>

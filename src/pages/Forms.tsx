@@ -7,6 +7,7 @@ import FormWizard from '@/components/forms/FormWizard';
 import NR1GeneratorForm from '@/components/forms/NR1GeneratorForm';
 import ND2AGeneratorForm from '@/components/forms/ND2AGeneratorForm';
 import ND2BGeneratorForm from '@/components/forms/ND2BGeneratorForm';
+import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { toast } from '@/hooks/use-toast';
 
 const Forms = () => {
@@ -16,9 +17,6 @@ const Forms = () => {
     toast({ title: '已重新整理', description: '表格列表已更新' });
   };
 
-  if (selectedForm === 'nar1') {
-    return <FormWizard formId="nar1" onBack={() => setSelectedForm(null)} />;
-  }
   if (selectedForm === 'nr1') {
     return <NR1GeneratorForm onBack={() => setSelectedForm(null)} />;
   }
@@ -138,6 +136,15 @@ const Forms = () => {
           </table>
         </div>
       </div>
+
+      {/* NAR1 Modal */}
+      <Dialog open={selectedForm === 'nar1'} onOpenChange={(open) => { if (!open) setSelectedForm(null); }}>
+        <DialogContent className="max-w-none w-[90vw] h-[90vh] p-0 flex flex-col">
+          <div className="flex-1 overflow-y-auto p-6">
+            <FormWizard formId="nar1" onBack={() => setSelectedForm(null)} />
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

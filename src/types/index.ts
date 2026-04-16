@@ -10,6 +10,11 @@ export interface Company {
   companyType: string;
   businessCode: string;
   updatedAt: string;
+  regFlat: string;
+  regBuilding: string;
+  regStreet: string;
+  regDistrict: string;
+  regRegion: string;
 }
 
 export interface Person {

@@ -13,6 +13,11 @@ interface DbCompany {
   business_code: string;
   company_group: string;
   updated_at: string;
+  reg_flat: string;
+  reg_building: string;
+  reg_street: string;
+  reg_district: string;
+  reg_region: string;
 }
 
 interface DbOfficer {
@@ -114,6 +119,11 @@ function mapToCompany(
     companyType: c.company_type || '',
     businessCode: c.business_code || '',
     updatedAt: new Date(c.updated_at).toLocaleDateString('zh-TW'),
+    regFlat: c.reg_flat || '',
+    regBuilding: c.reg_building || '',
+    regStreet: c.reg_street || '',
+    regDistrict: c.reg_district || '',
+    regRegion: c.reg_region || '香港 Hong Kong',
   };
 }
 
@@ -215,6 +225,11 @@ export function useUpdateCompany() {
           business_nature: data.businessNature,
           company_type: data.companyType,
           business_code: data.businessCode,
+          reg_flat: data.regFlat,
+          reg_building: data.regBuilding,
+          reg_street: data.regStreet,
+          reg_district: data.regDistrict,
+          reg_region: data.regRegion,
           updated_at: new Date().toISOString(),
         })
         .eq('id', id);

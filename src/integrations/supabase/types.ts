@@ -26,6 +26,11 @@ export type Database = {
           id: string
           name: string
           quorum: string | null
+          reg_building: string | null
+          reg_district: string | null
+          reg_flat: string | null
+          reg_region: string | null
+          reg_street: string | null
           register_date: string | null
           trading_name: string | null
           updated_at: string
@@ -41,6 +46,11 @@ export type Database = {
           id?: string
           name: string
           quorum?: string | null
+          reg_building?: string | null
+          reg_district?: string | null
+          reg_flat?: string | null
+          reg_region?: string | null
+          reg_street?: string | null
           register_date?: string | null
           trading_name?: string | null
           updated_at?: string
@@ -56,6 +66,11 @@ export type Database = {
           id?: string
           name?: string
           quorum?: string | null
+          reg_building?: string | null
+          reg_district?: string | null
+          reg_flat?: string | null
+          reg_region?: string | null
+          reg_street?: string | null
           register_date?: string | null
           trading_name?: string | null
           updated_at?: string

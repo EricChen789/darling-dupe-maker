@@ -17,6 +17,7 @@ const navItems = [
   { path: '/invoices', label: '發票管理', icon: Receipt },
   { path: '/logs', label: '公司日誌', icon: ClipboardList },
   { path: '/field-mapping', label: '欄位對照表', icon: Table },
+  { path: '/import-data-skill-guide.md', label: 'API 導入指南', icon: Download, external: true },
 ];
 
 const bottomNavItems = [

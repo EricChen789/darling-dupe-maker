@@ -50,7 +50,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
   const [addingOfficer, setAddingOfficer] = useState<'director' | 'secretary' | null>(null);
   const [addingShareholder, setAddingShareholder] = useState(false);
 
-  const [companyForm, setCompanyForm] = useState({ name: '', brNumber: '', tradingName: '', businessNature: '', companyType: '', businessCode: '' });
+  const [companyForm, setCompanyForm] = useState({ name: '', brNumber: '', tradingName: '', businessNature: '', companyType: '', businessCode: '', regFlat: '', regBuilding: '', regStreet: '', regDistrict: '', regRegion: '' });
   const [personForm, setPersonForm] = useState(emptyOfficerForm());
   const [newOfficerForm, setNewOfficerForm] = useState(emptyOfficerForm());
   const [shForm, setShForm] = useState(emptyShForm());
@@ -68,6 +68,8 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
       setCompanyForm({
         name: company.name, brNumber: company.brNumber, tradingName: company.tradingName,
         businessNature: company.businessNature, companyType: company.companyType, businessCode: company.businessCode,
+        regFlat: company.regFlat || '', regBuilding: company.regBuilding || '', regStreet: company.regStreet || '',
+        regDistrict: company.regDistrict || '', regRegion: company.regRegion || '',
       });
     }
   }, [company]);

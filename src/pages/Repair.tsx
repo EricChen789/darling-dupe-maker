@@ -219,10 +219,10 @@ const Repair = () => {
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <StatCard title="總記錄數" value={stats.total} icon={User} />
-        <StatCard title="名字異常" value={stats.badName} icon={AlertTriangle} />
-        <StatCard title="缺少地址" value={stats.noAddress} icon={MapPin} />
-        <StatCard title="正常記錄" value={stats.healthy} icon={Wrench} />
+        <StatCard label="總記錄數" value={stats.total} />
+        <StatCard label="名字異常" value={stats.badName} valueClassName="text-destructive" />
+        <StatCard label="缺少地址" value={stats.noAddress} valueClassName="text-orange-500" />
+        <StatCard label="正常記錄" value={stats.healthy} valueClassName="text-primary" />
       </div>
 
       {/* Filters */}

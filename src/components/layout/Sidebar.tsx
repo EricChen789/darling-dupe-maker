@@ -69,8 +69,20 @@ const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {
         <nav className="flex-1 py-4">
           <ul className="space-y-1 px-2">
             {navItems.map((item) => {
-              const isActive = location.pathname === item.path || location.pathname.startsWith(item.path + '/');
-              const linkContent = (
+              const isActive = !item.external && (location.pathname === item.path || location.pathname.startsWith(item.path + '/'));
+              const linkContent = item.external ? (
+                <a
+                  href={item.path}
+                  download
+                  className={cn(
+                    "flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors text-sidebar-foreground hover:bg-muted",
+                    collapsed && "justify-center"
+                  )}
+                >
+                  <item.icon className="h-4 w-4 shrink-0" />
+                  {!collapsed && <span>{item.label}</span>}
+                </a>
+              ) : (
                 <Link
                   to={item.path}
                   className={cn(

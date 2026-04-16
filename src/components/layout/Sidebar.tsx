@@ -1,5 +1,6 @@
 import { Link, useLocation } from 'react-router-dom';
 import { cn } from '@/lib/utils';
+import { Download } from 'lucide-react';
 import { Building2, Users, FileText, Receipt, ClipboardList, Settings, LogOut, Table, PanelLeftClose, PanelLeft } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAuth } from '@/hooks/useAuth';
@@ -9,13 +10,14 @@ interface SidebarProps {
   onToggle: () => void;
 }
 
-const navItems = [
+const navItems: { path: string; label: string; icon: any; external?: boolean }[] = [
   { path: '/companies', label: '公司管理', icon: Building2 },
   { path: '/people', label: '人員管理', icon: Users },
   { path: '/forms', label: '表單管理', icon: FileText },
   { path: '/invoices', label: '發票管理', icon: Receipt },
   { path: '/logs', label: '公司日誌', icon: ClipboardList },
   { path: '/field-mapping', label: '欄位對照表', icon: Table },
+  { path: '/import-data-skill-guide.md', label: 'API 導入指南', icon: Download, external: true },
 ];
 
 const bottomNavItems = [
@@ -67,8 +69,20 @@ const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {
         <nav className="flex-1 py-4">
           <ul className="space-y-1 px-2">
             {navItems.map((item) => {
-              const isActive = location.pathname === item.path || location.pathname.startsWith(item.path + '/');
-              const linkContent = (
+              const isActive = !item.external && (location.pathname === item.path || location.pathname.startsWith(item.path + '/'));
+              const linkContent = item.external ? (
+                <a
+                  href={item.path}
+                  download
+                  className={cn(
+                    "flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors text-sidebar-foreground hover:bg-muted",
+                    collapsed && "justify-center"
+                  )}
+                >
+                  <item.icon className="h-4 w-4 shrink-0" />
+                  {!collapsed && <span>{item.label}</span>}
+                </a>
+              ) : (
                 <Link
                   to={item.path}
                   className={cn(

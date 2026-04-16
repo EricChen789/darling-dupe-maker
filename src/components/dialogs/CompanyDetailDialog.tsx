@@ -242,6 +242,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                     <InfoItem label="公司類型" value={company.companyType} />
                     <InfoItem label="業務性質" value={company.businessNature} />
                     <InfoItem label="業務代碼" value={company.businessCode} />
+                    <InfoItem label="註冊辦事處地址" value={[company.regFlat, company.regBuilding, company.regStreet, company.regDistrict, company.regRegion].filter(Boolean).join(', ') || '—'} />
                     <InfoItem label="最後更新" value={company.updatedAt} />
                   </div>
                 ) : (
@@ -262,7 +263,26 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                       </Select>
                     </div>
                     <div className="space-y-1"><Label className="text-xs">業務代碼</Label><Input value={companyForm.businessCode} onChange={e => setCompanyForm({ ...companyForm, businessCode: e.target.value })} /></div>
-                  </div>
+                    <div className="col-span-2 border-t border-border pt-3 mt-2">
+                      <Label className="text-xs font-medium">註冊辦事處地址</Label>
+                      <div className="grid grid-cols-2 gap-2 mt-2">
+                        <div className="space-y-1"><Label className="text-xs">室／樓／座</Label><Input value={companyForm.regFlat} onChange={e => setCompanyForm({ ...companyForm, regFlat: e.target.value })} /></div>
+                        <div className="space-y-1"><Label className="text-xs">大廈</Label><Input value={companyForm.regBuilding} onChange={e => setCompanyForm({ ...companyForm, regBuilding: e.target.value })} /></div>
+                        <div className="col-span-2 space-y-1"><Label className="text-xs">街道</Label><Input value={companyForm.regStreet} onChange={e => setCompanyForm({ ...companyForm, regStreet: e.target.value })} /></div>
+                        <div className="space-y-1"><Label className="text-xs">區</Label><Input value={companyForm.regDistrict} onChange={e => setCompanyForm({ ...companyForm, regDistrict: e.target.value })} /></div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">地區</Label>
+                          <Select value={companyForm.regRegion} onValueChange={v => setCompanyForm({ ...companyForm, regRegion: v })}>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="香港 Hong Kong">香港 Hong Kong</SelectItem>
+                              <SelectItem value="九龍 Kowloon">九龍 Kowloon</SelectItem>
+                              <SelectItem value="新界 New Territories">新界 New Territories</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                    </div>
                 )}
               </TabsContent>
 

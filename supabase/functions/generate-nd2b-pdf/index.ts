@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { PDFDocument } from "https://esm.sh/pdf-lib@1.17.1";
+import { PDFDocument, PDFName, PDFHexString } from "https://esm.sh/pdf-lib@1.17.1";
 
 function uint8ToBase64(bytes: Uint8Array): string {
   let binary = "";
@@ -17,6 +17,22 @@ const corsHeaders = {
 };
 
 const ND2B_TEMPLATE_URL = "https://uqcsgmmsrgtlcqutaomg.supabase.co/storage/v1/object/public/pdf-templates/ND2B-template.pdf";
+
+const isAsciiOnly = (s: string) => /^[\x00-\x7F]*$/.test(s);
+
+function safeSetText(form: any, fieldName: string, text: string) {
+  if (!text) return;
+  try {
+    const field = form.getTextField(fieldName);
+    if (isAsciiOnly(text)) {
+      field.setText(text);
+    } else {
+      const dict = field.acroField.dict;
+      dict.set(PDFName.of('V'), PDFHexString.fromText(text));
+      dict.delete(PDFName.of('AP'));
+    }
+  } catch {}
+}
 
 interface ND2BData {
   brNumber: string;
@@ -67,72 +83,53 @@ serve(async (req) => {
         } catch {}
       }
     } else {
-      // Split English name into surname + other names
       const nameParts = (data.nameEnglish || '').trim().split(/\s+/);
       const surname = nameParts.length > 1 ? nameParts[nameParts.length - 1] : nameParts[0] || '';
       const otherNames = nameParts.length > 1 ? nameParts.slice(0, -1).join(' ') : '';
 
       // === PAGE 1 (P.1) ===
-      // BR Number
-      try { form.getTextField("fill_1_P.1").setText(data.brNumber); } catch {}
-      // Section 1: Company Name
-      try { form.getTextField("fill_2_P.1").setText(data.companyName); } catch {}
+      safeSetText(form, "fill_1_P.1", data.brNumber);
+      safeSetText(form, "fill_2_P.1", data.companyName);
 
       if (data.identity === 'natural') {
-        // Section 2A: Currently Registered Particulars (原本資料)
-        // Capacity checkbox
         if (data.role === 'secretary') {
           try { form.getCheckBox("cb_1_P.1").check(); } catch {}
         } else {
           try { form.getCheckBox("cb_2_P.1").check(); } catch {}
         }
-        // Chinese Name - fill without embedded font, PDF viewer uses system font
-        if (data.nameChinese) {
-          try { form.getTextField("fill_3_P.1").setText(data.nameChinese); } catch {}
-        }
-        // English Surname
-        try { form.getTextField("fill_4_P.1").setText(surname); } catch {}
-        // English Other Names
-        try { form.getTextField("fill_5_P.1").setText(otherNames); } catch {}
-        // ID Number (passport partial)
-        try { form.getTextField("fill_7_P.1").setText(data.idNumber); } catch {}
+        safeSetText(form, "fill_3_P.1", data.nameChinese);
+        safeSetText(form, "fill_4_P.1", surname);
+        safeSetText(form, "fill_5_P.1", otherNames);
+        safeSetText(form, "fill_7_P.1", data.idNumber);
 
         // === PAGE 2 (P.2) — Section B: Details of Changes ===
-        // For address change, fill correspondence address (e) with new address
         if (data.changeType === 'address' && data.newAddress) {
-          try { form.getTextField("fill_19_P.2").setText(data.newAddress); } catch {}
+          safeSetText(form, "fill_19_P.2", data.newAddress);
         }
 
         // === PAGE 6 (P.6) — PI-ND2B: Protected Information ===
-        // Capacity checkbox
         if (data.role === 'secretary') {
           try { form.getCheckBox("cb_1_P.6").check(); } catch {}
         } else {
           try { form.getCheckBox("cb_2_P.6").check(); } catch {}
         }
-        if (data.nameChinese) {
-          try { form.getTextField("fill_2_P.6").setText(data.nameChinese); } catch {}
-        }
-        try { form.getTextField("fill_3_P.6").setText(surname); } catch {}
-        try { form.getTextField("fill_4_P.6").setText(otherNames); } catch {}
-        // New residential address
-        try { form.getTextField("fill_9_P.6").setText(data.newAddress); } catch {}
+        safeSetText(form, "fill_2_P.6", data.nameChinese);
+        safeSetText(form, "fill_3_P.6", surname);
+        safeSetText(form, "fill_4_P.6", otherNames);
+        safeSetText(form, "fill_9_P.6", data.newAddress);
       }
 
       // === Presentor (bottom of Page 1) ===
-      try { form.getTextField("fill_8_P.1").setText(data.presentorName); } catch {}
-      try { form.getTextField("fill_9_P.1").setText(data.presentorAddress); } catch {}
-      try { form.getTextField("fill_10_P.1").setText(data.presentorContact); } catch {}
+      safeSetText(form, "fill_8_P.1", data.presentorName);
+      safeSetText(form, "fill_9_P.1", data.presentorAddress);
+      safeSetText(form, "fill_10_P.1", data.presentorContact);
 
       // === PAGE 3 (P.3) — Signature ===
-      try { form.getTextField("fill_30_P.3").setText(data.signerName); } catch {}
-      if (data.signDate) {
-        try { form.getTextField("fill_31_P.3").setText(data.signDate); } catch {}
-      }
+      safeSetText(form, "fill_30_P.3", data.signerName);
+      safeSetText(form, "fill_31_P.3", data.signDate);
     }
 
-    // Do NOT flatten — let PDF viewer render CJK text with system fonts
-    const pdfBytes = await pdfDoc.save();
+    const pdfBytes = await pdfDoc.save({ updateFieldAppearances: false });
     const base64 = uint8ToBase64(new Uint8Array(pdfBytes));
 
     return new Response(JSON.stringify({ pdf: base64 }), {

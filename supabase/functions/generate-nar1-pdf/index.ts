@@ -42,6 +42,7 @@ interface ShareholderData {
 
 interface CompanyData {
   name: string;
+  chineseName?: string;
   brNumber: string;
   tradingName: string;
   businessNature: string;
@@ -194,9 +195,10 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
 
   // ============ Page 1 - Company Info ============
   safeSetText("fill_1_P.1", br8);
-  // Box 1 - Company Name. Use English name; CR forms accept either or both.
-  safeSetText("fill_2_P.1", data.name || "");
-  // Box 2 - Trading/Business name (only if explicitly set)
+  // Box 1 - Company Name. CR forms accept Chinese + English in the same field.
+  const companyNameCombined = [data.chineseName, data.name].filter(Boolean).join('\n');
+  safeSetText("fill_2_P.1", companyNameCombined);
+  // Box 2 - Trading/Business name (only if explicitly set, no fallback)
   safeSetText("fill_3_P.1", data.tradingName || "");
   safeCheck("cb_1_P.1", data.companyType?.includes("私人") || data.companyType?.toLowerCase().includes("private") || false);
   safeCheck("cb_2_P.1", data.companyType?.includes("公眾") || data.companyType?.toLowerCase().includes("public") || false);

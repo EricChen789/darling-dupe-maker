@@ -138,8 +138,10 @@ const FormWizard = ({ formId, onBack }: FormWizardProps) => {
   const handleGenerate = async () => {
     setIsGenerating(true);
     try {
+      const company = companies.find(c => c.id === selectedCompanyId);
       const payload = {
         name: formData.companyName,
+        chineseName: company?.chineseName || '',
         brNumber: formData.brNumber,
         tradingName: formData.tradingName,
         businessNature: formData.businessNature,

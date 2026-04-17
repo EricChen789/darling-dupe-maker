@@ -1,6 +1,7 @@
 export interface Company {
   id: string;
   name: string;
+  chineseName?: string;
   brNumber: string;
   tradingName: string;
   businessNature: string;

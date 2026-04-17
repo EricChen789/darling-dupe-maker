@@ -33,6 +33,7 @@ const steps = [
 function companyToFormData(company: Company): NAR1FormData {
   const base = createEmptyFormData();
   base.companyName = company.name;
+  base.chineseName = company.chineseName || '';
   base.brNumber = company.brNumber;
   base.tradingName = company.tradingName;
   base.businessCode = company.businessCode;
@@ -140,6 +141,7 @@ const FormWizard = ({ formId, onBack }: FormWizardProps) => {
     try {
       const payload = {
         name: formData.companyName,
+        chineseName: formData.chineseName,
         brNumber: formData.brNumber,
         tradingName: formData.tradingName,
         businessNature: formData.businessNature,

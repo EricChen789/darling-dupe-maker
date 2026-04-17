@@ -110,8 +110,9 @@ function mapToCompany(
   return {
     id: c.id,
     name: c.name,
+    chineseName: c.chinese_name || '',
     brNumber: c.company_number,
-    tradingName: c.trading_name || c.chinese_name || '',
+    tradingName: c.trading_name || '',
     businessNature: c.business_nature || '',
     directors,
     secretaries,

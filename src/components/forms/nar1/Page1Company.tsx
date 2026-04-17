@@ -21,8 +21,12 @@ export const Page1Company = ({ data, onChange }: Props) => {
           <Input value={data.brNumber} onChange={e => set('brNumber', e.target.value)} placeholder="例：12345678" />
         </div>
         <div className="col-span-2 space-y-2">
-          <Label>1. 公司名稱 Company Name</Label>
+          <Label>1. 公司名稱 (英文) Company Name (English)</Label>
           <Input value={data.companyName} onChange={e => set('companyName', e.target.value)} />
+        </div>
+        <div className="col-span-2 space-y-2">
+          <Label>1. 公司名稱 (中文) Company Name (Chinese)</Label>
+          <Input value={data.chineseName} onChange={e => set('chineseName', e.target.value)} />
         </div>
         <div className="col-span-2 space-y-2">
           <Label>2. 商業名稱 Trading Name（如有）</Label>

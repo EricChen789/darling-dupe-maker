@@ -352,7 +352,9 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
   
   // ============ Pages 14-15 - Declaration ============
   safeSetText("fill_1_P.14", br8);
+  safeSetText("fill_4_P.14", br8);
   safeSetText("fill_1_P.15", br8);
+  safeSetText("fill_4_P.15", br8);
 
   // Keep form interactive so PDF viewer renders CJK with system fonts
   console.log("PDF filled with all data, serializing...");

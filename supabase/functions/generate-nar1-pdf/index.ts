@@ -195,11 +195,10 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
 
   // ============ Page 1 - Company Info ============
   safeSetText("fill_1_P.1", br8);
-  // Box 1 - Company Name. CR forms accept Chinese + English in the same field.
-  const companyNameCombined = [data.chineseName, data.name].filter(Boolean).join('\n');
-  safeSetText("fill_2_P.1", companyNameCombined);
-  // Box 2 - Trading/Business name (only if explicitly set, no fallback)
-  safeSetText("fill_3_P.1", data.tradingName || "");
+  // Box 1 - English company name
+  safeSetText("fill_2_P.1", data.name || "");
+  // Box 1 (cont.) - Chinese company name
+  safeSetText("fill_3_P.1", data.chineseName || "");
   safeCheck("cb_1_P.1", data.companyType?.includes("私人") || data.companyType?.toLowerCase().includes("private") || false);
   safeCheck("cb_2_P.1", data.companyType?.includes("公眾") || data.companyType?.toLowerCase().includes("public") || false);
   safeCheck("cb_3_P.1", data.companyType?.includes("擔保") || false);
@@ -353,7 +352,9 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
   
   // ============ Pages 14-15 - Declaration ============
   safeSetText("fill_1_P.14", br8);
+  safeSetText("fill_4_P.14", br8);
   safeSetText("fill_1_P.15", br8);
+  safeSetText("fill_4_P.15", br8);
 
   // Keep form interactive so PDF viewer renders CJK with system fonts
   console.log("PDF filled with all data, serializing...");

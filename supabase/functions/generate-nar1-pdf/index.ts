@@ -160,22 +160,29 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
       let textToSet = value ?? "";
       const maxLength = field.getMaxLength();
       if (maxLength && textToSet.length > maxLength) textToSet = textToSet.slice(0, maxLength);
-      
-      if (isAsciiOnly(textToSet)) {
-        // ASCII text: use setText which creates proper appearance stream
-        field.setText(textToSet);
-      } else {
-        // CJK text: set value via hex string, delete AP so viewer renders with system fonts
-        const dict = field.acroField.dict;
-        dict.set(PDFName.of('V'), PDFHexString.fromText(textToSet));
-        dict.delete(PDFName.of('AP'));
-      }
+
+      // Set value via hex string (works for both ASCII and CJK) and delete the
+      // pre-built appearance stream so PDF viewers regenerate it with system fonts.
+      // Combined with NeedAppearances=true on the AcroForm, this makes both
+      // English and Chinese text render correctly without embedding fonts.
+      const dict = field.acroField.dict;
+      dict.set(PDFName.of('V'), PDFHexString.fromText(textToSet));
+      dict.delete(PDFName.of('AP'));
       return true;
     } catch (e) {
       console.warn(`⚠ Missing: ${fieldName}`, e);
       return false;
     }
   };
+
+  // Tell PDF viewers to regenerate appearance streams for form fields.
+  // This makes filled values actually visible since we don't embed fonts.
+  try {
+    const acroForm = form.acroForm.dict;
+    acroForm.set(PDFName.of('NeedAppearances'), pdfDoc.context.obj(true));
+  } catch (e) {
+    console.warn('⚠ Could not set NeedAppearances', e);
+  }
 
   const safeCheck = (fieldName: string, shouldCheck: boolean) => {
     if (!shouldCheck) return false;

@@ -1,6 +1,7 @@
 export interface NAR1FormData {
   // Page 1 - Company info
   companyName: string;
+  chineseName: string;
   tradingName: string;
   companyType: 'private' | 'public' | 'guarantee';
   businessCode: string;
@@ -75,6 +76,7 @@ export function createEmptyFormData(): NAR1FormData {
   const today = new Date();
   return {
     companyName: '',
+    chineseName: '',
     tradingName: '',
     companyType: 'private',
     businessCode: '',

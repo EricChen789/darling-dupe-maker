@@ -16,6 +16,10 @@ export interface Company {
   regStreet: string;
   regDistrict: string;
   regRegion: string;
+  incorporationDate?: string;
+  jurisdiction?: string;
+  ciFilePath?: string;
+  brFilePath?: string;
 }
 
 export interface Person {

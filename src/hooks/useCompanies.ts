@@ -18,6 +18,10 @@ interface DbCompany {
   reg_street: string;
   reg_district: string;
   reg_region: string;
+  incorporation_date?: string;
+  jurisdiction?: string;
+  ci_file_path?: string;
+  br_file_path?: string;
 }
 
 interface DbOfficer {
@@ -125,6 +129,10 @@ function mapToCompany(
     regStreet: c.reg_street || '',
     regDistrict: c.reg_district || '',
     regRegion: c.reg_region || '香港 Hong Kong',
+    incorporationDate: c.incorporation_date || '',
+    jurisdiction: c.jurisdiction || 'Hong Kong',
+    ciFilePath: c.ci_file_path || '',
+    brFilePath: c.br_file_path || '',
   };
 }
 
@@ -231,6 +239,10 @@ export function useUpdateCompany() {
           reg_street: data.regStreet,
           reg_district: data.regDistrict,
           reg_region: data.regRegion,
+          incorporation_date: data.incorporationDate,
+          jurisdiction: data.jurisdiction,
+          ci_file_path: data.ciFilePath,
+          br_file_path: data.brFilePath,
           updated_at: new Date().toISOString(),
         })
         .eq('id', id);

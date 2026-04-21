@@ -49,7 +49,7 @@ const composePresenterContact = (p: any, referenceOverride?: string) => {
   if (!p) return '';
   const ref = (referenceOverride && referenceOverride.trim()) || p.reference || '';
   const parts: string[] = [];
-  if (p.phone) parts.push(`電話: ${p.phone}`);
+  if (p.phone) parts.push(p.phone);
   if (p.fax) parts.push(`傳真: ${p.fax}`);
   if (p.email) parts.push(`電郵: ${p.email}`);
   if (ref) parts.push(`參考編號: ${ref}`);

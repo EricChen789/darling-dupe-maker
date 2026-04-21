@@ -224,7 +224,8 @@ export function useAddCompany() {
           reg_street: data.regStreet || '',
           reg_district: data.regDistrict || '',
           reg_region: data.regRegion || '香港 Hong Kong',
-        })
+          preferred_presenter_id: data.preferredPresenterId || null,
+        } as any)
         .select()
         .single();
       if (error) throw error;
@@ -315,8 +316,9 @@ export function useUpdateCompany() {
           jurisdiction: data.jurisdiction,
           ci_file_path: data.ciFilePath,
           br_file_path: data.brFilePath,
+          preferred_presenter_id: data.preferredPresenterId === undefined ? undefined : (data.preferredPresenterId || null),
           updated_at: new Date().toISOString(),
-        })
+        } as any)
         .eq('id', id);
       if (error) throw error;
     },

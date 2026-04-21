@@ -388,6 +388,33 @@ export const CompanyDialog = ({ open, onOpenChange, company, onSave }: CompanyDi
               </Select>
             </div>
 
+            {/* Preferred presenter */}
+            <div className="col-span-2 mt-2 text-sm font-medium">表格提交人 Presenter</div>
+            <div className="space-y-2 col-span-2">
+              <Label htmlFor="preferredPresenter">預設提交人（用於 NAR1 等表格）</Label>
+              <Select
+                value={formData.preferredPresenterId || '__none__'}
+                onValueChange={(value) =>
+                  setFormData({ ...formData, preferredPresenterId: value === '__none__' ? '' : value })
+                }
+              >
+                <SelectTrigger><SelectValue placeholder="選擇提交人..." /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">— 不指定 —</SelectItem>
+                  {presenters.map(p => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.name} {p.type === 'tcsp' ? '(TCSP)' : p.type === 'company' ? '(公司)' : '(個人)'}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {presenters.length === 0 && (
+                <p className="text-xs text-muted-foreground">
+                  尚無提交人資料，請先到「提交人資料」頁面新增。
+                </p>
+              )}
+            </div>
+
             {renderPeopleSection('董事', directors, setDirectors)}
             {renderPeopleSection('秘書', secretaries, setSecretaries)}
             {renderPeopleSection('股東', shareholders, setShareholders)}

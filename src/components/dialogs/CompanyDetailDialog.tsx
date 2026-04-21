@@ -21,7 +21,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Company, Person, Shareholder } from '@/types';
 import {
-  Building2, Users, UserCheck, Briefcase, ArrowLeft, User,
+  Building2, Users, UserCheck, Briefcase, ArrowLeft, User, ShieldCheck, Copy,
   Edit, Save, X, Plus, Trash2, Upload, FileText, Download, Loader2,
 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
@@ -31,6 +31,8 @@ import {
   useAddOfficer, useUpdateOfficer, useDeleteOfficer,
   useAddShareholder, useUpdateShareholder, useDeleteShareholder,
 } from '@/hooks/useCompanies';
+import { SCRTab } from './SCRTab';
+import { CopyFromCompanyDialog } from './CopyFromCompanyDialog';
 
 interface CompanyDetailDialogProps {
   open: boolean;
@@ -38,8 +40,8 @@ interface CompanyDetailDialogProps {
   company: Company | null;
 }
 
-const emptyOfficerForm = () => ({ nameEnglish: '', nameChinese: '', identity: 'natural', idNumber: '', address: '', dateAppointed: '', dateCeased: '', placeIncorporated: '', companyNumberRef: '' });
-const emptyShForm = () => ({ name: '', nameEnglish: '', nameChinese: '', shares: 0, identity: 'natural', idNumber: '', address: '', email: '', shareType: '' });
+const emptyOfficerForm = () => ({ nameEnglish: '', nameChinese: '', identity: 'natural', idNumber: '', address: '', serviceAddress: '', dateAppointed: '', dateCeased: '', placeIncorporated: '', companyNumberRef: '' });
+const emptyShForm = () => ({ name: '', nameEnglish: '', nameChinese: '', shares: 0, identity: 'natural', idNumber: '', address: '', serviceAddress: '', email: '', shareType: '' });
 
 export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDetailDialogProps) => {
   const [selectedPerson, setSelectedPerson] = useState<(Person & { roleLabel: string }) | null>(null);

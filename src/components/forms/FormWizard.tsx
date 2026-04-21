@@ -55,6 +55,8 @@ function companyToFormData(company: Company): NAR1FormData {
     base.companyType = 'guarantee';
   }
 
+  const regAddress = [company.regFlat, company.regBuilding, company.regStreet, company.regDistrict, company.regRegion].filter(Boolean).join(', ');
+
   base.secretaries = company.secretaries.map(s => ({
     identity: s.identity,
     nameChinese: s.nameChinese || '',
@@ -62,7 +64,7 @@ function companyToFormData(company: Company): NAR1FormData {
     formerNameChinese: '',
     formerNameEnglish: '',
     idNumber: s.idNumber || '',
-    address: s.address || '',
+    address: s.address || regAddress,
     dateAppointed: s.dateAppointed || '',
     dateCeased: s.dateCeased || '',
     placeIncorporated: s.placeIncorporated || '',
@@ -77,7 +79,7 @@ function companyToFormData(company: Company): NAR1FormData {
     formerNameChinese: '',
     formerNameEnglish: '',
     idNumber: d.idNumber || '',
-    address: d.address || '',
+    address: d.address || regAddress,
     dateAppointed: d.dateAppointed || '',
     dateCeased: d.dateCeased || '',
     placeIncorporated: d.placeIncorporated || '',
@@ -90,7 +92,7 @@ function companyToFormData(company: Company): NAR1FormData {
     nameChinese: sh.nameChinese || '',
     nameEnglish: sh.nameEnglish || '',
     idNumber: sh.idNumber || '',
-    address: sh.address || '',
+    address: sh.address || regAddress,
     shares: String(sh.shares || ''),
     shareClass: sh.shareType || 'Ordinary 普通股',
     currency: 'HKD',

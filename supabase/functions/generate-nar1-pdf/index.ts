@@ -355,11 +355,27 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
   // Each shareholder entry needs: name, address, shares held, share class
   // The exact field layout depends on the template - we fill what we can
   
-  // ============ Pages 14-15 - Declaration ============
+  // ============ Pages 14-15 - Declaration & Presenter ============
   safeSetText("fill_1_P.14", br8);
   safeSetText("fill_4_P.14", br8);
   safeSetText("fill_1_P.15", br8);
   safeSetText("fill_4_P.15", br8);
+
+  // Presenter info typically appears on the declaration pages.
+  // We attempt common candidate field names; non-existent ones are skipped silently.
+  const presenter = data.presenter || {};
+  if (presenter.name) {
+    safeSetText("fill_2_P.15", presenter.name);
+    safeSetText("fill_5_P.15", presenter.name);
+  }
+  if (presenter.address) {
+    safeSetText("fill_3_P.15", presenter.address);
+    safeSetText("fill_6_P.15", presenter.address);
+  }
+  if (presenter.contact) {
+    safeSetText("fill_7_P.15", presenter.contact);
+    safeSetText("fill_8_P.15", presenter.contact);
+  }
 
   // Keep form interactive so PDF viewer renders CJK with system fonts
   console.log("PDF filled with all data, serializing...");

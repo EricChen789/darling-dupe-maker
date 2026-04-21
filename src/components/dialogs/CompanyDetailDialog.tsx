@@ -52,6 +52,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
   const [editingShDetail, setEditingShDetail] = useState(false);
   const [addingOfficer, setAddingOfficer] = useState<'director' | 'secretary' | null>(null);
   const [addingShareholder, setAddingShareholder] = useState(false);
+  const [copyDialogOpen, setCopyDialogOpen] = useState(false);
 
   const [companyForm, setCompanyForm] = useState({ name: '', chineseName: '', brNumber: '', tradingName: '', businessNature: '', companyType: '', businessCode: '', regFlat: '', regBuilding: '', regStreet: '', regDistrict: '', regRegion: '', incorporationDate: '', jurisdiction: 'Hong Kong', ciFilePath: '', brFilePath: '' });
   const [uploadingCi, setUploadingCi] = useState(false);

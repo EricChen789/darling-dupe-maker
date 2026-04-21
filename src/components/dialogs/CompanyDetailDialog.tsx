@@ -134,11 +134,12 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
       const path = `${company.id}/${kind}_${Date.now()}.${ext}`;
       const { error: upErr } = await supabase.storage.from('company-documents').upload(path, file, { upsert: true });
       if (upErr) throw upErr;
-      const newForm = { ...companyForm, [kind === 'ci' ? 'ciFilePath' : 'brFilePath']: path };
-      setCompanyForm(newForm);
-      updateCompany.mutate({ id: company.id, data: newForm }, {
+      const field = kind === 'ci' ? 'ciFilePath' : 'brFilePath';
+      setCompanyForm(prev => ({ ...prev, [field]: path }));
+      // Only update the specific file path field to avoid overwriting other fields with stale form state
+      updateCompany.mutate({ id: company.id, data: { [field]: path } }, {
         onSuccess: () => toast({ title: kind === 'ci' ? 'CI 已上傳' : 'BR 已上傳' }),
-        onError: () => toast({ title: '上傳成功，儲存連結失敗', variant: 'destructive' }),
+        onError: (e: any) => toast({ title: '上傳成功，儲存連結失敗', description: e?.message, variant: 'destructive' }),
       });
     } catch (e: any) {
       toast({ title: '上傳失敗', description: e.message, variant: 'destructive' });

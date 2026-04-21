@@ -244,35 +244,40 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
   safeSetText("fill_1_P.2", br8);
   
   // Fill share capital from shareholder data - aggregate by share type
-  const shareTypeMap = new Map<string, { shares: number; currency: string; className: string; paidUp: string }>();
+  const shareTypeMap = new Map<string, { shares: number; currency: string; className: string; totalAmount: string; paidUp: string }>();
   for (const sh of data.shareholders) {
     const st = sh.shareType || 'ORD';
     if (!shareTypeMap.has(st)) {
       // Parse share type like "ORD - HK$1.00 ORDINARY FULLY PAID (HK$)"
-      const currMatch = st.match(/\((\w+\$?)\)/) || st.match(/(HK\$|USD|RMB|GBP)/);
-      const parMatch = st.match(/(\w+\$?[\d.]+)/);
+      const currMatch = st.match(/(HK\$|USD|RMB|GBP|US\$|CNY|EUR)/i);
+      const parMatch = st.match(/[\d.]+/);
+      const parValue = parMatch ? parseFloat(parMatch[0]) : 0;
       shareTypeMap.set(st, {
         shares: 0,
         currency: currMatch ? currMatch[1] : 'HK$',
-        className: st.split(' - ')[0] || 'ORD',
-        paidUp: parMatch ? parMatch[1] : '',
+        className: (st.split(' - ')[0] || 'ORD').trim(),
+        totalAmount: '',
+        paidUp: parValue ? parValue.toFixed(2) : '',
       });
     }
     const entry = shareTypeMap.get(st)!;
     entry.shares += sh.shares;
   }
-  
-  // Page 2 layout: fill_2=Email, fill_3=Tel, fill_4=Mortgages, fill_5=Members
-  // Share capital table starts at fill_6_P.2: 6 rows × 4 columns
-  // Per row: [class, currency, total number, total amount paid-up]
+
+  // Page 2 share capital table: 5 columns × 4 rows starting at fill_6_P.2
+  // Per row: [class, currency, total number, total amount, total paid-up]
+  // Row 1: 6,7,8,9,10  Row 2: 11..15  Row 3: 16..20  Row 4: 21..25
   let shareIdx = 0;
   for (const [, info] of shareTypeMap) {
-    if (shareIdx >= 6) break;
-    const base = 6 + shareIdx * 4;
+    if (shareIdx >= 4) break;
+    const base = 6 + shareIdx * 5;
+    const parValue = parseFloat(info.paidUp) || 0;
+    const totalAmount = parValue ? (info.shares * parValue).toFixed(2) : '';
     safeSetText(`fill_${base}_P.2`, info.className);
     safeSetText(`fill_${base + 1}_P.2`, info.currency);
     safeSetText(`fill_${base + 2}_P.2`, info.shares.toLocaleString());
-    safeSetText(`fill_${base + 3}_P.2`, info.paidUp);
+    safeSetText(`fill_${base + 3}_P.2`, totalAmount);
+    safeSetText(`fill_${base + 4}_P.2`, totalAmount);
     shareIdx++;
   }
 

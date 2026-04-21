@@ -262,7 +262,7 @@ export function useUpdateCompany() {
 export function useAddOfficer() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (data: { company_id: string; name_english: string; name_chinese?: string; role: string; identity?: string; id_number?: string; address?: string; date_appointed?: string; date_ceased?: string; place_incorporated?: string; company_number_ref?: string }) => {
+    mutationFn: async (data: { company_id: string; name_english: string; name_chinese?: string; role: string; identity?: string; id_number?: string; address?: string; service_address?: string; date_appointed?: string; date_ceased?: string; place_incorporated?: string; company_number_ref?: string }) => {
       const { error } = await supabase.from('officers').insert({
         company_id: data.company_id,
         name_english: data.name_english,
@@ -271,11 +271,12 @@ export function useAddOfficer() {
         identity: data.identity || 'natural',
         id_number: data.id_number || '',
         address: data.address || '',
+        service_address: data.service_address || '',
         date_appointed: data.date_appointed || null,
         date_ceased: data.date_ceased || null,
         place_incorporated: data.place_incorporated || '',
         company_number_ref: data.company_number_ref || '',
-      });
+      } as any);
       if (error) throw error;
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['companies'] }),
@@ -285,8 +286,8 @@ export function useAddOfficer() {
 export function useUpdateOfficer() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: { name_english?: string; name_chinese?: string; identity?: string; id_number?: string; address?: string; date_appointed?: string; date_ceased?: string; place_incorporated?: string; company_number_ref?: string } }) => {
-      const { error } = await supabase.from('officers').update(data).eq('id', id);
+    mutationFn: async ({ id, data }: { id: string; data: { name_english?: string; name_chinese?: string; identity?: string; id_number?: string; address?: string; service_address?: string; date_appointed?: string; date_ceased?: string; place_incorporated?: string; company_number_ref?: string } }) => {
+      const { error } = await supabase.from('officers').update(data as any).eq('id', id);
       if (error) throw error;
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['companies'] }),
@@ -307,8 +308,8 @@ export function useDeleteOfficer() {
 export function useAddShareholder() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (data: { company_id: string; name: string; name_english?: string; name_chinese?: string; shares: number; identity?: string; id_number?: string; address?: string; email?: string; share_type?: string }) => {
-      const { error } = await supabase.from('shareholders').insert(data);
+    mutationFn: async (data: { company_id: string; name: string; name_english?: string; name_chinese?: string; shares: number; identity?: string; id_number?: string; address?: string; service_address?: string; email?: string; share_type?: string }) => {
+      const { error } = await supabase.from('shareholders').insert(data as any);
       if (error) throw error;
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['companies'] }),
@@ -318,8 +319,8 @@ export function useAddShareholder() {
 export function useUpdateShareholder() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: { name?: string; name_english?: string; name_chinese?: string; shares?: number; identity?: string; id_number?: string; address?: string; email?: string; share_type?: string } }) => {
-      const { error } = await supabase.from('shareholders').update(data).eq('id', id);
+    mutationFn: async ({ id, data }: { id: string; data: { name?: string; name_english?: string; name_chinese?: string; shares?: number; identity?: string; id_number?: string; address?: string; service_address?: string; email?: string; share_type?: string } }) => {
+      const { error } = await supabase.from('shareholders').update(data as any).eq('id', id);
       if (error) throw error;
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['companies'] }),
@@ -332,6 +333,71 @@ export function useDeleteShareholder() {
     mutationFn: async (id: string) => {
       const { error } = await supabase.from('shareholders').delete().eq('id', id);
       if (error) throw error;
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['companies'] }),
+  });
+}
+
+// Copy officers and/or shareholders from one company to another
+export function useCopyFromCompany() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      sourceCompanyId,
+      targetCompanyId,
+      officerIds,
+      shareholderIds,
+    }: {
+      sourceCompanyId: string;
+      targetCompanyId: string;
+      officerIds: string[];
+      shareholderIds: string[];
+    }) => {
+      if (officerIds.length > 0) {
+        const { data: srcOfficers, error: e1 } = await supabase
+          .from('officers').select('*').in('id', officerIds);
+        if (e1) throw e1;
+        const inserts = (srcOfficers || []).map((o: any) => ({
+          company_id: targetCompanyId,
+          name_english: o.name_english,
+          name_chinese: o.name_chinese,
+          identity: o.identity,
+          role: o.role,
+          id_number: o.id_number,
+          address: o.address,
+          service_address: o.service_address || '',
+          date_appointed: o.date_appointed,
+          date_ceased: o.date_ceased,
+          place_incorporated: o.place_incorporated,
+          company_number_ref: o.company_number_ref,
+        }));
+        if (inserts.length) {
+          const { error } = await supabase.from('officers').insert(inserts as any);
+          if (error) throw error;
+        }
+      }
+      if (shareholderIds.length > 0) {
+        const { data: srcShs, error: e2 } = await supabase
+          .from('shareholders').select('*').in('id', shareholderIds);
+        if (e2) throw e2;
+        const inserts = (srcShs || []).map((s: any) => ({
+          company_id: targetCompanyId,
+          name: s.name,
+          name_english: s.name_english,
+          name_chinese: s.name_chinese,
+          shares: s.shares,
+          identity: s.identity,
+          id_number: s.id_number,
+          address: s.address,
+          service_address: s.service_address || '',
+          email: s.email,
+          share_type: s.share_type,
+        }));
+        if (inserts.length) {
+          const { error } = await supabase.from('shareholders').insert(inserts as any);
+          if (error) throw error;
+        }
+      }
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['companies'] }),
   });

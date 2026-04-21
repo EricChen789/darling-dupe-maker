@@ -23,6 +23,7 @@ interface DbCompany {
   ci_file_path?: string;
   br_file_path?: string;
   preferred_presenter_id?: string | null;
+  presenter_reference?: string | null;
 }
 
 interface DbOfficer {
@@ -140,6 +141,7 @@ function mapToCompany(
     ciFilePath: c.ci_file_path || '',
     brFilePath: c.br_file_path || '',
     preferredPresenterId: c.preferred_presenter_id || '',
+    presenterReference: c.presenter_reference || '',
   };
 }
 
@@ -225,6 +227,7 @@ export function useAddCompany() {
           reg_district: data.regDistrict || '',
           reg_region: data.regRegion || '香港 Hong Kong',
           preferred_presenter_id: data.preferredPresenterId || null,
+          presenter_reference: data.presenterReference || '',
         } as any)
         .select()
         .single();
@@ -317,6 +320,7 @@ export function useUpdateCompany() {
           ci_file_path: data.ciFilePath,
           br_file_path: data.brFilePath,
           preferred_presenter_id: data.preferredPresenterId === undefined ? undefined : (data.preferredPresenterId || null),
+          presenter_reference: data.presenterReference,
           updated_at: new Date().toISOString(),
         } as any)
         .eq('id', id);

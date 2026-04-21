@@ -137,13 +137,14 @@ const FormWizard = ({ formId, onBack }: FormWizardProps) => {
     ).slice(0, 20);
   }, [companies, searchTerm]);
 
-  const composePresenterContact = (p: any) => {
+  const composePresenterContact = (p: any, referenceOverride?: string) => {
     if (!p) return '';
+    const ref = (referenceOverride && referenceOverride.trim()) || p.reference || '';
     const parts: string[] = [];
     if (p.phone) parts.push(`電話: ${p.phone}`);
     if (p.fax) parts.push(`傳真: ${p.fax}`);
     if (p.email) parts.push(`電郵: ${p.email}`);
-    if (p.reference) parts.push(`參考編號: ${p.reference}`);
+    if (ref) parts.push(`參考編號: ${ref}`);
     if (parts.length) return parts.join('  ');
     return p.contact || '';
   };
@@ -156,10 +157,12 @@ const FormWizard = ({ formId, onBack }: FormWizardProps) => {
       ? presenters.find(p => p.id === company.preferredPresenterId)
       : undefined;
     if (preferred) {
+      const refOverride = company.presenterReference || '';
       next.presenterId = preferred.id;
       next.presenterName = preferred.name;
       next.presenterAddress = preferred.address || '';
-      next.presenterContact = composePresenterContact(preferred);
+      next.presenterReference = refOverride || preferred.reference || '';
+      next.presenterContact = composePresenterContact(preferred, refOverride);
     }
     setFormData(next);
     toast({ title: '已載入公司資料', description: `${company.name} 的資料已自動填入表格` });
@@ -173,7 +176,17 @@ const FormWizard = ({ formId, onBack }: FormWizardProps) => {
       presenterId: p.id,
       presenterName: p.name,
       presenterAddress: p.address || '',
+      presenterReference: p.reference || '',
       presenterContact: composePresenterContact(p),
+    });
+  };
+
+  const handleReferenceChange = (value: string) => {
+    const p = presenters.find(x => x.id === formData.presenterId);
+    setFormData({
+      ...formData,
+      presenterReference: value,
+      presenterContact: p ? composePresenterContact(p, value) : formData.presenterContact,
     });
   };
 
@@ -460,8 +473,16 @@ const FormWizard = ({ formId, onBack }: FormWizardProps) => {
                   <Label className="text-xs">地址</Label>
                   <Textarea rows={2} value={formData.presenterAddress || ''} onChange={e => setFormData({ ...formData, presenterAddress: e.target.value })} />
                 </div>
-                <div className="space-y-1 col-span-2">
-                  <Label className="text-xs">聯絡資訊（電話／傳真／電郵／參考編號）</Label>
+                <div className="space-y-1">
+                  <Label className="text-xs">參考編號 Reference（可即時編輯覆寫）</Label>
+                  <Input
+                    value={formData.presenterReference || ''}
+                    onChange={e => handleReferenceChange(e.target.value)}
+                    placeholder="例如 TS-2026-001"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">聯絡資訊（自動由電話／傳真／電郵／參考編號組成）</Label>
                   <Textarea rows={2} value={formData.presenterContact || ''} onChange={e => setFormData({ ...formData, presenterContact: e.target.value })} />
                 </div>
               </div>

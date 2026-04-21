@@ -21,6 +21,7 @@ export interface Company {
   ciFilePath?: string;
   brFilePath?: string;
   preferredPresenterId?: string;
+  presenterReference?: string;
 }
 
 export interface Person {

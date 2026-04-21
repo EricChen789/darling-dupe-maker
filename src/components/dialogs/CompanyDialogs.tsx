@@ -57,6 +57,7 @@ export const CompanyDialog = ({ open, onOpenChange, company, onSave }: CompanyDi
     regDistrict: '',
     regRegion: '香港 Hong Kong',
     preferredPresenterId: '',
+    presenterReference: '',
   });
   const [directors, setDirectors] = useState<Partial<Person>[]>([]);
   const [secretaries, setSecretaries] = useState<Partial<Person>[]>([]);
@@ -93,6 +94,7 @@ export const CompanyDialog = ({ open, onOpenChange, company, onSave }: CompanyDi
         regDistrict: company?.regDistrict || '',
         regRegion: company?.regRegion || '香港 Hong Kong',
         preferredPresenterId: company?.preferredPresenterId || '',
+        presenterReference: company?.presenterReference || '',
       });
       setDirectors([]);
       setSecretaries([]);
@@ -413,6 +415,18 @@ export const CompanyDialog = ({ open, onOpenChange, company, onSave }: CompanyDi
                   尚無提交人資料，請先到「提交人資料」頁面新增。
                 </p>
               )}
+            </div>
+            <div className="space-y-2 col-span-2">
+              <Label htmlFor="presenterReference">提交人參考號碼（公司專屬，可覆寫預設值）</Label>
+              <Input
+                id="presenterReference"
+                value={formData.presenterReference}
+                onChange={(e) => setFormData({ ...formData, presenterReference: e.target.value })}
+                placeholder="留空則使用提交人預設參考號碼"
+              />
+              <p className="text-xs text-muted-foreground">
+                此欄位會優先用於該公司的表格生成；留空則自動套用所選提交人本身的參考號碼。
+              </p>
             </div>
 
             {renderPeopleSection('董事', directors, setDirectors)}

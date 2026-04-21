@@ -30,6 +30,7 @@ export type Database = {
           jurisdiction: string | null
           name: string
           preferred_presenter_id: string | null
+          presenter_reference: string | null
           quorum: string | null
           reg_building: string | null
           reg_district: string | null
@@ -55,6 +56,7 @@ export type Database = {
           jurisdiction?: string | null
           name: string
           preferred_presenter_id?: string | null
+          presenter_reference?: string | null
           quorum?: string | null
           reg_building?: string | null
           reg_district?: string | null
@@ -80,6 +82,7 @@ export type Database = {
           jurisdiction?: string | null
           name?: string
           preferred_presenter_id?: string | null
+          presenter_reference?: string | null
           quorum?: string | null
           reg_building?: string | null
           reg_district?: string | null

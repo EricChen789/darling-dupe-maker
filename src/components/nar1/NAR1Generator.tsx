@@ -22,6 +22,7 @@ import { FileText, Download, Loader2 } from 'lucide-react';
 import { Company } from '@/types';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
+import { usePresenters } from '@/hooks/usePresenters';
 
 interface NAR1GeneratorProps {
   open: boolean;
@@ -44,8 +45,21 @@ const computeReturnDate = (incorporationDate?: string): string => {
   return today.toISOString().split('T')[0];
 };
 
+const composePresenterContact = (p: any, referenceOverride?: string) => {
+  if (!p) return '';
+  const ref = (referenceOverride && referenceOverride.trim()) || p.reference || '';
+  const parts: string[] = [];
+  if (p.phone) parts.push(`電話: ${p.phone}`);
+  if (p.fax) parts.push(`傳真: ${p.fax}`);
+  if (p.email) parts.push(`電郵: ${p.email}`);
+  if (ref) parts.push(`參考編號: ${ref}`);
+  if (parts.length) return parts.join('  ');
+  return p.contact || '';
+};
+
 export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProps) => {
   const [isGenerating, setIsGenerating] = useState(false);
+  const { data: presenters = [] } = usePresenters();
   const [formData, setFormData] = useState({
     returnDate: computeReturnDate(company?.incorporationDate),
     flat: '',
@@ -53,11 +67,20 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
     street: '',
     district: '',
     region: '香港 Hong Kong',
+    presenterId: '',
+    presenterName: '',
+    presenterAddress: '',
+    presenterReference: '',
+    presenterContact: '',
   });
 
-  // 當 company 變更（開啟對話框時），重新計算結算日期與帶入註冊地址
+  // 當 company 變更（開啟對話框時），重新計算結算日期、帶入註冊地址 + Presenter
   useEffect(() => {
     if (company) {
+      const preferred = company.preferredPresenterId
+        ? presenters.find(p => p.id === company.preferredPresenterId)
+        : undefined;
+      const refOverride = company.presenterReference || '';
       setFormData(prev => ({
         ...prev,
         returnDate: computeReturnDate(company.incorporationDate),
@@ -66,9 +89,36 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
         street: company.regStreet || prev.street,
         district: company.regDistrict || prev.district,
         region: company.regRegion || prev.region,
+        presenterId: preferred?.id || '',
+        presenterName: preferred?.name || '',
+        presenterAddress: preferred?.address || '',
+        presenterReference: refOverride || preferred?.reference || '',
+        presenterContact: preferred ? composePresenterContact(preferred, refOverride) : '',
       }));
     }
-  }, [company]);
+  }, [company, presenters]);
+
+  const handlePickPresenter = (id: string) => {
+    const p = presenters.find(x => x.id === id);
+    if (!p) return;
+    setFormData(prev => ({
+      ...prev,
+      presenterId: p.id,
+      presenterName: p.name,
+      presenterAddress: p.address || '',
+      presenterReference: p.reference || '',
+      presenterContact: composePresenterContact(p),
+    }));
+  };
+
+  const handleReferenceChange = (value: string) => {
+    const p = presenters.find(x => x.id === formData.presenterId);
+    setFormData(prev => ({
+      ...prev,
+      presenterReference: value,
+      presenterContact: p ? composePresenterContact(p, value) : prev.presenterContact,
+    }));
+  };
 
   const handleGenerate = async () => {
     if (!company) return;
@@ -125,6 +175,11 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
           shareType: sh.shareType || '',
         })),
         returnDate: formData.returnDate,
+        presenter: {
+          name: formData.presenterName || '',
+          address: formData.presenterAddress || '',
+          contact: formData.presenterContact || '',
+        },
       };
 
       const { data, error } = await supabase.functions.invoke('generate-nar1-pdf', {

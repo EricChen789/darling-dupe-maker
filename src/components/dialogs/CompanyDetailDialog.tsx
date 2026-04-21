@@ -114,7 +114,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
   const selectShareholder = (sh: Shareholder) => {
     setSelectedPerson(null); setEditingPerson(false);
     setSelectedSh(sh);
-    setShForm({ name: sh.name, nameEnglish: sh.nameEnglish, nameChinese: sh.nameChinese, shares: sh.shares, identity: sh.identity, idNumber: sh.idNumber, address: sh.address, email: sh.email, shareType: sh.shareType || '' });
+    setShForm({ name: sh.name, nameEnglish: sh.nameEnglish, nameChinese: sh.nameChinese, shares: sh.shares, identity: sh.identity, idNumber: sh.idNumber, address: sh.address, serviceAddress: sh.serviceAddress || '', email: sh.email, shareType: sh.shareType || '' });
     setEditingShDetail(true);
   };
 

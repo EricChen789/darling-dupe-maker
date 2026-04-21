@@ -262,6 +262,9 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                   <Briefcase className="h-3.5 w-3.5" /> 股東
                   <Badge variant="secondary" className="text-xs ml-1">{company.shareholders.length}</Badge>
                 </TabsTrigger>
+                <TabsTrigger value="scr" className="gap-1.5">
+                  <ShieldCheck className="h-3.5 w-3.5" /> 重要控制人
+                </TabsTrigger>
               </TabsList>
 
               {/* Tab: 基本資料 */}

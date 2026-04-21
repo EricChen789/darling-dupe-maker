@@ -610,7 +610,7 @@ function PersonRow({ person, isSelected, onClick, onDelete }: { person: Person; 
   );
 }
 
-type OfficerFormType = { nameEnglish: string; nameChinese: string; identity: string; idNumber: string; address: string; dateAppointed: string; dateCeased: string; placeIncorporated: string; companyNumberRef: string };
+type OfficerFormType = { nameEnglish: string; nameChinese: string; identity: string; idNumber: string; address: string; serviceAddress: string; dateAppointed: string; dateCeased: string; placeIncorporated: string; companyNumberRef: string };
 
 function NewOfficerForm({ form, setForm, onSave, onCancel }: {
   form: OfficerFormType;

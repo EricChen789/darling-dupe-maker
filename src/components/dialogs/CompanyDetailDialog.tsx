@@ -270,17 +270,29 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
 
                 {!editingCompany ? (
                   <div className="grid grid-cols-2 gap-4 text-sm">
+                    <InfoItem label="中文名稱" value={company.chineseName} />
                     <InfoItem label="商業登記號碼" value={company.brNumber} />
                     <InfoItem label="商業名稱" value={company.tradingName} />
                     <InfoItem label="公司類型" value={company.companyType} />
                     <InfoItem label="業務性質" value={company.businessNature} />
                     <InfoItem label="業務代碼" value={company.businessCode} />
-                    <InfoItem label="註冊辦事處地址" value={[company.regFlat, company.regBuilding, company.regStreet, company.regDistrict, company.regRegion].filter(Boolean).join(', ') || '—'} />
+                    <InfoItem label="成立日期" value={company.incorporationDate} />
+                    <InfoItem label="司法管轄區" value={company.jurisdiction} />
+                    <div className="col-span-2">
+                      <InfoItem label="註冊辦事處地址" value={[company.regFlat, company.regBuilding, company.regStreet, company.regDistrict, company.regRegion].filter(Boolean).join(', ') || '—'} />
+                    </div>
                     <InfoItem label="最後更新" value={company.updatedAt} />
+                    <div className="col-span-2 border-t border-border pt-3 mt-2 grid grid-cols-2 gap-4">
+                      <DocSlot label="公司註冊證書 (CI)" path={company.ciFilePath} uploading={uploadingCi}
+                        onUpload={(f) => uploadDoc(f, 'ci')} onDownload={() => downloadDoc(company.ciFilePath || '')} />
+                      <DocSlot label="商業登記證 (BR)" path={company.brFilePath} uploading={uploadingBr}
+                        onUpload={(f) => uploadDoc(f, 'br')} onDownload={() => downloadDoc(company.brFilePath || '')} />
+                    </div>
                   </div>
                 ) : (
                   <div className="grid grid-cols-2 gap-3 text-sm">
-                    <div className="space-y-1"><Label className="text-xs">公司名稱</Label><Input value={companyForm.name} onChange={e => setCompanyForm({ ...companyForm, name: e.target.value })} /></div>
+                    <div className="space-y-1"><Label className="text-xs">公司英文名稱</Label><Input value={companyForm.name} onChange={e => setCompanyForm({ ...companyForm, name: e.target.value })} /></div>
+                    <div className="space-y-1"><Label className="text-xs">公司中文名稱</Label><Input value={companyForm.chineseName} onChange={e => setCompanyForm({ ...companyForm, chineseName: e.target.value })} /></div>
                     <div className="space-y-1"><Label className="text-xs">商業登記號碼</Label><Input value={companyForm.brNumber} onChange={e => setCompanyForm({ ...companyForm, brNumber: e.target.value })} /></div>
                     <div className="space-y-1"><Label className="text-xs">商業名稱</Label><Input value={companyForm.tradingName} onChange={e => setCompanyForm({ ...companyForm, tradingName: e.target.value })} /></div>
                     <div className="space-y-1"><Label className="text-xs">業務性質</Label><Input value={companyForm.businessNature} onChange={e => setCompanyForm({ ...companyForm, businessNature: e.target.value })} /></div>
@@ -296,6 +308,20 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                       </Select>
                     </div>
                     <div className="space-y-1"><Label className="text-xs">業務代碼</Label><Input value={companyForm.businessCode} onChange={e => setCompanyForm({ ...companyForm, businessCode: e.target.value })} /></div>
+                    <div className="space-y-1"><Label className="text-xs">成立日期</Label><Input type="date" value={companyForm.incorporationDate} onChange={e => setCompanyForm({ ...companyForm, incorporationDate: e.target.value })} /></div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">司法管轄區 Jurisdiction</Label>
+                      <Input list="jurisdiction-list" value={companyForm.jurisdiction}
+                        onChange={e => setCompanyForm({ ...companyForm, jurisdiction: e.target.value })}
+                        placeholder="Hong Kong / BVI / Cayman Islands ..." />
+                      <datalist id="jurisdiction-list">
+                        <option value="Hong Kong" />
+                        <option value="BVI" />
+                        <option value="Seychelles" />
+                        <option value="Samoa" />
+                        <option value="Cayman Islands" />
+                      </datalist>
+                    </div>
                     <div className="col-span-2 border-t border-border pt-3 mt-2">
                       <Label className="text-xs font-medium">註冊辦事處地址</Label>
                       <div className="grid grid-cols-2 gap-2 mt-2">

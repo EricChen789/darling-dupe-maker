@@ -31,6 +31,7 @@ export interface Person {
   role: 'director' | 'secretary' | 'shareholder';
   brNumber?: string;
   address?: string;
+  serviceAddress?: string;
   idNumber?: string;
   dateAppointed?: string;
   dateCeased?: string;

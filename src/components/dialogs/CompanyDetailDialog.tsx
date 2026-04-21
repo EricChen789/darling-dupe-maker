@@ -607,7 +607,15 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                   <div className="space-y-1"><Label className="text-xs">身份證號碼</Label><Input value={shForm.idNumber} onChange={e => setShForm({ ...shForm, idNumber: e.target.value })} /></div>
                   <div className="space-y-1"><Label className="text-xs">持股數量</Label><Input type="number" value={shForm.shares} onChange={e => setShForm({ ...shForm, shares: parseInt(e.target.value) || 0 })} /></div>
                   <div className="space-y-1"><Label className="text-xs">股份類別</Label><Input value={shForm.shareType} onChange={e => setShForm({ ...shForm, shareType: e.target.value })} placeholder="e.g. Ordinary 普通股" /></div>
-                  <div className="col-span-2 space-y-1"><Label className="text-xs">地址</Label><Textarea value={shForm.address} onChange={e => setShForm({ ...shForm, address: e.target.value })} rows={2} /></div>
+                  <div className="col-span-2 space-y-1"><Label className="text-xs">居住地址</Label><Textarea value={shForm.address} onChange={e => setShForm({ ...shForm, address: e.target.value })} rows={2} /></div>
+                  <div className="col-span-2 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs">服務地址 (Service Address)</Label>
+                      <Button type="button" variant="link" size="sm" className="h-auto p-0 text-xs"
+                        onClick={() => setShForm({ ...shForm, serviceAddress: regAddrFull })}>同註冊辦事處</Button>
+                    </div>
+                    <Textarea value={shForm.serviceAddress} onChange={e => setShForm({ ...shForm, serviceAddress: e.target.value })} rows={2} />
+                  </div>
                   <div className="space-y-1"><Label className="text-xs">電郵</Label><Input value={shForm.email} onChange={e => setShForm({ ...shForm, email: e.target.value })} /></div>
                 </div>
               )}

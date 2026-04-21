@@ -262,10 +262,13 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
     entry.shares += sh.shares;
   }
   
+  // Page 2 layout: fill_2=Email, fill_3=Tel, fill_4=Mortgages, fill_5=Members
+  // Share capital table starts at fill_6_P.2: 6 rows × 4 columns
+  // Per row: [class, currency, total number, total amount paid-up]
   let shareIdx = 0;
   for (const [, info] of shareTypeMap) {
     if (shareIdx >= 6) break;
-    const base = 4 + shareIdx * 4;
+    const base = 6 + shareIdx * 4;
     safeSetText(`fill_${base}_P.2`, info.className);
     safeSetText(`fill_${base + 1}_P.2`, info.currency);
     safeSetText(`fill_${base + 2}_P.2`, info.shares.toLocaleString());

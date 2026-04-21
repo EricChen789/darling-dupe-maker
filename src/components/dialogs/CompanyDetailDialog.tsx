@@ -22,9 +22,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Company, Person, Shareholder } from '@/types';
 import {
   Building2, Users, UserCheck, Briefcase, ArrowLeft, User,
-  Edit, Save, X, Plus, Trash2,
+  Edit, Save, X, Plus, Trash2, Upload, FileText, Download, Loader2,
 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
 import {
   useUpdateCompany,
   useAddOfficer, useUpdateOfficer, useDeleteOfficer,

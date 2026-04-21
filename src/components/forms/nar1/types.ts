@@ -78,8 +78,19 @@ export interface NAR1Shareholder {
   paidUp: string;
 }
 
-export function createEmptyFormData(): NAR1FormData {
+export function createEmptyFormData(incorporationDate?: string): NAR1FormData {
   const today = new Date();
+  // 結算日期 = 成立日期的月/日 + 今年；若沒成立日期則用今天
+  let returnDay = String(today.getDate()).padStart(2, '0');
+  let returnMonth = String(today.getMonth() + 1).padStart(2, '0');
+  const returnYear = String(today.getFullYear());
+  if (incorporationDate) {
+    const d = new Date(incorporationDate);
+    if (!isNaN(d.getTime())) {
+      returnDay = String(d.getDate()).padStart(2, '0');
+      returnMonth = String(d.getMonth() + 1).padStart(2, '0');
+    }
+  }
   return {
     companyName: '',
     chineseName: '',
@@ -87,9 +98,9 @@ export function createEmptyFormData(): NAR1FormData {
     companyType: 'private',
     businessCode: '',
     businessNature: '',
-    returnDateDay: String(today.getDate()).padStart(2, '0'),
-    returnDateMonth: String(today.getMonth() + 1).padStart(2, '0'),
-    returnDateYear: String(today.getFullYear()),
+    returnDateDay: returnDay,
+    returnDateMonth: returnMonth,
+    returnDateYear: returnYear,
     financialStartDay: '',
     financialStartMonth: '',
     financialStartYear: '',

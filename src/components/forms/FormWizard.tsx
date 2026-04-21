@@ -34,7 +34,7 @@ const steps = [
 ];
 
 function companyToFormData(company: Company): NAR1FormData {
-  const base = createEmptyFormData();
+  const base = createEmptyFormData(company.incorporationDate);
   base.companyName = company.name;
   base.chineseName = company.chineseName || '';
   base.brNumber = company.brNumber;

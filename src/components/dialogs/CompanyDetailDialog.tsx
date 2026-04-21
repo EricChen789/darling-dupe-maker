@@ -391,7 +391,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                 {/* Secretaries */}
                 <div className="flex items-center justify-between mb-2">
                   <SectionHeader icon={<UserCheck className="h-4 w-4 text-primary" />} title="秘書" count={company.secretaries.length} />
-                  <Button variant="ghost" size="sm" onClick={() => { setAddingOfficer('secretary'); setNewOfficerForm(emptyOfficerForm()); }}>
+                  <Button variant="ghost" size="sm" onClick={() => { setAddingOfficer('secretary'); setNewOfficerForm({ ...emptyOfficerForm(), serviceAddress: regAddrFull }); }}>
                     <Plus className="h-3.5 w-3.5 mr-1" /> 新增
                   </Button>
                 </div>

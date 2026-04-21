@@ -209,11 +209,14 @@ export function useAddCompany() {
         .from('companies')
         .insert({
           name: data.name || '',
+          chinese_name: data.chineseName || '',
           company_number: data.brNumber || '',
           trading_name: data.tradingName || '',
           business_nature: data.businessNature || '',
           company_type: data.companyType || '私人公司 Private company',
           business_code: data.businessCode || '',
+          incorporation_date: data.incorporationDate || '',
+          jurisdiction: data.jurisdiction || 'Hong Kong',
         })
         .select()
         .single();

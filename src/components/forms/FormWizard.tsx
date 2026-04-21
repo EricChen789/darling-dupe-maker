@@ -137,9 +137,31 @@ const FormWizard = ({ formId, onBack }: FormWizardProps) => {
     ).slice(0, 20);
   }, [companies, searchTerm]);
 
+  const composePresenterContact = (p: any) => {
+    if (!p) return '';
+    const parts: string[] = [];
+    if (p.phone) parts.push(`電話: ${p.phone}`);
+    if (p.fax) parts.push(`傳真: ${p.fax}`);
+    if (p.email) parts.push(`電郵: ${p.email}`);
+    if (p.reference) parts.push(`參考編號: ${p.reference}`);
+    if (parts.length) return parts.join('  ');
+    return p.contact || '';
+  };
+
   const handleSelectCompany = (company: Company) => {
     setSelectedCompanyId(company.id);
-    setFormData(companyToFormData(company));
+    const next = companyToFormData(company);
+    // Auto-pick the company's preferred presenter, if any
+    const preferred = company.preferredPresenterId
+      ? presenters.find(p => p.id === company.preferredPresenterId)
+      : undefined;
+    if (preferred) {
+      next.presenterId = preferred.id;
+      next.presenterName = preferred.name;
+      next.presenterAddress = preferred.address || '';
+      next.presenterContact = composePresenterContact(preferred);
+    }
+    setFormData(next);
     toast({ title: '已載入公司資料', description: `${company.name} 的資料已自動填入表格` });
   };
 
@@ -151,7 +173,7 @@ const FormWizard = ({ formId, onBack }: FormWizardProps) => {
       presenterId: p.id,
       presenterName: p.name,
       presenterAddress: p.address || '',
-      presenterContact: p.contact || '',
+      presenterContact: composePresenterContact(p),
     });
   };
 

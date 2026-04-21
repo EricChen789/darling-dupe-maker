@@ -15,6 +15,7 @@ import {
 import { Company, Person, Shareholder } from '@/types';
 import { toast } from '@/hooks/use-toast';
 import { Upload, FileText, Loader2, Sparkles, X } from 'lucide-react';
+import { usePresenters } from '@/hooks/usePresenters';
 
 interface CompanyDialogProps {
   open: boolean;
@@ -39,6 +40,7 @@ const mergeArr = <T extends Record<string, any>>(existing: T[], incoming: any[] 
 };
 
 export const CompanyDialog = ({ open, onOpenChange, company, onSave }: CompanyDialogProps) => {
+  const { data: presenters = [] } = usePresenters();
   const [formData, setFormData] = useState({
     name: '',
     chineseName: '',
@@ -54,6 +56,7 @@ export const CompanyDialog = ({ open, onOpenChange, company, onSave }: CompanyDi
     regStreet: '',
     regDistrict: '',
     regRegion: '香港 Hong Kong',
+    preferredPresenterId: '',
   });
   const [directors, setDirectors] = useState<Partial<Person>[]>([]);
   const [secretaries, setSecretaries] = useState<Partial<Person>[]>([]);
@@ -89,6 +92,7 @@ export const CompanyDialog = ({ open, onOpenChange, company, onSave }: CompanyDi
         regStreet: company?.regStreet || '',
         regDistrict: company?.regDistrict || '',
         regRegion: company?.regRegion || '香港 Hong Kong',
+        preferredPresenterId: company?.preferredPresenterId || '',
       });
       setDirectors([]);
       setSecretaries([]);
@@ -382,6 +386,33 @@ export const CompanyDialog = ({ open, onOpenChange, company, onSave }: CompanyDi
                   <SelectItem value="新界 New Territories">新界 New Territories</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+
+            {/* Preferred presenter */}
+            <div className="col-span-2 mt-2 text-sm font-medium">表格提交人 Presenter</div>
+            <div className="space-y-2 col-span-2">
+              <Label htmlFor="preferredPresenter">預設提交人（用於 NAR1 等表格）</Label>
+              <Select
+                value={formData.preferredPresenterId || '__none__'}
+                onValueChange={(value) =>
+                  setFormData({ ...formData, preferredPresenterId: value === '__none__' ? '' : value })
+                }
+              >
+                <SelectTrigger><SelectValue placeholder="選擇提交人..." /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">— 不指定 —</SelectItem>
+                  {presenters.map(p => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.name} {p.type === 'tcsp' ? '(TCSP)' : p.type === 'company' ? '(公司)' : '(個人)'}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {presenters.length === 0 && (
+                <p className="text-xs text-muted-foreground">
+                  尚無提交人資料，請先到「提交人資料」頁面新增。
+                </p>
+              )}
             </div>
 
             {renderPeopleSection('董事', directors, setDirectors)}

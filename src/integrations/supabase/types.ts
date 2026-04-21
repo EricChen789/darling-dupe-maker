@@ -29,6 +29,7 @@ export type Database = {
           incorporation_date: string | null
           jurisdiction: string | null
           name: string
+          preferred_presenter_id: string | null
           quorum: string | null
           reg_building: string | null
           reg_district: string | null
@@ -53,6 +54,7 @@ export type Database = {
           incorporation_date?: string | null
           jurisdiction?: string | null
           name: string
+          preferred_presenter_id?: string | null
           quorum?: string | null
           reg_building?: string | null
           reg_district?: string | null
@@ -77,6 +79,7 @@ export type Database = {
           incorporation_date?: string | null
           jurisdiction?: string | null
           name?: string
+          preferred_presenter_id?: string | null
           quorum?: string | null
           reg_building?: string | null
           reg_district?: string | null
@@ -87,7 +90,15 @@ export type Database = {
           trading_name?: string | null
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "companies_preferred_presenter_id_fkey"
+            columns: ["preferred_presenter_id"]
+            isOneToOne: false
+            referencedRelation: "presenters"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       officers: {
         Row: {

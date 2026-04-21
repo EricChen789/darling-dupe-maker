@@ -20,6 +20,7 @@ export interface Company {
   jurisdiction?: string;
   ciFilePath?: string;
   brFilePath?: string;
+  preferredPresenterId?: string;
 }
 
 export interface Person {

@@ -179,6 +179,7 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
           name: formData.presenterName || '',
           address: formData.presenterAddress || '',
           contact: formData.presenterContact || '',
+          reference: formData.presenterReference || '',
         },
       };
 

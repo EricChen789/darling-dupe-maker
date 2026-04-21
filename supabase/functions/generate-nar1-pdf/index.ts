@@ -63,6 +63,7 @@ interface CompanyData {
     name?: string;
     address?: string;
     contact?: string;
+    reference?: string;
   };
 }
 
@@ -216,6 +217,28 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
   safeSetText("fill_16_P.1", office.building || "");
   safeSetText("fill_17_P.1", office.street || "");
   safeSetText("fill_18_P.1", office.district || "");
+
+  // Region dropdown on Page 1
+  if (office.region) {
+    try {
+      const dropdown = form.getDropdown("Dropdown1_P.1");
+      const options = dropdown.getOptions();
+      const match = options.find((o: string) => office.region!.includes(o) || o.includes(office.region!));
+      if (match) dropdown.select(match);
+    } catch (e) {
+      console.warn("⚠ Region dropdown not found on P.1", e);
+    }
+  }
+
+  // Page 1 - Presenter's Reference block (bottom-left of page 1)
+  const presenterP1 = data.presenter || {};
+  if (presenterP1.name) safeSetText("fill_20_P.1", presenterP1.name);
+  if (presenterP1.address) safeSetText("fill_21_P.1", presenterP1.address);
+  if (presenterP1.contact) safeSetText("fill_22_P.1", presenterP1.contact);
+  if (presenterP1.reference) {
+    // Try common field names for reference; safeSetText logs warning if missing.
+    safeSetText("fill_23_P.1", presenterP1.reference);
+  }
 
   // ============ Page 2 - Share Capital ============
   safeSetText("fill_1_P.2", br8);

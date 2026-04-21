@@ -409,9 +409,14 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
 
               {/* Tab: 股東 */}
               <TabsContent value="shareholders">
+                <div className="flex justify-end mb-3">
+                  <Button variant="outline" size="sm" onClick={() => setCopyDialogOpen(true)}>
+                    <Copy className="h-3.5 w-3.5 mr-1" /> 從其他公司複製
+                  </Button>
+                </div>
                 <div className="flex items-center justify-between mb-2">
                   <SectionHeader icon={<Briefcase className="h-4 w-4 text-primary" />} title="股東" count={company.shareholders.length} />
-                  <Button variant="ghost" size="sm" onClick={() => { setAddingShareholder(true); setShForm(emptyShForm()); }}>
+                  <Button variant="ghost" size="sm" onClick={() => { setAddingShareholder(true); setShForm({ ...emptyShForm(), serviceAddress: regAddrFull }); }}>
                     <Plus className="h-3.5 w-3.5 mr-1" /> 新增
                   </Button>
                 </div>
@@ -449,8 +454,15 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                   </div>
                 ) : !addingShareholder && <p className="text-muted-foreground text-sm">無股東記錄</p>}
               </TabsContent>
+
+              {/* Tab: SCR */}
+              <TabsContent value="scr">
+                <SCRTab company={company} />
+              </TabsContent>
             </Tabs>
           </div>
+
+          <CopyFromCompanyDialog open={copyDialogOpen} onOpenChange={setCopyDialogOpen} targetCompany={company} />
 
           {/* Right: Person detail panel */}
           {selectedPerson && (

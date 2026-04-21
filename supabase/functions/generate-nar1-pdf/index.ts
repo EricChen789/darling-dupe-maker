@@ -59,6 +59,11 @@ interface CompanyData {
   secretaries: OfficerData[];
   shareholders: ShareholderData[];
   returnDate?: string;
+  presenter?: {
+    name?: string;
+    address?: string;
+    contact?: string;
+  };
 }
 
 const TEMPLATE_URL = "https://uqcsgmmsrgtlcqutaomg.supabase.co/storage/v1/object/public/pdf-templates/NAR1-template-v2.pdf";

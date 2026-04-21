@@ -154,6 +154,19 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
     window.open(data.signedUrl, '_blank');
   };
 
+  const downloadDocAsFile = async (path: string) => {
+    if (!path) return;
+    const filename = path.split('/').pop() || 'document';
+    const { data, error } = await supabase.storage.from('company-documents').createSignedUrl(path, 60, { download: filename });
+    if (error || !data) { toast({ title: '取得連結失敗', variant: 'destructive' }); return; }
+    const a = document.createElement('a');
+    a.href = data.signedUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
+
   const regAddrFull = [company.regFlat, company.regBuilding, company.regStreet, company.regDistrict, company.regRegion].filter(Boolean).join(', ');
 
   const handleSavePerson = () => {

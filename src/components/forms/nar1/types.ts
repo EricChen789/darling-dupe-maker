@@ -37,6 +37,12 @@ export interface NAR1FormData {
 
   // Shareholders
   shareholders: NAR1Shareholder[];
+
+  // Presenter
+  presenterId?: string;
+  presenterName?: string;
+  presenterAddress?: string;
+  presenterContact?: string;
 }
 
 export interface ShareCapitalRow {

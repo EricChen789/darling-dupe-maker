@@ -3,9 +3,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
-import { ArrowLeft, ArrowRight, Sparkles, Download, Loader2, Search } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
+import { ArrowLeft, ArrowRight, Sparkles, Download, Loader2, Search, Bug } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useCompanies } from '@/hooks/useCompanies';
+import { usePresenters } from '@/hooks/usePresenters';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 import { Company } from '@/types';
@@ -52,6 +55,8 @@ function companyToFormData(company: Company): NAR1FormData {
     base.companyType = 'guarantee';
   }
 
+  const regAddress = [company.regFlat, company.regBuilding, company.regStreet, company.regDistrict, company.regRegion].filter(Boolean).join(', ');
+
   base.secretaries = company.secretaries.map(s => ({
     identity: s.identity,
     nameChinese: s.nameChinese || '',
@@ -59,7 +64,7 @@ function companyToFormData(company: Company): NAR1FormData {
     formerNameChinese: '',
     formerNameEnglish: '',
     idNumber: s.idNumber || '',
-    address: s.address || '',
+    address: s.address || regAddress,
     dateAppointed: s.dateAppointed || '',
     dateCeased: s.dateCeased || '',
     placeIncorporated: s.placeIncorporated || '',
@@ -74,7 +79,7 @@ function companyToFormData(company: Company): NAR1FormData {
     formerNameChinese: '',
     formerNameEnglish: '',
     idNumber: d.idNumber || '',
-    address: d.address || '',
+    address: d.address || regAddress,
     dateAppointed: d.dateAppointed || '',
     dateCeased: d.dateCeased || '',
     placeIncorporated: d.placeIncorporated || '',
@@ -87,7 +92,7 @@ function companyToFormData(company: Company): NAR1FormData {
     nameChinese: sh.nameChinese || '',
     nameEnglish: sh.nameEnglish || '',
     idNumber: sh.idNumber || '',
-    address: sh.address || '',
+    address: sh.address || regAddress,
     shares: String(sh.shares || ''),
     shareClass: sh.shareType || 'Ordinary 普通股',
     currency: 'HKD',
@@ -119,8 +124,10 @@ const FormWizard = ({ formId, onBack }: FormWizardProps) => {
   const [selectedCompanyId, setSelectedCompanyId] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isDebugging, setIsDebugging] = useState(false);
 
   const { data: companies = [] } = useCompanies();
+  const { data: presenters = [] } = usePresenters();
 
   const filteredCompanies = useMemo(() => {
     if (!searchTerm) return companies.slice(0, 20);
@@ -136,82 +143,113 @@ const FormWizard = ({ formId, onBack }: FormWizardProps) => {
     toast({ title: '已載入公司資料', description: `${company.name} 的資料已自動填入表格` });
   };
 
-  const handleGenerate = async () => {
-    setIsGenerating(true);
+  const handlePickPresenter = (id: string) => {
+    const p = presenters.find(x => x.id === id);
+    if (!p) return;
+    setFormData({
+      ...formData,
+      presenterId: p.id,
+      presenterName: p.name,
+      presenterAddress: p.address || '',
+      presenterContact: p.contact || '',
+    });
+  };
+
+  const buildPayload = (debugMode = false) => ({
+    debugMode,
+    name: formData.companyName,
+    chineseName: formData.chineseName,
+    brNumber: formData.brNumber,
+    tradingName: formData.tradingName,
+    businessNature: formData.businessNature,
+    businessCode: formData.businessCode,
+    companyType: formData.companyType === 'private' ? '私人公司 Private company'
+      : formData.companyType === 'public' ? '公眾公司 Public company'
+      : '擔保有限公司 Company limited by guarantee',
+    registeredOffice: {
+      flat: formData.regFlat,
+      building: formData.regBuilding,
+      street: formData.regStreet,
+      district: formData.regDistrict,
+      region: formData.regRegion,
+    },
+    directors: formData.directors.map(d => ({
+      nameChinese: d.nameChinese,
+      nameEnglish: d.nameEnglish,
+      identity: d.identity,
+      address: d.address,
+      idNumber: d.idNumber,
+      dateAppointed: d.dateAppointed,
+      placeIncorporated: d.placeIncorporated,
+      companyNumberRef: d.companyNumberRef,
+      email: '',
+      brNumber: '',
+    })),
+    secretaries: formData.secretaries.map(s => ({
+      nameChinese: s.nameChinese,
+      nameEnglish: s.nameEnglish,
+      identity: s.identity,
+      address: s.address,
+      idNumber: s.idNumber,
+      dateAppointed: s.dateAppointed,
+      placeIncorporated: s.placeIncorporated,
+      companyNumberRef: s.companyNumberRef,
+      email: '',
+      brNumber: '',
+    })),
+    shareholders: formData.shareholders.map(sh => ({
+      name: sh.nameEnglish || sh.nameChinese,
+      nameEnglish: sh.nameEnglish,
+      nameChinese: sh.nameChinese,
+      shares: parseInt(sh.shares) || 0,
+      identity: sh.identity,
+      idNumber: sh.idNumber,
+      address: sh.address,
+      shareType: sh.shareClass,
+    })),
+    returnDate: `${formData.returnDateYear}-${formData.returnDateMonth}-${formData.returnDateDay}`,
+    presenter: {
+      name: formData.presenterName || '',
+      address: formData.presenterAddress || '',
+      contact: formData.presenterContact || '',
+    },
+  });
+
+  const downloadPdfFromInvoke = async (data: any, filename: string) => {
+    let blob: Blob;
+    if (data instanceof Blob) {
+      blob = data;
+    } else if (data instanceof ArrayBuffer) {
+      blob = new Blob([data], { type: 'application/pdf' });
+    } else if (data && typeof data === 'object' && data.pdf) {
+      const bin = atob(data.pdf);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      blob = new Blob([bytes], { type: 'application/pdf' });
+    } else {
+      blob = new Blob([data], { type: 'application/pdf' });
+    }
+    const url = URL.createObjectURL(blob);
+    window.open(url, '_blank');
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  };
+
+  const handleGenerate = async (debugMode = false) => {
+    const setLoading = debugMode ? setIsDebugging : setIsGenerating;
+    setLoading(true);
     try {
-      const payload = {
-        name: formData.companyName,
-        chineseName: formData.chineseName,
-        brNumber: formData.brNumber,
-        tradingName: formData.tradingName,
-        businessNature: formData.businessNature,
-        businessCode: formData.businessCode,
-        companyType: formData.companyType === 'private' ? '私人公司 Private company'
-          : formData.companyType === 'public' ? '公眾公司 Public company'
-          : '擔保有限公司 Company limited by guarantee',
-        registeredOffice: {
-          flat: formData.regFlat,
-          building: formData.regBuilding,
-          street: formData.regStreet,
-          district: formData.regDistrict,
-          region: formData.regRegion,
-        },
-        directors: formData.directors.map(d => ({
-          nameChinese: d.nameChinese,
-          nameEnglish: d.nameEnglish,
-          identity: d.identity,
-          address: d.address,
-          idNumber: d.idNumber,
-          dateAppointed: d.dateAppointed,
-          placeIncorporated: d.placeIncorporated,
-          companyNumberRef: d.companyNumberRef,
-          email: '',
-          brNumber: '',
-        })),
-        secretaries: formData.secretaries.map(s => ({
-          nameChinese: s.nameChinese,
-          nameEnglish: s.nameEnglish,
-          identity: s.identity,
-          address: s.address,
-          idNumber: s.idNumber,
-          dateAppointed: s.dateAppointed,
-          placeIncorporated: s.placeIncorporated,
-          companyNumberRef: s.companyNumberRef,
-          email: '',
-          brNumber: '',
-        })),
-        shareholders: formData.shareholders.map(sh => ({
-          name: sh.nameEnglish || sh.nameChinese,
-          nameEnglish: sh.nameEnglish,
-          nameChinese: sh.nameChinese,
-          shares: parseInt(sh.shares) || 0,
-          identity: sh.identity,
-          idNumber: sh.idNumber,
-          address: sh.address,
-          shareType: sh.shareClass,
-        })),
-        returnDate: `${formData.returnDateYear}-${formData.returnDateMonth}-${formData.returnDateDay}`,
-      };
-
-      const { data, error } = await supabase.functions.invoke('generate-nar1-pdf', { body: payload });
+      const { data, error } = await supabase.functions.invoke('generate-nar1-pdf', { body: buildPayload(debugMode) });
       if (error) throw error;
-
-      const blob = new Blob([data], { type: 'application/pdf' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `NAR1_${formData.brNumber}_${Date.now()}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-
-      toast({ title: 'PDF 已生成', description: 'NAR1 表格已成功生成並下載' });
+      const filename = debugMode
+        ? `NAR1_DEBUG_${formData.brNumber || 'preview'}.pdf`
+        : `NAR1_${formData.brNumber}_${formData.companyName}.pdf`;
+      await downloadPdfFromInvoke(data, filename);
+      toast({ title: debugMode ? 'Debug PDF 已生成' : 'PDF 已生成', description: debugMode ? '請查看每個欄位的編號並回報需修正的位置' : 'NAR1 表格已成功生成' });
     } catch (error) {
       console.error('Error generating PDF:', error);
       toast({ title: '生成失敗', description: error instanceof Error ? error.message : '無法生成 PDF', variant: 'destructive' });
     } finally {
-      setIsGenerating(false);
+      setLoading(false);
     }
   };
 
@@ -377,18 +415,63 @@ const FormWizard = ({ formId, onBack }: FormWizardProps) => {
               )}
             </div>
 
-            <Button
-              onClick={handleGenerate}
-              disabled={isGenerating}
-              className="w-full bg-primary text-primary-foreground"
-              size="lg"
-            >
-              {isGenerating ? (
-                <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> 生成中...</>
-              ) : (
-                <><Download className="h-4 w-4 mr-2" /> 生成並下載 NAR1 PDF</>
-              )}
-            </Button>
+            {/* Presenter section */}
+            <div className="space-y-3 border border-border rounded-lg p-4">
+              <h3 className="text-sm font-semibold">提交人 Presenter</h3>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">選擇預設提交人</Label>
+                  <Select value={formData.presenterId || ''} onValueChange={handlePickPresenter}>
+                    <SelectTrigger><SelectValue placeholder="選擇..." /></SelectTrigger>
+                    <SelectContent>
+                      {presenters.map(p => (
+                        <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">提交人名稱</Label>
+                  <Input value={formData.presenterName || ''} onChange={e => setFormData({ ...formData, presenterName: e.target.value })} />
+                </div>
+                <div className="space-y-1 col-span-2">
+                  <Label className="text-xs">地址</Label>
+                  <Textarea rows={2} value={formData.presenterAddress || ''} onChange={e => setFormData({ ...formData, presenterAddress: e.target.value })} />
+                </div>
+                <div className="space-y-1 col-span-2">
+                  <Label className="text-xs">聯絡資訊（電話／傳真／電郵／參考編號）</Label>
+                  <Textarea rows={2} value={formData.presenterContact || ''} onChange={e => setFormData({ ...formData, presenterContact: e.target.value })} />
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">在「設定」頁面可管理提交人列表</p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <Button
+                onClick={() => handleGenerate(true)}
+                disabled={isDebugging || isGenerating}
+                variant="outline"
+                size="lg"
+              >
+                {isDebugging ? (
+                  <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Debug 中...</>
+                ) : (
+                  <><Bug className="h-4 w-4 mr-2" /> Debug：印出欄位編號</>
+                )}
+              </Button>
+              <Button
+                onClick={() => handleGenerate(false)}
+                disabled={isGenerating || isDebugging}
+                className="bg-primary text-primary-foreground"
+                size="lg"
+              >
+                {isGenerating ? (
+                  <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> 生成中...</>
+                ) : (
+                  <><Download className="h-4 w-4 mr-2" /> 生成 NAR1 PDF</>
+                )}
+              </Button>
+            </div>
           </div>
         )}
       </div>

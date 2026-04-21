@@ -245,6 +245,13 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
   
   // Fill share capital from shareholder data - aggregate by share type
   const shareTypeMap = new Map<string, { shares: number; currency: string; className: string; totalAmount: string; paidUp: string }>();
+  const expandClassName = (raw: string) => {
+    const t = (raw || '').trim();
+    if (!t) return 'Ordinary';
+    if (/^ord(inary)?$/i.test(t)) return 'Ordinary';
+    if (/^pref(erence)?$/i.test(t)) return 'Preference';
+    return t;
+  };
   for (const sh of data.shareholders) {
     const st = sh.shareType || 'ORD';
     if (!shareTypeMap.has(st)) {
@@ -255,7 +262,7 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
       shareTypeMap.set(st, {
         shares: 0,
         currency: currMatch ? currMatch[1] : 'HK$',
-        className: (st.split(' - ')[0] || 'ORD').trim(),
+        className: expandClassName(st.split(' - ')[0] || 'ORD'),
         totalAmount: '',
         paidUp: parValue ? parValue.toFixed(2) : '',
       });

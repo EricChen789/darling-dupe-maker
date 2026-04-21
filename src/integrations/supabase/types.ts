@@ -104,6 +104,7 @@ export type Database = {
           name_english: string
           place_incorporated: string | null
           role: string
+          service_address: string | null
         }
         Insert: {
           address?: string | null
@@ -119,6 +120,7 @@ export type Database = {
           name_english?: string
           place_incorporated?: string | null
           role: string
+          service_address?: string | null
         }
         Update: {
           address?: string | null
@@ -134,6 +136,7 @@ export type Database = {
           name_english?: string
           place_incorporated?: string | null
           role?: string
+          service_address?: string | null
         }
         Relationships: [
           {
@@ -211,6 +214,7 @@ export type Database = {
           name: string
           name_chinese: string | null
           name_english: string | null
+          service_address: string | null
           share_type: string | null
           shares: number
         }
@@ -225,6 +229,7 @@ export type Database = {
           name?: string
           name_chinese?: string | null
           name_english?: string | null
+          service_address?: string | null
           share_type?: string | null
           shares?: number
         }
@@ -239,12 +244,93 @@ export type Database = {
           name?: string
           name_chinese?: string | null
           name_english?: string | null
+          service_address?: string | null
           share_type?: string | null
           shares?: number
         }
         Relationships: [
           {
             foreignKeyName: "shareholders_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      significant_controllers: {
+        Row: {
+          address: string | null
+          company_id: string
+          created_at: string
+          date_became: string | null
+          date_ceased: string | null
+          designated_rep_contact: string | null
+          designated_rep_name: string | null
+          id: string
+          id_number: string | null
+          identity: string
+          is_designated_rep: boolean | null
+          name_chinese: string | null
+          name_english: string
+          nature_appoint: boolean | null
+          nature_influence: boolean | null
+          nature_other: string | null
+          nature_shares: boolean | null
+          nature_trust: boolean | null
+          nature_voting: boolean | null
+          service_address: string | null
+          updated_at: string
+        }
+        Insert: {
+          address?: string | null
+          company_id: string
+          created_at?: string
+          date_became?: string | null
+          date_ceased?: string | null
+          designated_rep_contact?: string | null
+          designated_rep_name?: string | null
+          id?: string
+          id_number?: string | null
+          identity?: string
+          is_designated_rep?: boolean | null
+          name_chinese?: string | null
+          name_english?: string
+          nature_appoint?: boolean | null
+          nature_influence?: boolean | null
+          nature_other?: string | null
+          nature_shares?: boolean | null
+          nature_trust?: boolean | null
+          nature_voting?: boolean | null
+          service_address?: string | null
+          updated_at?: string
+        }
+        Update: {
+          address?: string | null
+          company_id?: string
+          created_at?: string
+          date_became?: string | null
+          date_ceased?: string | null
+          designated_rep_contact?: string | null
+          designated_rep_name?: string | null
+          id?: string
+          id_number?: string | null
+          identity?: string
+          is_designated_rep?: boolean | null
+          name_chinese?: string | null
+          name_english?: string
+          nature_appoint?: boolean | null
+          nature_influence?: boolean | null
+          nature_other?: string | null
+          nature_shares?: boolean | null
+          nature_trust?: boolean | null
+          nature_voting?: boolean | null
+          service_address?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "significant_controllers_company_id_fkey"
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"

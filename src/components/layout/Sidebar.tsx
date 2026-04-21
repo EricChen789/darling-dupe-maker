@@ -1,6 +1,6 @@
 import { Link, useLocation } from 'react-router-dom';
 import { cn } from '@/lib/utils';
-import { Download, Wrench } from 'lucide-react';
+import { Download, Wrench, UserCheck } from 'lucide-react';
 import { Building2, Users, FileText, Receipt, ClipboardList, Settings, LogOut, Table, PanelLeftClose, PanelLeft } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAuth } from '@/hooks/useAuth';
@@ -13,6 +13,7 @@ interface SidebarProps {
 const navItems: { path: string; label: string; icon: any; external?: boolean }[] = [
   { path: '/companies', label: '公司管理', icon: Building2 },
   { path: '/people', label: '人員管理', icon: Users },
+  { path: '/presenters', label: '提交人資料', icon: UserCheck },
   { path: '/forms', label: '表單管理', icon: FileText },
   { path: '/invoices', label: '發票管理', icon: Receipt },
   { path: '/logs', label: '公司日誌', icon: ClipboardList },

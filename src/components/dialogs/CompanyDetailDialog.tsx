@@ -789,18 +789,23 @@ function SectionHeader({ icon, title, count }: { icon: React.ReactNode; title: s
   );
 }
 
-function DocSlot({ label, path, uploading, onUpload, onDownload }: {
+function DocSlot({ label, path, uploading, onUpload, onView, onDownload }: {
   label: string; path?: string; uploading: boolean;
-  onUpload: (f: File) => void; onDownload: () => void;
+  onUpload: (f: File) => void; onView: () => void; onDownload: () => void;
 }) {
   return (
     <div className="space-y-1">
       <div className="text-muted-foreground text-xs">{label}</div>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 flex-wrap">
         {path ? (
-          <Button type="button" variant="outline" size="sm" onClick={onDownload} className="gap-1">
-            <FileText className="h-3.5 w-3.5" /> 查看
-          </Button>
+          <>
+            <Button type="button" variant="outline" size="sm" onClick={onView} className="gap-1">
+              <FileText className="h-3.5 w-3.5" /> 查看
+            </Button>
+            <Button type="button" variant="outline" size="sm" onClick={onDownload} className="gap-1">
+              <Download className="h-3.5 w-3.5" /> 下載
+            </Button>
+          </>
         ) : (
           <span className="text-xs text-muted-foreground">尚未上傳</span>
         )}
@@ -815,6 +820,45 @@ function DocSlot({ label, path, uploading, onUpload, onDownload }: {
           {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
           {path ? '更換' : '上傳'}
         </label>
+      </div>
+    </div>
+  );
+}
+
+function DocPreview({ path, label }: { path: string; label: string }) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    supabase.storage.from('company-documents').createSignedUrl(path, 3600).then(({ data }) => {
+      if (cancelled) return;
+      setUrl(data?.signedUrl || null);
+      setLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [path]);
+
+  const ext = (path.split('.').pop() || '').toLowerCase();
+  const isImage = ['png', 'jpg', 'jpeg', 'webp', 'gif'].includes(ext);
+  const isPdf = ext === 'pdf';
+
+  return (
+    <div className="border border-border rounded-lg overflow-hidden bg-muted/20">
+      <div className="px-3 py-2 text-xs font-medium border-b border-border bg-muted/40">{label}</div>
+      <div className="h-[500px] flex items-center justify-center">
+        {loading ? (
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        ) : !url ? (
+          <span className="text-xs text-muted-foreground">無法載入預覽</span>
+        ) : isImage ? (
+          <img src={url} alt={label} className="max-w-full max-h-full object-contain" />
+        ) : isPdf ? (
+          <iframe src={url} title={label} className="w-full h-full" />
+        ) : (
+          <a href={url} target="_blank" rel="noreferrer" className="text-primary text-sm underline">開啟檔案</a>
+        )}
       </div>
     </div>
   );

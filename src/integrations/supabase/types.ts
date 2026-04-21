@@ -16,14 +16,18 @@ export type Database = {
     Tables: {
       companies: {
         Row: {
+          br_file_path: string | null
           business_code: string | null
           business_nature: string | null
           chinese_name: string | null
+          ci_file_path: string | null
           company_group: string | null
           company_number: string | null
           company_type: string | null
           created_at: string
           id: string
+          incorporation_date: string | null
+          jurisdiction: string | null
           name: string
           quorum: string | null
           reg_building: string | null
@@ -36,14 +40,18 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          br_file_path?: string | null
           business_code?: string | null
           business_nature?: string | null
           chinese_name?: string | null
+          ci_file_path?: string | null
           company_group?: string | null
           company_number?: string | null
           company_type?: string | null
           created_at?: string
           id?: string
+          incorporation_date?: string | null
+          jurisdiction?: string | null
           name: string
           quorum?: string | null
           reg_building?: string | null
@@ -56,14 +64,18 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          br_file_path?: string | null
           business_code?: string | null
           business_nature?: string | null
           chinese_name?: string | null
+          ci_file_path?: string | null
           company_group?: string | null
           company_number?: string | null
           company_type?: string | null
           created_at?: string
           id?: string
+          incorporation_date?: string | null
+          jurisdiction?: string | null
           name?: string
           quorum?: string | null
           reg_building?: string | null

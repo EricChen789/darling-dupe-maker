@@ -22,9 +22,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Company, Person, Shareholder } from '@/types';
 import {
   Building2, Users, UserCheck, Briefcase, ArrowLeft, User,
-  Edit, Save, X, Plus, Trash2,
+  Edit, Save, X, Plus, Trash2, Upload, FileText, Download, Loader2,
 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
 import {
   useUpdateCompany,
   useAddOfficer, useUpdateOfficer, useDeleteOfficer,
@@ -50,7 +51,9 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
   const [addingOfficer, setAddingOfficer] = useState<'director' | 'secretary' | null>(null);
   const [addingShareholder, setAddingShareholder] = useState(false);
 
-  const [companyForm, setCompanyForm] = useState({ name: '', brNumber: '', tradingName: '', businessNature: '', companyType: '', businessCode: '', regFlat: '', regBuilding: '', regStreet: '', regDistrict: '', regRegion: '' });
+  const [companyForm, setCompanyForm] = useState({ name: '', chineseName: '', brNumber: '', tradingName: '', businessNature: '', companyType: '', businessCode: '', regFlat: '', regBuilding: '', regStreet: '', regDistrict: '', regRegion: '', incorporationDate: '', jurisdiction: 'Hong Kong', ciFilePath: '', brFilePath: '' });
+  const [uploadingCi, setUploadingCi] = useState(false);
+  const [uploadingBr, setUploadingBr] = useState(false);
   const [personForm, setPersonForm] = useState(emptyOfficerForm());
   const [newOfficerForm, setNewOfficerForm] = useState(emptyOfficerForm());
   const [shForm, setShForm] = useState(emptyShForm());
@@ -66,10 +69,12 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
   useEffect(() => {
     if (company) {
       setCompanyForm({
-        name: company.name, brNumber: company.brNumber, tradingName: company.tradingName,
+        name: company.name, chineseName: company.chineseName || '', brNumber: company.brNumber, tradingName: company.tradingName,
         businessNature: company.businessNature, companyType: company.companyType, businessCode: company.businessCode,
         regFlat: company.regFlat || '', regBuilding: company.regBuilding || '', regStreet: company.regStreet || '',
         regDistrict: company.regDistrict || '', regRegion: company.regRegion || '',
+        incorporationDate: company.incorporationDate || '', jurisdiction: company.jurisdiction || 'Hong Kong',
+        ciFilePath: company.ciFilePath || '', brFilePath: company.brFilePath || '',
       });
     }
   }, [company]);
@@ -114,6 +119,34 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
       onSuccess: () => { toast({ title: '公司資料已更新' }); setEditingCompany(false); },
       onError: () => toast({ title: '更新失敗', variant: 'destructive' }),
     });
+  };
+
+  const uploadDoc = async (file: File, kind: 'ci' | 'br') => {
+    const setUploading = kind === 'ci' ? setUploadingCi : setUploadingBr;
+    setUploading(true);
+    try {
+      const ext = file.name.split('.').pop() || 'pdf';
+      const path = `${company.id}/${kind}_${Date.now()}.${ext}`;
+      const { error: upErr } = await supabase.storage.from('company-documents').upload(path, file, { upsert: true });
+      if (upErr) throw upErr;
+      const newForm = { ...companyForm, [kind === 'ci' ? 'ciFilePath' : 'brFilePath']: path };
+      setCompanyForm(newForm);
+      updateCompany.mutate({ id: company.id, data: newForm }, {
+        onSuccess: () => toast({ title: kind === 'ci' ? 'CI 已上傳' : 'BR 已上傳' }),
+        onError: () => toast({ title: '上傳成功，儲存連結失敗', variant: 'destructive' }),
+      });
+    } catch (e: any) {
+      toast({ title: '上傳失敗', description: e.message, variant: 'destructive' });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const downloadDoc = async (path: string) => {
+    if (!path) return;
+    const { data, error } = await supabase.storage.from('company-documents').createSignedUrl(path, 60);
+    if (error || !data) { toast({ title: '取得連結失敗', variant: 'destructive' }); return; }
+    window.open(data.signedUrl, '_blank');
   };
 
   const handleSavePerson = () => {
@@ -237,17 +270,29 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
 
                 {!editingCompany ? (
                   <div className="grid grid-cols-2 gap-4 text-sm">
+                    <InfoItem label="中文名稱" value={company.chineseName} />
                     <InfoItem label="商業登記號碼" value={company.brNumber} />
                     <InfoItem label="商業名稱" value={company.tradingName} />
                     <InfoItem label="公司類型" value={company.companyType} />
                     <InfoItem label="業務性質" value={company.businessNature} />
                     <InfoItem label="業務代碼" value={company.businessCode} />
-                    <InfoItem label="註冊辦事處地址" value={[company.regFlat, company.regBuilding, company.regStreet, company.regDistrict, company.regRegion].filter(Boolean).join(', ') || '—'} />
+                    <InfoItem label="成立日期" value={company.incorporationDate} />
+                    <InfoItem label="司法管轄區" value={company.jurisdiction} />
+                    <div className="col-span-2">
+                      <InfoItem label="註冊辦事處地址" value={[company.regFlat, company.regBuilding, company.regStreet, company.regDistrict, company.regRegion].filter(Boolean).join(', ') || '—'} />
+                    </div>
                     <InfoItem label="最後更新" value={company.updatedAt} />
+                    <div className="col-span-2 border-t border-border pt-3 mt-2 grid grid-cols-2 gap-4">
+                      <DocSlot label="公司註冊證書 (CI)" path={company.ciFilePath} uploading={uploadingCi}
+                        onUpload={(f) => uploadDoc(f, 'ci')} onDownload={() => downloadDoc(company.ciFilePath || '')} />
+                      <DocSlot label="商業登記證 (BR)" path={company.brFilePath} uploading={uploadingBr}
+                        onUpload={(f) => uploadDoc(f, 'br')} onDownload={() => downloadDoc(company.brFilePath || '')} />
+                    </div>
                   </div>
                 ) : (
                   <div className="grid grid-cols-2 gap-3 text-sm">
-                    <div className="space-y-1"><Label className="text-xs">公司名稱</Label><Input value={companyForm.name} onChange={e => setCompanyForm({ ...companyForm, name: e.target.value })} /></div>
+                    <div className="space-y-1"><Label className="text-xs">公司英文名稱</Label><Input value={companyForm.name} onChange={e => setCompanyForm({ ...companyForm, name: e.target.value })} /></div>
+                    <div className="space-y-1"><Label className="text-xs">公司中文名稱</Label><Input value={companyForm.chineseName} onChange={e => setCompanyForm({ ...companyForm, chineseName: e.target.value })} /></div>
                     <div className="space-y-1"><Label className="text-xs">商業登記號碼</Label><Input value={companyForm.brNumber} onChange={e => setCompanyForm({ ...companyForm, brNumber: e.target.value })} /></div>
                     <div className="space-y-1"><Label className="text-xs">商業名稱</Label><Input value={companyForm.tradingName} onChange={e => setCompanyForm({ ...companyForm, tradingName: e.target.value })} /></div>
                     <div className="space-y-1"><Label className="text-xs">業務性質</Label><Input value={companyForm.businessNature} onChange={e => setCompanyForm({ ...companyForm, businessNature: e.target.value })} /></div>
@@ -263,6 +308,20 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                       </Select>
                     </div>
                     <div className="space-y-1"><Label className="text-xs">業務代碼</Label><Input value={companyForm.businessCode} onChange={e => setCompanyForm({ ...companyForm, businessCode: e.target.value })} /></div>
+                    <div className="space-y-1"><Label className="text-xs">成立日期</Label><Input type="date" value={companyForm.incorporationDate} onChange={e => setCompanyForm({ ...companyForm, incorporationDate: e.target.value })} /></div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">司法管轄區 Jurisdiction</Label>
+                      <Input list="jurisdiction-list" value={companyForm.jurisdiction}
+                        onChange={e => setCompanyForm({ ...companyForm, jurisdiction: e.target.value })}
+                        placeholder="Hong Kong / BVI / Cayman Islands ..." />
+                      <datalist id="jurisdiction-list">
+                        <option value="Hong Kong" />
+                        <option value="BVI" />
+                        <option value="Seychelles" />
+                        <option value="Samoa" />
+                        <option value="Cayman Islands" />
+                      </datalist>
+                    </div>
                     <div className="col-span-2 border-t border-border pt-3 mt-2">
                       <Label className="text-xs font-medium">註冊辦事處地址</Label>
                       <div className="grid grid-cols-2 gap-2 mt-2">
@@ -656,5 +715,36 @@ function SectionHeader({ icon, title, count }: { icon: React.ReactNode; title: s
       {icon} {title}
       <Badge variant="secondary" className="text-xs">{count}</Badge>
     </h3>
+  );
+}
+
+function DocSlot({ label, path, uploading, onUpload, onDownload }: {
+  label: string; path?: string; uploading: boolean;
+  onUpload: (f: File) => void; onDownload: () => void;
+}) {
+  return (
+    <div className="space-y-1">
+      <div className="text-muted-foreground text-xs">{label}</div>
+      <div className="flex items-center gap-2">
+        {path ? (
+          <Button type="button" variant="outline" size="sm" onClick={onDownload} className="gap-1">
+            <FileText className="h-3.5 w-3.5" /> 查看
+          </Button>
+        ) : (
+          <span className="text-xs text-muted-foreground">尚未上傳</span>
+        )}
+        <label className="inline-flex cursor-pointer items-center gap-1 text-xs px-2 py-1 rounded hover:bg-accent">
+          <input
+            type="file"
+            accept=".pdf,.png,.jpg,.jpeg,.webp"
+            className="hidden"
+            disabled={uploading}
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) onUpload(f); e.target.value = ''; }}
+          />
+          {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+          {path ? '更換' : '上傳'}
+        </label>
+      </div>
+    </div>
   );
 }

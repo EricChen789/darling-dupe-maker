@@ -390,6 +390,40 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
                 </Select>
               </div>
             </div>
+
+            {/* Presenter section */}
+            <div className="space-y-3 border border-border rounded-lg p-3">
+              <h4 className="font-medium text-sm">提交人 Presenter</h4>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">選擇提交人</Label>
+                  <Select value={formData.presenterId || ''} onValueChange={handlePickPresenter}>
+                    <SelectTrigger><SelectValue placeholder="選擇..." /></SelectTrigger>
+                    <SelectContent>
+                      {presenters.map(p => (
+                        <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">提交人名稱</Label>
+                  <Input value={formData.presenterName} onChange={e => setFormData({ ...formData, presenterName: e.target.value })} />
+                </div>
+                <div className="space-y-1 col-span-2">
+                  <Label className="text-xs">地址</Label>
+                  <Textarea rows={2} value={formData.presenterAddress} onChange={e => setFormData({ ...formData, presenterAddress: e.target.value })} />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">參考編號 Reference</Label>
+                  <Input value={formData.presenterReference} onChange={e => handleReferenceChange(e.target.value)} />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">聯絡資訊（自動組成）</Label>
+                  <Textarea rows={2} value={formData.presenterContact} onChange={e => setFormData({ ...formData, presenterContact: e.target.value })} />
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 

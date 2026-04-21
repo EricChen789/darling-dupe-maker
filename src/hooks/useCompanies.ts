@@ -33,6 +33,7 @@ interface DbOfficer {
   role: string;
   id_number: string;
   address: string;
+  service_address?: string;
   date_appointed: string;
   date_ceased: string;
   place_incorporated: string;
@@ -49,6 +50,7 @@ interface DbShareholder {
   identity: string;
   id_number: string;
   address: string;
+  service_address?: string;
   email: string;
   share_type: string;
 }

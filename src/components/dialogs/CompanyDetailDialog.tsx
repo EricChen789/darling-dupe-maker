@@ -86,7 +86,9 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
       setPersonForm({
         nameEnglish: selectedPerson.nameEnglish, nameChinese: selectedPerson.nameChinese,
         identity: selectedPerson.identity, idNumber: selectedPerson.idNumber || '',
-        address: selectedPerson.address || '', dateAppointed: selectedPerson.dateAppointed || '',
+        address: selectedPerson.address || '',
+        serviceAddress: selectedPerson.serviceAddress || '',
+        dateAppointed: selectedPerson.dateAppointed || '',
         dateCeased: selectedPerson.dateCeased || '', placeIncorporated: selectedPerson.placeIncorporated || '',
         companyNumberRef: selectedPerson.companyNumberRef || '',
       });

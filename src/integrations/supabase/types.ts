@@ -153,8 +153,12 @@ export type Database = {
           address: string | null
           contact: string | null
           created_at: string
+          email: string | null
+          fax: string | null
           id: string
           name: string
+          phone: string | null
+          reference: string | null
           type: string
           updated_at: string
         }
@@ -162,8 +166,12 @@ export type Database = {
           address?: string | null
           contact?: string | null
           created_at?: string
+          email?: string | null
+          fax?: string | null
           id?: string
           name: string
+          phone?: string | null
+          reference?: string | null
           type?: string
           updated_at?: string
         }
@@ -171,8 +179,12 @@ export type Database = {
           address?: string | null
           contact?: string | null
           created_at?: string
+          email?: string | null
+          fax?: string | null
           id?: string
           name?: string
+          phone?: string | null
+          reference?: string | null
           type?: string
           updated_at?: string
         }

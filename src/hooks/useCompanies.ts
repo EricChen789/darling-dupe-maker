@@ -237,6 +237,7 @@ export function useUpdateCompany() {
         .from('companies')
         .update({
           name: data.name,
+          chinese_name: data.chineseName,
           company_number: data.brNumber,
           trading_name: data.tradingName,
           business_nature: data.businessNature,

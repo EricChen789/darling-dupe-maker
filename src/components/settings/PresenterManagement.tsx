@@ -56,36 +56,6 @@ export const PresenterManagement = () => {
     });
   };
 
-  const Row = ({ p }: { p: Presenter }) => {
-    if (editingId === p.id) {
-      return (
-        <PresenterForm form={form} setForm={setForm} onSave={save} onCancel={cancel} />
-      );
-    }
-    return (
-      <div className="border border-border rounded-lg p-3 flex items-start justify-between gap-3">
-        <div className="flex-1 min-w-0">
-          <div className="font-medium text-sm flex items-center gap-2">
-            {p.name}
-            <span className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
-              {p.type === 'tcsp' ? 'TCSP' : p.type === 'company' ? '公司' : '個人'}
-            </span>
-          </div>
-          {p.address && <div className="text-xs text-muted-foreground mt-0.5">{p.address}</div>}
-          {p.contact && <div className="text-xs text-muted-foreground mt-0.5">{p.contact}</div>}
-        </div>
-        <div className="flex gap-1">
-          <Button variant="ghost" size="icon" onClick={() => startEdit(p)}>
-            <Pencil className="h-4 w-4" />
-          </Button>
-          <Button variant="ghost" size="icon" onClick={() => remove(p)}>
-            <Trash2 className="h-4 w-4 text-destructive" />
-          </Button>
-        </div>
-      </div>
-    );
-  };
-
   return (
     <div className="bg-card border border-border rounded-lg p-6">
       <div className="flex items-center justify-between mb-4">
@@ -104,7 +74,32 @@ export const PresenterManagement = () => {
         ) : presenters.length === 0 && !adding ? (
           <p className="text-sm text-muted-foreground">尚無提交人，點擊「新增」開始建立。</p>
         ) : (
-          presenters.map(p => <Row key={p.id} p={p} />)
+          presenters.map(p =>
+            editingId === p.id ? (
+              <PresenterForm key={p.id} form={form} setForm={setForm} onSave={save} onCancel={cancel} />
+            ) : (
+              <div key={p.id} className="border border-border rounded-lg p-3 flex items-start justify-between gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium text-sm flex items-center gap-2">
+                    {p.name}
+                    <span className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+                      {p.type === 'tcsp' ? 'TCSP' : p.type === 'company' ? '公司' : '個人'}
+                    </span>
+                  </div>
+                  {p.address && <div className="text-xs text-muted-foreground mt-0.5">{p.address}</div>}
+                  {p.contact && <div className="text-xs text-muted-foreground mt-0.5">{p.contact}</div>}
+                </div>
+                <div className="flex gap-1">
+                  <Button variant="ghost" size="icon" onClick={() => startEdit(p)}>
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                  <Button variant="ghost" size="icon" onClick={() => remove(p)}>
+                    <Trash2 className="h-4 w-4 text-destructive" />
+                  </Button>
+                </div>
+              </div>
+            )
+          )
         )}
       </div>
     </div>

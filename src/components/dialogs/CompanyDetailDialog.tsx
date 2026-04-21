@@ -121,6 +121,34 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
     });
   };
 
+  const uploadDoc = async (file: File, kind: 'ci' | 'br') => {
+    const setUploading = kind === 'ci' ? setUploadingCi : setUploadingBr;
+    setUploading(true);
+    try {
+      const ext = file.name.split('.').pop() || 'pdf';
+      const path = `${company.id}/${kind}_${Date.now()}.${ext}`;
+      const { error: upErr } = await supabase.storage.from('company-documents').upload(path, file, { upsert: true });
+      if (upErr) throw upErr;
+      const newForm = { ...companyForm, [kind === 'ci' ? 'ciFilePath' : 'brFilePath']: path };
+      setCompanyForm(newForm);
+      updateCompany.mutate({ id: company.id, data: newForm }, {
+        onSuccess: () => toast({ title: kind === 'ci' ? 'CI 已上傳' : 'BR 已上傳' }),
+        onError: () => toast({ title: '上傳成功，儲存連結失敗', variant: 'destructive' }),
+      });
+    } catch (e: any) {
+      toast({ title: '上傳失敗', description: e.message, variant: 'destructive' });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const downloadDoc = async (path: string) => {
+    if (!path) return;
+    const { data, error } = await supabase.storage.from('company-documents').createSignedUrl(path, 60);
+    if (error || !data) { toast({ title: '取得連結失敗', variant: 'destructive' }); return; }
+    window.open(data.signedUrl, '_blank');
+  };
+
   const handleSavePerson = () => {
     if (!selectedPerson) return;
     updateOfficer.mutate({ id: selectedPerson.id, data: {

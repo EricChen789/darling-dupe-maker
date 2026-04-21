@@ -153,12 +153,16 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
     window.open(data.signedUrl, '_blank');
   };
 
+  const regAddrFull = [company.regFlat, company.regBuilding, company.regStreet, company.regDistrict, company.regRegion].filter(Boolean).join(', ');
+
   const handleSavePerson = () => {
     if (!selectedPerson) return;
     updateOfficer.mutate({ id: selectedPerson.id, data: {
       name_english: personForm.nameEnglish, name_chinese: personForm.nameChinese,
       identity: personForm.identity, id_number: personForm.idNumber,
-      address: personForm.address, date_appointed: personForm.dateAppointed || undefined,
+      address: personForm.address,
+      service_address: personForm.serviceAddress || personForm.address || regAddrFull,
+      date_appointed: personForm.dateAppointed || undefined,
       date_ceased: personForm.dateCeased || undefined,
       place_incorporated: personForm.placeIncorporated, company_number_ref: personForm.companyNumberRef,
     }}, {
@@ -185,7 +189,9 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
       company_id: company.id, name_english: newOfficerForm.nameEnglish,
       name_chinese: newOfficerForm.nameChinese, role: addingOfficer,
       identity: newOfficerForm.identity, id_number: newOfficerForm.idNumber,
-      address: newOfficerForm.address, date_appointed: newOfficerForm.dateAppointed || undefined,
+      address: newOfficerForm.address,
+      service_address: newOfficerForm.serviceAddress || newOfficerForm.address || regAddrFull,
+      date_appointed: newOfficerForm.dateAppointed || undefined,
       date_ceased: newOfficerForm.dateCeased || undefined,
       place_incorporated: newOfficerForm.placeIncorporated, company_number_ref: newOfficerForm.companyNumberRef,
     }, {
@@ -198,7 +204,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
   };
 
   const handleSaveShareholder = (id: string) => {
-    updateShareholder.mutate({ id, data: { name: shForm.name, name_english: shForm.nameEnglish, name_chinese: shForm.nameChinese, shares: shForm.shares, identity: shForm.identity, id_number: shForm.idNumber, address: shForm.address, email: shForm.email, share_type: shForm.shareType } }, {
+    updateShareholder.mutate({ id, data: { name: shForm.name, name_english: shForm.nameEnglish, name_chinese: shForm.nameChinese, shares: shForm.shares, identity: shForm.identity, id_number: shForm.idNumber, address: shForm.address, service_address: shForm.serviceAddress || shForm.address || regAddrFull, email: shForm.email, share_type: shForm.shareType } }, {
       onSuccess: () => { toast({ title: '股東已更新' }); setEditingShareholder(null); },
       onError: () => toast({ title: '更新失敗', variant: 'destructive' }),
     });
@@ -210,7 +216,8 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
       company_id: company.id, name: shForm.name || shForm.nameEnglish,
       name_english: shForm.nameEnglish, name_chinese: shForm.nameChinese,
       shares: shForm.shares, identity: shForm.identity, id_number: shForm.idNumber,
-      address: shForm.address, email: shForm.email, share_type: shForm.shareType,
+      address: shForm.address, service_address: shForm.serviceAddress || shForm.address || regAddrFull,
+      email: shForm.email, share_type: shForm.shareType,
     }, {
       onSuccess: () => {
         toast({ title: '股東已新增' });

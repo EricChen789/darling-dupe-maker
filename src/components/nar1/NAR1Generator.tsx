@@ -29,16 +29,46 @@ interface NAR1GeneratorProps {
   company: Company | null;
 }
 
+// 結算日期 = 成立日期的月/日 + 今年。如沒成立日期，就用今天。
+const computeReturnDate = (incorporationDate?: string): string => {
+  const today = new Date();
+  const currentYear = today.getFullYear();
+  if (incorporationDate) {
+    const d = new Date(incorporationDate);
+    if (!isNaN(d.getTime())) {
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      return `${currentYear}-${mm}-${dd}`;
+    }
+  }
+  return today.toISOString().split('T')[0];
+};
+
 export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProps) => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [formData, setFormData] = useState({
-    returnDate: new Date().toISOString().split('T')[0],
+    returnDate: computeReturnDate(company?.incorporationDate),
     flat: '',
     building: '',
     street: '',
     district: '',
     region: '香港 Hong Kong',
   });
+
+  // 當 company 變更（開啟對話框時），重新計算結算日期與帶入註冊地址
+  useEffect(() => {
+    if (company) {
+      setFormData(prev => ({
+        ...prev,
+        returnDate: computeReturnDate(company.incorporationDate),
+        flat: company.regFlat || prev.flat,
+        building: company.regBuilding || prev.building,
+        street: company.regStreet || prev.street,
+        district: company.regDistrict || prev.district,
+        region: company.regRegion || prev.region,
+      }));
+    }
+  }, [company]);
 
   const handleGenerate = async () => {
     if (!company) return;

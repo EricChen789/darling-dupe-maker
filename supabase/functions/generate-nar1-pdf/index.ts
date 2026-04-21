@@ -231,13 +231,13 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
   }
 
   // Page 1 - Presenter's Reference block (bottom-left of page 1)
+  // Field offset by -1: 19=Name, 20=Address, 21=Tel, 22=Fax, (Email/Reference TBD)
   const presenterP1 = data.presenter || {};
-  if (presenterP1.name) safeSetText("fill_20_P.1", presenterP1.name);
-  if (presenterP1.address) safeSetText("fill_21_P.1", presenterP1.address);
-  if (presenterP1.contact) safeSetText("fill_22_P.1", presenterP1.contact);
+  if (presenterP1.name) safeSetText("fill_19_P.1", presenterP1.name);
+  if (presenterP1.address) safeSetText("fill_20_P.1", presenterP1.address);
+  if (presenterP1.contact) safeSetText("fill_21_P.1", presenterP1.contact);
   if (presenterP1.reference) {
-    // Try common field names for reference; safeSetText logs warning if missing.
-    safeSetText("fill_23_P.1", presenterP1.reference);
+    safeSetText("fill_22_P.1", presenterP1.reference);
   }
 
   // ============ Page 2 - Share Capital ============

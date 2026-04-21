@@ -415,18 +415,63 @@ const FormWizard = ({ formId, onBack }: FormWizardProps) => {
               )}
             </div>
 
-            <Button
-              onClick={handleGenerate}
-              disabled={isGenerating}
-              className="w-full bg-primary text-primary-foreground"
-              size="lg"
-            >
-              {isGenerating ? (
-                <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> 生成中...</>
-              ) : (
-                <><Download className="h-4 w-4 mr-2" /> 生成並下載 NAR1 PDF</>
-              )}
-            </Button>
+            {/* Presenter section */}
+            <div className="space-y-3 border border-border rounded-lg p-4">
+              <h3 className="text-sm font-semibold">提交人 Presenter</h3>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">選擇預設提交人</Label>
+                  <Select value={formData.presenterId || ''} onValueChange={handlePickPresenter}>
+                    <SelectTrigger><SelectValue placeholder="選擇..." /></SelectTrigger>
+                    <SelectContent>
+                      {presenters.map(p => (
+                        <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">提交人名稱</Label>
+                  <Input value={formData.presenterName || ''} onChange={e => setFormData({ ...formData, presenterName: e.target.value })} />
+                </div>
+                <div className="space-y-1 col-span-2">
+                  <Label className="text-xs">地址</Label>
+                  <Textarea rows={2} value={formData.presenterAddress || ''} onChange={e => setFormData({ ...formData, presenterAddress: e.target.value })} />
+                </div>
+                <div className="space-y-1 col-span-2">
+                  <Label className="text-xs">聯絡資訊（電話／傳真／電郵／參考編號）</Label>
+                  <Textarea rows={2} value={formData.presenterContact || ''} onChange={e => setFormData({ ...formData, presenterContact: e.target.value })} />
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">在「設定」頁面可管理提交人列表</p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <Button
+                onClick={() => handleGenerate(true)}
+                disabled={isDebugging || isGenerating}
+                variant="outline"
+                size="lg"
+              >
+                {isDebugging ? (
+                  <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Debug 中...</>
+                ) : (
+                  <><Bug className="h-4 w-4 mr-2" /> Debug：印出欄位編號</>
+                )}
+              </Button>
+              <Button
+                onClick={() => handleGenerate(false)}
+                disabled={isGenerating || isDebugging}
+                className="bg-primary text-primary-foreground"
+                size="lg"
+              >
+                {isGenerating ? (
+                  <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> 生成中...</>
+                ) : (
+                  <><Download className="h-4 w-4 mr-2" /> 生成 NAR1 PDF</>
+                )}
+              </Button>
+            </div>
           </div>
         )}
       </div>

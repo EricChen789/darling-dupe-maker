@@ -8,7 +8,11 @@ import { Plus, Pencil, Trash2, Save, X } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { usePresenters, useUpsertPresenter, useDeletePresenter, Presenter } from '@/hooks/usePresenters';
 
-const empty = (): Partial<Presenter> => ({ name: '', address: '', contact: '', type: 'individual' });
+const empty = (): Partial<Presenter> => ({
+  name: '', address: '', contact: '',
+  phone: '', fax: '', email: '', reference: '',
+  type: 'individual',
+});
 
 export const PresenterManagement = () => {
   const { data: presenters = [], isLoading } = usePresenters();

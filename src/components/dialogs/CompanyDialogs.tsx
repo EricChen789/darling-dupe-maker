@@ -15,6 +15,7 @@ import {
 import { Company, Person, Shareholder } from '@/types';
 import { toast } from '@/hooks/use-toast';
 import { Upload, FileText, Loader2, Sparkles, X } from 'lucide-react';
+import { usePresenters } from '@/hooks/usePresenters';
 
 interface CompanyDialogProps {
   open: boolean;
@@ -39,6 +40,7 @@ const mergeArr = <T extends Record<string, any>>(existing: T[], incoming: any[] 
 };
 
 export const CompanyDialog = ({ open, onOpenChange, company, onSave }: CompanyDialogProps) => {
+  const { data: presenters = [] } = usePresenters();
   const [formData, setFormData] = useState({
     name: '',
     chineseName: '',
@@ -54,6 +56,7 @@ export const CompanyDialog = ({ open, onOpenChange, company, onSave }: CompanyDi
     regStreet: '',
     regDistrict: '',
     regRegion: '香港 Hong Kong',
+    preferredPresenterId: '',
   });
   const [directors, setDirectors] = useState<Partial<Person>[]>([]);
   const [secretaries, setSecretaries] = useState<Partial<Person>[]>([]);
@@ -89,6 +92,7 @@ export const CompanyDialog = ({ open, onOpenChange, company, onSave }: CompanyDi
         regStreet: company?.regStreet || '',
         regDistrict: company?.regDistrict || '',
         regRegion: company?.regRegion || '香港 Hong Kong',
+        preferredPresenterId: company?.preferredPresenterId || '',
       });
       setDirectors([]);
       setSecretaries([]);

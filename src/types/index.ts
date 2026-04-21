@@ -51,8 +51,31 @@ export interface Shareholder {
   identity: 'natural' | 'corporate';
   idNumber: string;
   address: string;
+  serviceAddress?: string;
   email: string;
   shareType?: string;
+}
+
+export interface SignificantController {
+  id: string;
+  companyId: string;
+  identity: 'natural' | 'corporate';
+  nameEnglish: string;
+  nameChinese: string;
+  idNumber: string;
+  address: string;
+  serviceAddress: string;
+  dateBecame: string;
+  dateCeased: string;
+  natureShares: boolean;
+  natureVoting: boolean;
+  natureAppoint: boolean;
+  natureInfluence: boolean;
+  natureTrust: boolean;
+  natureOther: string;
+  isDesignatedRep: boolean;
+  designatedRepName: string;
+  designatedRepContact: string;
 }
 
 export interface Form {

@@ -41,6 +41,7 @@ const mergeArr = <T extends Record<string, any>>(existing: T[], incoming: any[] 
 
 export const CompanyDialog = ({ open, onOpenChange, company, onSave }: CompanyDialogProps) => {
   const { data: presenters = [] } = usePresenters();
+  const defaultPresenterId = presenters.find(p => p.name === 'Twinsail Consultants Limited')?.id || '';
   const [formData, setFormData] = useState({
     name: '',
     chineseName: '',
@@ -93,7 +94,7 @@ export const CompanyDialog = ({ open, onOpenChange, company, onSave }: CompanyDi
         regStreet: company?.regStreet || '',
         regDistrict: company?.regDistrict || '',
         regRegion: company?.regRegion || '香港 Hong Kong',
-        preferredPresenterId: company?.preferredPresenterId || '',
+        preferredPresenterId: company?.preferredPresenterId || (company ? '' : defaultPresenterId),
         presenterReference: company?.presenterReference || '',
       });
       setDirectors([]);

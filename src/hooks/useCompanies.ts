@@ -70,6 +70,7 @@ function mapToCompany(
       identity: o.identity as 'natural' | 'corporate',
       role: 'director' as const,
       address: o.address || '',
+      serviceAddress: o.service_address || '',
       idNumber: o.id_number || '',
       dateAppointed: o.date_appointed || '',
       dateCeased: o.date_ceased || '',
@@ -90,6 +91,7 @@ function mapToCompany(
       identity: o.identity as 'natural' | 'corporate',
       role: 'secretary' as const,
       address: o.address || '',
+      serviceAddress: o.service_address || '',
       idNumber: o.id_number || '',
       dateAppointed: o.date_appointed || '',
       dateCeased: o.date_ceased || '',
@@ -109,6 +111,7 @@ function mapToCompany(
     identity: (s.identity as 'natural' | 'corporate') || 'natural',
     idNumber: s.id_number || '',
     address: s.address || '',
+    serviceAddress: s.service_address || '',
     email: s.email || '',
     shareType: s.share_type || '',
   }));

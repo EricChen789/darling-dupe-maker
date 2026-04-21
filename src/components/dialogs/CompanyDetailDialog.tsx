@@ -650,7 +650,7 @@ function NewOfficerForm({ form, setForm, onSave, onCancel }: {
   );
 }
 
-type ShFormType = { name: string; nameEnglish: string; nameChinese: string; shares: number; identity: string; idNumber: string; address: string; email: string; shareType: string };
+type ShFormType = { name: string; nameEnglish: string; nameChinese: string; shares: number; identity: string; idNumber: string; address: string; serviceAddress: string; email: string; shareType: string };
 
 function NewShareholderForm({ form, setForm, onSave, onCancel }: {
   form: ShFormType; setForm: (f: ShFormType) => void; onSave: () => void; onCancel: () => void;

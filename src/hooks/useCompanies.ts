@@ -217,10 +217,71 @@ export function useAddCompany() {
           business_code: data.businessCode || '',
           incorporation_date: data.incorporationDate || '',
           jurisdiction: data.jurisdiction || 'Hong Kong',
+          reg_flat: data.regFlat || '',
+          reg_building: data.regBuilding || '',
+          reg_street: data.regStreet || '',
+          reg_district: data.regDistrict || '',
+          reg_region: data.regRegion || '香港 Hong Kong',
         })
         .select()
         .single();
       if (error) throw error;
+
+      const companyId = company.id;
+
+      // Insert nested directors / secretaries (if provided from AI extraction)
+      const officerInserts: any[] = [];
+      for (const d of data.directors || []) {
+        if (!d.nameEnglish && !d.nameChinese) continue;
+        officerInserts.push({
+          company_id: companyId,
+          name_english: d.nameEnglish || '',
+          name_chinese: d.nameChinese || '',
+          role: 'director',
+          identity: d.identity || 'natural',
+          id_number: d.idNumber || '',
+          address: d.address || '',
+        });
+      }
+      for (const s of data.secretaries || []) {
+        if (!s.nameEnglish && !s.nameChinese) continue;
+        officerInserts.push({
+          company_id: companyId,
+          name_english: s.nameEnglish || '',
+          name_chinese: s.nameChinese || '',
+          role: 'secretary',
+          identity: s.identity || 'natural',
+          id_number: s.idNumber || '',
+          address: s.address || '',
+        });
+      }
+      if (officerInserts.length) {
+        const { error: oErr } = await supabase.from('officers').insert(officerInserts);
+        if (oErr) console.error('Officer insert error:', oErr);
+      }
+
+      // Insert nested shareholders
+      const shInserts: any[] = [];
+      for (const sh of data.shareholders || []) {
+        if (!sh.nameEnglish && !sh.nameChinese && !sh.name) continue;
+        shInserts.push({
+          company_id: companyId,
+          name: sh.name || sh.nameEnglish || sh.nameChinese || '',
+          name_english: sh.nameEnglish || '',
+          name_chinese: sh.nameChinese || '',
+          shares: sh.shares || 0,
+          identity: sh.identity || 'natural',
+          id_number: sh.idNumber || '',
+          address: sh.address || '',
+          email: sh.email || '',
+          share_type: sh.shareType || '',
+        });
+      }
+      if (shInserts.length) {
+        const { error: sErr } = await supabase.from('shareholders').insert(shInserts);
+        if (sErr) console.error('Shareholder insert error:', sErr);
+      }
+
       return company;
     },
     onSuccess: () => {

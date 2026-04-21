@@ -22,6 +22,7 @@ interface DbCompany {
   jurisdiction?: string;
   ci_file_path?: string;
   br_file_path?: string;
+  preferred_presenter_id?: string | null;
 }
 
 interface DbOfficer {
@@ -138,6 +139,7 @@ function mapToCompany(
     jurisdiction: c.jurisdiction || 'Hong Kong',
     ciFilePath: c.ci_file_path || '',
     brFilePath: c.br_file_path || '',
+    preferredPresenterId: c.preferred_presenter_id || '',
   };
 }
 

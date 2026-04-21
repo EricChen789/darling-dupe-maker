@@ -43,6 +43,7 @@ export interface NAR1FormData {
   presenterName?: string;
   presenterAddress?: string;
   presenterContact?: string;
+  presenterReference?: string;
 }
 
 export interface ShareCapitalRow {

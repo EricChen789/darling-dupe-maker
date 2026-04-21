@@ -5,6 +5,7 @@ import { Label } from '@/components/ui/label';
 import { toast } from '@/hooks/use-toast';
 import { useState } from 'react';
 import { UserManagement } from '@/components/settings/UserManagement';
+import { PresenterManagement } from '@/components/settings/PresenterManagement';
 
 const Settings = () => {
   const [companyName, setCompanyName] = useState('Muselabs');
@@ -54,6 +55,8 @@ const Settings = () => {
           </Button>
         </div>
       </div>
+
+      <PresenterManagement />
 
       <UserManagement />
     </div>

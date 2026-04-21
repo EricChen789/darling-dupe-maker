@@ -717,3 +717,34 @@ function SectionHeader({ icon, title, count }: { icon: React.ReactNode; title: s
     </h3>
   );
 }
+
+function DocSlot({ label, path, uploading, onUpload, onDownload }: {
+  label: string; path?: string; uploading: boolean;
+  onUpload: (f: File) => void; onDownload: () => void;
+}) {
+  return (
+    <div className="space-y-1">
+      <div className="text-muted-foreground text-xs">{label}</div>
+      <div className="flex items-center gap-2">
+        {path ? (
+          <Button type="button" variant="outline" size="sm" onClick={onDownload} className="gap-1">
+            <FileText className="h-3.5 w-3.5" /> 查看
+          </Button>
+        ) : (
+          <span className="text-xs text-muted-foreground">尚未上傳</span>
+        )}
+        <label className="inline-flex cursor-pointer items-center gap-1 text-xs px-2 py-1 rounded hover:bg-accent">
+          <input
+            type="file"
+            accept=".pdf,.png,.jpg,.jpeg,.webp"
+            className="hidden"
+            disabled={uploading}
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) onUpload(f); e.target.value = ''; }}
+          />
+          {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+          {path ? '更換' : '上傳'}
+        </label>
+      </div>
+    </div>
+  );
+}

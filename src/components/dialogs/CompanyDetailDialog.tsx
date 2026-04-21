@@ -363,10 +363,15 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
 
               {/* Tab: 董事/秘書 */}
               <TabsContent value="officers">
+                <div className="flex justify-end mb-3">
+                  <Button variant="outline" size="sm" onClick={() => setCopyDialogOpen(true)}>
+                    <Copy className="h-3.5 w-3.5 mr-1" /> 從其他公司複製
+                  </Button>
+                </div>
                 {/* Directors */}
                 <div className="flex items-center justify-between mb-2">
                   <SectionHeader icon={<Users className="h-4 w-4 text-primary" />} title="董事" count={company.directors.length} />
-                  <Button variant="ghost" size="sm" onClick={() => { setAddingOfficer('director'); setNewOfficerForm(emptyOfficerForm()); }}>
+                  <Button variant="ghost" size="sm" onClick={() => { setAddingOfficer('director'); setNewOfficerForm({ ...emptyOfficerForm(), serviceAddress: regAddrFull }); }}>
                     <Plus className="h-3.5 w-3.5 mr-1" /> 新增
                   </Button>
                 </div>

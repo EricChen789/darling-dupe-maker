@@ -133,6 +133,8 @@ const Companies = () => {
             <TableRow className="bg-muted/50">
               <TableHead className="font-medium">公司名稱</TableHead>
               <TableHead className="font-medium">商業登記號碼</TableHead>
+              <TableHead className="font-medium">司法管轄區</TableHead>
+              <TableHead className="font-medium">成立日期</TableHead>
               <TableHead className="font-medium">商業名稱</TableHead>
               <TableHead className="font-medium">董事</TableHead>
               <TableHead className="font-medium">秘書</TableHead>
@@ -151,6 +153,14 @@ const Companies = () => {
                   )}
                 </TableCell>
                 <TableCell>{company.brNumber}</TableCell>
+                <TableCell className="text-xs">
+                  {company.jurisdiction ? (
+                    <span className={company.jurisdiction !== 'Hong Kong' ? 'font-medium text-primary' : ''}>{company.jurisdiction}</span>
+                  ) : <span className="text-muted-foreground">-</span>}
+                </TableCell>
+                <TableCell className="text-xs whitespace-nowrap">
+                  {company.incorporationDate || <span className="text-muted-foreground">-</span>}
+                </TableCell>
                 <TableCell className="max-w-[150px]">
                   <div className="truncate">{company.tradingName}</div>
                 </TableCell>

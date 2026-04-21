@@ -312,10 +312,18 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                     <InfoItem label="最後更新" value={company.updatedAt} />
                     <div className="col-span-2 border-t border-border pt-3 mt-2 grid grid-cols-2 gap-4">
                       <DocSlot label="公司註冊證書 (CI)" path={company.ciFilePath} uploading={uploadingCi}
-                        onUpload={(f) => uploadDoc(f, 'ci')} onDownload={() => downloadDoc(company.ciFilePath || '')} />
+                        onUpload={(f) => uploadDoc(f, 'ci')} onView={() => downloadDoc(company.ciFilePath || '')}
+                        onDownload={() => downloadDocAsFile(company.ciFilePath || '')} />
                       <DocSlot label="商業登記證 (BR)" path={company.brFilePath} uploading={uploadingBr}
-                        onUpload={(f) => uploadDoc(f, 'br')} onDownload={() => downloadDoc(company.brFilePath || '')} />
+                        onUpload={(f) => uploadDoc(f, 'br')} onView={() => downloadDoc(company.brFilePath || '')}
+                        onDownload={() => downloadDocAsFile(company.brFilePath || '')} />
                     </div>
+                    {(company.ciFilePath || company.brFilePath) && (
+                      <div className="col-span-2 grid grid-cols-2 gap-4">
+                        {company.ciFilePath && <DocPreview path={company.ciFilePath} label="公司註冊證書 (CI)" />}
+                        {company.brFilePath && <DocPreview path={company.brFilePath} label="商業登記證 (BR)" />}
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="grid grid-cols-2 gap-3 text-sm">

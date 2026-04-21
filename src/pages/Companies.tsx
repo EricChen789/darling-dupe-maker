@@ -16,6 +16,7 @@ import { CompanyDetailDialog } from '@/components/dialogs/CompanyDetailDialog';
 import { NAR1Generator } from '@/components/nar1/NAR1Generator';
 import { toast } from '@/hooks/use-toast';
 import { useCompanies, useDeleteCompany, useAddCompany, useUpdateCompany } from '@/hooks/useCompanies';
+import { usePresenters } from '@/hooks/usePresenters';
 
 const Companies = () => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -32,9 +33,24 @@ const Companies = () => {
   const [currentPage, setCurrentPage] = useState(1);
 
   const { data: companies = [], isLoading, refetch } = useCompanies();
+  const { data: presenters = [] } = usePresenters();
+  const defaultPresenterId = presenters.find(p => p.name === 'Twinsail Consultants Limited')?.id || '';
   const deleteCompany = useDeleteCompany();
   const addCompany = useAddCompany();
   const updateCompany = useUpdateCompany();
+
+  const handleQuickPresenterChange = (company: Company, presenterId: string) => {
+    updateCompany.mutate(
+      { id: company.id, data: { preferredPresenterId: presenterId } },
+      {
+        onSuccess: () => {
+          const p = presenters.find(x => x.id === presenterId);
+          toast({ title: '已更新提交人', description: `${company.name} → ${p?.name || '(無)'}` });
+        },
+        onError: (e: any) => toast({ title: '更新失敗', description: e.message, variant: 'destructive' }),
+      }
+    );
+  };
 
   const filteredCompanies = companies.filter(company =>
     company.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -139,6 +155,7 @@ const Companies = () => {
               <TableHead className="font-medium">董事</TableHead>
               <TableHead className="font-medium">秘書</TableHead>
               <TableHead className="font-medium">股東</TableHead>
+              <TableHead className="font-medium">提交人 Presenter</TableHead>
               <TableHead className="font-medium">操作</TableHead>
             </TableRow>
           </TableHeader>
@@ -198,6 +215,22 @@ const Companies = () => {
                       <div className="text-muted-foreground">+{company.shareholders.length - 2} 更多</div>
                     )}
                   </div>
+                </TableCell>
+                <TableCell onClick={(e) => e.stopPropagation()} className="min-w-[180px]">
+                  <Select
+                    value={company.preferredPresenterId || '__none__'}
+                    onValueChange={(v) => handleQuickPresenterChange(company, v === '__none__' ? '' : v)}
+                  >
+                    <SelectTrigger className={`h-8 text-xs ${!company.preferredPresenterId ? 'border-destructive/50 text-destructive' : ''}`}>
+                      <SelectValue placeholder="未指定" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">— 未指定 —</SelectItem>
+                      {presenters.map(p => (
+                        <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </TableCell>
                 <TableCell onClick={(e) => e.stopPropagation()}>
                   <div className="flex items-center gap-1">

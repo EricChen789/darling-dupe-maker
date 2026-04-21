@@ -5,7 +5,11 @@ export interface Presenter {
   id: string;
   name: string;
   address: string;
-  contact: string;
+  contact: string; // legacy / notes
+  phone: string;
+  fax: string;
+  email: string;
+  reference: string;
   type: 'individual' | 'company' | 'tcsp';
   created_at?: string;
   updated_at?: string;
@@ -29,16 +33,21 @@ export function useUpsertPresenter() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (p: Partial<Presenter> & { name: string }) => {
+      const payload: any = {
+        name: p.name,
+        address: p.address || '',
+        contact: p.contact || '',
+        phone: p.phone || '',
+        fax: p.fax || '',
+        email: p.email || '',
+        reference: p.reference || '',
+        type: p.type || 'individual',
+      };
       if (p.id) {
-        const { error } = await supabase
-          .from('presenters' as any)
-          .update({ name: p.name, address: p.address || '', contact: p.contact || '', type: p.type || 'individual' })
-          .eq('id', p.id);
+        const { error } = await supabase.from('presenters' as any).update(payload).eq('id', p.id);
         if (error) throw error;
       } else {
-        const { error } = await supabase
-          .from('presenters' as any)
-          .insert({ name: p.name, address: p.address || '', contact: p.contact || '', type: p.type || 'individual' });
+        const { error } = await supabase.from('presenters' as any).insert(payload);
         if (error) throw error;
       }
     },

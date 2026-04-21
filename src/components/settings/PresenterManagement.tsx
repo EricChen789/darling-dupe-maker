@@ -8,7 +8,11 @@ import { Plus, Pencil, Trash2, Save, X } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { usePresenters, useUpsertPresenter, useDeletePresenter, Presenter } from '@/hooks/usePresenters';
 
-const empty = (): Partial<Presenter> => ({ name: '', address: '', contact: '', type: 'individual' });
+const empty = (): Partial<Presenter> => ({
+  name: '', address: '', contact: '',
+  phone: '', fax: '', email: '', reference: '',
+  type: 'individual',
+});
 
 export const PresenterManagement = () => {
   const { data: presenters = [], isLoading } = usePresenters();
@@ -87,7 +91,15 @@ export const PresenterManagement = () => {
                     </span>
                   </div>
                   {p.address && <div className="text-xs text-muted-foreground mt-0.5">{p.address}</div>}
-                  {p.contact && <div className="text-xs text-muted-foreground mt-0.5">{p.contact}</div>}
+                  {(p.phone || p.fax || p.email || p.reference) && (
+                    <div className="text-xs text-muted-foreground mt-0.5 flex flex-wrap gap-x-3">
+                      {p.phone && <span>電話：{p.phone}</span>}
+                      {p.fax && <span>傳真：{p.fax}</span>}
+                      {p.email && <span>電郵：{p.email}</span>}
+                      {p.reference && <span>參考編號：{p.reference}</span>}
+                    </div>
+                  )}
+                  {p.contact && <div className="text-xs text-muted-foreground mt-0.5">備註：{p.contact}</div>}
                 </div>
                 <div className="flex gap-1">
                   <Button variant="ghost" size="icon" onClick={() => startEdit(p)}>
@@ -134,8 +146,24 @@ function PresenterForm({ form, setForm, onSave, onCancel }: {
           <Label className="text-xs">地址</Label>
           <Textarea rows={2} value={form.address || ''} onChange={e => setForm({ ...form, address: e.target.value })} />
         </div>
+        <div className="space-y-1">
+          <Label className="text-xs">電話</Label>
+          <Input value={form.phone || ''} onChange={e => setForm({ ...form, phone: e.target.value })} />
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs">傳真</Label>
+          <Input value={form.fax || ''} onChange={e => setForm({ ...form, fax: e.target.value })} />
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs">電郵</Label>
+          <Input type="email" value={form.email || ''} onChange={e => setForm({ ...form, email: e.target.value })} />
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs">參考編號</Label>
+          <Input value={form.reference || ''} onChange={e => setForm({ ...form, reference: e.target.value })} />
+        </div>
         <div className="space-y-1 col-span-2">
-          <Label className="text-xs">聯絡資訊（電話／傳真／電郵／參考編號）</Label>
+          <Label className="text-xs">備註（選填）</Label>
           <Textarea rows={2} value={form.contact || ''} onChange={e => setForm({ ...form, contact: e.target.value })} />
         </div>
       </div>

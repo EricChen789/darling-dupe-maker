@@ -120,6 +120,8 @@ const DATE_RE = /^\d{1,2}\/\d{1,2}\/\d{4}$/;
 // Capture HK ID like P373848(9) including the trailing parenthesised check digit.
 const ID_INLINE_RE = /\(Hong Kong ID No\s*:\s*([A-Z]{1,3}\d{4,8}(?:\([0-9A-Z]\))?|\d{4,10})\s*\)/i;
 const PASSPORT_TOKEN_RE = /^[A-Z]{1,3}\d{4,8}(?:\([0-9A-Z]\))?$/i;
+const CN_ID_RE = /^\d{15,18}[0-9Xx]?$/;
+const PASSPORT_LINE_RE = /^Passport\s+Number\s+/i;
 const CR_NUMBER_RE = /^\d{4,10}$/;
 const NUMERIC_BALANCE_RE = /^\(?-?[\d,]+\)?$/;
 const CURRENCY_RE = /^(HK\$|US\$|USD|RMB|CNY|EUR|GBP|JPY|AUD|SGD|CAD|NZD)\s*[\d,.]+$/i;

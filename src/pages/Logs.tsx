@@ -274,11 +274,15 @@ const Logs = () => {
                   <span>更新於：{new Date(openLog.updated_at).toLocaleString()}</span>
                 </div>
 
-                <RichTextEditor
-                  content={editing ? draftHtml : openLog.html_content}
-                  onChange={(html) => editing && setDraftHtml(html)}
-                  editable={editing}
-                />
+                {editing ? (
+                  <RichTextEditor
+                    content={draftHtml}
+                    onChange={(html) => setDraftHtml(html)}
+                    editable={true}
+                  />
+                ) : (
+                  <LogTableView html={openLog.html_content} />
+                )}
 
                 <div>
                   <Label className="text-sm text-muted-foreground mb-1 block">備註</Label>

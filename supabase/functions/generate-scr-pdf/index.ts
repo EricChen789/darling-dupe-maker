@@ -101,7 +101,7 @@ Deno.serve(async (req) => {
     });
 
     const bytes = await pdf.save();
-    return new Response(bytes, {
+    return new Response(bytes as BodyInit, {
       headers: {
         ...corsHeaders,
         'Content-Type': 'application/pdf',

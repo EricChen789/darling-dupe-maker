@@ -240,6 +240,9 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave, onGenerateND2
         passportNumber: '',
         passportExpiry: '',
         whatsapp: '',
+        passportFilePath: '',
+        idCardFilePath: '',
+        addressProofFilePath: '',
       });
     }
   }, [person, open]);

@@ -214,6 +214,9 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
           address: formData.presenterAddress || '',
           contact: formData.presenterContact || '',
           reference: formData.presenterReference || '',
+          phone: formData.presenterPhone || '',
+          fax: formData.presenterFax || '',
+          email: formData.presenterEmail || '',
         },
       };
 

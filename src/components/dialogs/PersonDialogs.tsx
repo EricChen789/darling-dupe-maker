@@ -449,6 +449,14 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave, onGenerateND2
                 placeholder="輸入服務地址"
               />
             </div>
+            <div className="col-span-2">
+              <FileUploadSlot
+                label="住址證明圖片"
+                filePath={formData.addressProofFilePath}
+                onChange={(p) => setFormData({ ...formData, addressProofFilePath: p })}
+                folder="officers/address-proof"
+              />
+            </div>
           </div>
           <DialogFooter className="gap-2">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>

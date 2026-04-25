@@ -282,13 +282,22 @@ const parseRom = (paragraphs: string[]): MemberEntry[] => {
     while (cursor < slice.length && MEMBER_ANCHORS.has(slice[cursor])) {
       const anchor = slice[cursor];
       cursor++;
-      // Collect anchor's value lines until next anchor
+      if (anchor === 'Date' || anchor === 'Date Ceased') {
+        // Peek exactly one date line if present; otherwise leave empty.
+        if (cursor < slice.length && DATE_RE.test(slice[cursor])) {
+          if (anchor === 'Date') m.dateEntered = slice[cursor];
+          else m.dateCeased = slice[cursor];
+          cursor++;
+        }
+        continue;
+      }
+      // Collect value lines until next anchor OR until a line that clearly
+      // belongs to the transaction table (numeric units or a stray date).
       const vals: string[] = [];
       while (cursor < slice.length && !MEMBER_ANCHORS.has(slice[cursor])) {
-        // Stop if we hit something that looks like the start of transaction data:
-        // either a TXN_TYPE token or a numeric (units) line — this only matters
-        // if anchors order changes; normally column-headers (filtered) sit between.
-        vals.push(slice[cursor]);
+        const line = slice[cursor];
+        if (NUMERIC_BALANCE_RE.test(line) || DATE_RE.test(line)) break;
+        vals.push(line);
         cursor++;
       }
       switch (anchor) {
@@ -296,12 +305,6 @@ const parseRom = (paragraphs: string[]): MemberEntry[] => {
         case 'Date of Birth': m.dateOfBirth = vals.join(' ').trim() || undefined; break;
         case 'Passport Details': m.passportDetails = vals.join(' ').trim() || undefined; break;
         case 'Security': m.security = vals.join(' ').trim() || undefined; break;
-        case 'Date':
-          if (vals.length && DATE_RE.test(vals[0])) m.dateEntered = vals[0];
-          break;
-        case 'Date Ceased':
-          if (vals.length && DATE_RE.test(vals[0])) m.dateCeased = vals[0];
-          break;
       }
     }
 

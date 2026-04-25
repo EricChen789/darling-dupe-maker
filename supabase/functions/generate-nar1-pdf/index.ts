@@ -312,18 +312,18 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
     const totalAmount = info.parValue ? info.shares * info.parValue : 0;
     safeSetText(`fill_${base}_P.2`, info.className);
     safeSetText(`fill_${base + 1}_P.2`, info.currency);
-    safeSetText(`fill_${base + 2}_P.2`, info.shares.toLocaleString());
-    safeSetText(`fill_${base + 3}_P.2`, totalAmount ? totalAmount.toFixed(2) : "");
-    safeSetText(`fill_${base + 4}_P.2`, totalAmount ? totalAmount.toFixed(2) : "");
+    safeSetText(`fill_${base + 2}_P.2`, fmtInt(info.shares));
+    safeSetText(`fill_${base + 3}_P.2`, totalAmount ? fmtAmount(totalAmount) : "");
+    safeSetText(`fill_${base + 4}_P.2`, totalAmount ? fmtAmount(totalAmount) : "");
     totalShares += info.shares;
     totalAmountSum += totalAmount;
     if (!firstCurrency) firstCurrency = info.currency;
   }
   if (shareInfos.length > 0) {
     safeSetText("fill_26_P.2", firstCurrency);
-    safeSetText("fill_27_P.2", totalShares.toLocaleString());
-    safeSetText("fill_28_P.2", totalAmountSum ? totalAmountSum.toFixed(2) : "");
-    safeSetText("fill_29_P.2", totalAmountSum ? totalAmountSum.toFixed(2) : "");
+    safeSetText("fill_27_P.2", fmtInt(totalShares));
+    safeSetText("fill_28_P.2", totalAmountSum ? fmtAmount(totalAmountSum) : "");
+    safeSetText("fill_29_P.2", totalAmountSum ? fmtAmount(totalAmountSum) : "");
   }
 
   // ============ Page 3 - Secretary (Natural Person) 12A ============

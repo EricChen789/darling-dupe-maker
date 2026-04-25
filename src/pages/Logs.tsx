@@ -153,15 +153,45 @@ const parseRod = (paragraphs: string[]): { section: string; entries: OfficerEntr
 
   const finalizePre = (entry: OfficerEntry) => {
     if (!buffer.length) return;
-    // Detect id/passport/CR token: should be a standalone line
-    const idIdx = buffer.findIndex((l) => PASSPORT_TOKEN_RE.test(l) || CR_NUMBER_RE.test(l));
+
+    // 1) Locate ID line. Multiple possible formats:
+    //    - HK ID standalone (e.g. P373848(9))
+    //    - CN national ID (15-18 digits, optional X)
+    //    - CR number (4-10 digits) — only when no DOB present (corporate secretary)
+    //    - "Passport Number XXX issued by YYY" possibly spanning 2 lines
     let idVal: string | undefined;
-    let rest = buffer;
-    if (idIdx >= 0) {
-      idVal = buffer[idIdx];
-      rest = buffer.filter((_, i) => i !== idIdx);
+    const consumed = new Set<number>();
+
+    // Passport Number multi-line
+    const pIdx = buffer.findIndex((l) => PASSPORT_LINE_RE.test(l));
+    if (pIdx >= 0) {
+      const parts = [buffer[pIdx]];
+      consumed.add(pIdx);
+      // Optionally consume the next line if it begins with "issued by" or starts lowercase / CJK continuation
+      if (pIdx + 1 < buffer.length) {
+        const nxt = buffer[pIdx + 1];
+        if (/^issued\s+by/i.test(nxt) || (!POSITION_RE.test(nxt) && !DATE_RE.test(nxt) && parts[0].length < 60)) {
+          // Heuristic: only merge if line looks like continuation (short, contains "issued" or place name)
+          if (/^issued\s+by/i.test(nxt) || /[\u4e00-\u9fff]/.test(nxt) || /^[A-Z][A-Z\s]+$/.test(nxt)) {
+            parts.push(nxt);
+            consumed.add(pIdx + 1);
+          }
+        }
+      }
+      idVal = parts.join(' ');
+    } else {
+      const idIdx = buffer.findIndex((l) =>
+        PASSPORT_TOKEN_RE.test(l) || CN_ID_RE.test(l) || CR_NUMBER_RE.test(l)
+      );
+      if (idIdx >= 0) {
+        idVal = buffer[idIdx];
+        consumed.add(idIdx);
+      }
     }
-    // Inside `rest`: detect first DATE line → birth/incorp + place, otherwise everything is name+address.
+
+    const rest = buffer.filter((_, i) => !consumed.has(i));
+
+    // 2) Detect first DATE line → DOB / Incorp date; everything from there until end (excl. id) is birth/incorp/occupation.
     const dateIdx = rest.findIndex((l) => DATE_RE.test(l));
     let nameAddr: string[];
     let birth: string[] = [];
@@ -169,10 +199,24 @@ const parseRod = (paragraphs: string[]): { section: string; entries: OfficerEntr
       nameAddr = rest.slice(0, dateIdx);
       birth = rest.slice(dateIdx);
     } else {
-      nameAddr = rest;
+      // No DOB. If we still have an "occupation" / place-only line (e.g. MERCHANT) at the end,
+      // treat trailing lines that look like single-token occupations as birthIncorp.
+      // Heuristic: from the end, peel off lines that are short uppercase tokens or CJK-only short lines.
+      let cut = rest.length;
+      while (cut > 1) {
+        const cand = rest[cut - 1];
+        const isShortOccupation =
+          /^[A-Z][A-Z\s.\-/&]{1,30}$/.test(cand) && !/(ROAD|STREET|ESTATE|FLAT|ROOM|BUILDING|HOUSE|TOWER|HONG KONG|KOWLOON|TERRITORIES|FLOOR|VILLAGE|CENTRE|CENTER|AVENUE|LANE|PLAZA|COURT|GARDEN|MANSION)/i.test(cand);
+        const isShortCJK = /^[\u4e00-\u9fff]{1,8}$/.test(cand);
+        if (isShortOccupation || isShortCJK) {
+          cut--;
+        } else break;
+      }
+      nameAddr = rest.slice(0, cut);
+      birth = rest.slice(cut);
     }
-    // Split name vs address: first 1-2 lines that contain CJK or are obvious name lines
-    // Heuristic: name is the first line; if next line also contains CJK and no digits, treat as Chinese name.
+
+    // 3) Split name vs address
     if (nameAddr.length) {
       entry.name.push(nameAddr[0]);
       let addrStart = 1;

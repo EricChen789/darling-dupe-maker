@@ -580,7 +580,16 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                   <ArrowLeft className="h-4 w-4 mr-1" /> 返回
                 </Button>
                 {!editingShDetail ? (
-                  <Button variant="ghost" size="sm" onClick={() => setEditingShDetail(true)}>
+                  <Button variant="ghost" size="sm" onClick={() => {
+                    // Re-sync shForm from the current selectedSh to avoid stale data
+                    setShForm({
+                      name: selectedSh.name, nameEnglish: selectedSh.nameEnglish, nameChinese: selectedSh.nameChinese,
+                      shares: selectedSh.shares, identity: selectedSh.identity, idNumber: selectedSh.idNumber || '',
+                      address: selectedSh.address || '', serviceAddress: selectedSh.serviceAddress || '',
+                      email: selectedSh.email || '', shareType: selectedSh.shareType || '',
+                    });
+                    setEditingShDetail(true);
+                  }}>
                     <Edit className="h-3.5 w-3.5 mr-1" /> 編輯
                   </Button>
                 ) : (

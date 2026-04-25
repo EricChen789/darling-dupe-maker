@@ -60,138 +60,347 @@ const stripLogHtml = (value: string): string =>
     .replace(/\s+/g, ' ')
     .trim();
 
-type LogEntry = {
-  nameAddress: string[];
-  birthIncorpOccupation: string[];
-  idPassport?: string;
+// === Officer (ROD) entry ===
+type OfficerEntry = {
+  name: string[];           // English + Chinese name lines
+  address: string[];         // residential / service address lines
+  birthIncorp: string[];     // DOB or place of incorporation
+  idPassport?: string;       // ID number or CR number
   position?: string;
   appointedMeeting: string[];
   ceasedReason: string[];
 };
 
-// Pure column-header / template lines we drop entirely
+// === Member (ROM) entry ===
+type ShareTxn = {
+  units?: string;
+  date?: string;
+  transactionType?: string;
+  parValue?: string;
+  paidUpValue?: string;
+  certificateNo?: string;
+  balance?: string;
+  notes?: string;            // Transferred To/From etc.
+};
+
+type MemberEntry = {
+  name: string[];            // English + Chinese name lines
+  idPassport?: string;
+  address: string[];
+  security?: string;
+  dateEntered?: string;
+  dateCeased?: string;
+  transactions: ShareTxn[];
+};
+
+type ParsedLog =
+  | { kind: 'rod'; sections: { section: string; entries: OfficerEntry[] }[] }
+  | { kind: 'rom'; members: MemberEntry[] }
+  | { kind: 'unknown'; raw: string[] };
+
+// Lines treated as pure column-header noise we drop
 const HEADER_NOISE = new Set([
-  'Date of', 'Entry / Update', 'Name', 'Particulars', 'Remarks / Notes',
-  'Entry', 'No', 'Position', 'Date(s) Appointed', '/Meeting',
-  'Reason / Date(s)', 'Ceased', 'Date(s) Ceased',
+  'Date of', 'Entry / Update', 'Particulars', 'Remarks / Notes',
+  'Entry', 'No', 'Date(s) Appointed', '/Meeting',
+  'Reason / Date(s)', 'Date(s) Ceased',
   'Name / Service / Residential Address',
   'Date / Place Birth / Place', 'Incorporated / Occupation /',
   'ID No / Passport Details',
-  'Address', 'Security', 'Date', 'Date Ceased', 'Date Entered',
-  '/ Ceased', 'Transaction', 'Type', 'Units', 'Par Value',
-  'Paid Up Value', 'Certificate', 'Balance',
+  'Date Entered', '/ Ceased', 'Transaction', 'Type', 'Units',
+  'Par Value', 'Paid Up Value', 'Certificate',
   'Transferred To/From, Redeemed,', 'Reissued',
   'Per Share', 'Distinctive Numbers',
 ]);
 const PAGE_NOISE_RE = /^(- ?\d+ ?-|REGISTER OF|Company Number|Quorum)/i;
-const SECTION_RE = /^(Significant Controllers|Designated Representatives|Directors?|Secretar(?:y|ies)|Members?|Officers?|Reserve Directors?|Alternate Directors?)$/i;
-const POSITION_RE = /^(Director|Secretary|Reserve Director|Alternate Director|Member|Designated Representative)$/i;
+const POSITION_RE = /^(Director|Secretary|Reserve Director|Alternate Director|Designated Representative)$/i;
 const STATUS_RE = /^(Resigned|Ceased|Removed|Deceased|Struck Off)$/i;
 const DATE_RE = /^\d{1,2}\/\d{1,2}\/\d{4}$/;
-const ENTRY_NO_RE = /^\d{1,3}$/;
-const ID_PASSPORT_RE = /^(?:[A-Z]{1,3}\d{4,8}(?:\([0-9A-Z]\))?|\d{4,10})$/i;
+const ID_INLINE_RE = /\(Hong Kong ID No\s*:\s*([^)]+)\)/i;
+const PASSPORT_TOKEN_RE = /^[A-Z]{1,3}\d{4,8}(?:\([0-9A-Z]\))?$/i;
+const CR_NUMBER_RE = /^\d{4,10}$/;
+const NUMERIC_BALANCE_RE = /^\(?-?[\d,]+\)?$/;
+const HK_MONEY_RE = /^HK\$/i;
 
-const createLogEntry = (): LogEntry => ({
-  nameAddress: [],
-  birthIncorpOccupation: [],
-  appointedMeeting: [],
-  ceasedReason: [],
-});
-
-const applyPrePositionColumns = (entry: LogEntry, lines: string[]) => {
-  if (!lines.length) return;
-
-  const idIndex = [...lines].reverse().findIndex((line) => ID_PASSPORT_RE.test(line));
-  const realIdIndex = idIndex >= 0 ? lines.length - 1 - idIndex : -1;
-  const bodyLines = realIdIndex >= 0 ? lines.filter((_, idx) => idx !== realIdIndex) : lines;
-
-  if (realIdIndex >= 0) entry.idPassport = lines[realIdIndex];
-
-  const birthOrIncorpIndex = bodyLines.findIndex((line) => DATE_RE.test(line));
-  if (birthOrIncorpIndex >= 0) {
-    entry.nameAddress = bodyLines.slice(0, birthOrIncorpIndex);
-    entry.birthIncorpOccupation = bodyLines.slice(birthOrIncorpIndex);
-  } else {
-    entry.nameAddress = bodyLines;
-  }
-};
-
-const parseLogEntries = (html: string): { section: string; entries: LogEntry[] }[] => {
-  const paragraphs = (html.match(/<p[^>]*>[\s\S]*?<\/p>/gi) || [])
+const cleanParagraphs = (html: string): string[] =>
+  (html.match(/<p[^>]*>[\s\S]*?<\/p>/gi) || [])
     .map(stripLogHtml)
     .filter(Boolean)
     .filter((t) => !PAGE_NOISE_RE.test(t) && !HEADER_NOISE.has(t));
 
-  const sections: { section: string; entries: LogEntry[] }[] = [];
-  let currentSection = '記錄';
-  let current: LogEntry | null = null;
-  let prePositionLines: string[] = [];
-  let phase: 'prePosition' | 'postPosition' = 'prePosition';
+const looksLikeRom = (paragraphs: string[]): boolean =>
+  paragraphs.some((p) => /Hong Kong ID No\s*:/i.test(p)) ||
+  paragraphs.filter((p) => p === 'Security').length > 0;
 
-  const ensureSection = () => {
-    let bucket = sections.find((s) => s.section === currentSection);
-    if (!bucket) {
-      bucket = { section: currentSection, entries: [] };
-      sections.push(bucket);
+// ----- ROD parser -----
+const parseRod = (paragraphs: string[]): { section: string; entries: OfficerEntry[] }[] => {
+  const sections: { section: string; entries: OfficerEntry[] }[] = [];
+  let bucket = { section: '官員記錄', entries: [] as OfficerEntry[] };
+  sections.push(bucket);
+
+  let current: OfficerEntry | null = null;
+  let buffer: string[] = [];
+  let phase: 'pre' | 'post' = 'pre';
+
+  const newEntry = (): OfficerEntry => ({
+    name: [], address: [], birthIncorp: [], appointedMeeting: [], ceasedReason: [],
+  });
+
+  const finalizePre = (entry: OfficerEntry) => {
+    if (!buffer.length) return;
+    // Detect id/passport/CR token: should be a standalone line
+    const idIdx = buffer.findIndex((l) => PASSPORT_TOKEN_RE.test(l) || CR_NUMBER_RE.test(l));
+    let idVal: string | undefined;
+    let rest = buffer;
+    if (idIdx >= 0) {
+      idVal = buffer[idIdx];
+      rest = buffer.filter((_, i) => i !== idIdx);
     }
-    return bucket;
+    // Inside `rest`: detect first DATE line → birth/incorp + place, otherwise everything is name+address.
+    const dateIdx = rest.findIndex((l) => DATE_RE.test(l));
+    let nameAddr: string[];
+    let birth: string[] = [];
+    if (dateIdx >= 0) {
+      nameAddr = rest.slice(0, dateIdx);
+      birth = rest.slice(dateIdx);
+    } else {
+      nameAddr = rest;
+    }
+    // Split name vs address: first 1-2 lines that contain CJK or are obvious name lines
+    // Heuristic: name is the first line; if next line also contains CJK and no digits, treat as Chinese name.
+    if (nameAddr.length) {
+      entry.name.push(nameAddr[0]);
+      let addrStart = 1;
+      if (nameAddr.length > 1) {
+        const second = nameAddr[1];
+        const hasCJK = /[\u4e00-\u9fff]/.test(second);
+        const hasDigit = /\d/.test(second);
+        const looksAddr = /,/.test(second) || /(ROAD|STREET|ESTATE|FLAT|ROOM|BUILDING|HOUSE|TOWER|HONG KONG|KOWLOON|TERRITORIES|G\/F|F\.|FLOOR|VILLAGE|CENTRE|CENTER)/i.test(second);
+        if (hasCJK && !hasDigit && !looksAddr) {
+          entry.name.push(second);
+          addrStart = 2;
+        }
+      }
+      entry.address = nameAddr.slice(addrStart);
+    }
+    entry.birthIncorp = birth;
+    if (idVal) entry.idPassport = idVal;
   };
 
   const flush = () => {
     if (current) {
-      applyPrePositionColumns(current, prePositionLines);
-    }
-    if (current && (current.nameAddress.length || current.idPassport || current.position)) {
-      ensureSection().entries.push(current);
+      finalizePre(current);
+      if (current.name.length || current.idPassport || current.position) {
+        bucket.entries.push(current);
+      }
     }
     current = null;
-    prePositionLines = [];
-    phase = 'prePosition';
+    buffer = [];
+    phase = 'pre';
   };
 
   paragraphs.forEach((text) => {
-    if (SECTION_RE.test(text)) {
-      flush();
-      currentSection = text;
-      return;
-    }
-
-    // Entry number after a completed row → end of record
-    if (ENTRY_NO_RE.test(text) && phase === 'postPosition') {
-      flush();
-      return;
-    }
-
-    if (STATUS_RE.test(text)) {
-      if (!current) return;
-      current.ceasedReason.push(text);
-      phase = 'postPosition';
-      return;
-    }
-
     if (POSITION_RE.test(text)) {
-      if (!current) current = createLogEntry();
+      if (!current) current = newEntry();
       current.position = text;
-      phase = 'postPosition';
+      phase = 'post';
       return;
     }
-
-    if (DATE_RE.test(text) && phase === 'postPosition') {
-      if (!current) current = createLogEntry();
+    if (STATUS_RE.test(text)) {
+      if (!current) current = newEntry();
+      current.ceasedReason.push(text);
+      phase = 'post';
+      return;
+    }
+    if (DATE_RE.test(text) && phase === 'post') {
+      if (!current) current = newEntry();
       if (current.ceasedReason.length) current.ceasedReason.push(text);
       else current.appointedMeeting.push(text);
       return;
     }
-
-    // Regular text after appointed/ceased columns starts the next row.
-    if (phase === 'postPosition') flush();
-
-    if (!current) current = createLogEntry();
-    prePositionLines.push(text);
+    // New text after we've completed a record's post phase → start next entry
+    if (phase === 'post') flush();
+    if (!current) current = newEntry();
+    buffer.push(text);
   });
   flush();
 
   return sections;
+};
+
+// ----- ROM parser -----
+const parseRom = (paragraphs: string[]): MemberEntry[] => {
+  // Walk through paragraphs detecting "Name" markers.
+  const members: MemberEntry[] = [];
+  let i = 0;
+  const n = paragraphs.length;
+
+  const newMember = (): MemberEntry => ({ name: [], address: [], transactions: [] });
+
+  // Find all member start indices (paragraph "Name")
+  const starts: number[] = [];
+  paragraphs.forEach((p, idx) => { if (p === 'Name') starts.push(idx); });
+
+  // ROM may have continuation pages where the leading "Name" header is stripped and the
+  // next member's name appears directly above an Address paragraph.
+  // We'll just split ranges between consecutive "Name" occurrences.
+  for (let s = 0; s < starts.length; s++) {
+    const start = starts[s];
+    const end = s + 1 < starts.length ? starts[s + 1] : n;
+    const slice = paragraphs.slice(start + 1, end);
+    const m = newMember();
+
+    // Collect name lines until "Address"
+    let cursor = 0;
+    while (cursor < slice.length && slice[cursor] !== 'Address') {
+      const line = slice[cursor];
+      const idMatch = line.match(ID_INLINE_RE);
+      if (idMatch) {
+        m.idPassport = idMatch[1].trim();
+        const before = line.replace(ID_INLINE_RE, '').replace(/\s+$/, '').trim();
+        if (before) m.name.push(before);
+      } else {
+        m.name.push(line);
+      }
+      cursor++;
+    }
+    // Address
+    if (slice[cursor] === 'Address') {
+      cursor++;
+      while (cursor < slice.length && slice[cursor] !== 'Security' && slice[cursor] !== 'Date') {
+        m.address.push(slice[cursor]);
+        cursor++;
+      }
+    }
+    // Security
+    if (slice[cursor] === 'Security') {
+      cursor++;
+      if (cursor < slice.length && slice[cursor] !== 'Date') {
+        m.security = slice[cursor];
+        cursor++;
+      }
+    }
+    // Date / Date Ceased
+    if (slice[cursor] === 'Date') {
+      cursor++;
+      if (cursor < slice.length && DATE_RE.test(slice[cursor])) {
+        m.dateEntered = slice[cursor];
+        cursor++;
+      }
+    }
+    if (slice[cursor] === 'Date Ceased') {
+      cursor++;
+      if (cursor < slice.length && DATE_RE.test(slice[cursor])) {
+        m.dateCeased = slice[cursor];
+        cursor++;
+      }
+    }
+    // Remaining lines = transaction rows. Each transaction has the pattern:
+    // Units, Date, TransactionType, ParValue, PaidUpValue, Balance, CertNo
+    // with optional preceding "notes" line (e.g. "KWOK AH NAM" before a Transfer).
+    const tail = slice.slice(cursor).filter(Boolean);
+    // Group by detecting Date markers as txn anchors.
+    let pending: ShareTxn = {};
+    let prevWasNotes = false;
+    let lastNote: string | undefined;
+    const pushTxn = () => {
+      if (Object.keys(pending).length) members; // keep linter happy
+      if (
+        pending.units !== undefined ||
+        pending.date !== undefined ||
+        pending.transactionType !== undefined ||
+        pending.balance !== undefined
+      ) {
+        m.transactions.push(pending);
+      }
+      pending = {};
+    };
+
+    let k = 0;
+    while (k < tail.length) {
+      const line = tail[k];
+      // Units = first numeric (possibly negative / parenthesised)
+      if (pending.units === undefined && NUMERIC_BALANCE_RE.test(line)) {
+        pending.units = line;
+        k++;
+        continue;
+      }
+      // Date for txn
+      if (pending.date === undefined && DATE_RE.test(line)) {
+        pending.date = line;
+        k++;
+        continue;
+      }
+      // Optional note line (e.g. transferee/transferor name) — non-numeric, non-date
+      if (
+        pending.transactionType === undefined &&
+        !NUMERIC_BALANCE_RE.test(line) &&
+        !HK_MONEY_RE.test(line) &&
+        !DATE_RE.test(line) &&
+        !/^(Subscription|Allotment|Transfer In|Transfer Out|Redemption|Reissue|Bonus)/i.test(line)
+      ) {
+        lastNote = (lastNote ? `${lastNote} ` : '') + line;
+        k++;
+        continue;
+      }
+      // Transaction type
+      if (pending.transactionType === undefined && /^(Subscription|Allotment|Transfer In|Transfer Out|Redemption|Reissue|Bonus)/i.test(line)) {
+        pending.transactionType = line;
+        if (lastNote) { pending.notes = lastNote; lastNote = undefined; }
+        k++;
+        continue;
+      }
+      // Par value
+      if (pending.parValue === undefined && HK_MONEY_RE.test(line)) {
+        pending.parValue = line;
+        k++;
+        continue;
+      }
+      // Paid Up value
+      if (pending.paidUpValue === undefined && HK_MONEY_RE.test(line)) {
+        pending.paidUpValue = line;
+        k++;
+        continue;
+      }
+      // Balance
+      if (pending.balance === undefined && NUMERIC_BALANCE_RE.test(line)) {
+        pending.balance = line;
+        k++;
+        continue;
+      }
+      // Certificate No
+      if (pending.certificateNo === undefined && NUMERIC_BALANCE_RE.test(line)) {
+        pending.certificateNo = line;
+        k++;
+        // End of one transaction
+        pushTxn();
+        continue;
+      }
+      // Anything else → push current and restart with this line as units if numeric
+      pushTxn();
+      if (NUMERIC_BALANCE_RE.test(line)) {
+        pending.units = line;
+      } else if (DATE_RE.test(line)) {
+        pending.date = line;
+      } else {
+        lastNote = (lastNote ? `${lastNote} ` : '') + line;
+      }
+      k++;
+    }
+    pushTxn();
+
+    if (m.name.length || m.idPassport || m.address.length) members.push(m);
+    i = end;
+  }
+  return members;
+};
+
+const parseLog = (html: string): ParsedLog => {
+  const paragraphs = cleanParagraphs(html);
+  if (!paragraphs.length) return { kind: 'unknown', raw: [] };
+  if (looksLikeRom(paragraphs)) {
+    return { kind: 'rom', members: parseRom(paragraphs) };
+  }
+  return { kind: 'rod', sections: parseRod(paragraphs) };
 };
 
 const LogTableView = ({ html }: { html: string }) => {

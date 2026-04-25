@@ -32,6 +32,7 @@ import { toast } from '@/hooks/use-toast';
 import { useCompanyLogs, useCompanyLogContent, useUpdateCompanyLog } from '@/hooks/useCompanyLogs';
 import { useCompanies } from '@/hooks/useCompanies';
 import { RichTextEditor } from '@/components/logs/RichTextEditor';
+import { LogTableView } from '@/components/logs/LogTableView';
 
 const docTypes = [
   { value: 'all', label: '所有類型' },

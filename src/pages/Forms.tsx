@@ -139,7 +139,7 @@ const Forms = () => {
 
       {/* NAR1 Modal */}
       <Dialog open={selectedForm === 'nar1'} onOpenChange={(open) => { if (!open) setSelectedForm(null); }}>
-        <DialogContent className="max-w-none w-[90vw] h-[90vh] p-0 flex flex-col">
+        <DialogContent className="max-w-none w-[95vw] h-[95vh] p-0 flex flex-col">
           <div className="flex-1 overflow-y-auto p-6">
             <FormWizard formId="nar1" onBack={() => setSelectedForm(null)} />
           </div>

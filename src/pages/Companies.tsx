@@ -193,7 +193,7 @@ const Companies = () => {
                 <TableCell className="max-w-[180px]">
                   <div className="text-xs space-y-0.5">
                     {company.secretaries.length > 0 ? (
-                      company.secretaries.slice(0, 2).map((s, i) => (
+                      company.secretaries.map((s, i) => (
                         <div key={i} className="truncate">{s.nameEnglish || s.nameChinese}</div>
                       ))
                     ) : <span className="text-muted-foreground">-</span>}
@@ -202,15 +202,12 @@ const Companies = () => {
                 <TableCell className="max-w-[150px]">
                   <div className="text-xs space-y-0.5">
                     {company.shareholders.length > 0 ? (
-                      company.shareholders.slice(0, 2).map((sh, i) => (
+                      company.shareholders.map((sh, i) => (
                         <div key={i} className="truncate">
                           {sh.name} <span className="text-muted-foreground">({sh.shares} 股)</span>
                         </div>
                       ))
                     ) : <span className="text-muted-foreground">-</span>}
-                    {company.shareholders.length > 2 && (
-                      <div className="text-muted-foreground">+{company.shareholders.length - 2} 更多</div>
-                    )}
                   </div>
                 </TableCell>
                 <TableCell onClick={(e) => e.stopPropagation()} className="min-w-[180px]">

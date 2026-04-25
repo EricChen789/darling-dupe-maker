@@ -200,6 +200,51 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave, onGenerateND2
                 </p>
               )}
             </div>
+            <div className="space-y-2 col-span-2">
+              <Label htmlFor="serviceAddress">服務地址</Label>
+              <Input
+                id="serviceAddress"
+                value={formData.serviceAddress}
+                onChange={(e) => setFormData({ ...formData, serviceAddress: e.target.value })}
+                placeholder="輸入服務地址"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="idNumber">香港身份證號碼</Label>
+              <Input
+                id="idNumber"
+                value={formData.idNumber}
+                onChange={(e) => setFormData({ ...formData, idNumber: e.target.value })}
+                placeholder="例如 A123456(7)"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="passportNumber">護照號碼</Label>
+              <Input
+                id="passportNumber"
+                value={formData.passportNumber}
+                onChange={(e) => setFormData({ ...formData, passportNumber: e.target.value })}
+                placeholder="輸入護照號碼"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="passportExpiry">護照失效日期</Label>
+              <Input
+                id="passportExpiry"
+                type="date"
+                value={formData.passportExpiry}
+                onChange={(e) => setFormData({ ...formData, passportExpiry: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="whatsapp">WhatsApp 電話號碼</Label>
+              <Input
+                id="whatsapp"
+                value={formData.whatsapp}
+                onChange={(e) => setFormData({ ...formData, whatsapp: e.target.value })}
+                placeholder="例如 +852 9123 4567"
+              />
+            </div>
             {formData.identity === 'corporate' && (
               <div className="space-y-2">
                 <Label htmlFor="brNumber">商業登記號碼</Label>

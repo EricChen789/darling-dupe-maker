@@ -107,7 +107,7 @@ const HEADER_NOISE = new Set([
   'Date / Place Birth / Place', 'Incorporated / Occupation /',
   'ID No / Passport Details',
   'Date Entered', '/ Ceased', 'Transaction', 'Type', 'Units',
-  'Par Value', 'Paid Up Value', 'Certificate',
+  'Par Value', 'Paid Up Value', 'Certificate', 'Balance',
   'Transferred To/From, Redeemed,', 'Reissued',
   'Per Share', 'Distinctive Numbers',
 ]);
@@ -115,7 +115,8 @@ const PAGE_NOISE_RE = /^(- ?\d+ ?-|REGISTER OF|Company Number|Quorum)/i;
 const POSITION_RE = /^(Director|Secretary|Reserve Director|Alternate Director|Designated Representative)$/i;
 const STATUS_RE = /^(Resigned|Ceased|Removed|Deceased|Struck Off)$/i;
 const DATE_RE = /^\d{1,2}\/\d{1,2}\/\d{4}$/;
-const ID_INLINE_RE = /\(Hong Kong ID No\s*:\s*([^)]+)\)/i;
+// Capture HK ID like P373848(9) including the trailing parenthesised check digit.
+const ID_INLINE_RE = /\(Hong Kong ID No\s*:\s*([A-Z]{1,3}\d{4,8}(?:\([0-9A-Z]\))?|\d{4,10})\s*\)/i;
 const PASSPORT_TOKEN_RE = /^[A-Z]{1,3}\d{4,8}(?:\([0-9A-Z]\))?$/i;
 const CR_NUMBER_RE = /^\d{4,10}$/;
 const NUMERIC_BALANCE_RE = /^\(?-?[\d,]+\)?$/;

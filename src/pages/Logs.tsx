@@ -122,7 +122,8 @@ const ID_INLINE_RE = /\(Hong Kong ID No\s*:\s*([A-Z]{1,3}\d{4,8}(?:\([0-9A-Z]\))
 const PASSPORT_TOKEN_RE = /^[A-Z]{1,3}\d{4,8}(?:\([0-9A-Z]\))?$/i;
 const CR_NUMBER_RE = /^\d{4,10}$/;
 const NUMERIC_BALANCE_RE = /^\(?-?[\d,]+\)?$/;
-const HK_MONEY_RE = /^HK\$/i;
+const CURRENCY_RE = /^(HK\$|US\$|USD|RMB|CNY|EUR|GBP|JPY|AUD|SGD|CAD|NZD)\s*[\d,.]+$/i;
+const TXN_TYPE_RE = /^(Subscription|Allotment|Transfer In|Transfer Out|Redemption|Reissue|Bonus|Issue|Surrender|Forfeiture)/i;
 
 const cleanParagraphs = (html: string): string[] =>
   (html.match(/<p[^>]*>[\s\S]*?<\/p>/gi) || [])

@@ -457,7 +457,19 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
                   <Input value={formData.presenterReference} onChange={e => handleReferenceChange(e.target.value)} />
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs">聯絡資訊（自動組成）</Label>
+                  <Label className="text-xs">電話 Phone</Label>
+                  <Input value={formData.presenterPhone} onChange={e => handlePhoneChange(e.target.value)} />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">傳真 Fax</Label>
+                  <Input value={formData.presenterFax} onChange={e => handleFaxChange(e.target.value)} />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">電郵 Email</Label>
+                  <Input type="email" value={formData.presenterEmail} onChange={e => handleEmailChange(e.target.value)} />
+                </div>
+                <div className="space-y-1 col-span-2">
+                  <Label className="text-xs">聯絡資訊（自動組成，可手動覆蓋）</Label>
                   <Textarea rows={2} value={formData.presenterContact} onChange={e => setFormData({ ...formData, presenterContact: e.target.value })} />
                 </div>
               </div>

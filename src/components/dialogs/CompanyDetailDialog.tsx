@@ -334,6 +334,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
 
                 {!editingCompany ? (
                   <div className="grid grid-cols-2 gap-4 text-sm">
+                    <InfoItem label="英文名稱" value={company.name} />
                     <InfoItem label="中文名稱" value={company.chineseName} />
                     <InfoItem label="商業登記號碼" value={company.brNumber} />
                     <InfoItem label="商業名稱" value={company.tradingName} />

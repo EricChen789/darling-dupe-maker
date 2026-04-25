@@ -493,15 +493,37 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
   safeSetText("fill_4_P.12", br8);
   safeSetText("fill_4_P.13", br8);
 
-  // ============ Pages 14-15 - Declaration & Presenter ============
+  // ============ Page 14 - Declaration & Signature (正本第8頁) ============
   safeSetText("fill_1_P.14", br8);
   safeSetText("fill_4_P.14", br8);
+  // 14 ☑ 非上市公司成員詳情列於附表一
+  safeCheck("cb_1_P.14", true);
+  // 16 ☑ 私人公司陳述
+  safeCheck("cb_4_P.14", (data.companyType?.includes("私人") || data.companyType?.toLowerCase().includes("private")) || false);
+
+  // 續頁頁數：C = 額外董事人數 (>1 自然人董事時用 C 續頁)；附表一 = 股東頁數
+  const naturalDirCount = (data.directors || []).filter(d => d.identity === "natural").length;
+  const continuationC = Math.max(0, naturalDirCount - 1);
+  const memberCount = (data.shareholders || []).length;
+  const schedulePages = Math.max(1, Math.ceil(memberCount / 2));
+  if (continuationC > 0) safeSetText("fill_15_P.14", String(continuationC));
+  safeSetText("fill_18_P.14", String(schedulePages));
+
+  // 簽署 / 姓名 / 日期：使用提交人資訊
+  const presenter = data.presenter || {};
+  const signerName = presenter.name || "";
+  if (signerName) {
+    safeSetText("fill_20_P.14", signerName); // 簽署
+    safeSetText("fill_21_P.14", signerName); // 姓名
+  }
+  // 日期 (DD/MM/YYYY) — 使用結算日期
+  if (day && month && year) {
+    safeSetText("fill_22_P.14", `${day}/${month}/${year}`);
+  }
+
+  // ============ Page 15 - Presenter's Reference (續) ============
   safeSetText("fill_1_P.15", br8);
   safeSetText("fill_4_P.15", br8);
-
-  // Presenter info typically appears on the declaration pages.
-  // We attempt common candidate field names; non-existent ones are skipped silently.
-  const presenter = data.presenter || {};
   if (presenter.name) {
     safeSetText("fill_2_P.15", presenter.name);
     safeSetText("fill_5_P.15", presenter.name);
@@ -510,7 +532,6 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
     safeSetText("fill_3_P.15", presenter.address);
     safeSetText("fill_6_P.15", presenter.address);
   }
-  // Note: P.15 only has fill_1..fill_6, no Tel/Fax/Email fields on this page
 
   // Keep form interactive so PDF viewer renders CJK with system fonts
   console.log("PDF filled with all data, serializing...");

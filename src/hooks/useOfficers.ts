@@ -95,17 +95,26 @@ export function useOfficers() {
       const personMap = new Map<string, { officer: OfficerRow; companies: { id: string; name: string; brNumber: string }[] }>();
 
       for (const row of officerRows || []) {
-        // Use officer id as unique key since each row is unique
         const company = companyMap.get(row.company_id);
         const companyInfo = company
           ? { id: company.id, name: company.name, brNumber: company.company_number || '' }
           : { id: row.company_id, name: '未知公司', brNumber: '' };
 
-        // Group officers by name+identity+role to merge companies
-        const key = `${row.name_english}|${row.name_chinese || ''}|${row.identity}|${row.role}`;
+        // Group officers by normalized english name + role only.
+        // identity & chinese name are unreliable (data inconsistencies — same person
+        // sometimes recorded as natural vs corporate, or with empty/wrong chinese name).
+        const normEng = (row.name_english || '').trim().toLowerCase().replace(/\s+/g, ' ');
+        const key = `${normEng}|${row.role}`;
         const existing = personMap.get(key);
         if (existing) {
-          existing.companies.push(companyInfo);
+          // Avoid duplicate company entries for the same person
+          if (!existing.companies.some(c => c.id === companyInfo.id)) {
+            existing.companies.push(companyInfo);
+          }
+          // Prefer a row with non-empty chinese name as the canonical record
+          if (!existing.officer.name_chinese && row.name_chinese) {
+            existing.officer = row;
+          }
         } else {
           personMap.set(key, { officer: row, companies: [companyInfo] });
         }

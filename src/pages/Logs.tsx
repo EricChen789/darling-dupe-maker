@@ -129,7 +129,8 @@ const TXN_TYPE_RE = /^(Subscription|Allotment|Transfer In|Transfer Out|Redemptio
 
 // Some RTF exports collapse an entire ROD/ROM table row into a single <p>.
 // Detect those and split into the logical lines before parsing.
-const COMPANY_TITLE_RE = /\b(LIMITED|有限公司|CORPORATION|HOLDINGS)\b/i;
+// Match company titles in either Latin (\b boundary) or CJK form (no \b for Chinese).
+const COMPANY_TITLE_RE = /(\b(LIMITED|CORPORATION|HOLDINGS|COMPANY|CO\.|LTD\.?)\b|有限公司|股?份有限公司|集團)/i;
 const explodeCompoundLine = (text: string): string[] => {
   // Look for a position keyword glued to a date, e.g. "...Director01/01/2016" or "...Secretary 01/01/2016"
   const POS_DATE = /(Director|Secretary|Reserve Director|Alternate Director|Designated Representative)\s*(\d{1,2}\/\d{1,2}\/\d{4})/;

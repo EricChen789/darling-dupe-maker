@@ -214,11 +214,12 @@ const LogTableView = ({ html }: { html: string }) => {
             <TableHeader>
               <TableRow>
                 <TableHead className="w-12 text-center">#</TableHead>
-                <TableHead className="w-[240px]">姓名 / 名稱</TableHead>
-                <TableHead>詳細資料</TableHead>
-                <TableHead className="w-[120px]">職位</TableHead>
-                <TableHead className="w-[120px]">委任日期</TableHead>
-                <TableHead className="w-[140px]">狀態 / 終止日期</TableHead>
+                <TableHead className="min-w-[260px]">Name / Service / Residential Address</TableHead>
+                <TableHead className="min-w-[190px]">Date / Place Birth / Place Incorporated / Occupation</TableHead>
+                <TableHead className="min-w-[150px]">ID No / Passport Details</TableHead>
+                <TableHead className="min-w-[120px]">Position</TableHead>
+                <TableHead className="min-w-[130px]">Date(s) Appointed / Meeting</TableHead>
+                <TableHead className="min-w-[150px]">Reason / Date(s) Ceased</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -228,32 +229,23 @@ const LogTableView = ({ html }: { html: string }) => {
                     {idx + 1}
                   </TableCell>
                   <TableCell className="text-sm font-medium whitespace-pre-wrap break-words">
-                    {entry.name || '—'}
+                    {entry.nameAddress.length ? entry.nameAddress.join('\n') : '—'}
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">
                     <div className="space-y-0.5">
-                      {entry.details.map((d, i) => (
+                      {entry.birthIncorpOccupation.map((d, i) => (
                         <div key={i} className="whitespace-pre-wrap break-words">{d}</div>
                       ))}
+                      {!entry.birthIncorpOccupation.length && <span>—</span>}
                     </div>
                   </TableCell>
+                  <TableCell className="text-xs font-mono whitespace-nowrap">{entry.idPassport || '—'}</TableCell>
                   <TableCell className="text-sm">{entry.position || '—'}</TableCell>
                   <TableCell className="text-xs font-mono whitespace-nowrap">
-                    {entry.appointedDates.length ? entry.appointedDates.join(', ') : '—'}
+                    {entry.appointedMeeting.length ? entry.appointedMeeting.join(', ') : '—'}
                   </TableCell>
                   <TableCell className="text-xs whitespace-nowrap">
-                    {entry.status ? (
-                      <div className="space-y-1">
-                        <Badge variant="outline">{entry.status}</Badge>
-                        {entry.ceasedDates.length > 0 && (
-                          <div className="font-mono text-muted-foreground">
-                            {entry.ceasedDates.join(', ')}
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <span className="text-muted-foreground">—</span>
-                    )}
+                    {entry.ceasedReason.length ? entry.ceasedReason.join(', ') : '—'}
                   </TableCell>
                 </TableRow>
               ))}

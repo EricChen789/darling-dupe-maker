@@ -433,8 +433,9 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
   // Pick the first share-class info for header (most common case: single class)
   const firstShareInfo = shareInfos[0];
   if (firstShareInfo) {
-    safeSetText("fill_5_P.9", firstShareInfo.className);
-    safeSetText("fill_6_P.9", firstShareInfo.shares.toLocaleString());
+    // 附表一格式：「ORDINARY SHARES (HK$)」
+    safeSetText("fill_5_P.9", `${firstShareInfo.className} (${firstShareInfo.currency})`);
+    safeSetText("fill_6_P.9", fmtInt(firstShareInfo.shares));
   }
 
   // Fill up to 2 members on page 9 (template only contains one schedule page)
@@ -446,7 +447,6 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
     if (slot === 1) {
       safeSetText("fill_7_P.9", sh.nameChinese || "");
       if (isCorp) {
-        // Corporate member uses combined name field (10), leave surname/other blank
         safeSetText("fill_10_P.9", fullName);
       } else {
         safeSetText("fill_8_P.9", surname);
@@ -457,7 +457,7 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
       safeSetText("fill_13_P.9", addr.street);
       safeSetText("fill_14_P.9", addr.district);
       safeSetText("fill_15_P.9", addr.country);
-      safeSetText("fill_16_P.9", (Number(sh.shares) || 0).toLocaleString());
+      safeSetText("fill_16_P.9", fmtInt(Number(sh.shares) || 0));
     } else {
       safeSetText("fill_18_P.9", sh.nameChinese || "");
       if (isCorp) {
@@ -471,7 +471,7 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
       safeSetText("fill_24_P.9", addr.street);
       safeSetText("fill_25_P.9", addr.district);
       safeSetText("fill_26_P.9", addr.country);
-      safeSetText("fill_27_P.9", (Number(sh.shares) || 0).toLocaleString());
+      safeSetText("fill_27_P.9", fmtInt(Number(sh.shares) || 0));
     }
   };
 

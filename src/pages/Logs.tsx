@@ -204,19 +204,17 @@ const cleanParagraphs = (html: string): string[] => {
   );
   if (firstRecordIdx < 0) firstRecordIdx = trimmed.length;
 
-  return trimmed
-    .filter((t, i) => !PAGE_NOISE_RE.test(t) && !HEADER_NOISE.has(t))
-    .filter((t, i) => {
-      // Only drop pure company-title lines when they appear in the document preamble.
-      const isCompanyTitle =
-        COMPANY_TITLE_RE.test(t) &&
-        !/(FLAT|ROOM|FLOOR|ROAD|STREET|HOUSE|BUILDING|ESTATE|TOWER)/i.test(t) &&
-        t.length < 80;
-      if (!isCompanyTitle) return true;
-      // Keep if this line falls inside the officer/member records section.
-      // (We compare against the original index in `trimmed`, which matches by value+order.)
-      return i >= firstRecordIdx;
-    });
+  return trimmed.filter((t, i) => {
+    if (PAGE_NOISE_RE.test(t)) return false;
+    if (HEADER_NOISE.has(t)) return false;
+    const isCompanyTitle =
+      COMPANY_TITLE_RE.test(t) &&
+      !/(FLAT|ROOM|FLOOR|ROAD|STREET|HOUSE|BUILDING|ESTATE|TOWER)/i.test(t) &&
+      t.length < 80;
+    // Drop company-title lines only in the preamble (before first officer/member record).
+    if (isCompanyTitle && i < firstRecordIdx) return false;
+    return true;
+  });
 };
 
 const looksLikeRom = (paragraphs: string[]): boolean =>

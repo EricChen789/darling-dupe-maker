@@ -111,14 +111,18 @@ export type Database = {
           created_at: string
           date_appointed: string | null
           date_ceased: string | null
+          email: string | null
           id: string
           id_number: string | null
           identity: string
           name_chinese: string | null
           name_english: string
+          passport_expiry: string | null
+          passport_number: string | null
           place_incorporated: string | null
           role: string
           service_address: string | null
+          whatsapp: string | null
         }
         Insert: {
           address?: string | null
@@ -127,14 +131,18 @@ export type Database = {
           created_at?: string
           date_appointed?: string | null
           date_ceased?: string | null
+          email?: string | null
           id?: string
           id_number?: string | null
           identity?: string
           name_chinese?: string | null
           name_english?: string
+          passport_expiry?: string | null
+          passport_number?: string | null
           place_incorporated?: string | null
           role: string
           service_address?: string | null
+          whatsapp?: string | null
         }
         Update: {
           address?: string | null
@@ -143,14 +151,18 @@ export type Database = {
           created_at?: string
           date_appointed?: string | null
           date_ceased?: string | null
+          email?: string | null
           id?: string
           id_number?: string | null
           identity?: string
           name_chinese?: string | null
           name_english?: string
+          passport_expiry?: string | null
+          passport_number?: string | null
           place_incorporated?: string | null
           role?: string
           service_address?: string | null
+          whatsapp?: string | null
         }
         Relationships: [
           {

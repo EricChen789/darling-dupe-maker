@@ -249,50 +249,77 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
 
   // ============ Page 2 - Share Capital ============
   safeSetText("fill_1_P.2", br8);
-  
-  // Fill share capital from shareholder data - aggregate by share type
-  const shareTypeMap = new Map<string, { shares: number; currency: string; className: string; totalAmount: string; paidUp: string }>();
+  // fill_2_P.2 = Email, fill_3_P.2 = Phone (after +852) — leave blank unless company-level data
+  // fill_4_P.2 = Mortgages amount, fill_5_P.2 = Number of members (no share capital co)
+
+  // Aggregate shareholdings by share-class identifier
+  type ShareInfo = { className: string; currency: string; shares: number; parValue: number };
+  const shareTypeMap = new Map<string, ShareInfo>();
+
   const expandClassName = (raw: string) => {
-    const t = (raw || '').trim();
-    if (!t) return 'Ordinary';
-    if (/^ord(inary)?$/i.test(t)) return 'Ordinary';
-    if (/^pref(erence)?$/i.test(t)) return 'Preference';
-    return t;
+    const t = (raw || "").trim();
+    if (!t) return "Ordinary";
+    const head = t.split(/[-—]/)[0].trim();
+    if (/^ord(inary)?$/i.test(head)) return "Ordinary";
+    if (/^pref(erence)?$/i.test(head)) return "Preference";
+    if (head.includes("普通")) return "Ordinary 普通股";
+    if (head.includes("優先")) return "Preference 優先股";
+    return head || "Ordinary";
   };
-  for (const sh of data.shareholders) {
-    const st = sh.shareType || 'ORD';
-    if (!shareTypeMap.has(st)) {
-      // Parse share type like "ORD - HK$1.00 ORDINARY FULLY PAID (HK$)"
-      const currMatch = st.match(/(HK\$|USD|RMB|GBP|US\$|CNY|EUR)/i);
-      const parMatch = st.match(/[\d.]+/);
-      const parValue = parMatch ? parseFloat(parMatch[0]) : 0;
-      shareTypeMap.set(st, {
+  const detectCurrency = (raw: string) => {
+    const m = (raw || "").match(/(HK\$|HKD|US\$|USD|RMB|CNY|GBP|EUR|JPY)/i);
+    if (!m) return "HKD";
+    const c = m[1].toUpperCase();
+    if (c === "HK$") return "HKD";
+    if (c === "US$") return "USD";
+    return c;
+  };
+  const detectParValue = (raw: string) => {
+    // Look for currency-prefixed amount like HK$1.00 or HK$100.00
+    const m = (raw || "").match(/(?:HK\$|US\$|HKD|USD|RMB|CNY|GBP|EUR|JPY)\s*([\d,]+(?:\.\d+)?)/i);
+    if (m) return parseFloat(m[1].replace(/,/g, "")) || 0;
+    return 0;
+  };
+
+  for (const sh of data.shareholders || []) {
+    const raw = (sh.shareType || "").trim();
+    const key = raw || "ORD";
+    if (!shareTypeMap.has(key)) {
+      shareTypeMap.set(key, {
+        className: expandClassName(raw || "Ordinary"),
+        currency: detectCurrency(raw),
         shares: 0,
-        currency: currMatch ? currMatch[1] : 'HK$',
-        className: expandClassName(st.split(' - ')[0] || 'ORD'),
-        totalAmount: '',
-        paidUp: parValue ? parValue.toFixed(2) : '',
+        parValue: detectParValue(raw),
       });
     }
-    const entry = shareTypeMap.get(st)!;
-    entry.shares += sh.shares;
+    shareTypeMap.get(key)!.shares += Number(sh.shares) || 0;
   }
 
-  // Page 2 share capital table: 5 columns × 4 rows starting at fill_6_P.2
-  // Per row: [class, currency, total number, total amount, total paid-up]
+  // Page 2 share capital table: 5 cols × 4 data rows + totals row
   // Row 1: 6,7,8,9,10  Row 2: 11..15  Row 3: 16..20  Row 4: 21..25
-  let shareIdx = 0;
-  for (const [, info] of shareTypeMap) {
-    if (shareIdx >= 4) break;
-    const base = 6 + shareIdx * 5;
-    const parValue = parseFloat(info.paidUp) || 0;
-    const totalAmount = parValue ? (info.shares * parValue).toFixed(2) : '';
+  // Totals row: -, 26 (currency), 27 (total shares), 28 (total amount), 29 (total paid-up)
+  const shareInfos = Array.from(shareTypeMap.values());
+  let totalShares = 0;
+  let totalAmountSum = 0;
+  let firstCurrency = "";
+  for (let i = 0; i < Math.min(4, shareInfos.length); i++) {
+    const info = shareInfos[i];
+    const base = 6 + i * 5;
+    const totalAmount = info.parValue ? info.shares * info.parValue : 0;
     safeSetText(`fill_${base}_P.2`, info.className);
     safeSetText(`fill_${base + 1}_P.2`, info.currency);
     safeSetText(`fill_${base + 2}_P.2`, info.shares.toLocaleString());
-    safeSetText(`fill_${base + 3}_P.2`, totalAmount);
-    safeSetText(`fill_${base + 4}_P.2`, totalAmount);
-    shareIdx++;
+    safeSetText(`fill_${base + 3}_P.2`, totalAmount ? totalAmount.toFixed(2) : "");
+    safeSetText(`fill_${base + 4}_P.2`, totalAmount ? totalAmount.toFixed(2) : "");
+    totalShares += info.shares;
+    totalAmountSum += totalAmount;
+    if (!firstCurrency) firstCurrency = info.currency;
+  }
+  if (shareInfos.length > 0) {
+    safeSetText("fill_26_P.2", firstCurrency);
+    safeSetText("fill_27_P.2", totalShares.toLocaleString());
+    safeSetText("fill_28_P.2", totalAmountSum ? totalAmountSum.toFixed(2) : "");
+    safeSetText("fill_29_P.2", totalAmountSum ? totalAmountSum.toFixed(2) : "");
   }
 
   // ============ Page 3 - Secretary (Natural Person) 12A ============

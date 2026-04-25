@@ -162,7 +162,9 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
     return pdfBytes;
   }
 
-  // Normal mode - no font embedding, PDF viewer uses system fonts for CJK
+  // 嵌入標準 Helvetica 字型，用於 ASCII 文字欄位的 appearance 重繪。
+  // CJK 文字仍維持「不嵌入字型」由 PDF viewer 用系統字型渲染。
+  const helv = await pdfDoc.embedFont(StandardFonts.Helvetica);
 
   const returnDate = data.returnDate || new Date().toISOString().split("T")[0];
   const [year, month, day] = returnDate.split("-");
@@ -178,8 +180,10 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
       if (maxLength && textToSet.length > maxLength) textToSet = textToSet.slice(0, maxLength);
 
       if (isAsciiOnly(textToSet)) {
-        // 純 ASCII：用標準 setText，使用 PDF 內建字型（Helvetica）正常顯示
+        // 純 ASCII：setText + 用嵌入的 Helvetica 立即更新 appearance
+        // （不依賴 viewer 的 NeedAppearances，避免模板自訂 encoding 干擾）
         field.setText(textToSet);
+        try { field.updateAppearances(helv); } catch (_) { /* ignore */ }
       } else {
         // 含中文：用 hex string (UTF-16BE) 並刪除 appearance stream，
         // 配合 NeedAppearances=true，由 PDF viewer 用系統字型重繪
@@ -194,8 +198,7 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
     }
   };
 
-  // Tell PDF viewers to regenerate appearance streams for form fields.
-  // This makes filled values actually visible since we don't embed fonts.
+  // 仍保留 NeedAppearances=true 給 CJK 欄位
   try {
     const acroForm = form.acroForm.dict;
     acroForm.set(PDFName.of('NeedAppearances'), pdfDoc.context.obj(true));

@@ -222,6 +222,9 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave, onGenerateND2
         passportNumber: person.passportNumber || '',
         passportExpiry: person.passportExpiry || '',
         whatsapp: person.whatsapp || '',
+        passportFilePath: person.passportFilePath || '',
+        idCardFilePath: person.idCardFilePath || '',
+        addressProofFilePath: person.addressProofFilePath || '',
       });
     } else {
       setFormData({

@@ -288,12 +288,16 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave, onGenerateND2
             </div>
             <div className="space-y-2">
               <Label htmlFor="whatsapp">WhatsApp 電話號碼</Label>
-              <Input
-                id="whatsapp"
-                value={formData.whatsapp}
-                onChange={(e) => setFormData({ ...formData, whatsapp: e.target.value })}
-                placeholder="例如 +852 9123 4567"
-              />
+              <div className="flex items-center gap-2">
+                <Input
+                  id="whatsapp"
+                  value={formData.whatsapp}
+                  onChange={(e) => setFormData({ ...formData, whatsapp: e.target.value })}
+                  placeholder="例如 +852 9123 4567"
+                  className="flex-1"
+                />
+                <PassportExpiryBadge expiry={formData.passportExpiry} />
+              </div>
             </div>
             {formData.identity === 'corporate' && (
               <div className="space-y-2">

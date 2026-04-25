@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -17,9 +17,120 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { FileText, AlertTriangle, CheckCircle2, XCircle } from 'lucide-react';
+import { FileText, AlertTriangle, CheckCircle2, XCircle, Upload, X, Image as ImageIcon } from 'lucide-react';
 import { Person } from '@/types';
 import { toast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
+
+interface FileUploadSlotProps {
+  label: string;
+  filePath: string;
+  onChange: (path: string) => void;
+  folder: string;
+}
+
+const FileUploadSlot = ({ label, filePath, onChange, folder }: FileUploadSlotProps) => {
+  const [dragOver, setDragOver] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState<string>('');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    let active = true;
+    if (filePath) {
+      supabase.storage.from('company-documents').createSignedUrl(filePath, 3600).then(({ data }) => {
+        if (active && data?.signedUrl) setPreviewUrl(data.signedUrl);
+      });
+    } else {
+      setPreviewUrl('');
+    }
+    return () => { active = false; };
+  }, [filePath]);
+
+  const upload = async (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      toast({ title: '錯誤', description: '請上傳圖片檔', variant: 'destructive' });
+      return;
+    }
+    setUploading(true);
+    try {
+      const ext = file.name.split('.').pop() || 'jpg';
+      const path = `${folder}/${crypto.randomUUID()}.${ext}`;
+      // Remove old
+      if (filePath) {
+        await supabase.storage.from('company-documents').remove([filePath]);
+      }
+      const { error } = await supabase.storage.from('company-documents').upload(path, file, { upsert: true });
+      if (error) throw error;
+      onChange(path);
+      toast({ title: '上傳成功', description: label });
+    } catch (e: any) {
+      toast({ title: '上傳失敗', description: e.message, variant: 'destructive' });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleRemove = async () => {
+    if (filePath) {
+      await supabase.storage.from('company-documents').remove([filePath]);
+    }
+    onChange('');
+  };
+
+  return (
+    <div className="space-y-2">
+      <Label>{label}</Label>
+      <div
+        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+        onDragEnter={(e) => { e.preventDefault(); setDragOver(true); }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragOver(false);
+          const file = e.dataTransfer.files?.[0];
+          if (file) upload(file);
+        }}
+        className={`relative border-2 border-dashed rounded-md p-3 text-center transition-colors cursor-pointer ${
+          dragOver ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50'
+        }`}
+        onClick={() => !filePath && inputRef.current?.click()}
+      >
+        <input
+          ref={inputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) upload(file);
+            e.target.value = '';
+          }}
+        />
+        {previewUrl ? (
+          <div className="relative">
+            <img src={previewUrl} alt={label} className="max-h-32 mx-auto rounded" />
+            <div className="flex justify-center gap-2 mt-2">
+              <Button type="button" size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); inputRef.current?.click(); }}>
+                <Upload className="h-3 w-3 mr-1" />更換
+              </Button>
+              <Button type="button" size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); handleRemove(); }}>
+                <X className="h-3 w-3 mr-1" />刪除
+              </Button>
+            </div>
+          </div>
+        ) : uploading ? (
+          <div className="py-4 text-sm text-muted-foreground">上傳中...</div>
+        ) : (
+          <div className="py-4 text-sm text-muted-foreground flex flex-col items-center gap-1">
+            <ImageIcon className="h-6 w-6" />
+            <span>{dragOver ? '放開以上傳' : '點擊或拖放圖片上傳'}</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
 
 const PassportExpiryBadge = ({ expiry }: { expiry: string }) => {
   if (!expiry) {
@@ -89,6 +200,9 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave, onGenerateND2
     passportNumber: '',
     passportExpiry: '',
     whatsapp: '',
+    passportFilePath: '',
+    idCardFilePath: '',
+    addressProofFilePath: '',
   });
 
   const originalAddress = person?.address || '';
@@ -108,6 +222,9 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave, onGenerateND2
         passportNumber: person.passportNumber || '',
         passportExpiry: person.passportExpiry || '',
         whatsapp: person.whatsapp || '',
+        passportFilePath: person.passportFilePath || '',
+        idCardFilePath: person.idCardFilePath || '',
+        addressProofFilePath: person.addressProofFilePath || '',
       });
     } else {
       setFormData({
@@ -123,6 +240,9 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave, onGenerateND2
         passportNumber: '',
         passportExpiry: '',
         whatsapp: '',
+        passportFilePath: '',
+        idCardFilePath: '',
+        addressProofFilePath: '',
       });
     }
   }, [person, open]);
@@ -262,6 +382,18 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave, onGenerateND2
                 onChange={(e) => setFormData({ ...formData, passportExpiry: e.target.value })}
               />
             </div>
+            <FileUploadSlot
+              label="護照圖片"
+              filePath={formData.passportFilePath}
+              onChange={(p) => setFormData({ ...formData, passportFilePath: p })}
+              folder="officers/passport"
+            />
+            <FileUploadSlot
+              label="身份證圖片"
+              filePath={formData.idCardFilePath}
+              onChange={(p) => setFormData({ ...formData, idCardFilePath: p })}
+              folder="officers/id-card"
+            />
 
             {/* === 聯絡 === */}
             <div className="space-y-2">
@@ -315,6 +447,14 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave, onGenerateND2
                 value={formData.serviceAddress}
                 onChange={(e) => setFormData({ ...formData, serviceAddress: e.target.value })}
                 placeholder="輸入服務地址"
+              />
+            </div>
+            <div className="col-span-2">
+              <FileUploadSlot
+                label="住址證明圖片"
+                filePath={formData.addressProofFilePath}
+                onChange={(p) => setFormData({ ...formData, addressProofFilePath: p })}
+                folder="officers/address-proof"
               />
             </div>
           </div>

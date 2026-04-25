@@ -38,6 +38,9 @@ export interface Person {
   passportNumber?: string;
   passportExpiry?: string;
   whatsapp?: string;
+  passportFilePath?: string;
+  idCardFilePath?: string;
+  addressProofFilePath?: string;
   dateAppointed?: string;
   dateCeased?: string;
   placeIncorporated?: string;

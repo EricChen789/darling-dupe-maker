@@ -21,6 +21,9 @@ interface OfficerRow {
   passport_expiry: string | null;
   whatsapp: string | null;
   email: string | null;
+  passport_file_path: string | null;
+  id_card_file_path: string | null;
+  address_proof_file_path: string | null;
   created_at: string;
 }
 
@@ -48,6 +51,9 @@ function mapOfficerToPerson(
     passportNumber: officer.passport_number || undefined,
     passportExpiry: officer.passport_expiry || undefined,
     whatsapp: officer.whatsapp || undefined,
+    passportFilePath: officer.passport_file_path || undefined,
+    idCardFilePath: officer.id_card_file_path || undefined,
+    addressProofFilePath: officer.address_proof_file_path || undefined,
     dateAppointed: officer.date_appointed || undefined,
     dateCeased: officer.date_ceased || undefined,
     placeIncorporated: officer.place_incorporated || undefined,
@@ -140,6 +146,9 @@ export function useOfficers() {
             whatsapp: personData.whatsapp || '',
             email: personData.email || '',
             company_number_ref: personData.brNumber || '',
+            passport_file_path: personData.passportFilePath || '',
+            id_card_file_path: personData.idCardFilePath || '',
+            address_proof_file_path: personData.addressProofFilePath || '',
           })
           .eq('id', existingPerson.id);
         if (error) throw error;

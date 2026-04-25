@@ -204,18 +204,22 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
 
   // ============ Page 1 - Company Info ============
   safeSetText("fill_1_P.1", br8);
-  // Box 1 - English company name
-  safeSetText("fill_2_P.1", data.name || "");
-  // Box 1 (cont.) - Chinese company name
-  safeSetText("fill_3_P.1", data.chineseName || "");
+  // Box 1 公司名稱 - 中英文同一欄
+  const fullCompanyName = [data.name, data.chineseName].filter(Boolean).join("  ");
+  safeSetText("fill_2_P.1", fullCompanyName);
+  // Box 2 商業名稱 Trading Name (Business Name)
+  safeSetText("fill_3_P.1", data.tradingName || "");
   safeCheck("cb_1_P.1", data.companyType?.includes("私人") || data.companyType?.toLowerCase().includes("private") || false);
   safeCheck("cb_2_P.1", data.companyType?.includes("公眾") || data.companyType?.toLowerCase().includes("public") || false);
   safeCheck("cb_3_P.1", data.companyType?.includes("擔保") || false);
+  // Box 9 業務性質 -> 4=Code, 5=Description
   safeSetText("fill_4_P.1", data.businessCode || "");
   safeSetText("fill_5_P.1", data.businessNature || "");
+  // Box 4 結算日期 dd/mm/yyyy -> 6/7/8
   safeSetText("fill_6_P.1", day || "");
   safeSetText("fill_7_P.1", month || "");
   safeSetText("fill_8_P.1", year || "");
+  // Box 6 註冊地址 -> 15/16/17/18
   safeSetText("fill_15_P.1", office.flat || "");
   safeSetText("fill_16_P.1", office.building || "");
   safeSetText("fill_17_P.1", office.street || "");

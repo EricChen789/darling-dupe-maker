@@ -381,6 +381,16 @@ const parseRom = (paragraphs: string[]): MemberEntry[] => {
     // --- Name (until next anchor) ---
     while (cursor < slice.length && !MEMBER_ANCHORS.has(slice[cursor])) {
       const line = slice[cursor];
+      // Defensive: skip company-title / page-header lines that may slip past headerSet
+      // (e.g. continuation-page company name reappearing inside a member's slice).
+      if (
+        COMPANY_TITLE_RE.test(line) &&
+        !/(FLAT|ROOM|FLOOR|ROAD|STREET|HOUSE|BUILDING|ESTATE|TOWER|VILLAGE)/i.test(line) &&
+        line.length < 80
+      ) {
+        cursor++;
+        continue;
+      }
       const idMatch = line.match(ID_INLINE_RE);
       if (idMatch) {
         m.idPassport = idMatch[1].trim();

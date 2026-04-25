@@ -194,12 +194,27 @@ const cleanParagraphs = (html: string): string[] => {
       exploded.push(t);
     }
   }
-  return exploded
-    .map((t) => t.trim())
-    .filter(Boolean)
-    .filter((t) => !PAGE_NOISE_RE.test(t) && !HEADER_NOISE.has(t))
-    // Drop pure company-title lines (e.g. "1&1 FOOD AND BEVERAGE LIMITED1加1飲食有限公司")
-    .filter((t) => !(COMPANY_TITLE_RE.test(t) && !/(FLAT|ROOM|FLOOR|ROAD|STREET|HOUSE|BUILDING|ESTATE|TOWER)/i.test(t) && t.length < 80));
+  // Drop preamble company-title lines that appear BEFORE the first officer/member record begins.
+  // Keep company-title lines that appear inside officer entries (e.g. corporate director/secretary names
+  // such as "TWINSAIL CONSULTANTS LIMITED" / "雙帆顧問有限公司").
+  const trimmed = exploded.map((t) => t.trim()).filter(Boolean);
+  // First "real" record marker: a Position keyword (ROD) or "Name" anchor (ROM).
+  let firstRecordIdx = trimmed.findIndex(
+    (t) => POSITION_RE.test(t) || t === 'Name'
+  );
+  if (firstRecordIdx < 0) firstRecordIdx = trimmed.length;
+
+  return trimmed.filter((t, i) => {
+    if (PAGE_NOISE_RE.test(t)) return false;
+    if (HEADER_NOISE.has(t)) return false;
+    const isCompanyTitle =
+      COMPANY_TITLE_RE.test(t) &&
+      !/(FLAT|ROOM|FLOOR|ROAD|STREET|HOUSE|BUILDING|ESTATE|TOWER)/i.test(t) &&
+      t.length < 80;
+    // Drop company-title lines only in the preamble (before first officer/member record).
+    if (isCompanyTitle && i < firstRecordIdx) return false;
+    return true;
+  });
 };
 
 const looksLikeRom = (paragraphs: string[]): boolean =>

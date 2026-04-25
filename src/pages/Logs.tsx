@@ -87,6 +87,8 @@ type MemberEntry = {
   name: string[];            // English + Chinese name lines
   idPassport?: string;
   address: string[];
+  dateOfBirth?: string;
+  passportDetails?: string;
   security?: string;
   dateEntered?: string;
   dateCeased?: string;
@@ -120,7 +122,8 @@ const ID_INLINE_RE = /\(Hong Kong ID No\s*:\s*([A-Z]{1,3}\d{4,8}(?:\([0-9A-Z]\))
 const PASSPORT_TOKEN_RE = /^[A-Z]{1,3}\d{4,8}(?:\([0-9A-Z]\))?$/i;
 const CR_NUMBER_RE = /^\d{4,10}$/;
 const NUMERIC_BALANCE_RE = /^\(?-?[\d,]+\)?$/;
-const HK_MONEY_RE = /^HK\$/i;
+const CURRENCY_RE = /^(HK\$|US\$|USD|RMB|CNY|EUR|GBP|JPY|AUD|SGD|CAD|NZD)\s*[\d,.]+$/i;
+const TXN_TYPE_RE = /^(Subscription|Allotment|Transfer In|Transfer Out|Redemption|Reissue|Bonus|Issue|Surrender|Forfeiture)/i;
 
 const cleanParagraphs = (html: string): string[] =>
   (html.match(/<p[^>]*>[\s\S]*?<\/p>/gi) || [])
@@ -230,9 +233,7 @@ const parseRod = (paragraphs: string[]): { section: string; entries: OfficerEntr
 
 // ----- ROM parser -----
 const parseRom = (paragraphs: string[]): MemberEntry[] => {
-  // Walk through paragraphs detecting "Name" markers.
   const members: MemberEntry[] = [];
-  let i = 0;
   const n = paragraphs.length;
 
   const newMember = (): MemberEntry => ({ name: [], address: [], transactions: [] });
@@ -241,23 +242,28 @@ const parseRom = (paragraphs: string[]): MemberEntry[] => {
   const starts: number[] = [];
   paragraphs.forEach((p, idx) => { if (p === 'Name') starts.push(idx); });
 
-  // Lines appearing before the first "Name" are document/page headers (company title,
-  // Chinese company name, etc.) — skip them whenever they reappear inside a slice
-  // (continuation pages repeat the title rows).
+  // Lines appearing before the first "Name" are document/page headers — skip them
+  // when they reappear inside continuation pages.
   const headerSet = new Set(
     starts.length ? paragraphs.slice(0, starts[0]) : []
   );
 
-  // We'll just split ranges between consecutive "Name" occurrences.
+  // Anchors that delimit member-card sub-fields
+  const MEMBER_ANCHORS = new Set([
+    'Address', 'Date of Birth', 'Passport Details',
+    'Security', 'Date', 'Date Ceased',
+  ]);
+
   for (let s = 0; s < starts.length; s++) {
     const start = starts[s];
     const end = s + 1 < starts.length ? starts[s + 1] : n;
     const slice = paragraphs.slice(start + 1, end).filter((p) => !headerSet.has(p));
     const m = newMember();
 
-    // Collect name lines until "Address"
     let cursor = 0;
-    while (cursor < slice.length && slice[cursor] !== 'Address') {
+
+    // --- Name (until next anchor) ---
+    while (cursor < slice.length && !MEMBER_ANCHORS.has(slice[cursor])) {
       const line = slice[cursor];
       const idMatch = line.match(ID_INLINE_RE);
       if (idMatch) {
@@ -269,133 +275,121 @@ const parseRom = (paragraphs: string[]): MemberEntry[] => {
       }
       cursor++;
     }
-    // Address
-    if (slice[cursor] === 'Address') {
+
+    // --- Walk through anchored sub-sections until we hit transaction header zone ---
+    // Transaction header zone starts when we see lines like "Date Entered" or noise table headers.
+    // After Date Ceased we expect the transaction column-header block (already filtered as HEADER_NOISE).
+    while (cursor < slice.length && MEMBER_ANCHORS.has(slice[cursor])) {
+      const anchor = slice[cursor];
       cursor++;
-      while (cursor < slice.length && slice[cursor] !== 'Security' && slice[cursor] !== 'Date') {
-        m.address.push(slice[cursor]);
+      // Collect anchor's value lines until next anchor
+      const vals: string[] = [];
+      while (cursor < slice.length && !MEMBER_ANCHORS.has(slice[cursor])) {
+        // Stop if we hit something that looks like the start of transaction data:
+        // either a TXN_TYPE token or a numeric (units) line — this only matters
+        // if anchors order changes; normally column-headers (filtered) sit between.
+        vals.push(slice[cursor]);
         cursor++;
       }
-    }
-    // Security
-    if (slice[cursor] === 'Security') {
-      cursor++;
-      if (cursor < slice.length && slice[cursor] !== 'Date') {
-        m.security = slice[cursor];
-        cursor++;
+      switch (anchor) {
+        case 'Address': m.address = vals; break;
+        case 'Date of Birth': m.dateOfBirth = vals.join(' ').trim() || undefined; break;
+        case 'Passport Details': m.passportDetails = vals.join(' ').trim() || undefined; break;
+        case 'Security': m.security = vals.join(' ').trim() || undefined; break;
+        case 'Date':
+          if (vals.length && DATE_RE.test(vals[0])) m.dateEntered = vals[0];
+          break;
+        case 'Date Ceased':
+          if (vals.length && DATE_RE.test(vals[0])) m.dateCeased = vals[0];
+          break;
       }
     }
-    // Date / Date Ceased
-    if (slice[cursor] === 'Date') {
-      cursor++;
-      if (cursor < slice.length && DATE_RE.test(slice[cursor])) {
-        m.dateEntered = slice[cursor];
-        cursor++;
-      }
-    }
-    if (slice[cursor] === 'Date Ceased') {
-      cursor++;
-      if (cursor < slice.length && DATE_RE.test(slice[cursor])) {
-        m.dateCeased = slice[cursor];
-        cursor++;
-      }
-    }
-    // Remaining lines = transaction rows. Each transaction has the pattern:
-    // Units, Date, TransactionType, ParValue, PaidUpValue, Balance, CertNo
-    // with optional preceding "notes" line (e.g. "KWOK AH NAM" before a Transfer).
+
+    // --- Remaining = transaction rows ---
+    // Per row order observed in source RTF stream:
+    //   Units, Date, [counterparty notes lines], Type, Par, Paid, Balance, Cert
     const tail = slice.slice(cursor).filter(Boolean);
-    // Group by detecting Date markers as txn anchors.
+
     let pending: ShareTxn = {};
-    let prevWasNotes = false;
-    let lastNote: string | undefined;
+    let noteBuf: string[] = [];
+    let stage: 'units' | 'date' | 'notes_or_type' | 'par' | 'paid' | 'balance' | 'cert' = 'units';
+
     const pushTxn = () => {
-      if (Object.keys(pending).length) members; // keep linter happy
       if (
         pending.units !== undefined ||
         pending.date !== undefined ||
         pending.transactionType !== undefined ||
         pending.balance !== undefined
       ) {
+        if (noteBuf.length) pending.notes = noteBuf.join(' ');
         m.transactions.push(pending);
       }
       pending = {};
+      noteBuf = [];
+      stage = 'units';
     };
 
-    let k = 0;
-    while (k < tail.length) {
+    const isCurrencyLike = (l: string) => CURRENCY_RE.test(l) || /^[A-Z]{2,4}\s*[\d,.]+$/.test(l);
+
+    for (let k = 0; k < tail.length; k++) {
       const line = tail[k];
-      // Units = first numeric (possibly negative / parenthesised)
-      if (pending.units === undefined && NUMERIC_BALANCE_RE.test(line)) {
-        pending.units = line;
-        k++;
+
+      if (stage === 'units') {
+        if (NUMERIC_BALANCE_RE.test(line)) { pending.units = line; stage = 'date'; continue; }
+        // Skip stray non-numeric line at units stage
         continue;
       }
-      // Date for txn
-      if (pending.date === undefined && DATE_RE.test(line)) {
-        pending.date = line;
-        k++;
+      if (stage === 'date') {
+        if (DATE_RE.test(line)) { pending.date = line; stage = 'notes_or_type'; continue; }
+        // No date — treat current line as note start
+        stage = 'notes_or_type';
+        // fallthrough
+      }
+      if (stage === 'notes_or_type') {
+        if (TXN_TYPE_RE.test(line)) {
+          pending.transactionType = line;
+          stage = 'par';
+          continue;
+        }
+        // Counterparty / transferred-to lines accumulate
+        if (!NUMERIC_BALANCE_RE.test(line) && !isCurrencyLike(line) && !DATE_RE.test(line)) {
+          noteBuf.push(line);
+          continue;
+        }
+        // Unexpected — skip
         continue;
       }
-      // Optional note line (e.g. transferee/transferor name) — non-numeric, non-date
-      if (
-        pending.transactionType === undefined &&
-        !NUMERIC_BALANCE_RE.test(line) &&
-        !HK_MONEY_RE.test(line) &&
-        !DATE_RE.test(line) &&
-        !/^(Subscription|Allotment|Transfer In|Transfer Out|Redemption|Reissue|Bonus)/i.test(line)
-      ) {
-        lastNote = (lastNote ? `${lastNote} ` : '') + line;
-        k++;
+      if (stage === 'par') {
+        if (isCurrencyLike(line)) { pending.parValue = line; stage = 'paid'; continue; }
+        // Some templates skip par/paid; if numeric, treat as balance
+        if (NUMERIC_BALANCE_RE.test(line)) { pending.balance = line; stage = 'cert'; continue; }
         continue;
       }
-      // Transaction type
-      if (pending.transactionType === undefined && /^(Subscription|Allotment|Transfer In|Transfer Out|Redemption|Reissue|Bonus)/i.test(line)) {
-        pending.transactionType = line;
-        if (lastNote) { pending.notes = lastNote; lastNote = undefined; }
-        k++;
+      if (stage === 'paid') {
+        if (isCurrencyLike(line)) { pending.paidUpValue = line; stage = 'balance'; continue; }
+        if (NUMERIC_BALANCE_RE.test(line)) { pending.balance = line; stage = 'cert'; continue; }
         continue;
       }
-      // Par value
-      if (pending.parValue === undefined && HK_MONEY_RE.test(line)) {
-        pending.parValue = line;
-        k++;
+      if (stage === 'balance') {
+        if (NUMERIC_BALANCE_RE.test(line)) { pending.balance = line; stage = 'cert'; continue; }
         continue;
       }
-      // Paid Up value
-      if (pending.paidUpValue === undefined && HK_MONEY_RE.test(line)) {
-        pending.paidUpValue = line;
-        k++;
-        continue;
-      }
-      // Balance
-      if (pending.balance === undefined && NUMERIC_BALANCE_RE.test(line)) {
-        pending.balance = line;
-        k++;
-        continue;
-      }
-      // Certificate No
-      if (pending.certificateNo === undefined && NUMERIC_BALANCE_RE.test(line)) {
-        pending.certificateNo = line;
-        k++;
-        // End of one transaction
+      if (stage === 'cert') {
+        if (NUMERIC_BALANCE_RE.test(line)) {
+          pending.certificateNo = line;
+          pushTxn();
+          continue;
+        }
+        // Next row started without explicit cert
         pushTxn();
+        // Reprocess this line as the start of next row
+        k--;
         continue;
       }
-      // Anything else → push current and restart with this line as units if numeric
-      pushTxn();
-      if (NUMERIC_BALANCE_RE.test(line)) {
-        pending.units = line;
-      } else if (DATE_RE.test(line)) {
-        pending.date = line;
-      } else {
-        lastNote = (lastNote ? `${lastNote} ` : '') + line;
-      }
-      k++;
     }
     pushTxn();
 
     if (m.name.length || m.idPassport || m.address.length) members.push(m);
-    i = end;
   }
   return members;
 };
@@ -469,7 +463,7 @@ const RomTable = ({ members }: { members: MemberEntry[] }) => (
             </div>
           </div>
           <div className="md:col-span-2">
-            <div className="text-xs text-muted-foreground mb-0.5">ID / Passport</div>
+            <div className="text-xs text-muted-foreground mb-0.5">HK ID</div>
             <div className="font-mono text-xs">{m.idPassport || '—'}</div>
           </div>
           <div className="md:col-span-6">
@@ -478,17 +472,25 @@ const RomTable = ({ members }: { members: MemberEntry[] }) => (
               {m.address.length ? m.address.join(' ') : '—'}
             </div>
           </div>
-          <div className="md:col-span-6">
-            <div className="text-xs text-muted-foreground mb-0.5">證券類別 / Security</div>
-            <div className="text-xs">{m.security || '—'}</div>
-          </div>
           <div className="md:col-span-3">
+            <div className="text-xs text-muted-foreground mb-0.5">出生日期</div>
+            <div className="text-xs font-mono">{m.dateOfBirth || '—'}</div>
+          </div>
+          <div className="md:col-span-5">
+            <div className="text-xs text-muted-foreground mb-0.5">護照詳情 / Passport</div>
+            <div className="text-xs">{m.passportDetails || '—'}</div>
+          </div>
+          <div className="md:col-span-2">
             <div className="text-xs text-muted-foreground mb-0.5">登記日期</div>
             <div className="text-xs font-mono">{m.dateEntered || '—'}</div>
           </div>
-          <div className="md:col-span-3">
+          <div className="md:col-span-2">
             <div className="text-xs text-muted-foreground mb-0.5">終止日期</div>
             <div className="text-xs font-mono">{m.dateCeased || '—'}</div>
+          </div>
+          <div className="md:col-span-12">
+            <div className="text-xs text-muted-foreground mb-0.5">證券類別 / Security</div>
+            <div className="text-xs">{m.security || '—'}</div>
           </div>
         </div>
         <Table>
@@ -497,12 +499,12 @@ const RomTable = ({ members }: { members: MemberEntry[] }) => (
               <TableHead className="w-12 text-center">#</TableHead>
               <TableHead className="min-w-[110px]">日期</TableHead>
               <TableHead className="min-w-[120px]">交易類別</TableHead>
-              <TableHead className="min-w-[150px]">對方 / 備註</TableHead>
-              <TableHead className="text-right min-w-[90px]">股數變動</TableHead>
-              <TableHead className="text-right min-w-[90px]">面值</TableHead>
-              <TableHead className="text-right min-w-[90px]">已繳值</TableHead>
-              <TableHead className="text-right min-w-[90px]">結餘</TableHead>
+              <TableHead className="text-right min-w-[90px]">股數</TableHead>
+              <TableHead className="text-right min-w-[90px]">面值/股</TableHead>
+              <TableHead className="text-right min-w-[90px]">已繳/股</TableHead>
               <TableHead className="text-right min-w-[80px]">證書編號</TableHead>
+              <TableHead className="min-w-[150px]">對方 / 備註</TableHead>
+              <TableHead className="text-right min-w-[90px]">結餘</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -518,12 +520,12 @@ const RomTable = ({ members }: { members: MemberEntry[] }) => (
                   <TableCell className="text-center text-xs text-muted-foreground font-mono">{i + 1}</TableCell>
                   <TableCell className="text-xs font-mono whitespace-nowrap">{t.date || '—'}</TableCell>
                   <TableCell className="text-xs">{t.transactionType || '—'}</TableCell>
-                  <TableCell className="text-xs whitespace-pre-wrap break-words">{t.notes || '—'}</TableCell>
                   <TableCell className="text-xs font-mono text-right">{t.units ?? '—'}</TableCell>
                   <TableCell className="text-xs font-mono text-right">{t.parValue || '—'}</TableCell>
                   <TableCell className="text-xs font-mono text-right">{t.paidUpValue || '—'}</TableCell>
-                  <TableCell className="text-xs font-mono text-right font-medium">{t.balance ?? '—'}</TableCell>
                   <TableCell className="text-xs font-mono text-right">{t.certificateNo ?? '—'}</TableCell>
+                  <TableCell className="text-xs whitespace-pre-wrap break-words">{t.notes || '—'}</TableCell>
+                  <TableCell className="text-xs font-mono text-right font-medium">{t.balance ?? '—'}</TableCell>
                 </TableRow>
               ))
             )}

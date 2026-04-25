@@ -102,37 +102,50 @@ const parseEnglishName = (fullName: string) => {
 const fmtAmount = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtInt = (n: number) => n.toLocaleString("en-US");
 
-// Parse a full address string into components
+// Parse a full address string into components.
+// 智能識別：Flat/Room/Unit/Shop/Floor 等開頭的前綴會聚合為「flat」，
+// 即使其中含有逗號（如 "Shop 3, 1/F"）。最後 1-2 段為地區/國家。
+const ADDR_FLAT_RE = /^(?:flat|room|rm|unit|shop|suite|ste|workshop|portion|floor|fl|\d+\/f|g\/f|gf|lg\/f|ug\/f|m\/f|b\d*\/f)\b/i;
+const ADDR_COUNTRY_RE = /^(hong\s*kong|hk|china|prc|macau|macao|singapore|taiwan|united\s+\w+|usa|uk|canada|australia|japan|korea|h\.?k\.?\s*sar)$/i;
+const ADDR_DISTRICT_HINTS = /(kowloon|hong\s*kong|new\s*territories|n\.t\.|island|wan\s*chai|central|tsim|mong\s*kok|sham\s*shui|kwun\s*tong|sha\s*tin|tai\s*po|tuen\s*mun|yuen\s*long|tsuen\s*wan|kwai\s*tsing|sai\s*kung|north\s*district|southern\s*district|eastern\s*district)/i;
+
 const parseAddress = (addr: string) => {
   if (!addr) return { flat: '', building: '', street: '', district: '', country: '' };
-  const parts = addr.split(',').map(s => s.trim()).filter(Boolean);
-  if (parts.length <= 1) return { flat: '', building: '', street: addr, district: '', country: '' };
-  
-  // Last part is usually country/region
-  const country = parts[parts.length - 1] || '';
-  // Second-to-last is district
-  const district = parts.length > 2 ? parts[parts.length - 2] : '';
-  // First part is flat/room
-  const flat = parts[0] || '';
-  // Middle parts are building and street
-  const middle = parts.slice(1, Math.max(1, parts.length - 2));
-  const building = middle.length > 0 ? middle[0] : '';
-  const street = middle.length > 1 ? middle.slice(1).join(', ') : '';
-  
+  let parts = addr.split(',').map(s => s.trim()).filter(Boolean);
+  if (parts.length === 0) return { flat: '', building: '', street: '', district: '', country: '' };
+  if (parts.length === 1) return { flat: '', building: '', street: parts[0], district: '', country: '' };
+
+  // 1) 從尾部抽出 country
+  let country = '';
+  if (ADDR_COUNTRY_RE.test(parts[parts.length - 1])) {
+    country = parts.pop()!;
+  }
+  // 2) 從尾部抽出 district
+  let district = '';
+  if (parts.length > 1 && (ADDR_DISTRICT_HINTS.test(parts[parts.length - 1]) || parts.length >= 3)) {
+    district = parts.pop()!;
+  }
+  // 3) 從頭部聚合 flat（連續的 Flat/Floor/Shop 段落）
+  const flatParts: string[] = [];
+  while (parts.length > 1 && ADDR_FLAT_RE.test(parts[0])) {
+    flatParts.push(parts.shift()!);
+  }
+  const flat = flatParts.join(', ');
+  // 4) 剩下的：第一段 = building，其餘 = street
+  const building = parts.shift() || '';
+  const street = parts.join(', ');
+
   return { flat, building, street, district, country };
 };
 
-// Parse HKID partial (first letter + last 3 digits before check digit)
+// HKID：NAR1 表格需填入完整身分證號碼（例：A123456(7)）。
+// 只負責標準化格式，不做任何遮罩。
 const parseHkidPartial = (idNumber: string) => {
   if (!idNumber) return '';
-  // Match HKID pattern like A123456(7) or AB123456(7)
-  const m = idNumber.match(/^([A-Z]{1,2}\d{6})\s*\((\d)\)$/);
-  if (m) {
-    // Return partial: first letter(s) + *** + last digit + (check)
-    const full = m[1];
-    return full.charAt(0) + '***' + full.slice(-1) + '(' + m[2] + ')';
-  }
-  return '';
+  const cleaned = idNumber.replace(/\s+/g, '').toUpperCase();
+  const m = cleaned.match(/^([A-Z]{1,2})(\d{6})\(?(\d|A)\)?$/);
+  if (m) return `${m[1]}${m[2]}(${m[3]})`;
+  return idNumber.trim();
 };
 
 async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Uint8Array> {

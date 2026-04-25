@@ -3,6 +3,7 @@ import { PageHeader } from '@/components/ui/page-header';
 import { StatCard } from '@/components/ui/stat-card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -31,7 +32,6 @@ import { Search, RefreshCw, X, FileText, Save, Loader2, Pencil } from 'lucide-re
 import { toast } from '@/hooks/use-toast';
 import { useCompanyLogs, useCompanyLogContent, useUpdateCompanyLog } from '@/hooks/useCompanyLogs';
 import { useCompanies } from '@/hooks/useCompanies';
-import { RichTextEditor } from '@/components/logs/RichTextEditor.tsx';
 
 const docTypes = [
   { value: 'all', label: '所有類型' },
@@ -341,11 +341,14 @@ const Logs = () => {
                 </div>
 
                 {editing ? (
-                  <RichTextEditor
-                    content={draftHtml}
-                    onChange={(html) => setDraftHtml(html)}
-                    editable={true}
-                  />
+                  <div>
+                    <Label className="text-sm text-muted-foreground mb-1 block">HTML 內容</Label>
+                    <Textarea
+                      value={draftHtml}
+                      onChange={(e) => setDraftHtml(e.target.value)}
+                      className="min-h-[420px] font-mono text-xs"
+                    />
+                  </div>
                 ) : (
                   <LogTableView html={openLog.html_content} />
                 )}

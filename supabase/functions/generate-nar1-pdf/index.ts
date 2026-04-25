@@ -376,53 +376,48 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
   }
 
   // ============ Page 5 - Director (Natural Person) 13A ============
+  // 對照: BR=1, 代替=2, 中文姓名=3, 姓氏=4, 名字=5, 前用中=6, 前用英=7, 別名中=8, 別名英=9,
+  //       flat=10, building=11, street=12, district=13, country=14, email=15, hkid=16,
+  //       passport_country=17, passport_no=18
   safeSetText("fill_1_P.5", br8);
   const naturalDirectors = (data.directors || []).filter(d => d.identity === "natural");
   if (naturalDirectors.length > 0) {
     const dir = naturalDirectors[0];
     const { surname, otherNames } = parseEnglishName(dir.nameEnglish);
     safeCheck("cb_1_P.5", true);
-    safeSetText("fill_2_P.5", dir.nameChinese || "");
-    safeSetText("fill_3_P.5", surname);
-    safeSetText("fill_4_P.5", otherNames);
-    // Address
+    safeSetText("fill_3_P.5", dir.nameChinese || "");
+    safeSetText("fill_4_P.5", surname);
+    safeSetText("fill_5_P.5", otherNames);
     const addr = parseAddress(dir.address || '');
-    safeSetText("fill_9_P.5", addr.flat);
-    safeSetText("fill_10_P.5", addr.building);
-    safeSetText("fill_11_P.5", addr.street);
-    safeSetText("fill_12_P.5", addr.district);
-    safeSetText("fill_13_P.5", addr.country);
-    safeSetText("fill_14_P.5", dir.email || "");
-    // HKID
+    safeSetText("fill_10_P.5", addr.flat);
+    safeSetText("fill_11_P.5", addr.building);
+    safeSetText("fill_12_P.5", addr.street);
+    safeSetText("fill_13_P.5", addr.district);
+    safeSetText("fill_14_P.5", addr.country);
+    safeSetText("fill_15_P.5", dir.email || "");
     const hkid = parseHkidPartial(dir.idNumber || '');
-    if (hkid) safeSetText("fill_15_P.5", hkid);
+    if (hkid) safeSetText("fill_16_P.5", hkid);
     console.log(`Filled Director (Natural): ${dir.nameEnglish || dir.nameChinese}`);
   }
 
   // ============ Page 6 - Director (Body Corporate) 13B ============
+  // 對照: BR=1, 代替=2, 中文=3, 英=4, flat=5, building=6, street=7, district=8, country=9, email=10, BR=11
+  // 第二董事: 12=代替, 13=中文, 14=英, 15-19=地址, 20=email, 21=BR
   safeSetText("fill_1_P.6", br8);
   const corporateDirectors = (data.directors || []).filter(d => d.identity === "corporate");
   if (corporateDirectors.length > 0) {
     const dir = corporateDirectors[0];
     safeCheck("cb_1_P.6", true);
-    safeSetText("fill_2_P.6", dir.nameChinese || "");
-    safeSetText("fill_3_P.6", dir.nameEnglish || "");
+    safeSetText("fill_3_P.6", dir.nameChinese || "");
+    safeSetText("fill_4_P.6", dir.nameEnglish || "");
     const addr = parseAddress(dir.address || '');
-    safeSetText("fill_4_P.6", addr.flat);
-    safeSetText("fill_5_P.6", addr.building);
-    safeSetText("fill_6_P.6", addr.street);
-    safeSetText("fill_7_P.6", addr.district);
-    safeSetText("fill_8_P.6", dir.email || "");
-    safeSetText("fill_9_P.6", dir.companyNumberRef || dir.brNumber || "");
-    // Place of incorporation
-    if (dir.placeIncorporated) {
-      const isHK = dir.placeIncorporated.toUpperCase().includes('HONG KONG');
-      safeCheck("cb_3_P.6", isHK);
-      safeCheck("cb_4_P.6", !isHK);
-      if (!isHK) {
-        safeSetText("fill_10_P.6", dir.placeIncorporated);
-      }
-    }
+    safeSetText("fill_5_P.6", addr.flat);
+    safeSetText("fill_6_P.6", addr.building);
+    safeSetText("fill_7_P.6", addr.street);
+    safeSetText("fill_8_P.6", addr.district);
+    safeSetText("fill_9_P.6", addr.country);
+    safeSetText("fill_10_P.6", dir.email || "");
+    safeSetText("fill_11_P.6", dir.companyNumberRef || dir.brNumber || "");
     console.log(`Filled Director (Corporate): ${dir.nameEnglish || dir.nameChinese}`);
   }
 

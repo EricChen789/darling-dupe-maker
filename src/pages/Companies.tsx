@@ -184,13 +184,10 @@ const Companies = () => {
                 <TableCell className="max-w-[180px]">
                   <div className="text-xs space-y-0.5">
                     {company.directors.length > 0 ? (
-                      company.directors.slice(0, 2).map((d, i) => (
+                      company.directors.map((d, i) => (
                         <div key={i} className="truncate">{d.nameEnglish || d.nameChinese}</div>
                       ))
                     ) : <span className="text-muted-foreground">-</span>}
-                    {company.directors.length > 2 && (
-                      <div className="text-muted-foreground">+{company.directors.length - 2} 更多</div>
-                    )}
                   </div>
                 </TableCell>
                 <TableCell className="max-w-[180px]">

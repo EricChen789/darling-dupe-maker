@@ -204,18 +204,22 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
 
   // ============ Page 1 - Company Info ============
   safeSetText("fill_1_P.1", br8);
-  // Box 1 - English company name
-  safeSetText("fill_2_P.1", data.name || "");
-  // Box 1 (cont.) - Chinese company name
-  safeSetText("fill_3_P.1", data.chineseName || "");
+  // Box 1 公司名稱 - 中英文同一欄
+  const fullCompanyName = [data.name, data.chineseName].filter(Boolean).join("  ");
+  safeSetText("fill_2_P.1", fullCompanyName);
+  // Box 2 商業名稱 Trading Name (Business Name)
+  safeSetText("fill_3_P.1", data.tradingName || "");
   safeCheck("cb_1_P.1", data.companyType?.includes("私人") || data.companyType?.toLowerCase().includes("private") || false);
   safeCheck("cb_2_P.1", data.companyType?.includes("公眾") || data.companyType?.toLowerCase().includes("public") || false);
   safeCheck("cb_3_P.1", data.companyType?.includes("擔保") || false);
+  // Box 9 業務性質 -> 4=Code, 5=Description
   safeSetText("fill_4_P.1", data.businessCode || "");
   safeSetText("fill_5_P.1", data.businessNature || "");
+  // Box 4 結算日期 dd/mm/yyyy -> 6/7/8
   safeSetText("fill_6_P.1", day || "");
   safeSetText("fill_7_P.1", month || "");
   safeSetText("fill_8_P.1", year || "");
+  // Box 6 註冊地址 -> 15/16/17/18
   safeSetText("fill_15_P.1", office.flat || "");
   safeSetText("fill_16_P.1", office.building || "");
   safeSetText("fill_17_P.1", office.street || "");
@@ -245,50 +249,77 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
 
   // ============ Page 2 - Share Capital ============
   safeSetText("fill_1_P.2", br8);
-  
-  // Fill share capital from shareholder data - aggregate by share type
-  const shareTypeMap = new Map<string, { shares: number; currency: string; className: string; totalAmount: string; paidUp: string }>();
+  // fill_2_P.2 = Email, fill_3_P.2 = Phone (after +852) — leave blank unless company-level data
+  // fill_4_P.2 = Mortgages amount, fill_5_P.2 = Number of members (no share capital co)
+
+  // Aggregate shareholdings by share-class identifier
+  type ShareInfo = { className: string; currency: string; shares: number; parValue: number };
+  const shareTypeMap = new Map<string, ShareInfo>();
+
   const expandClassName = (raw: string) => {
-    const t = (raw || '').trim();
-    if (!t) return 'Ordinary';
-    if (/^ord(inary)?$/i.test(t)) return 'Ordinary';
-    if (/^pref(erence)?$/i.test(t)) return 'Preference';
-    return t;
+    const t = (raw || "").trim();
+    if (!t) return "Ordinary";
+    const head = t.split(/[-—]/)[0].trim();
+    if (/^ord(inary)?$/i.test(head)) return "Ordinary";
+    if (/^pref(erence)?$/i.test(head)) return "Preference";
+    if (head.includes("普通")) return "Ordinary 普通股";
+    if (head.includes("優先")) return "Preference 優先股";
+    return head || "Ordinary";
   };
-  for (const sh of data.shareholders) {
-    const st = sh.shareType || 'ORD';
-    if (!shareTypeMap.has(st)) {
-      // Parse share type like "ORD - HK$1.00 ORDINARY FULLY PAID (HK$)"
-      const currMatch = st.match(/(HK\$|USD|RMB|GBP|US\$|CNY|EUR)/i);
-      const parMatch = st.match(/[\d.]+/);
-      const parValue = parMatch ? parseFloat(parMatch[0]) : 0;
-      shareTypeMap.set(st, {
+  const detectCurrency = (raw: string) => {
+    const m = (raw || "").match(/(HK\$|HKD|US\$|USD|RMB|CNY|GBP|EUR|JPY)/i);
+    if (!m) return "HKD";
+    const c = m[1].toUpperCase();
+    if (c === "HK$") return "HKD";
+    if (c === "US$") return "USD";
+    return c;
+  };
+  const detectParValue = (raw: string) => {
+    // Look for currency-prefixed amount like HK$1.00 or HK$100.00
+    const m = (raw || "").match(/(?:HK\$|US\$|HKD|USD|RMB|CNY|GBP|EUR|JPY)\s*([\d,]+(?:\.\d+)?)/i);
+    if (m) return parseFloat(m[1].replace(/,/g, "")) || 0;
+    return 0;
+  };
+
+  for (const sh of data.shareholders || []) {
+    const raw = (sh.shareType || "").trim();
+    const key = raw || "ORD";
+    if (!shareTypeMap.has(key)) {
+      shareTypeMap.set(key, {
+        className: expandClassName(raw || "Ordinary"),
+        currency: detectCurrency(raw),
         shares: 0,
-        currency: currMatch ? currMatch[1] : 'HK$',
-        className: expandClassName(st.split(' - ')[0] || 'ORD'),
-        totalAmount: '',
-        paidUp: parValue ? parValue.toFixed(2) : '',
+        parValue: detectParValue(raw),
       });
     }
-    const entry = shareTypeMap.get(st)!;
-    entry.shares += sh.shares;
+    shareTypeMap.get(key)!.shares += Number(sh.shares) || 0;
   }
 
-  // Page 2 share capital table: 5 columns × 4 rows starting at fill_6_P.2
-  // Per row: [class, currency, total number, total amount, total paid-up]
+  // Page 2 share capital table: 5 cols × 4 data rows + totals row
   // Row 1: 6,7,8,9,10  Row 2: 11..15  Row 3: 16..20  Row 4: 21..25
-  let shareIdx = 0;
-  for (const [, info] of shareTypeMap) {
-    if (shareIdx >= 4) break;
-    const base = 6 + shareIdx * 5;
-    const parValue = parseFloat(info.paidUp) || 0;
-    const totalAmount = parValue ? (info.shares * parValue).toFixed(2) : '';
+  // Totals row: -, 26 (currency), 27 (total shares), 28 (total amount), 29 (total paid-up)
+  const shareInfos = Array.from(shareTypeMap.values());
+  let totalShares = 0;
+  let totalAmountSum = 0;
+  let firstCurrency = "";
+  for (let i = 0; i < Math.min(4, shareInfos.length); i++) {
+    const info = shareInfos[i];
+    const base = 6 + i * 5;
+    const totalAmount = info.parValue ? info.shares * info.parValue : 0;
     safeSetText(`fill_${base}_P.2`, info.className);
     safeSetText(`fill_${base + 1}_P.2`, info.currency);
     safeSetText(`fill_${base + 2}_P.2`, info.shares.toLocaleString());
-    safeSetText(`fill_${base + 3}_P.2`, totalAmount);
-    safeSetText(`fill_${base + 4}_P.2`, totalAmount);
-    shareIdx++;
+    safeSetText(`fill_${base + 3}_P.2`, totalAmount ? totalAmount.toFixed(2) : "");
+    safeSetText(`fill_${base + 4}_P.2`, totalAmount ? totalAmount.toFixed(2) : "");
+    totalShares += info.shares;
+    totalAmountSum += totalAmount;
+    if (!firstCurrency) firstCurrency = info.currency;
+  }
+  if (shareInfos.length > 0) {
+    safeSetText("fill_26_P.2", firstCurrency);
+    safeSetText("fill_27_P.2", totalShares.toLocaleString());
+    safeSetText("fill_28_P.2", totalAmountSum ? totalAmountSum.toFixed(2) : "");
+    safeSetText("fill_29_P.2", totalAmountSum ? totalAmountSum.toFixed(2) : "");
   }
 
   // ============ Page 3 - Secretary (Natural Person) 12A ============
@@ -381,21 +412,79 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
     console.log(`Filled Director (Corporate): ${dir.nameEnglish || dir.nameChinese}`);
   }
 
-  // ============ Pages 7-8 - BR Number ============
-  safeSetText("fill_1_P.7", br8);
-  safeSetText("fill_1_P.8", br8);
 
-  // ============ Pages 9-13 - Schedule: Members (Shareholders) ============
-  // Page 9 header fields
-  for (let page = 9; page <= 13; page++) {
-    safeSetText(`fill_4_P.${page}`, br8);
+
+  // ============ Page 9 - Schedule 1: Members (Non-listed Co), 2 per page ============
+  // Header: 1=day, 2=month, 3=year, 4=BR, 5=Class of Shares, 6=Total issued shares of class
+  // Member 1: 7=name_chinese, 8=surname, 9=other_names, 10=full_name_alt,
+  //           11=flat, 12=building, 13=street, 14=district, 15=country, 16=shares_held, 17=remarks
+  // Member 2: 18=name_chinese, 19=surname, 20=other_names, 21=full_name_alt,
+  //           22=flat, 23=building, 24=street, 25=district, 26=country, 27=shares_held, 28=remarks
+  // Footer: 29=schedule page no, 30=total schedule pages
+  safeSetText("fill_1_P.9", day || "");
+  safeSetText("fill_2_P.9", month || "");
+  safeSetText("fill_3_P.9", year || "");
+  safeSetText("fill_4_P.9", br8);
+
+  // Pick the first share-class info for header (most common case: single class)
+  const firstShareInfo = shareInfos[0];
+  if (firstShareInfo) {
+    safeSetText("fill_5_P.9", firstShareInfo.className);
+    safeSetText("fill_6_P.9", firstShareInfo.shares.toLocaleString());
   }
 
-  // Fill shareholder details on page 9+ (schedule pages)
-  // NAR1 schedule page 9 has specific fields for listing shareholders
-  // Each shareholder entry needs: name, address, shares held, share class
-  // The exact field layout depends on the template - we fill what we can
-  
+  // Fill up to 2 members on page 9 (template only contains one schedule page)
+  const fillMember = (sh: ShareholderData, slot: 1 | 2) => {
+    const isCorp = sh.identity === "corporate";
+    const fullName = sh.nameEnglish || sh.name || "";
+    const { surname, otherNames } = parseEnglishName(fullName);
+    const addr = parseAddress(sh.address || "");
+    if (slot === 1) {
+      safeSetText("fill_7_P.9", sh.nameChinese || "");
+      if (isCorp) {
+        // Corporate member uses combined name field (10), leave surname/other blank
+        safeSetText("fill_10_P.9", fullName);
+      } else {
+        safeSetText("fill_8_P.9", surname);
+        safeSetText("fill_9_P.9", otherNames);
+      }
+      safeSetText("fill_11_P.9", addr.flat);
+      safeSetText("fill_12_P.9", addr.building);
+      safeSetText("fill_13_P.9", addr.street);
+      safeSetText("fill_14_P.9", addr.district);
+      safeSetText("fill_15_P.9", addr.country);
+      safeSetText("fill_16_P.9", (Number(sh.shares) || 0).toLocaleString());
+    } else {
+      safeSetText("fill_18_P.9", sh.nameChinese || "");
+      if (isCorp) {
+        safeSetText("fill_21_P.9", fullName);
+      } else {
+        safeSetText("fill_19_P.9", surname);
+        safeSetText("fill_20_P.9", otherNames);
+      }
+      safeSetText("fill_22_P.9", addr.flat);
+      safeSetText("fill_23_P.9", addr.building);
+      safeSetText("fill_24_P.9", addr.street);
+      safeSetText("fill_25_P.9", addr.district);
+      safeSetText("fill_26_P.9", addr.country);
+      safeSetText("fill_27_P.9", (Number(sh.shares) || 0).toLocaleString());
+    }
+  };
+
+  const memberList = (data.shareholders || []).slice(0, 2);
+  if (memberList[0]) fillMember(memberList[0], 1);
+  if (memberList[1]) fillMember(memberList[1], 2);
+  safeSetText("fill_29_P.9", "1");
+  safeSetText("fill_30_P.9", "1");
+
+  // Pages 7, 8 (Reserve Director / Service Agent) - BR header only
+  safeSetText("fill_1_P.7", br8);
+  safeSetText("fill_1_P.8", br8);
+  // Pages 11/12/13 are continuation sheets for additional officers — fill BR only
+  safeSetText("fill_4_P.11", br8);
+  safeSetText("fill_4_P.12", br8);
+  safeSetText("fill_4_P.13", br8);
+
   // ============ Pages 14-15 - Declaration & Presenter ============
   safeSetText("fill_1_P.14", br8);
   safeSetText("fill_4_P.14", br8);

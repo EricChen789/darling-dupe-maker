@@ -128,6 +128,7 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
     try {
       const payload = {
         name: company.name,
+        chineseName: company.chineseName || '',
         brNumber: company.brNumber,
         tradingName: company.tradingName,
         businessNature: company.businessNature,

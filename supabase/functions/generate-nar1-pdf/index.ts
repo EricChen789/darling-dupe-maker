@@ -64,6 +64,9 @@ interface CompanyData {
     address?: string;
     contact?: string;
     reference?: string;
+    phone?: string;
+    fax?: string;
+    email?: string;
   };
 }
 

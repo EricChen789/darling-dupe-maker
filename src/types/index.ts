@@ -35,6 +35,9 @@ export interface Person {
   address?: string;
   serviceAddress?: string;
   idNumber?: string;
+  passportNumber?: string;
+  passportExpiry?: string;
+  whatsapp?: string;
   dateAppointed?: string;
   dateCeased?: string;
   placeIncorporated?: string;

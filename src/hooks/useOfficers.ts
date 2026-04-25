@@ -16,6 +16,11 @@ interface OfficerRow {
   date_ceased: string | null;
   place_incorporated: string | null;
   company_number_ref: string | null;
+  service_address: string | null;
+  passport_number: string | null;
+  passport_expiry: string | null;
+  whatsapp: string | null;
+  email: string | null;
   created_at: string;
 }
 
@@ -33,12 +38,16 @@ function mapOfficerToPerson(
     id: officer.id,
     nameChinese: officer.name_chinese || '',
     nameEnglish: officer.name_english || '',
-    email: '',
+    email: officer.email || '',
     identity: (officer.identity === 'corporate' ? 'corporate' : 'natural') as 'natural' | 'corporate',
     role: (['director', 'secretary', 'shareholder'].includes(officer.role) ? officer.role : 'director') as 'director' | 'secretary' | 'shareholder',
     brNumber: officer.company_number_ref || undefined,
     address: officer.address || undefined,
+    serviceAddress: officer.service_address || undefined,
     idNumber: officer.id_number || undefined,
+    passportNumber: officer.passport_number || undefined,
+    passportExpiry: officer.passport_expiry || undefined,
+    whatsapp: officer.whatsapp || undefined,
     dateAppointed: officer.date_appointed || undefined,
     dateCeased: officer.date_ceased || undefined,
     placeIncorporated: officer.place_incorporated || undefined,
@@ -124,7 +133,12 @@ export function useOfficers() {
             identity: personData.identity || 'natural',
             role: personData.role || 'director',
             address: personData.address || '',
+            service_address: personData.serviceAddress || '',
             id_number: personData.idNumber || '',
+            passport_number: personData.passportNumber || '',
+            passport_expiry: personData.passportExpiry || '',
+            whatsapp: personData.whatsapp || '',
+            email: personData.email || '',
             company_number_ref: personData.brNumber || '',
           })
           .eq('id', existingPerson.id);

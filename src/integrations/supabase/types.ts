@@ -106,6 +106,7 @@ export type Database = {
       officers: {
         Row: {
           address: string | null
+          address_proof_file_path: string | null
           company_id: string
           company_number_ref: string | null
           created_at: string
@@ -113,11 +114,13 @@ export type Database = {
           date_ceased: string | null
           email: string | null
           id: string
+          id_card_file_path: string | null
           id_number: string | null
           identity: string
           name_chinese: string | null
           name_english: string
           passport_expiry: string | null
+          passport_file_path: string | null
           passport_number: string | null
           place_incorporated: string | null
           role: string
@@ -126,6 +129,7 @@ export type Database = {
         }
         Insert: {
           address?: string | null
+          address_proof_file_path?: string | null
           company_id: string
           company_number_ref?: string | null
           created_at?: string
@@ -133,11 +137,13 @@ export type Database = {
           date_ceased?: string | null
           email?: string | null
           id?: string
+          id_card_file_path?: string | null
           id_number?: string | null
           identity?: string
           name_chinese?: string | null
           name_english?: string
           passport_expiry?: string | null
+          passport_file_path?: string | null
           passport_number?: string | null
           place_incorporated?: string | null
           role: string
@@ -146,6 +152,7 @@ export type Database = {
         }
         Update: {
           address?: string | null
+          address_proof_file_path?: string | null
           company_id?: string
           company_number_ref?: string | null
           created_at?: string
@@ -153,11 +160,13 @@ export type Database = {
           date_ceased?: string | null
           email?: string | null
           id?: string
+          id_card_file_path?: string | null
           id_number?: string | null
           identity?: string
           name_chinese?: string | null
           name_english?: string
           passport_expiry?: string | null
+          passport_file_path?: string | null
           passport_number?: string | null
           place_incorporated?: string | null
           role?: string

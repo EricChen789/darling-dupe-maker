@@ -104,7 +104,7 @@ type ParsedLog =
 const HEADER_NOISE = new Set([
   'Date of', 'Entry / Update', 'Particulars', 'Remarks / Notes',
   'Entry', 'No', 'Date(s) Appointed', '/Meeting',
-  'Reason / Date(s)', 'Date(s) Ceased',
+  'Reason / Date(s)', 'Date(s) Ceased', 'Ceased', 'Position',
   'Name / Service / Residential Address',
   'Date / Place Birth / Place', 'Incorporated / Occupation /',
   'ID No / Passport Details',
@@ -239,7 +239,8 @@ const parseRod = (paragraphs: string[]): { section: string; entries: OfficerEntr
   const flush = () => {
     if (current) {
       finalizePre(current);
-      if (current.name.length || current.idPassport || current.position) {
+      // Only accept entries with a real Position (filters out preamble/title noise)
+      if (current.position && current.name.length) {
         bucket.entries.push(current);
       }
     }

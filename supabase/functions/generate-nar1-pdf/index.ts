@@ -89,12 +89,18 @@ async function listAllFormFields(): Promise<{ fields: Array<{name: string; type:
   return { fields };
 }
 
+// 港式英文姓名格式：姓氏在「最前」（例如 AU KWOK LAM → 姓 AU、名 KWOK LAM）
 const parseEnglishName = (fullName: string) => {
   const parts = (fullName || "").trim().split(/\s+/).filter(Boolean);
-  const surname = parts.length ? parts[parts.length - 1] : "";
-  const otherNames = parts.slice(0, -1).join(" ");
+  if (parts.length === 0) return { surname: "", otherNames: "" };
+  const surname = parts[0];
+  const otherNames = parts.slice(1).join(" ");
   return { surname, otherNames };
 };
+
+// 數字千分位 + 兩位小數
+const fmtAmount = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtInt = (n: number) => n.toLocaleString("en-US");
 
 // Parse a full address string into components
 const parseAddress = (addr: string) => {

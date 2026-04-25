@@ -61,12 +61,12 @@ const stripLogHtml = (value: string): string =>
     .trim();
 
 type LogEntry = {
-  name: string;
-  details: string[];
+  nameAddress: string[];
+  birthIncorpOccupation: string[];
+  idPassport?: string;
   position?: string;
-  appointedDates: string[];
-  status?: string;
-  ceasedDates: string[];
+  appointedMeeting: string[];
+  ceasedReason: string[];
 };
 
 // Pure column-header / template lines we drop entirely
@@ -89,6 +89,32 @@ const POSITION_RE = /^(Director|Secretary|Reserve Director|Alternate Director|Me
 const STATUS_RE = /^(Resigned|Ceased|Removed|Deceased|Struck Off)$/i;
 const DATE_RE = /^\d{1,2}\/\d{1,2}\/\d{4}$/;
 const ENTRY_NO_RE = /^\d{1,3}$/;
+const ID_PASSPORT_RE = /^(?:[A-Z]{1,3}\d{4,8}(?:\([0-9A-Z]\))?|\d{4,10})$/i;
+
+const createLogEntry = (): LogEntry => ({
+  nameAddress: [],
+  birthIncorpOccupation: [],
+  appointedMeeting: [],
+  ceasedReason: [],
+});
+
+const applyPrePositionColumns = (entry: LogEntry, lines: string[]) => {
+  if (!lines.length) return;
+
+  const idIndex = [...lines].reverse().findIndex((line) => ID_PASSPORT_RE.test(line));
+  const realIdIndex = idIndex >= 0 ? lines.length - 1 - idIndex : -1;
+  const bodyLines = realIdIndex >= 0 ? lines.filter((_, idx) => idx !== realIdIndex) : lines;
+
+  if (realIdIndex >= 0) entry.idPassport = lines[realIdIndex];
+
+  const birthOrIncorpIndex = bodyLines.findIndex((line) => DATE_RE.test(line));
+  if (birthOrIncorpIndex >= 0) {
+    entry.nameAddress = bodyLines.slice(0, birthOrIncorpIndex);
+    entry.birthIncorpOccupation = bodyLines.slice(birthOrIncorpIndex);
+  } else {
+    entry.nameAddress = bodyLines;
+  }
+};
 
 const parseLogEntries = (html: string): { section: string; entries: LogEntry[] }[] => {
   const paragraphs = (html.match(/<p[^>]*>[\s\S]*?<\/p>/gi) || [])
@@ -99,8 +125,8 @@ const parseLogEntries = (html: string): { section: string; entries: LogEntry[] }
   const sections: { section: string; entries: LogEntry[] }[] = [];
   let currentSection = '記錄';
   let current: LogEntry | null = null;
-  // 'identity' = collecting name + details; 'post' = after Position, collecting dates/status
-  let phase: 'identity' | 'post' = 'identity';
+  let prePositionLines: string[] = [];
+  let phase: 'prePosition' | 'postPosition' = 'prePosition';
 
   const ensureSection = () => {
     let bucket = sections.find((s) => s.section === currentSection);
@@ -112,11 +138,15 @@ const parseLogEntries = (html: string): { section: string; entries: LogEntry[] }
   };
 
   const flush = () => {
-    if (current && (current.name || current.details.length)) {
+    if (current) {
+      applyPrePositionColumns(current, prePositionLines);
+    }
+    if (current && (current.nameAddress.length || current.idPassport || current.position)) {
       ensureSection().entries.push(current);
     }
     current = null;
-    phase = 'identity';
+    prePositionLines = [];
+    phase = 'prePosition';
   };
 
   paragraphs.forEach((text) => {
@@ -126,47 +156,38 @@ const parseLogEntries = (html: string): { section: string; entries: LogEntry[] }
       return;
     }
 
-    // Entry number after we've seen Position → end of record
-    if (ENTRY_NO_RE.test(text) && phase === 'post') {
+    // Entry number after a completed row → end of record
+    if (ENTRY_NO_RE.test(text) && phase === 'postPosition') {
       flush();
-      return;
-    }
-
-    if (DATE_RE.test(text)) {
-      if (!current) current = { name: '', details: [], appointedDates: [], ceasedDates: [] };
-      if (phase === 'post') {
-        if (current.status) current.ceasedDates.push(text);
-        else current.appointedDates.push(text);
-      } else {
-        current.details.push(text);
-      }
       return;
     }
 
     if (STATUS_RE.test(text)) {
       if (!current) return;
-      current.status = text;
-      phase = 'post';
+      current.ceasedReason.push(text);
+      phase = 'postPosition';
       return;
     }
 
     if (POSITION_RE.test(text)) {
-      if (!current) current = { name: '', details: [], appointedDates: [], ceasedDates: [] };
+      if (!current) current = createLogEntry();
       current.position = text;
-      phase = 'post';
+      phase = 'postPosition';
       return;
     }
 
-    // Regular text — if we were in post phase, this starts a new record
-    if (phase === 'post') flush();
-
-    if (!current) {
-      current = { name: text, details: [], appointedDates: [], ceasedDates: [] };
-    } else if (!current.name) {
-      current.name = text;
-    } else {
-      current.details.push(text);
+    if (DATE_RE.test(text) && phase === 'postPosition') {
+      if (!current) current = createLogEntry();
+      if (current.ceasedReason.length) current.ceasedReason.push(text);
+      else current.appointedMeeting.push(text);
+      return;
     }
+
+    // Regular text after appointed/ceased columns starts the next row.
+    if (phase === 'postPosition') flush();
+
+    if (!current) current = createLogEntry();
+    prePositionLines.push(text);
   });
   flush();
 
@@ -193,11 +214,12 @@ const LogTableView = ({ html }: { html: string }) => {
             <TableHeader>
               <TableRow>
                 <TableHead className="w-12 text-center">#</TableHead>
-                <TableHead className="w-[240px]">姓名 / 名稱</TableHead>
-                <TableHead>詳細資料</TableHead>
-                <TableHead className="w-[120px]">職位</TableHead>
-                <TableHead className="w-[120px]">委任日期</TableHead>
-                <TableHead className="w-[140px]">狀態 / 終止日期</TableHead>
+                <TableHead className="min-w-[260px]">Name / Service / Residential Address</TableHead>
+                <TableHead className="min-w-[190px]">Date / Place Birth / Place Incorporated / Occupation</TableHead>
+                <TableHead className="min-w-[150px]">ID No / Passport Details</TableHead>
+                <TableHead className="min-w-[120px]">Position</TableHead>
+                <TableHead className="min-w-[130px]">Date(s) Appointed / Meeting</TableHead>
+                <TableHead className="min-w-[150px]">Reason / Date(s) Ceased</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -207,32 +229,23 @@ const LogTableView = ({ html }: { html: string }) => {
                     {idx + 1}
                   </TableCell>
                   <TableCell className="text-sm font-medium whitespace-pre-wrap break-words">
-                    {entry.name || '—'}
+                    {entry.nameAddress.length ? entry.nameAddress.join('\n') : '—'}
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">
                     <div className="space-y-0.5">
-                      {entry.details.map((d, i) => (
+                      {entry.birthIncorpOccupation.map((d, i) => (
                         <div key={i} className="whitespace-pre-wrap break-words">{d}</div>
                       ))}
+                      {!entry.birthIncorpOccupation.length && <span>—</span>}
                     </div>
                   </TableCell>
+                  <TableCell className="text-xs font-mono whitespace-nowrap">{entry.idPassport || '—'}</TableCell>
                   <TableCell className="text-sm">{entry.position || '—'}</TableCell>
                   <TableCell className="text-xs font-mono whitespace-nowrap">
-                    {entry.appointedDates.length ? entry.appointedDates.join(', ') : '—'}
+                    {entry.appointedMeeting.length ? entry.appointedMeeting.join(', ') : '—'}
                   </TableCell>
                   <TableCell className="text-xs whitespace-nowrap">
-                    {entry.status ? (
-                      <div className="space-y-1">
-                        <Badge variant="outline">{entry.status}</Badge>
-                        {entry.ceasedDates.length > 0 && (
-                          <div className="font-mono text-muted-foreground">
-                            {entry.ceasedDates.join(', ')}
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <span className="text-muted-foreground">—</span>
-                    )}
+                    {entry.ceasedReason.length ? entry.ceasedReason.join(', ') : '—'}
                   </TableCell>
                 </TableRow>
               ))}

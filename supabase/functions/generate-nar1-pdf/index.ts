@@ -362,6 +362,10 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
     safeSetText("fill_7_P.4", addr.district);
     safeSetText("fill_8_P.4", sec.email || "");
     safeSetText("fill_9_P.4", sec.companyNumberRef || sec.brNumber || "");
+    // 信託或公司服務提供者牌照編號（如為 TCSP 持牌人）
+    if ((sec as any).licenceNumber) {
+      safeSetText("fill_10_P.4", (sec as any).licenceNumber);
+    }
     console.log(`Filled Secretary (Corporate): ${sec.nameEnglish || sec.nameChinese}`);
   }
 

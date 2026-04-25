@@ -120,6 +120,8 @@ const DATE_RE = /^\d{1,2}\/\d{1,2}\/\d{4}$/;
 // Capture HK ID like P373848(9) including the trailing parenthesised check digit.
 const ID_INLINE_RE = /\(Hong Kong ID No\s*:\s*([A-Z]{1,3}\d{4,8}(?:\([0-9A-Z]\))?|\d{4,10})\s*\)/i;
 const PASSPORT_TOKEN_RE = /^[A-Z]{1,3}\d{4,8}(?:\([0-9A-Z]\))?$/i;
+const CN_ID_RE = /^\d{15,18}[0-9Xx]?$/;
+const PASSPORT_LINE_RE = /^Passport\s+Number\s+/i;
 const CR_NUMBER_RE = /^\d{4,10}$/;
 const NUMERIC_BALANCE_RE = /^\(?-?[\d,]+\)?$/;
 const CURRENCY_RE = /^(HK\$|US\$|USD|RMB|CNY|EUR|GBP|JPY|AUD|SGD|CAD|NZD)\s*[\d,.]+$/i;
@@ -151,15 +153,45 @@ const parseRod = (paragraphs: string[]): { section: string; entries: OfficerEntr
 
   const finalizePre = (entry: OfficerEntry) => {
     if (!buffer.length) return;
-    // Detect id/passport/CR token: should be a standalone line
-    const idIdx = buffer.findIndex((l) => PASSPORT_TOKEN_RE.test(l) || CR_NUMBER_RE.test(l));
+
+    // 1) Locate ID line. Multiple possible formats:
+    //    - HK ID standalone (e.g. P373848(9))
+    //    - CN national ID (15-18 digits, optional X)
+    //    - CR number (4-10 digits) — only when no DOB present (corporate secretary)
+    //    - "Passport Number XXX issued by YYY" possibly spanning 2 lines
     let idVal: string | undefined;
-    let rest = buffer;
-    if (idIdx >= 0) {
-      idVal = buffer[idIdx];
-      rest = buffer.filter((_, i) => i !== idIdx);
+    const consumed = new Set<number>();
+
+    // Passport Number multi-line
+    const pIdx = buffer.findIndex((l) => PASSPORT_LINE_RE.test(l));
+    if (pIdx >= 0) {
+      const parts = [buffer[pIdx]];
+      consumed.add(pIdx);
+      // Optionally consume the next line if it begins with "issued by" or starts lowercase / CJK continuation
+      if (pIdx + 1 < buffer.length) {
+        const nxt = buffer[pIdx + 1];
+        if (/^issued\s+by/i.test(nxt) || (!POSITION_RE.test(nxt) && !DATE_RE.test(nxt) && parts[0].length < 60)) {
+          // Heuristic: only merge if line looks like continuation (short, contains "issued" or place name)
+          if (/^issued\s+by/i.test(nxt) || /[\u4e00-\u9fff]/.test(nxt) || /^[A-Z][A-Z\s]+$/.test(nxt)) {
+            parts.push(nxt);
+            consumed.add(pIdx + 1);
+          }
+        }
+      }
+      idVal = parts.join(' ');
+    } else {
+      const idIdx = buffer.findIndex((l) =>
+        PASSPORT_TOKEN_RE.test(l) || CN_ID_RE.test(l) || CR_NUMBER_RE.test(l)
+      );
+      if (idIdx >= 0) {
+        idVal = buffer[idIdx];
+        consumed.add(idIdx);
+      }
     }
-    // Inside `rest`: detect first DATE line → birth/incorp + place, otherwise everything is name+address.
+
+    const rest = buffer.filter((_, i) => !consumed.has(i));
+
+    // 2) Detect first DATE line → DOB / Incorp date; everything from there until end (excl. id) is birth/incorp/occupation.
     const dateIdx = rest.findIndex((l) => DATE_RE.test(l));
     let nameAddr: string[];
     let birth: string[] = [];
@@ -167,10 +199,24 @@ const parseRod = (paragraphs: string[]): { section: string; entries: OfficerEntr
       nameAddr = rest.slice(0, dateIdx);
       birth = rest.slice(dateIdx);
     } else {
-      nameAddr = rest;
+      // No DOB. If we still have an "occupation" / place-only line (e.g. MERCHANT) at the end,
+      // treat trailing lines that look like single-token occupations as birthIncorp.
+      // Heuristic: from the end, peel off lines that are short uppercase tokens or CJK-only short lines.
+      let cut = rest.length;
+      while (cut > 1) {
+        const cand = rest[cut - 1];
+        const isShortOccupation =
+          /^[A-Z][A-Z\s.\-/&]{1,30}$/.test(cand) && !/(ROAD|STREET|ESTATE|FLAT|ROOM|BUILDING|HOUSE|TOWER|HONG KONG|KOWLOON|TERRITORIES|FLOOR|VILLAGE|CENTRE|CENTER|AVENUE|LANE|PLAZA|COURT|GARDEN|MANSION)/i.test(cand);
+        const isShortCJK = /^[\u4e00-\u9fff]{1,8}$/.test(cand);
+        if (isShortOccupation || isShortCJK) {
+          cut--;
+        } else break;
+      }
+      nameAddr = rest.slice(0, cut);
+      birth = rest.slice(cut);
     }
-    // Split name vs address: first 1-2 lines that contain CJK or are obvious name lines
-    // Heuristic: name is the first line; if next line also contains CJK and no digits, treat as Chinese name.
+
+    // 3) Split name vs address
     if (nameAddr.length) {
       entry.name.push(nameAddr[0]);
       let addrStart = 1;
@@ -282,13 +328,22 @@ const parseRom = (paragraphs: string[]): MemberEntry[] => {
     while (cursor < slice.length && MEMBER_ANCHORS.has(slice[cursor])) {
       const anchor = slice[cursor];
       cursor++;
-      // Collect anchor's value lines until next anchor
+      if (anchor === 'Date' || anchor === 'Date Ceased') {
+        // Peek exactly one date line if present; otherwise leave empty.
+        if (cursor < slice.length && DATE_RE.test(slice[cursor])) {
+          if (anchor === 'Date') m.dateEntered = slice[cursor];
+          else m.dateCeased = slice[cursor];
+          cursor++;
+        }
+        continue;
+      }
+      // Collect value lines until next anchor OR until a line that clearly
+      // belongs to the transaction table (numeric units or a stray date).
       const vals: string[] = [];
       while (cursor < slice.length && !MEMBER_ANCHORS.has(slice[cursor])) {
-        // Stop if we hit something that looks like the start of transaction data:
-        // either a TXN_TYPE token or a numeric (units) line — this only matters
-        // if anchors order changes; normally column-headers (filtered) sit between.
-        vals.push(slice[cursor]);
+        const line = slice[cursor];
+        if (NUMERIC_BALANCE_RE.test(line) || DATE_RE.test(line)) break;
+        vals.push(line);
         cursor++;
       }
       switch (anchor) {
@@ -296,12 +351,6 @@ const parseRom = (paragraphs: string[]): MemberEntry[] => {
         case 'Date of Birth': m.dateOfBirth = vals.join(' ').trim() || undefined; break;
         case 'Passport Details': m.passportDetails = vals.join(' ').trim() || undefined; break;
         case 'Security': m.security = vals.join(' ').trim() || undefined; break;
-        case 'Date':
-          if (vals.length && DATE_RE.test(vals[0])) m.dateEntered = vals[0];
-          break;
-        case 'Date Ceased':
-          if (vals.length && DATE_RE.test(vals[0])) m.dateCeased = vals[0];
-          break;
       }
     }
 

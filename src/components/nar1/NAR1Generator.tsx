@@ -45,16 +45,16 @@ const computeReturnDate = (incorporationDate?: string): string => {
   return today.toISOString().split('T')[0];
 };
 
-const composePresenterContact = (p: any, referenceOverride?: string) => {
-  if (!p) return '';
-  const ref = (referenceOverride && referenceOverride.trim()) || p.reference || '';
+const composePresenterContact = (
+  opts: { phone?: string; fax?: string; email?: string; reference?: string; fallback?: string }
+) => {
   const parts: string[] = [];
-  if (p.phone) parts.push(p.phone);
-  if (p.fax) parts.push(`傳真: ${p.fax}`);
-  if (p.email) parts.push(`電郵: ${p.email}`);
-  if (ref) parts.push(`參考編號: ${ref}`);
+  if (opts.phone) parts.push(`電話: ${opts.phone}`);
+  if (opts.fax) parts.push(`傳真: ${opts.fax}`);
+  if (opts.email) parts.push(`電郵: ${opts.email}`);
+  if (opts.reference) parts.push(`參考編號: ${opts.reference}`);
   if (parts.length) return parts.join('  ');
-  return p.contact || '';
+  return opts.fallback || '';
 };
 
 export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProps) => {

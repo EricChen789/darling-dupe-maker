@@ -463,7 +463,7 @@ const RomTable = ({ members }: { members: MemberEntry[] }) => (
             </div>
           </div>
           <div className="md:col-span-2">
-            <div className="text-xs text-muted-foreground mb-0.5">ID / Passport</div>
+            <div className="text-xs text-muted-foreground mb-0.5">HK ID</div>
             <div className="font-mono text-xs">{m.idPassport || '—'}</div>
           </div>
           <div className="md:col-span-6">
@@ -472,17 +472,25 @@ const RomTable = ({ members }: { members: MemberEntry[] }) => (
               {m.address.length ? m.address.join(' ') : '—'}
             </div>
           </div>
-          <div className="md:col-span-6">
-            <div className="text-xs text-muted-foreground mb-0.5">證券類別 / Security</div>
-            <div className="text-xs">{m.security || '—'}</div>
-          </div>
           <div className="md:col-span-3">
+            <div className="text-xs text-muted-foreground mb-0.5">出生日期</div>
+            <div className="text-xs font-mono">{m.dateOfBirth || '—'}</div>
+          </div>
+          <div className="md:col-span-5">
+            <div className="text-xs text-muted-foreground mb-0.5">護照詳情 / Passport</div>
+            <div className="text-xs">{m.passportDetails || '—'}</div>
+          </div>
+          <div className="md:col-span-2">
             <div className="text-xs text-muted-foreground mb-0.5">登記日期</div>
             <div className="text-xs font-mono">{m.dateEntered || '—'}</div>
           </div>
-          <div className="md:col-span-3">
+          <div className="md:col-span-2">
             <div className="text-xs text-muted-foreground mb-0.5">終止日期</div>
             <div className="text-xs font-mono">{m.dateCeased || '—'}</div>
+          </div>
+          <div className="md:col-span-12">
+            <div className="text-xs text-muted-foreground mb-0.5">證券類別 / Security</div>
+            <div className="text-xs">{m.security || '—'}</div>
           </div>
         </div>
         <Table>
@@ -491,12 +499,12 @@ const RomTable = ({ members }: { members: MemberEntry[] }) => (
               <TableHead className="w-12 text-center">#</TableHead>
               <TableHead className="min-w-[110px]">日期</TableHead>
               <TableHead className="min-w-[120px]">交易類別</TableHead>
-              <TableHead className="min-w-[150px]">對方 / 備註</TableHead>
-              <TableHead className="text-right min-w-[90px]">股數變動</TableHead>
-              <TableHead className="text-right min-w-[90px]">面值</TableHead>
-              <TableHead className="text-right min-w-[90px]">已繳值</TableHead>
-              <TableHead className="text-right min-w-[90px]">結餘</TableHead>
+              <TableHead className="text-right min-w-[90px]">股數</TableHead>
+              <TableHead className="text-right min-w-[90px]">面值/股</TableHead>
+              <TableHead className="text-right min-w-[90px]">已繳/股</TableHead>
               <TableHead className="text-right min-w-[80px]">證書編號</TableHead>
+              <TableHead className="min-w-[150px]">對方 / 備註</TableHead>
+              <TableHead className="text-right min-w-[90px]">結餘</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -512,12 +520,12 @@ const RomTable = ({ members }: { members: MemberEntry[] }) => (
                   <TableCell className="text-center text-xs text-muted-foreground font-mono">{i + 1}</TableCell>
                   <TableCell className="text-xs font-mono whitespace-nowrap">{t.date || '—'}</TableCell>
                   <TableCell className="text-xs">{t.transactionType || '—'}</TableCell>
-                  <TableCell className="text-xs whitespace-pre-wrap break-words">{t.notes || '—'}</TableCell>
                   <TableCell className="text-xs font-mono text-right">{t.units ?? '—'}</TableCell>
                   <TableCell className="text-xs font-mono text-right">{t.parValue || '—'}</TableCell>
                   <TableCell className="text-xs font-mono text-right">{t.paidUpValue || '—'}</TableCell>
-                  <TableCell className="text-xs font-mono text-right font-medium">{t.balance ?? '—'}</TableCell>
                   <TableCell className="text-xs font-mono text-right">{t.certificateNo ?? '—'}</TableCell>
+                  <TableCell className="text-xs whitespace-pre-wrap break-words">{t.notes || '—'}</TableCell>
+                  <TableCell className="text-xs font-mono text-right font-medium">{t.balance ?? '—'}</TableCell>
                 </TableRow>
               ))
             )}

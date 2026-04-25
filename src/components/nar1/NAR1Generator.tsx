@@ -71,6 +71,9 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
     presenterName: '',
     presenterAddress: '',
     presenterReference: '',
+    presenterPhone: '',
+    presenterFax: '',
+    presenterEmail: '',
     presenterContact: '',
   });
 
@@ -81,6 +84,7 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
         ? presenters.find(p => p.id === company.preferredPresenterId)
         : undefined;
       const refOverride = company.presenterReference || '';
+      const ref = refOverride || preferred?.reference || '';
       setFormData(prev => ({
         ...prev,
         returnDate: computeReturnDate(company.incorporationDate),
@@ -92,8 +96,19 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
         presenterId: preferred?.id || '',
         presenterName: preferred?.name || '',
         presenterAddress: preferred?.address || '',
-        presenterReference: refOverride || preferred?.reference || '',
-        presenterContact: preferred ? composePresenterContact(preferred, refOverride) : '',
+        presenterReference: ref,
+        presenterPhone: preferred?.phone || '',
+        presenterFax: preferred?.fax || '',
+        presenterEmail: preferred?.email || '',
+        presenterContact: preferred
+          ? composePresenterContact({
+              phone: preferred.phone,
+              fax: preferred.fax,
+              email: preferred.email,
+              reference: ref,
+              fallback: preferred.contact,
+            })
+          : '',
       }));
     }
   }, [company, presenters]);
@@ -107,18 +122,36 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
       presenterName: p.name,
       presenterAddress: p.address || '',
       presenterReference: p.reference || '',
-      presenterContact: composePresenterContact(p),
+      presenterPhone: p.phone || '',
+      presenterFax: p.fax || '',
+      presenterEmail: p.email || '',
+      presenterContact: composePresenterContact({
+        phone: p.phone,
+        fax: p.fax,
+        email: p.email,
+        reference: p.reference,
+        fallback: p.contact,
+      }),
     }));
   };
 
-  const handleReferenceChange = (value: string) => {
-    const p = presenters.find(x => x.id === formData.presenterId);
-    setFormData(prev => ({
-      ...prev,
-      presenterReference: value,
-      presenterContact: p ? composePresenterContact(p, value) : prev.presenterContact,
-    }));
+  const recomposeContact = (overrides: Partial<{ phone: string; fax: string; email: string; reference: string }>) => {
+    setFormData(prev => {
+      const next = { ...prev, ...Object.fromEntries(Object.entries(overrides).map(([k, v]) => [`presenter${k.charAt(0).toUpperCase()}${k.slice(1)}`, v])) } as typeof prev;
+      next.presenterContact = composePresenterContact({
+        phone: next.presenterPhone,
+        fax: next.presenterFax,
+        email: next.presenterEmail,
+        reference: next.presenterReference,
+      });
+      return next;
+    });
   };
+
+  const handleReferenceChange = (value: string) => recomposeContact({ reference: value });
+  const handlePhoneChange = (value: string) => recomposeContact({ phone: value });
+  const handleFaxChange = (value: string) => recomposeContact({ fax: value });
+  const handleEmailChange = (value: string) => recomposeContact({ email: value });
 
   const handleGenerate = async () => {
     if (!company) return;

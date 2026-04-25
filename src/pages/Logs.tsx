@@ -403,10 +403,139 @@ const parseLog = (html: string): ParsedLog => {
   return { kind: 'rod', sections: parseRod(paragraphs) };
 };
 
-const LogTableView = ({ html }: { html: string }) => {
-  const sections = useMemo(() => parseLogEntries(html || ''), [html]);
+const RodTable = ({ sections }: { sections: { section: string; entries: OfficerEntry[] }[] }) => (
+  <div className="space-y-6">
+    {sections.map((section, sIdx) => (
+      <div key={sIdx} className="border border-border rounded-lg overflow-hidden">
+        <div className="px-4 py-2 bg-muted/50 font-medium text-sm">{section.section}</div>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-12 text-center">#</TableHead>
+              <TableHead className="min-w-[200px]">姓名 / Name</TableHead>
+              <TableHead className="min-w-[260px]">服務 / 居住地址</TableHead>
+              <TableHead className="min-w-[160px]">出生 / 成立日期 / 地點</TableHead>
+              <TableHead className="min-w-[140px]">ID / CR No</TableHead>
+              <TableHead className="min-w-[110px]">職位</TableHead>
+              <TableHead className="min-w-[120px]">委任日期</TableHead>
+              <TableHead className="min-w-[140px]">終止 / 原因</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {section.entries.map((entry, idx) => (
+              <TableRow key={idx} className="align-top">
+                <TableCell className="text-center text-xs text-muted-foreground font-mono">{idx + 1}</TableCell>
+                <TableCell className="text-sm font-medium whitespace-pre-wrap break-words">
+                  {entry.name.length ? entry.name.join('\n') : '—'}
+                </TableCell>
+                <TableCell className="text-xs whitespace-pre-wrap break-words">
+                  {entry.address.length ? entry.address.join(' ') : '—'}
+                </TableCell>
+                <TableCell className="text-xs text-muted-foreground whitespace-pre-wrap break-words">
+                  {entry.birthIncorp.length ? entry.birthIncorp.join(' / ') : '—'}
+                </TableCell>
+                <TableCell className="text-xs font-mono whitespace-nowrap">{entry.idPassport || '—'}</TableCell>
+                <TableCell className="text-sm">{entry.position || '—'}</TableCell>
+                <TableCell className="text-xs font-mono whitespace-nowrap">
+                  {entry.appointedMeeting.length ? entry.appointedMeeting.join(', ') : '—'}
+                </TableCell>
+                <TableCell className="text-xs whitespace-nowrap">
+                  {entry.ceasedReason.length ? entry.ceasedReason.join(', ') : '—'}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    ))}
+  </div>
+);
 
-  if (!sections.length) {
+const RomTable = ({ members }: { members: MemberEntry[] }) => (
+  <div className="space-y-6">
+    {members.map((m, idx) => (
+      <div key={idx} className="border border-border rounded-lg overflow-hidden">
+        <div className="px-4 py-3 bg-muted/40 grid grid-cols-1 md:grid-cols-12 gap-3 text-sm">
+          <div className="md:col-span-4">
+            <div className="text-xs text-muted-foreground mb-0.5">姓名 / Name</div>
+            <div className="font-medium whitespace-pre-wrap break-words">
+              {m.name.length ? m.name.join('\n') : '—'}
+            </div>
+          </div>
+          <div className="md:col-span-2">
+            <div className="text-xs text-muted-foreground mb-0.5">ID / Passport</div>
+            <div className="font-mono text-xs">{m.idPassport || '—'}</div>
+          </div>
+          <div className="md:col-span-6">
+            <div className="text-xs text-muted-foreground mb-0.5">地址 / Address</div>
+            <div className="text-xs whitespace-pre-wrap break-words">
+              {m.address.length ? m.address.join(' ') : '—'}
+            </div>
+          </div>
+          <div className="md:col-span-6">
+            <div className="text-xs text-muted-foreground mb-0.5">證券類別 / Security</div>
+            <div className="text-xs">{m.security || '—'}</div>
+          </div>
+          <div className="md:col-span-3">
+            <div className="text-xs text-muted-foreground mb-0.5">登記日期</div>
+            <div className="text-xs font-mono">{m.dateEntered || '—'}</div>
+          </div>
+          <div className="md:col-span-3">
+            <div className="text-xs text-muted-foreground mb-0.5">終止日期</div>
+            <div className="text-xs font-mono">{m.dateCeased || '—'}</div>
+          </div>
+        </div>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-12 text-center">#</TableHead>
+              <TableHead className="min-w-[110px]">日期</TableHead>
+              <TableHead className="min-w-[120px]">交易類別</TableHead>
+              <TableHead className="min-w-[150px]">對方 / 備註</TableHead>
+              <TableHead className="text-right min-w-[90px]">股數變動</TableHead>
+              <TableHead className="text-right min-w-[90px]">面值</TableHead>
+              <TableHead className="text-right min-w-[90px]">已繳值</TableHead>
+              <TableHead className="text-right min-w-[90px]">結餘</TableHead>
+              <TableHead className="text-right min-w-[80px]">證書編號</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {m.transactions.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={9} className="text-center text-xs text-muted-foreground py-3">
+                  沒有交易記錄
+                </TableCell>
+              </TableRow>
+            ) : (
+              m.transactions.map((t, i) => (
+                <TableRow key={i} className="align-top">
+                  <TableCell className="text-center text-xs text-muted-foreground font-mono">{i + 1}</TableCell>
+                  <TableCell className="text-xs font-mono whitespace-nowrap">{t.date || '—'}</TableCell>
+                  <TableCell className="text-xs">{t.transactionType || '—'}</TableCell>
+                  <TableCell className="text-xs whitespace-pre-wrap break-words">{t.notes || '—'}</TableCell>
+                  <TableCell className="text-xs font-mono text-right">{t.units ?? '—'}</TableCell>
+                  <TableCell className="text-xs font-mono text-right">{t.parValue || '—'}</TableCell>
+                  <TableCell className="text-xs font-mono text-right">{t.paidUpValue || '—'}</TableCell>
+                  <TableCell className="text-xs font-mono text-right font-medium">{t.balance ?? '—'}</TableCell>
+                  <TableCell className="text-xs font-mono text-right">{t.certificateNo ?? '—'}</TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
+    ))}
+  </div>
+);
+
+const LogTableView = ({ html }: { html: string }) => {
+  const parsed = useMemo(() => parseLog(html || ''), [html]);
+
+  if (
+    parsed.kind === 'unknown' ||
+    (parsed.kind === 'rod' && !parsed.sections.length) ||
+    (parsed.kind === 'rom' && !parsed.members.length)
+  ) {
     return (
       <div className="border border-border rounded-lg p-4 text-sm text-muted-foreground">
         沒有可解析的內容
@@ -414,56 +543,8 @@ const LogTableView = ({ html }: { html: string }) => {
     );
   }
 
-  return (
-    <div className="space-y-6">
-      {sections.map((section, sIdx) => (
-        <div key={sIdx} className="border border-border rounded-lg overflow-hidden">
-          <div className="px-4 py-2 bg-muted/50 font-medium text-sm">{section.section}</div>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-12 text-center">#</TableHead>
-                <TableHead className="min-w-[260px]">Name / Service / Residential Address</TableHead>
-                <TableHead className="min-w-[190px]">Date / Place Birth / Place Incorporated / Occupation</TableHead>
-                <TableHead className="min-w-[150px]">ID No / Passport Details</TableHead>
-                <TableHead className="min-w-[120px]">Position</TableHead>
-                <TableHead className="min-w-[130px]">Date(s) Appointed / Meeting</TableHead>
-                <TableHead className="min-w-[150px]">Reason / Date(s) Ceased</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {section.entries.map((entry, idx) => (
-                <TableRow key={idx} className="align-top">
-                  <TableCell className="text-center text-xs text-muted-foreground font-mono">
-                    {idx + 1}
-                  </TableCell>
-                  <TableCell className="text-sm font-medium whitespace-pre-wrap break-words">
-                    {entry.nameAddress.length ? entry.nameAddress.join('\n') : '—'}
-                  </TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
-                    <div className="space-y-0.5">
-                      {entry.birthIncorpOccupation.map((d, i) => (
-                        <div key={i} className="whitespace-pre-wrap break-words">{d}</div>
-                      ))}
-                      {!entry.birthIncorpOccupation.length && <span>—</span>}
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-xs font-mono whitespace-nowrap">{entry.idPassport || '—'}</TableCell>
-                  <TableCell className="text-sm">{entry.position || '—'}</TableCell>
-                  <TableCell className="text-xs font-mono whitespace-nowrap">
-                    {entry.appointedMeeting.length ? entry.appointedMeeting.join(', ') : '—'}
-                  </TableCell>
-                  <TableCell className="text-xs whitespace-nowrap">
-                    {entry.ceasedReason.length ? entry.ceasedReason.join(', ') : '—'}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      ))}
-    </div>
-  );
+  if (parsed.kind === 'rom') return <RomTable members={parsed.members} />;
+  return <RodTable sections={parsed.sections} />;
 };
 
 const Logs = () => {

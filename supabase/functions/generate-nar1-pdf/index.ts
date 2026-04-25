@@ -416,17 +416,77 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
   safeSetText("fill_1_P.7", br8);
   safeSetText("fill_1_P.8", br8);
 
-  // ============ Pages 9-13 - Schedule: Members (Shareholders) ============
-  // Page 9 header fields
-  for (let page = 9; page <= 13; page++) {
-    safeSetText(`fill_4_P.${page}`, br8);
+  // ============ Page 9 - Schedule 1: Members (Non-listed Co), 2 per page ============
+  // Header: 1=day, 2=month, 3=year, 4=BR, 5=Class of Shares, 6=Total issued shares of class
+  // Member 1: 7=name_chinese, 8=surname, 9=other_names, 10=full_name_alt,
+  //           11=flat, 12=building, 13=street, 14=district, 15=country, 16=shares_held, 17=remarks
+  // Member 2: 18=name_chinese, 19=surname, 20=other_names, 21=full_name_alt,
+  //           22=flat, 23=building, 24=street, 25=district, 26=country, 27=shares_held, 28=remarks
+  // Footer: 29=schedule page no, 30=total schedule pages
+  safeSetText("fill_1_P.9", day || "");
+  safeSetText("fill_2_P.9", month || "");
+  safeSetText("fill_3_P.9", year || "");
+  safeSetText("fill_4_P.9", br8);
+
+  // Pick the first share-class info for header (most common case: single class)
+  const firstShareInfo = shareInfos[0];
+  if (firstShareInfo) {
+    safeSetText("fill_5_P.9", firstShareInfo.className);
+    safeSetText("fill_6_P.9", firstShareInfo.shares.toLocaleString());
   }
 
-  // Fill shareholder details on page 9+ (schedule pages)
-  // NAR1 schedule page 9 has specific fields for listing shareholders
-  // Each shareholder entry needs: name, address, shares held, share class
-  // The exact field layout depends on the template - we fill what we can
-  
+  // Fill up to 2 members on page 9 (template only contains one schedule page)
+  const fillMember = (sh: ShareholderData, slot: 1 | 2) => {
+    const isCorp = sh.identity === "corporate";
+    const fullName = sh.nameEnglish || sh.name || "";
+    const { surname, otherNames } = parseEnglishName(fullName);
+    const addr = parseAddress(sh.address || "");
+    if (slot === 1) {
+      safeSetText("fill_7_P.9", sh.nameChinese || "");
+      if (isCorp) {
+        // Corporate member uses combined name field (10), leave surname/other blank
+        safeSetText("fill_10_P.9", fullName);
+      } else {
+        safeSetText("fill_8_P.9", surname);
+        safeSetText("fill_9_P.9", otherNames);
+      }
+      safeSetText("fill_11_P.9", addr.flat);
+      safeSetText("fill_12_P.9", addr.building);
+      safeSetText("fill_13_P.9", addr.street);
+      safeSetText("fill_14_P.9", addr.district);
+      safeSetText("fill_15_P.9", addr.country);
+      safeSetText("fill_16_P.9", (Number(sh.shares) || 0).toLocaleString());
+    } else {
+      safeSetText("fill_18_P.9", sh.nameChinese || "");
+      if (isCorp) {
+        safeSetText("fill_21_P.9", fullName);
+      } else {
+        safeSetText("fill_19_P.9", surname);
+        safeSetText("fill_20_P.9", otherNames);
+      }
+      safeSetText("fill_22_P.9", addr.flat);
+      safeSetText("fill_23_P.9", addr.building);
+      safeSetText("fill_24_P.9", addr.street);
+      safeSetText("fill_25_P.9", addr.district);
+      safeSetText("fill_26_P.9", addr.country);
+      safeSetText("fill_27_P.9", (Number(sh.shares) || 0).toLocaleString());
+    }
+  };
+
+  const memberList = (data.shareholders || []).slice(0, 2);
+  if (memberList[0]) fillMember(memberList[0], 1);
+  if (memberList[1]) fillMember(memberList[1], 2);
+  safeSetText("fill_29_P.9", "1");
+  safeSetText("fill_30_P.9", "1");
+
+  // Pages 7, 8 (Reserve Director / Service Agent) - BR header only
+  safeSetText("fill_1_P.7", br8);
+  safeSetText("fill_1_P.8", br8);
+  // Pages 11/12/13 are continuation sheets for additional officers — fill BR only
+  safeSetText("fill_4_P.11", br8);
+  safeSetText("fill_4_P.12", br8);
+  safeSetText("fill_4_P.13", br8);
+
   // ============ Pages 14-15 - Declaration & Presenter ============
   safeSetText("fill_1_P.14", br8);
   safeSetText("fill_4_P.14", br8);

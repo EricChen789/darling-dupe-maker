@@ -168,6 +168,7 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave, onGenerateND2
         </DialogHeader>
         <form onSubmit={handleSubmit}>
           <div className="grid grid-cols-2 gap-4 py-4">
+            {/* === 姓名 === */}
             <div className="space-y-2">
               <Label htmlFor="nameChinese">中文姓名</Label>
               <Input
@@ -185,20 +186,6 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave, onGenerateND2
                 onChange={(e) => setFormData({ ...formData, nameEnglish: e.target.value })}
                 placeholder="輸入英文姓名"
               />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="email">電郵地址</Label>
-              <div className="flex items-center gap-2">
-                <Input
-                  id="email"
-                  type="email"
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  placeholder="輸入電郵地址"
-                  className="flex-1"
-                />
-                <PassportExpiryBadge expiry={formData.passportExpiry} />
-              </div>
             </div>
             <div className="space-y-2">
               <Label htmlFor="identity">身份類型</Label>
@@ -235,6 +222,77 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave, onGenerateND2
                 </SelectContent>
               </Select>
             </div>
+
+            {/* === 身份證件 === */}
+            <div className="space-y-2">
+              <Label htmlFor="idNumber">香港身份證號碼</Label>
+              <Input
+                id="idNumber"
+                value={formData.idNumber}
+                onChange={(e) => setFormData({ ...formData, idNumber: e.target.value })}
+                placeholder="例如 A123456(7)"
+              />
+            </div>
+            {formData.identity === 'corporate' && (
+              <div className="space-y-2">
+                <Label htmlFor="brNumber">商業登記號碼</Label>
+                <Input
+                  id="brNumber"
+                  value={formData.brNumber}
+                  onChange={(e) => setFormData({ ...formData, brNumber: e.target.value })}
+                  placeholder="輸入商業登記號碼"
+                />
+              </div>
+            )}
+            <div className="space-y-2">
+              <Label htmlFor="passportNumber">護照號碼</Label>
+              <Input
+                id="passportNumber"
+                value={formData.passportNumber}
+                onChange={(e) => setFormData({ ...formData, passportNumber: e.target.value })}
+                placeholder="輸入護照號碼"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="passportExpiry">護照失效日期</Label>
+              <Input
+                id="passportExpiry"
+                type="date"
+                value={formData.passportExpiry}
+                onChange={(e) => setFormData({ ...formData, passportExpiry: e.target.value })}
+              />
+            </div>
+
+            {/* === 聯絡 === */}
+            <div className="space-y-2">
+              <Label htmlFor="whatsapp">WhatsApp 電話號碼</Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  id="whatsapp"
+                  value={formData.whatsapp}
+                  onChange={(e) => setFormData({ ...formData, whatsapp: e.target.value })}
+                  placeholder="例如 +852 9123 4567"
+                  className="flex-1"
+                />
+                <PassportExpiryBadge expiry={formData.passportExpiry} />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="email">電郵地址</Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  id="email"
+                  type="email"
+                  value={formData.email}
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  placeholder="輸入電郵地址"
+                  className="flex-1"
+                />
+                <PassportExpiryBadge expiry={formData.passportExpiry} />
+              </div>
+            </div>
+
+            {/* === 地址 === */}
             <div className="space-y-2 col-span-2">
               <Label htmlFor="address">住址</Label>
               <Input
@@ -259,57 +317,6 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave, onGenerateND2
                 placeholder="輸入服務地址"
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="idNumber">香港身份證號碼</Label>
-              <Input
-                id="idNumber"
-                value={formData.idNumber}
-                onChange={(e) => setFormData({ ...formData, idNumber: e.target.value })}
-                placeholder="例如 A123456(7)"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="passportNumber">護照號碼</Label>
-              <Input
-                id="passportNumber"
-                value={formData.passportNumber}
-                onChange={(e) => setFormData({ ...formData, passportNumber: e.target.value })}
-                placeholder="輸入護照號碼"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="passportExpiry">護照失效日期</Label>
-              <Input
-                id="passportExpiry"
-                type="date"
-                value={formData.passportExpiry}
-                onChange={(e) => setFormData({ ...formData, passportExpiry: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="whatsapp">WhatsApp 電話號碼</Label>
-              <div className="flex items-center gap-2">
-                <Input
-                  id="whatsapp"
-                  value={formData.whatsapp}
-                  onChange={(e) => setFormData({ ...formData, whatsapp: e.target.value })}
-                  placeholder="例如 +852 9123 4567"
-                  className="flex-1"
-                />
-                <PassportExpiryBadge expiry={formData.passportExpiry} />
-              </div>
-            </div>
-            {formData.identity === 'corporate' && (
-              <div className="space-y-2">
-                <Label htmlFor="brNumber">商業登記號碼</Label>
-                <Input
-                  id="brNumber"
-                  value={formData.brNumber}
-                  onChange={(e) => setFormData({ ...formData, brNumber: e.target.value })}
-                  placeholder="輸入商業登記號碼"
-                />
-              </div>
-            )}
           </div>
           <DialogFooter className="gap-2">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>

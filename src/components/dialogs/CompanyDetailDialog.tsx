@@ -794,8 +794,27 @@ function DocSlot({ label, path, uploading, onUpload, onView, onDownload }: {
   label: string; path?: string; uploading: boolean;
   onUpload: (f: File) => void; onView: () => void; onDownload: () => void;
 }) {
+  const [dragOver, setDragOver] = useState(false);
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOver(false);
+    if (uploading) return;
+    const f = e.dataTransfer.files?.[0];
+    if (f) onUpload(f);
+  };
+
   return (
-    <div className="space-y-1">
+    <div
+      className={`space-y-1 rounded-md border-2 border-dashed transition-colors p-2 ${
+        dragOver ? 'border-primary bg-primary/5' : 'border-transparent'
+      }`}
+      onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); if (!uploading) setDragOver(true); }}
+      onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); if (!uploading) setDragOver(true); }}
+      onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setDragOver(false); }}
+      onDrop={handleDrop}
+    >
       <div className="text-muted-foreground text-xs">{label}</div>
       <div className="flex items-center gap-2 flex-wrap">
         {path ? (
@@ -808,7 +827,9 @@ function DocSlot({ label, path, uploading, onUpload, onView, onDownload }: {
             </Button>
           </>
         ) : (
-          <span className="text-xs text-muted-foreground">尚未上傳</span>
+          <span className="text-xs text-muted-foreground">
+            {dragOver ? '放開以上傳' : '尚未上傳（可拖放檔案）'}
+          </span>
         )}
         <label className="inline-flex cursor-pointer items-center gap-1 text-xs px-2 py-1 rounded hover:bg-accent">
           <input

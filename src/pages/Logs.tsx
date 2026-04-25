@@ -699,6 +699,404 @@ const LogTableView = ({ html }: { html: string }) => {
   return <RodTable sections={parsed.sections} />;
 };
 
+// =============================================================================
+// Editable structured editors (Excel-like cell-by-cell editing)
+// =============================================================================
+
+const escapeHtml = (s: string): string =>
+  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+// Extract the document preamble (paragraphs before the first officer/member record)
+// from the original HTML so it survives a round-trip through editing.
+const extractPreamble = (html: string): string[] => {
+  const raw = (html.match(/<p[^>]*>[\s\S]*?<\/p>/gi) || [])
+    .map(stripLogHtml)
+    .map((t) => t.trim())
+    .filter(Boolean);
+  const firstIdx = raw.findIndex((t) => POSITION_RE.test(t) || t === 'Name');
+  return firstIdx <= 0 ? raw : raw.slice(0, firstIdx);
+};
+
+const linesToParagraphs = (lines: string[]): string =>
+  lines
+    .map((l) => l.split('\n').map((x) => x.trim()).filter(Boolean))
+    .flat()
+    .map((l) => `<p>${escapeHtml(l)}</p>`)
+    .join('\n');
+
+const serializeRod = (
+  preamble: string[],
+  sections: { section: string; entries: OfficerEntry[] }[],
+): string => {
+  const out: string[] = preamble.map((p) => `<p>${escapeHtml(p)}</p>`);
+  sections.forEach((sec) => {
+    sec.entries.forEach((e) => {
+      e.name.forEach((n) => out.push(`<p>${escapeHtml(n)}</p>`));
+      e.address.forEach((a) => out.push(`<p>${escapeHtml(a)}</p>`));
+      e.birthIncorp.forEach((b) => out.push(`<p>${escapeHtml(b)}</p>`));
+      if (e.idPassport) out.push(`<p>${escapeHtml(e.idPassport)}</p>`);
+      if (e.position) out.push(`<p>${escapeHtml(e.position)}</p>`);
+      e.appointedMeeting.forEach((d) => out.push(`<p>${escapeHtml(d)}</p>`));
+      e.ceasedReason.forEach((c) => out.push(`<p>${escapeHtml(c)}</p>`));
+    });
+  });
+  return out.join('\n');
+};
+
+const serializeRom = (preamble: string[], members: MemberEntry[]): string => {
+  const out: string[] = preamble.map((p) => `<p>${escapeHtml(p)}</p>`);
+  members.forEach((m) => {
+    out.push(`<p>Name</p>`);
+    m.name.forEach((n, i) => {
+      // Re-attach HK ID inline on the first name line if present and not already inline.
+      if (i === 0 && m.idPassport && !/Hong Kong ID No/i.test(n)) {
+        out.push(`<p>${escapeHtml(`${n} (Hong Kong ID No : ${m.idPassport})`)}</p>`);
+      } else {
+        out.push(`<p>${escapeHtml(n)}</p>`);
+      }
+    });
+    if (m.address.length) {
+      out.push(`<p>Address</p>`);
+      m.address.forEach((a) => out.push(`<p>${escapeHtml(a)}</p>`));
+    }
+    if (m.dateOfBirth) {
+      out.push(`<p>Date of Birth</p>`);
+      out.push(`<p>${escapeHtml(m.dateOfBirth)}</p>`);
+    }
+    if (m.passportDetails) {
+      out.push(`<p>Passport Details</p>`);
+      out.push(`<p>${escapeHtml(m.passportDetails)}</p>`);
+    }
+    if (m.security) {
+      out.push(`<p>Security</p>`);
+      out.push(`<p>${escapeHtml(m.security)}</p>`);
+    }
+    if (m.dateEntered) {
+      out.push(`<p>Date</p>`);
+      out.push(`<p>${escapeHtml(m.dateEntered)}</p>`);
+    }
+    if (m.dateCeased) {
+      out.push(`<p>Date Ceased</p>`);
+      out.push(`<p>${escapeHtml(m.dateCeased)}</p>`);
+    }
+    m.transactions.forEach((t) => {
+      if (t.units !== undefined) out.push(`<p>${escapeHtml(t.units)}</p>`);
+      if (t.date) out.push(`<p>${escapeHtml(t.date)}</p>`);
+      if (t.notes) t.notes.split('\n').forEach((ln) => ln.trim() && out.push(`<p>${escapeHtml(ln.trim())}</p>`));
+      if (t.transactionType) out.push(`<p>${escapeHtml(t.transactionType)}</p>`);
+      if (t.parValue) out.push(`<p>${escapeHtml(t.parValue)}</p>`);
+      if (t.paidUpValue) out.push(`<p>${escapeHtml(t.paidUpValue)}</p>`);
+      if (t.balance !== undefined) out.push(`<p>${escapeHtml(t.balance)}</p>`);
+      if (t.certificateNo !== undefined) out.push(`<p>${escapeHtml(t.certificateNo)}</p>`);
+    });
+  });
+  return out.join('\n');
+};
+
+// Tiny inline editor: textarea that auto-grows with rows={lines}.
+const CellEditor = ({
+  value,
+  onChange,
+  multiline = false,
+  placeholder,
+  className = '',
+  mono = false,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  multiline?: boolean;
+  placeholder?: string;
+  className?: string;
+  mono?: boolean;
+}) => {
+  const base = `w-full bg-transparent border border-transparent hover:border-border focus:border-ring focus:bg-background rounded px-1.5 py-1 text-xs ${mono ? 'font-mono' : ''} ${className}`;
+  if (multiline) {
+    const rows = Math.max(1, value.split('\n').length);
+    return (
+      <textarea
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        rows={rows}
+        className={`${base} resize-y outline-none`}
+      />
+    );
+  }
+  return (
+    <input
+      type="text"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={placeholder}
+      className={`${base} outline-none`}
+    />
+  );
+};
+
+const EditableRodTable = ({
+  sections,
+  onChange,
+}: {
+  sections: { section: string; entries: OfficerEntry[] }[];
+  onChange: (next: { section: string; entries: OfficerEntry[] }[]) => void;
+}) => {
+  const updateEntry = (sIdx: number, eIdx: number, patch: Partial<OfficerEntry>) => {
+    const next = sections.map((s, i) =>
+      i !== sIdx ? s : { ...s, entries: s.entries.map((e, j) => (j !== eIdx ? e : { ...e, ...patch })) }
+    );
+    onChange(next);
+  };
+  const addRow = (sIdx: number) => {
+    const next = sections.map((s, i) =>
+      i !== sIdx
+        ? s
+        : {
+            ...s,
+            entries: [
+              ...s.entries,
+              { name: [''], address: [], birthIncorp: [], appointedMeeting: [], ceasedReason: [] } as OfficerEntry,
+            ],
+          }
+    );
+    onChange(next);
+  };
+  const removeRow = (sIdx: number, eIdx: number) => {
+    const next = sections.map((s, i) =>
+      i !== sIdx ? s : { ...s, entries: s.entries.filter((_, j) => j !== eIdx) }
+    );
+    onChange(next);
+  };
+
+  return (
+    <div className="space-y-6">
+      {sections.map((section, sIdx) => (
+        <div key={sIdx} className="border border-border rounded-lg overflow-hidden">
+          <div className="px-4 py-2 bg-muted/50 font-medium text-sm flex items-center justify-between">
+            <span>{section.section}</span>
+            <Button size="sm" variant="outline" onClick={() => addRow(sIdx)}>+ 新增一列</Button>
+          </div>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-12 text-center">#</TableHead>
+                <TableHead className="min-w-[200px]">姓名 / Name</TableHead>
+                <TableHead className="min-w-[260px]">服務 / 居住地址</TableHead>
+                <TableHead className="min-w-[160px]">出生 / 成立日期 / 地點</TableHead>
+                <TableHead className="min-w-[140px]">ID / CR No</TableHead>
+                <TableHead className="min-w-[110px]">職位</TableHead>
+                <TableHead className="min-w-[120px]">委任日期</TableHead>
+                <TableHead className="min-w-[140px]">終止 / 原因</TableHead>
+                <TableHead className="w-12"></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {section.entries.map((entry, idx) => (
+                <TableRow key={idx} className="align-top">
+                  <TableCell className="text-center text-xs text-muted-foreground font-mono">{idx + 1}</TableCell>
+                  <TableCell>
+                    <CellEditor
+                      multiline
+                      value={entry.name.join('\n')}
+                      onChange={(v) => updateEntry(sIdx, idx, { name: v.split('\n') })}
+                      placeholder="英文名 / 中文名"
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <CellEditor
+                      multiline
+                      value={entry.address.join('\n')}
+                      onChange={(v) => updateEntry(sIdx, idx, { address: v.split('\n') })}
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <CellEditor
+                      multiline
+                      value={entry.birthIncorp.join('\n')}
+                      onChange={(v) => updateEntry(sIdx, idx, { birthIncorp: v.split('\n') })}
+                      placeholder="DD/MM/YYYY"
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <CellEditor
+                      mono
+                      value={entry.idPassport || ''}
+                      onChange={(v) => updateEntry(sIdx, idx, { idPassport: v || undefined })}
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <CellEditor
+                      value={entry.position || ''}
+                      onChange={(v) => updateEntry(sIdx, idx, { position: v || undefined })}
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <CellEditor
+                      mono
+                      multiline
+                      value={entry.appointedMeeting.join('\n')}
+                      onChange={(v) => updateEntry(sIdx, idx, { appointedMeeting: v.split('\n').filter(Boolean) })}
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <CellEditor
+                      multiline
+                      value={entry.ceasedReason.join('\n')}
+                      onChange={(v) => updateEntry(sIdx, idx, { ceasedReason: v.split('\n').filter(Boolean) })}
+                    />
+                  </TableCell>
+                  <TableCell className="text-center">
+                    <Button size="sm" variant="ghost" onClick={() => removeRow(sIdx, idx)}>
+                      <X className="h-3 w-3" />
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+const EditableRomTable = ({
+  members,
+  onChange,
+}: {
+  members: MemberEntry[];
+  onChange: (next: MemberEntry[]) => void;
+}) => {
+  const updateMember = (idx: number, patch: Partial<MemberEntry>) => {
+    onChange(members.map((m, i) => (i !== idx ? m : { ...m, ...patch })));
+  };
+  const updateTxn = (mIdx: number, tIdx: number, patch: Partial<ShareTxn>) => {
+    onChange(
+      members.map((m, i) =>
+        i !== mIdx
+          ? m
+          : { ...m, transactions: m.transactions.map((t, j) => (j !== tIdx ? t : { ...t, ...patch })) }
+      )
+    );
+  };
+  const addTxn = (mIdx: number) => {
+    onChange(members.map((m, i) => (i !== mIdx ? m : { ...m, transactions: [...m.transactions, {}] })));
+  };
+  const removeTxn = (mIdx: number, tIdx: number) => {
+    onChange(
+      members.map((m, i) =>
+        i !== mIdx ? m : { ...m, transactions: m.transactions.filter((_, j) => j !== tIdx) }
+      )
+    );
+  };
+  const addMember = () => {
+    onChange([...members, { name: [''], address: [], transactions: [] }]);
+  };
+  const removeMember = (mIdx: number) => {
+    onChange(members.filter((_, i) => i !== mIdx));
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-end">
+        <Button size="sm" variant="outline" onClick={addMember}>+ 新增成員</Button>
+      </div>
+      {members.map((m, idx) => (
+        <div key={idx} className="border border-border rounded-lg overflow-hidden">
+          <div className="px-4 py-2 bg-muted/50 font-medium text-sm flex items-center justify-between">
+            <span>成員 #{idx + 1}</span>
+            <Button size="sm" variant="ghost" onClick={() => removeMember(idx)}>
+              <X className="h-3 w-3 mr-1" />刪除成員
+            </Button>
+          </div>
+          <div className="px-4 py-3 grid grid-cols-1 md:grid-cols-12 gap-3 text-sm">
+            <div className="md:col-span-4">
+              <Label className="text-xs text-muted-foreground mb-1 block">姓名 / Name</Label>
+              <CellEditor
+                multiline
+                value={m.name.join('\n')}
+                onChange={(v) => updateMember(idx, { name: v.split('\n') })}
+              />
+            </div>
+            <div className="md:col-span-2">
+              <Label className="text-xs text-muted-foreground mb-1 block">HK ID</Label>
+              <CellEditor mono value={m.idPassport || ''} onChange={(v) => updateMember(idx, { idPassport: v || undefined })} />
+            </div>
+            <div className="md:col-span-6">
+              <Label className="text-xs text-muted-foreground mb-1 block">地址 / Address</Label>
+              <CellEditor
+                multiline
+                value={m.address.join('\n')}
+                onChange={(v) => updateMember(idx, { address: v.split('\n') })}
+              />
+            </div>
+            <div className="md:col-span-3">
+              <Label className="text-xs text-muted-foreground mb-1 block">出生日期</Label>
+              <CellEditor mono value={m.dateOfBirth || ''} onChange={(v) => updateMember(idx, { dateOfBirth: v || undefined })} />
+            </div>
+            <div className="md:col-span-5">
+              <Label className="text-xs text-muted-foreground mb-1 block">護照詳情 / Passport</Label>
+              <CellEditor value={m.passportDetails || ''} onChange={(v) => updateMember(idx, { passportDetails: v || undefined })} />
+            </div>
+            <div className="md:col-span-2">
+              <Label className="text-xs text-muted-foreground mb-1 block">登記日期</Label>
+              <CellEditor mono value={m.dateEntered || ''} onChange={(v) => updateMember(idx, { dateEntered: v || undefined })} />
+            </div>
+            <div className="md:col-span-2">
+              <Label className="text-xs text-muted-foreground mb-1 block">終止日期</Label>
+              <CellEditor mono value={m.dateCeased || ''} onChange={(v) => updateMember(idx, { dateCeased: v || undefined })} />
+            </div>
+            <div className="md:col-span-12">
+              <Label className="text-xs text-muted-foreground mb-1 block">證券類別 / Security</Label>
+              <CellEditor value={m.security || ''} onChange={(v) => updateMember(idx, { security: v || undefined })} />
+            </div>
+          </div>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-12 text-center">#</TableHead>
+                <TableHead className="min-w-[110px]">日期</TableHead>
+                <TableHead className="min-w-[120px]">交易類別</TableHead>
+                <TableHead className="text-right min-w-[90px]">股數</TableHead>
+                <TableHead className="text-right min-w-[90px]">面值/股</TableHead>
+                <TableHead className="text-right min-w-[90px]">已繳/股</TableHead>
+                <TableHead className="text-right min-w-[80px]">證書編號</TableHead>
+                <TableHead className="min-w-[150px]">對方 / 備註</TableHead>
+                <TableHead className="text-right min-w-[90px]">結餘</TableHead>
+                <TableHead className="w-12"></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {m.transactions.map((t, i) => (
+                <TableRow key={i} className="align-top">
+                  <TableCell className="text-center text-xs text-muted-foreground font-mono">{i + 1}</TableCell>
+                  <TableCell><CellEditor mono value={t.date || ''} onChange={(v) => updateTxn(idx, i, { date: v || undefined })} /></TableCell>
+                  <TableCell><CellEditor value={t.transactionType || ''} onChange={(v) => updateTxn(idx, i, { transactionType: v || undefined })} /></TableCell>
+                  <TableCell><CellEditor mono value={t.units || ''} onChange={(v) => updateTxn(idx, i, { units: v || undefined })} /></TableCell>
+                  <TableCell><CellEditor mono value={t.parValue || ''} onChange={(v) => updateTxn(idx, i, { parValue: v || undefined })} /></TableCell>
+                  <TableCell><CellEditor mono value={t.paidUpValue || ''} onChange={(v) => updateTxn(idx, i, { paidUpValue: v || undefined })} /></TableCell>
+                  <TableCell><CellEditor mono value={t.certificateNo || ''} onChange={(v) => updateTxn(idx, i, { certificateNo: v || undefined })} /></TableCell>
+                  <TableCell><CellEditor multiline value={t.notes || ''} onChange={(v) => updateTxn(idx, i, { notes: v || undefined })} /></TableCell>
+                  <TableCell><CellEditor mono value={t.balance || ''} onChange={(v) => updateTxn(idx, i, { balance: v || undefined })} /></TableCell>
+                  <TableCell className="text-center">
+                    <Button size="sm" variant="ghost" onClick={() => removeTxn(idx, i)}>
+                      <X className="h-3 w-3" />
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+              <TableRow>
+                <TableCell colSpan={10} className="text-center py-2">
+                  <Button size="sm" variant="ghost" onClick={() => addTxn(idx)}>+ 新增交易</Button>
+                </TableCell>
+              </TableRow>
+            </TableBody>
+          </Table>
+        </div>
+      ))}
+    </div>
+  );
+};
+
 const Logs = () => {
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');

@@ -264,24 +264,22 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
 
   const expandClassName = (raw: string) => {
     const t = (raw || "").trim();
-    if (!t) return "Ordinary";
+    if (!t) return "ORDINARY SHARES";
     const head = t.split(/[-—]/)[0].trim();
-    if (/^ord(inary)?$/i.test(head)) return "Ordinary";
-    if (/^pref(erence)?$/i.test(head)) return "Preference";
-    if (head.includes("普通")) return "Ordinary 普通股";
-    if (head.includes("優先")) return "Preference 優先股";
-    return head || "Ordinary";
+    if (/^ord(inary)?$/i.test(head) || head.includes("普通")) return "ORDINARY SHARES";
+    if (/^pref(erence)?$/i.test(head) || head.includes("優先")) return "PREFERENCE SHARES";
+    return head.toUpperCase() || "ORDINARY SHARES";
   };
+  // 顯示貨幣（含 $ 號，符合 NAR1 正本格式）
   const detectCurrency = (raw: string) => {
     const m = (raw || "").match(/(HK\$|HKD|US\$|USD|RMB|CNY|GBP|EUR|JPY)/i);
-    if (!m) return "HKD";
+    if (!m) return "HK$";
     const c = m[1].toUpperCase();
-    if (c === "HK$") return "HKD";
-    if (c === "US$") return "USD";
+    if (c === "HKD" || c === "HK$") return "HK$";
+    if (c === "USD" || c === "US$") return "US$";
     return c;
   };
   const detectParValue = (raw: string) => {
-    // Look for currency-prefixed amount like HK$1.00 or HK$100.00
     const m = (raw || "").match(/(?:HK\$|US\$|HKD|USD|RMB|CNY|GBP|EUR|JPY)\s*([\d,]+(?:\.\d+)?)/i);
     if (m) return parseFloat(m[1].replace(/,/g, "")) || 0;
     return 0;

@@ -396,7 +396,7 @@ const Logs = () => {
 
       {/* Detail dialog */}
       <Dialog open={!!openId} onOpenChange={(o) => { if (!o) { setOpenId(null); setEditing(false); } }}>
-        <DialogContent className="max-w-5xl w-[95vw] max-h-[92vh] overflow-hidden flex flex-col">
+        <DialogContent className="max-w-none w-[95vw] h-[95vh] sm:rounded-lg overflow-hidden flex flex-col">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 flex-wrap">
               {openLog && docTypeBadge(openLog.doc_type)}

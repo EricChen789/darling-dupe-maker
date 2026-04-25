@@ -60,57 +60,137 @@ const stripLogHtml = (value: string): string =>
     .replace(/\s+/g, ' ')
     .trim();
 
-const parseLogRows = (html: string): string[][] => {
-  const paragraphs = html.match(/<p[^>]*>[\s\S]*?<\/p>/gi) || [];
-  const rows: string[][] = [];
-  let current: string[] = [];
+type LogEntry = {
+  section?: string;
+  name: string;
+  details: string[];
+  position?: string;
+  dates: string[];
+  status?: string;
+};
 
-  paragraphs.forEach((paragraph) => {
-    const text = stripLogHtml(paragraph);
-    if (!text) return;
+// Patterns to detect row markers
+const HEADER_NOISE = /^(Date of|Entry \/ Update|Name|Particulars|Remarks|Notes|Entry|No|Position|Date\(s\)|Reason|Ceased|Quorum|Place|Incorporated|Occupation|ID No|Passport|Appointed|\/Meeting|Birth|Service|Residential|Date \/|Address|Telephone|Facsimile|Capacity|Alias|Nationality|Identification|Nature of Control|Correspondence|Date of becoming|Country|Folio|Account|Class|Number of|Amount|Held|Type of)/i;
+const PAGE_NOISE = /^(- ?\d+ ?-|REGISTER OF|Company Number|Company Name)/i;
+const SECTION_RE = /^(Significant Controllers|Designated Representatives|Directors?|Secretar(?:y|ies)|Members?|Officers?|Reserve Directors?|Alternate Directors?)$/i;
+const POSITION_RE = /^(Director|Secretary|Reserve Director|Alternate Director|Member|Designated Representative)$/i;
+const DATE_RE = /^\d{2}\/\d{2}\/\d{4}$/;
+const ENTRY_NO_RE = /^\d{1,3}$/;
 
-    current.push(text);
-    if (/^\d{1,3}$/.test(text)) {
-      rows.push(current);
-      current = [];
+const parseLogEntries = (html: string): { section: string; entries: LogEntry[] }[] => {
+  const paragraphs = (html.match(/<p[^>]*>[\s\S]*?<\/p>/gi) || [])
+    .map(stripLogHtml)
+    .filter(Boolean)
+    .filter((t) => !PAGE_NOISE.test(t) && !HEADER_NOISE.test(t));
+
+  const sections: { section: string; entries: LogEntry[] }[] = [];
+  let currentSection = '記錄';
+  let current: LogEntry | null = null;
+
+  const pushCurrent = () => {
+    if (current && (current.name || current.details.length || current.dates.length)) {
+      let bucket = sections.find((s) => s.section === currentSection);
+      if (!bucket) {
+        bucket = { section: currentSection, entries: [] };
+        sections.push(bucket);
+      }
+      bucket.entries.push(current);
+    }
+    current = null;
+  };
+
+  paragraphs.forEach((text) => {
+    if (SECTION_RE.test(text)) {
+      pushCurrent();
+      currentSection = text;
+      return;
+    }
+
+    if (ENTRY_NO_RE.test(text)) {
+      pushCurrent();
+      return;
+    }
+
+    if (!current) {
+      current = { name: text, details: [], dates: [] };
+      return;
+    }
+
+    if (POSITION_RE.test(text)) {
+      current.position = text;
+    } else if (/^Resigned|^Ceased|^Removed/i.test(text)) {
+      current.status = text;
+    } else if (DATE_RE.test(text)) {
+      current.dates.push(text);
+    } else {
+      current.details.push(text);
     }
   });
+  pushCurrent();
 
-  if (current.length) rows.push(current);
-  return rows.length ? rows : [[stripLogHtml(html) || '沒有內容']];
+  return sections;
 };
 
 const LogTableView = ({ html }: { html: string }) => {
-  const rows = useMemo(() => parseLogRows(html || ''), [html]);
+  const sections = useMemo(() => parseLogEntries(html || ''), [html]);
+
+  if (!sections.length) {
+    return (
+      <div className="border border-border rounded-lg p-4 text-sm text-muted-foreground">
+        沒有可解析的內容
+      </div>
+    );
+  }
 
   return (
-    <div className="border border-border rounded-lg overflow-hidden">
-      <Table>
-        <TableHeader>
-          <TableRow className="bg-muted/50">
-            <TableHead className="w-16 text-center">#</TableHead>
-            <TableHead>記錄內容</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {rows.map((row, rowIndex) => (
-            <TableRow key={rowIndex} className="align-top">
-              <TableCell className="text-center text-xs text-muted-foreground font-mono">
-                {rowIndex + 1}
-              </TableCell>
-              <TableCell>
-                <div className="space-y-1">
-                  {row.map((line, lineIndex) => (
-                    <div key={lineIndex} className="text-sm whitespace-pre-wrap break-words">
-                      {line}
+    <div className="space-y-6">
+      {sections.map((section, sIdx) => (
+        <div key={sIdx} className="border border-border rounded-lg overflow-hidden">
+          <div className="px-4 py-2 bg-muted/50 font-medium text-sm">{section.section}</div>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-12 text-center">#</TableHead>
+                <TableHead className="w-[260px]">姓名 / 名稱</TableHead>
+                <TableHead>詳細資料</TableHead>
+                <TableHead className="w-[140px]">職位</TableHead>
+                <TableHead className="w-[140px]">日期</TableHead>
+                <TableHead className="w-[120px]">狀態</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {section.entries.map((entry, idx) => (
+                <TableRow key={idx} className="align-top">
+                  <TableCell className="text-center text-xs text-muted-foreground font-mono">
+                    {idx + 1}
+                  </TableCell>
+                  <TableCell className="text-sm font-medium whitespace-pre-wrap break-words">
+                    {entry.name}
+                  </TableCell>
+                  <TableCell className="text-xs text-muted-foreground">
+                    <div className="space-y-0.5">
+                      {entry.details.map((d, i) => (
+                        <div key={i} className="whitespace-pre-wrap break-words">{d}</div>
+                      ))}
                     </div>
-                  ))}
-                </div>
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+                  </TableCell>
+                  <TableCell className="text-sm">{entry.position || '—'}</TableCell>
+                  <TableCell className="text-xs font-mono">
+                    {entry.dates.length ? entry.dates.join(' / ') : '—'}
+                  </TableCell>
+                  <TableCell className="text-xs">
+                    {entry.status ? (
+                      <Badge variant="outline">{entry.status}</Badge>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      ))}
     </div>
   );
 };

@@ -17,9 +17,55 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { FileText } from 'lucide-react';
+import { FileText, AlertTriangle, CheckCircle2, XCircle } from 'lucide-react';
 import { Person } from '@/types';
 import { toast } from '@/hooks/use-toast';
+
+const PassportExpiryBadge = ({ expiry }: { expiry: string }) => {
+  if (!expiry) {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-border bg-muted text-muted-foreground text-xs whitespace-nowrap">
+        <AlertTriangle className="h-3 w-3" />
+        未設定護照失效日期
+      </span>
+    );
+  }
+  const expiryDate = new Date(expiry);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const diffDays = Math.ceil((expiryDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+  if (isNaN(expiryDate.getTime())) {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-border bg-muted text-muted-foreground text-xs whitespace-nowrap">
+        <AlertTriangle className="h-3 w-3" />
+        日期格式錯誤
+      </span>
+    );
+  }
+  if (diffDays < 0) {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-destructive bg-destructive/10 text-destructive text-xs whitespace-nowrap">
+        <XCircle className="h-3 w-3" />
+        護照已失效（{Math.abs(diffDays)} 日前）
+      </span>
+    );
+  }
+  if (diffDays <= 180) {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-yellow-500 bg-yellow-500/10 text-yellow-700 dark:text-yellow-400 text-xs whitespace-nowrap">
+        <AlertTriangle className="h-3 w-3" />
+        護照即將失效（剩 {diffDays} 日）
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-green-600 bg-green-600/10 text-green-700 dark:text-green-400 text-xs whitespace-nowrap">
+      <CheckCircle2 className="h-3 w-3" />
+      護照有效（剩 {diffDays} 日）
+    </span>
+  );
+};
 
 interface PersonDialogProps {
   open: boolean;

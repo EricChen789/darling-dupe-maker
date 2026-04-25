@@ -188,13 +188,17 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave, onGenerateND2
             </div>
             <div className="space-y-2">
               <Label htmlFor="email">電郵地址</Label>
-              <Input
-                id="email"
-                type="email"
-                value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                placeholder="輸入電郵地址"
-              />
+              <div className="flex items-center gap-2">
+                <Input
+                  id="email"
+                  type="email"
+                  value={formData.email}
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  placeholder="輸入電郵地址"
+                  className="flex-1"
+                />
+                <PassportExpiryBadge expiry={formData.passportExpiry} />
+              </div>
             </div>
             <div className="space-y-2">
               <Label htmlFor="identity">身份類型</Label>

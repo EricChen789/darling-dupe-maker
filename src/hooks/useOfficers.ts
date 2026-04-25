@@ -133,7 +133,12 @@ export function useOfficers() {
             identity: personData.identity || 'natural',
             role: personData.role || 'director',
             address: personData.address || '',
+            service_address: personData.serviceAddress || '',
             id_number: personData.idNumber || '',
+            passport_number: personData.passportNumber || '',
+            passport_expiry: personData.passportExpiry || '',
+            whatsapp: personData.whatsapp || '',
+            email: personData.email || '',
             company_number_ref: personData.brNumber || '',
           })
           .eq('id', existingPerson.id);

@@ -239,7 +239,7 @@ const People = () => {
                           <Button variant="ghost" size="sm" className="h-auto py-1 px-2 text-xs font-normal">
                             <span className="truncate max-w-[200px]">{person.companies[0].name}</span>
                             {person.companies.length > 1 && (
-                              <span className="ml-1 text-muted-foreground">+{person.companies.length - 1}</span>
+                              <span className="ml-1 text-muted-foreground">共 {person.companies.length} 間</span>
                             )}
                             <ChevronDown className="h-3 w-3 ml-1 text-muted-foreground" />
                           </Button>

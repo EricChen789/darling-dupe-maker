@@ -32,7 +32,6 @@ import { toast } from '@/hooks/use-toast';
 import { useCompanyLogs, useCompanyLogContent, useUpdateCompanyLog } from '@/hooks/useCompanyLogs';
 import { useCompanies } from '@/hooks/useCompanies';
 import { RichTextEditor } from '@/components/logs/RichTextEditor.tsx';
-import { LogTableView } from '@/components/logs/LogTableView.tsx';
 
 const docTypes = [
   { value: 'all', label: '所有類型' },
@@ -47,6 +46,73 @@ const docTypeBadge = (t: string) => {
   if (t === 'ROD') return <Badge variant="default">ROD</Badge>;
   if (t === 'ROM') return <Badge variant="secondary">ROM</Badge>;
   return <Badge variant="outline">{t}</Badge>;
+};
+
+const stripLogHtml = (value: string): string =>
+  value
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const parseLogRows = (html: string): string[][] => {
+  const paragraphs = html.match(/<p[^>]*>[\s\S]*?<\/p>/gi) || [];
+  const rows: string[][] = [];
+  let current: string[] = [];
+
+  paragraphs.forEach((paragraph) => {
+    const text = stripLogHtml(paragraph);
+    if (!text) return;
+
+    current.push(text);
+    if (/^\d{1,3}$/.test(text)) {
+      rows.push(current);
+      current = [];
+    }
+  });
+
+  if (current.length) rows.push(current);
+  return rows.length ? rows : [[stripLogHtml(html) || '沒有內容']];
+};
+
+const LogTableView = ({ html }: { html: string }) => {
+  const rows = useMemo(() => parseLogRows(html || ''), [html]);
+
+  return (
+    <div className="border border-border rounded-lg overflow-hidden">
+      <Table>
+        <TableHeader>
+          <TableRow className="bg-muted/50">
+            <TableHead className="w-16 text-center">#</TableHead>
+            <TableHead>記錄內容</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {rows.map((row, rowIndex) => (
+            <TableRow key={rowIndex} className="align-top">
+              <TableCell className="text-center text-xs text-muted-foreground font-mono">
+                {rowIndex + 1}
+              </TableCell>
+              <TableCell>
+                <div className="space-y-1">
+                  {row.map((line, lineIndex) => (
+                    <div key={lineIndex} className="text-sm whitespace-pre-wrap break-words">
+                      {line}
+                    </div>
+                  ))}
+                </div>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  );
 };
 
 const Logs = () => {

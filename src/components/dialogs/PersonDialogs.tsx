@@ -382,6 +382,18 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave, onGenerateND2
                 onChange={(e) => setFormData({ ...formData, passportExpiry: e.target.value })}
               />
             </div>
+            <FileUploadSlot
+              label="護照圖片"
+              filePath={formData.passportFilePath}
+              onChange={(p) => setFormData({ ...formData, passportFilePath: p })}
+              folder="officers/passport"
+            />
+            <FileUploadSlot
+              label="身份證圖片"
+              filePath={formData.idCardFilePath}
+              onChange={(p) => setFormData({ ...formData, idCardFilePath: p })}
+              folder="officers/id-card"
+            />
 
             {/* === 聯絡 === */}
             <div className="space-y-2">

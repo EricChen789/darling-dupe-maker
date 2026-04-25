@@ -1338,13 +1338,54 @@ const Logs = () => {
                 </div>
 
                 {editing ? (
-                  <div>
-                    <Label className="text-sm text-muted-foreground mb-1 block">HTML 內容</Label>
-                    <Textarea
-                      value={draftHtml}
-                      onChange={(e) => setDraftHtml(e.target.value)}
-                      className="min-h-[420px] font-mono text-xs"
-                    />
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-sm text-muted-foreground">
+                        編輯模式：{editMode === 'table' ? '結構化表格（直接點擊儲存格修改）' : '原始 HTML'}
+                      </Label>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          if (editMode === 'table' && draftParsed) {
+                            // Switch to HTML: serialize current table state into HTML
+                            let h = draftHtml;
+                            if (draftParsed.kind === 'rod') h = serializeRod(draftPreamble, draftParsed.sections);
+                            else if (draftParsed.kind === 'rom') h = serializeRom(draftPreamble, draftParsed.members);
+                            setDraftHtml(h);
+                            setEditMode('html');
+                          } else {
+                            // Switch to table: re-parse from current HTML
+                            const p = parseLog(draftHtml);
+                            setDraftParsed(p);
+                            setDraftPreamble(extractPreamble(draftHtml));
+                            setEditMode('table');
+                          }
+                        }}
+                        disabled={draftParsed?.kind === 'unknown'}
+                      >
+                        切換到 {editMode === 'table' ? 'HTML 模式' : '表格模式'}
+                      </Button>
+                    </div>
+                    {editMode === 'table' && draftParsed?.kind === 'rod' && (
+                      <EditableRodTable
+                        sections={draftParsed.sections}
+                        onChange={(sections) => setDraftParsed({ kind: 'rod', sections })}
+                      />
+                    )}
+                    {editMode === 'table' && draftParsed?.kind === 'rom' && (
+                      <EditableRomTable
+                        members={draftParsed.members}
+                        onChange={(members) => setDraftParsed({ kind: 'rom', members })}
+                      />
+                    )}
+                    {editMode === 'html' && (
+                      <Textarea
+                        value={draftHtml}
+                        onChange={(e) => setDraftHtml(e.target.value)}
+                        className="min-h-[420px] font-mono text-xs"
+                      />
+                    )}
                   </div>
                 ) : (
                   <LogTableView html={openLog.html_content} />

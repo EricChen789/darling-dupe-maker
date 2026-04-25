@@ -233,9 +233,7 @@ const parseRod = (paragraphs: string[]): { section: string; entries: OfficerEntr
 
 // ----- ROM parser -----
 const parseRom = (paragraphs: string[]): MemberEntry[] => {
-  // Walk through paragraphs detecting "Name" markers.
   const members: MemberEntry[] = [];
-  let i = 0;
   const n = paragraphs.length;
 
   const newMember = (): MemberEntry => ({ name: [], address: [], transactions: [] });
@@ -244,23 +242,28 @@ const parseRom = (paragraphs: string[]): MemberEntry[] => {
   const starts: number[] = [];
   paragraphs.forEach((p, idx) => { if (p === 'Name') starts.push(idx); });
 
-  // Lines appearing before the first "Name" are document/page headers (company title,
-  // Chinese company name, etc.) — skip them whenever they reappear inside a slice
-  // (continuation pages repeat the title rows).
+  // Lines appearing before the first "Name" are document/page headers — skip them
+  // when they reappear inside continuation pages.
   const headerSet = new Set(
     starts.length ? paragraphs.slice(0, starts[0]) : []
   );
 
-  // We'll just split ranges between consecutive "Name" occurrences.
+  // Anchors that delimit member-card sub-fields
+  const MEMBER_ANCHORS = new Set([
+    'Address', 'Date of Birth', 'Passport Details',
+    'Security', 'Date', 'Date Ceased',
+  ]);
+
   for (let s = 0; s < starts.length; s++) {
     const start = starts[s];
     const end = s + 1 < starts.length ? starts[s + 1] : n;
     const slice = paragraphs.slice(start + 1, end).filter((p) => !headerSet.has(p));
     const m = newMember();
 
-    // Collect name lines until "Address"
     let cursor = 0;
-    while (cursor < slice.length && slice[cursor] !== 'Address') {
+
+    // --- Name (until next anchor) ---
+    while (cursor < slice.length && !MEMBER_ANCHORS.has(slice[cursor])) {
       const line = slice[cursor];
       const idMatch = line.match(ID_INLINE_RE);
       if (idMatch) {
@@ -272,133 +275,121 @@ const parseRom = (paragraphs: string[]): MemberEntry[] => {
       }
       cursor++;
     }
-    // Address
-    if (slice[cursor] === 'Address') {
+
+    // --- Walk through anchored sub-sections until we hit transaction header zone ---
+    // Transaction header zone starts when we see lines like "Date Entered" or noise table headers.
+    // After Date Ceased we expect the transaction column-header block (already filtered as HEADER_NOISE).
+    while (cursor < slice.length && MEMBER_ANCHORS.has(slice[cursor])) {
+      const anchor = slice[cursor];
       cursor++;
-      while (cursor < slice.length && slice[cursor] !== 'Security' && slice[cursor] !== 'Date') {
-        m.address.push(slice[cursor]);
+      // Collect anchor's value lines until next anchor
+      const vals: string[] = [];
+      while (cursor < slice.length && !MEMBER_ANCHORS.has(slice[cursor])) {
+        // Stop if we hit something that looks like the start of transaction data:
+        // either a TXN_TYPE token or a numeric (units) line — this only matters
+        // if anchors order changes; normally column-headers (filtered) sit between.
+        vals.push(slice[cursor]);
         cursor++;
       }
-    }
-    // Security
-    if (slice[cursor] === 'Security') {
-      cursor++;
-      if (cursor < slice.length && slice[cursor] !== 'Date') {
-        m.security = slice[cursor];
-        cursor++;
+      switch (anchor) {
+        case 'Address': m.address = vals; break;
+        case 'Date of Birth': m.dateOfBirth = vals.join(' ').trim() || undefined; break;
+        case 'Passport Details': m.passportDetails = vals.join(' ').trim() || undefined; break;
+        case 'Security': m.security = vals.join(' ').trim() || undefined; break;
+        case 'Date':
+          if (vals.length && DATE_RE.test(vals[0])) m.dateEntered = vals[0];
+          break;
+        case 'Date Ceased':
+          if (vals.length && DATE_RE.test(vals[0])) m.dateCeased = vals[0];
+          break;
       }
     }
-    // Date / Date Ceased
-    if (slice[cursor] === 'Date') {
-      cursor++;
-      if (cursor < slice.length && DATE_RE.test(slice[cursor])) {
-        m.dateEntered = slice[cursor];
-        cursor++;
-      }
-    }
-    if (slice[cursor] === 'Date Ceased') {
-      cursor++;
-      if (cursor < slice.length && DATE_RE.test(slice[cursor])) {
-        m.dateCeased = slice[cursor];
-        cursor++;
-      }
-    }
-    // Remaining lines = transaction rows. Each transaction has the pattern:
-    // Units, Date, TransactionType, ParValue, PaidUpValue, Balance, CertNo
-    // with optional preceding "notes" line (e.g. "KWOK AH NAM" before a Transfer).
+
+    // --- Remaining = transaction rows ---
+    // Per row order observed in source RTF stream:
+    //   Units, Date, [counterparty notes lines], Type, Par, Paid, Balance, Cert
     const tail = slice.slice(cursor).filter(Boolean);
-    // Group by detecting Date markers as txn anchors.
+
     let pending: ShareTxn = {};
-    let prevWasNotes = false;
-    let lastNote: string | undefined;
+    let noteBuf: string[] = [];
+    let stage: 'units' | 'date' | 'notes_or_type' | 'par' | 'paid' | 'balance' | 'cert' = 'units';
+
     const pushTxn = () => {
-      if (Object.keys(pending).length) members; // keep linter happy
       if (
         pending.units !== undefined ||
         pending.date !== undefined ||
         pending.transactionType !== undefined ||
         pending.balance !== undefined
       ) {
+        if (noteBuf.length) pending.notes = noteBuf.join(' ');
         m.transactions.push(pending);
       }
       pending = {};
+      noteBuf = [];
+      stage = 'units';
     };
 
-    let k = 0;
-    while (k < tail.length) {
+    const isCurrencyLike = (l: string) => CURRENCY_RE.test(l) || /^[A-Z]{2,4}\s*[\d,.]+$/.test(l);
+
+    for (let k = 0; k < tail.length; k++) {
       const line = tail[k];
-      // Units = first numeric (possibly negative / parenthesised)
-      if (pending.units === undefined && NUMERIC_BALANCE_RE.test(line)) {
-        pending.units = line;
-        k++;
+
+      if (stage === 'units') {
+        if (NUMERIC_BALANCE_RE.test(line)) { pending.units = line; stage = 'date'; continue; }
+        // Skip stray non-numeric line at units stage
         continue;
       }
-      // Date for txn
-      if (pending.date === undefined && DATE_RE.test(line)) {
-        pending.date = line;
-        k++;
+      if (stage === 'date') {
+        if (DATE_RE.test(line)) { pending.date = line; stage = 'notes_or_type'; continue; }
+        // No date — treat current line as note start
+        stage = 'notes_or_type';
+        // fallthrough
+      }
+      if (stage === 'notes_or_type') {
+        if (TXN_TYPE_RE.test(line)) {
+          pending.transactionType = line;
+          stage = 'par';
+          continue;
+        }
+        // Counterparty / transferred-to lines accumulate
+        if (!NUMERIC_BALANCE_RE.test(line) && !isCurrencyLike(line) && !DATE_RE.test(line)) {
+          noteBuf.push(line);
+          continue;
+        }
+        // Unexpected — skip
         continue;
       }
-      // Optional note line (e.g. transferee/transferor name) — non-numeric, non-date
-      if (
-        pending.transactionType === undefined &&
-        !NUMERIC_BALANCE_RE.test(line) &&
-        !HK_MONEY_RE.test(line) &&
-        !DATE_RE.test(line) &&
-        !/^(Subscription|Allotment|Transfer In|Transfer Out|Redemption|Reissue|Bonus)/i.test(line)
-      ) {
-        lastNote = (lastNote ? `${lastNote} ` : '') + line;
-        k++;
+      if (stage === 'par') {
+        if (isCurrencyLike(line)) { pending.parValue = line; stage = 'paid'; continue; }
+        // Some templates skip par/paid; if numeric, treat as balance
+        if (NUMERIC_BALANCE_RE.test(line)) { pending.balance = line; stage = 'cert'; continue; }
         continue;
       }
-      // Transaction type
-      if (pending.transactionType === undefined && /^(Subscription|Allotment|Transfer In|Transfer Out|Redemption|Reissue|Bonus)/i.test(line)) {
-        pending.transactionType = line;
-        if (lastNote) { pending.notes = lastNote; lastNote = undefined; }
-        k++;
+      if (stage === 'paid') {
+        if (isCurrencyLike(line)) { pending.paidUpValue = line; stage = 'balance'; continue; }
+        if (NUMERIC_BALANCE_RE.test(line)) { pending.balance = line; stage = 'cert'; continue; }
         continue;
       }
-      // Par value
-      if (pending.parValue === undefined && HK_MONEY_RE.test(line)) {
-        pending.parValue = line;
-        k++;
+      if (stage === 'balance') {
+        if (NUMERIC_BALANCE_RE.test(line)) { pending.balance = line; stage = 'cert'; continue; }
         continue;
       }
-      // Paid Up value
-      if (pending.paidUpValue === undefined && HK_MONEY_RE.test(line)) {
-        pending.paidUpValue = line;
-        k++;
-        continue;
-      }
-      // Balance
-      if (pending.balance === undefined && NUMERIC_BALANCE_RE.test(line)) {
-        pending.balance = line;
-        k++;
-        continue;
-      }
-      // Certificate No
-      if (pending.certificateNo === undefined && NUMERIC_BALANCE_RE.test(line)) {
-        pending.certificateNo = line;
-        k++;
-        // End of one transaction
+      if (stage === 'cert') {
+        if (NUMERIC_BALANCE_RE.test(line)) {
+          pending.certificateNo = line;
+          pushTxn();
+          continue;
+        }
+        // Next row started without explicit cert
         pushTxn();
+        // Reprocess this line as the start of next row
+        k--;
         continue;
       }
-      // Anything else → push current and restart with this line as units if numeric
-      pushTxn();
-      if (NUMERIC_BALANCE_RE.test(line)) {
-        pending.units = line;
-      } else if (DATE_RE.test(line)) {
-        pending.date = line;
-      } else {
-        lastNote = (lastNote ? `${lastNote} ` : '') + line;
-      }
-      k++;
     }
     pushTxn();
 
     if (m.name.length || m.idPassport || m.address.length) members.push(m);
-    i = end;
   }
   return members;
 };

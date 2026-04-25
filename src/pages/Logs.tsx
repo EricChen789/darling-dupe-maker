@@ -127,11 +127,79 @@ const NUMERIC_BALANCE_RE = /^\(?-?[\d,]+\)?$/;
 const CURRENCY_RE = /^(HK\$|US\$|USD|RMB|CNY|EUR|GBP|JPY|AUD|SGD|CAD|NZD)\s*[\d,.]+$/i;
 const TXN_TYPE_RE = /^(Subscription|Allotment|Transfer In|Transfer Out|Redemption|Reissue|Bonus|Issue|Surrender|Forfeiture)/i;
 
-const cleanParagraphs = (html: string): string[] =>
-  (html.match(/<p[^>]*>[\s\S]*?<\/p>/gi) || [])
+// Some RTF exports collapse an entire ROD/ROM table row into a single <p>.
+// Detect those and split into the logical lines before parsing.
+const COMPANY_TITLE_RE = /\b(LIMITED|有限公司|CORPORATION|HOLDINGS)\b/i;
+const explodeCompoundLine = (text: string): string[] => {
+  // Look for a position keyword glued to a date, e.g. "...Director01/01/2016" or "...Secretary 01/01/2016"
+  const POS_DATE = /(Director|Secretary|Reserve Director|Alternate Director|Designated Representative)\s*(\d{1,2}\/\d{1,2}\/\d{4})/;
+  const m = text.match(POS_DATE);
+  if (!m) return [text];
+  const pos = m[1];
+  const date = m[2];
+  const idx = text.indexOf(m[0]);
+  const head = text.slice(0, idx).trim();
+  const tail = text.slice(idx + m[0].length).trim();
+
+  const out: string[] = [];
+  // Split head: try to peel off a leading company title (ENG + optional CJK) before the personal record.
+  // Heuristic: find the first run of uppercase ASCII personal name (>=2 words) following the company title.
+  let personStart = -1;
+  // Scan for a pattern like ' AU KWOK LAM' — uppercase tokens after a LIMITED/有限公司 boundary.
+  const compMatch = head.match(/^(.*?(?:LIMITED|有限公司|CORPORATION|HOLDINGS)[^\sA-Z]*)\s*([\u4e00-\u9fff]+)?\s*([A-Z][A-Z\s]{3,}?)\s+/);
+  if (compMatch) {
+    personStart = compMatch[0].length - compMatch[3].length - 1;
+    // Drop the company title entirely (it's redundant — the section header already shows it)
+  }
+  const rest = personStart >= 0 ? head.slice(personStart).trim() : head;
+
+  // Try to peel ID like "—P373848(9)" or "(Hong Kong ID No : ...)" off the end of `rest`.
+  let body = rest;
+  let idLine: string | undefined;
+  const idTail = body.match(/[—\-–]\s*([A-Z]{1,3}\d{4,8}(?:\([0-9A-Z]\))?)\s*$/);
+  if (idTail) {
+    idLine = idTail[1];
+    body = body.slice(0, idTail.index).trim();
+  }
+
+  // Split body into name + address by detecting first address keyword
+  const ADDR_KEYS = /(FLAT|ROOM|UNIT|G\/F|\d+\/F|FLOOR|HOUSE|TOWER|BUILDING|BLOCK|ESTATE|ROAD|STREET|AVENUE|LANE|VILLAGE|CENTRE|CENTER|PLAZA|COURT|GARDEN|MANSION|NO\.\s*\d)/i;
+  const addrMatch = body.match(ADDR_KEYS);
+  if (addrMatch && addrMatch.index !== undefined) {
+    const namePart = body.slice(0, addrMatch.index).trim();
+    const addrPart = body.slice(addrMatch.index).trim();
+    if (namePart) out.push(namePart);
+    if (addrPart) out.push(addrPart);
+  } else if (body) {
+    out.push(body);
+  }
+
+  if (idLine) out.push(idLine);
+  out.push(pos);
+  out.push(date);
+  if (tail) out.push(...explodeCompoundLine(tail));
+  return out;
+};
+
+const cleanParagraphs = (html: string): string[] => {
+  const raw = (html.match(/<p[^>]*>[\s\S]*?<\/p>/gi) || [])
     .map(stripLogHtml)
+    .filter(Boolean);
+  const exploded: string[] = [];
+  for (const t of raw) {
+    if (/(Director|Secretary|Representative)\s*\d{1,2}\/\d{1,2}\/\d{4}/.test(t)) {
+      exploded.push(...explodeCompoundLine(t));
+    } else {
+      exploded.push(t);
+    }
+  }
+  return exploded
+    .map((t) => t.trim())
     .filter(Boolean)
-    .filter((t) => !PAGE_NOISE_RE.test(t) && !HEADER_NOISE.has(t));
+    .filter((t) => !PAGE_NOISE_RE.test(t) && !HEADER_NOISE.has(t))
+    // Drop pure company-title lines (e.g. "1&1 FOOD AND BEVERAGE LIMITED1加1飲食有限公司")
+    .filter((t) => !(COMPANY_TITLE_RE.test(t) && !/(FLAT|ROOM|FLOOR|ROAD|STREET|HOUSE|BUILDING|ESTATE|TOWER)/i.test(t) && t.length < 80));
+};
 
 const looksLikeRom = (paragraphs: string[]): boolean =>
   paragraphs.some((p) => /Hong Kong ID No\s*:/i.test(p)) ||

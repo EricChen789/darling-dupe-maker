@@ -38,6 +38,11 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave, onGenerateND2
     role: 'director' as 'director' | 'secretary' | 'shareholder',
     brNumber: '',
     address: '',
+    serviceAddress: '',
+    idNumber: '',
+    passportNumber: '',
+    passportExpiry: '',
+    whatsapp: '',
   });
 
   const originalAddress = person?.address || '';
@@ -47,11 +52,16 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave, onGenerateND2
       setFormData({
         nameChinese: person.nameChinese,
         nameEnglish: person.nameEnglish,
-        email: person.email,
+        email: person.email || '',
         identity: person.identity,
         role: person.role,
         brNumber: person.brNumber || '',
         address: person.address || '',
+        serviceAddress: person.serviceAddress || '',
+        idNumber: person.idNumber || '',
+        passportNumber: person.passportNumber || '',
+        passportExpiry: person.passportExpiry || '',
+        whatsapp: person.whatsapp || '',
       });
     } else {
       setFormData({
@@ -62,6 +72,11 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave, onGenerateND2
         role: 'director',
         brNumber: '',
         address: '',
+        serviceAddress: '',
+        idNumber: '',
+        passportNumber: '',
+        passportExpiry: '',
+        whatsapp: '',
       });
     }
   }, [person, open]);

@@ -113,7 +113,7 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave, onGenerateND2
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-[95vw] w-[95vw] h-[95vh] max-h-[95vh] overflow-y-auto sm:max-w-[95vw]">
         <DialogHeader>
           <DialogTitle>{person ? '編輯人員' : '新增人員'}</DialogTitle>
           <DialogDescription>

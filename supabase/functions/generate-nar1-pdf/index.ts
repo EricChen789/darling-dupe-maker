@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { PDFDocument, PDFName, PDFString, PDFHexString } from "https://esm.sh/pdf-lib@1.17.1";
+import { PDFDocument, PDFName, PDFString, PDFHexString, StandardFonts } from "https://esm.sh/pdf-lib@1.17.1";
 
 function uint8ToBase64(bytes: Uint8Array): string {
   let binary = "";
@@ -89,12 +89,18 @@ async function listAllFormFields(): Promise<{ fields: Array<{name: string; type:
   return { fields };
 }
 
+// 港式英文姓名格式：姓氏在「最前」（例如 AU KWOK LAM → 姓 AU、名 KWOK LAM）
 const parseEnglishName = (fullName: string) => {
   const parts = (fullName || "").trim().split(/\s+/).filter(Boolean);
-  const surname = parts.length ? parts[parts.length - 1] : "";
-  const otherNames = parts.slice(0, -1).join(" ");
+  if (parts.length === 0) return { surname: "", otherNames: "" };
+  const surname = parts[0];
+  const otherNames = parts.slice(1).join(" ");
   return { surname, otherNames };
 };
+
+// 數字千分位 + 兩位小數
+const fmtAmount = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtInt = (n: number) => n.toLocaleString("en-US");
 
 // Parse a full address string into components
 const parseAddress = (addr: string) => {
@@ -156,7 +162,9 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
     return pdfBytes;
   }
 
-  // Normal mode - no font embedding, PDF viewer uses system fonts for CJK
+  // 嵌入標準 Helvetica 字型，用於 ASCII 文字欄位的 appearance 重繪。
+  // CJK 文字仍維持「不嵌入字型」由 PDF viewer 用系統字型渲染。
+  const helv = await pdfDoc.embedFont(StandardFonts.Helvetica);
 
   const returnDate = data.returnDate || new Date().toISOString().split("T")[0];
   const [year, month, day] = returnDate.split("-");
@@ -171,13 +179,18 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
       const maxLength = field.getMaxLength();
       if (maxLength && textToSet.length > maxLength) textToSet = textToSet.slice(0, maxLength);
 
-      // Set value via hex string (works for both ASCII and CJK) and delete the
-      // pre-built appearance stream so PDF viewers regenerate it with system fonts.
-      // Combined with NeedAppearances=true on the AcroForm, this makes both
-      // English and Chinese text render correctly without embedding fonts.
-      const dict = field.acroField.dict;
-      dict.set(PDFName.of('V'), PDFHexString.fromText(textToSet));
-      dict.delete(PDFName.of('AP'));
+      if (isAsciiOnly(textToSet)) {
+        // 純 ASCII：setText + 用嵌入的 Helvetica 立即更新 appearance
+        // （不依賴 viewer 的 NeedAppearances，避免模板自訂 encoding 干擾）
+        field.setText(textToSet);
+        try { field.updateAppearances(helv); } catch (_) { /* ignore */ }
+      } else {
+        // 含中文：用 hex string (UTF-16BE) 並刪除 appearance stream，
+        // 配合 NeedAppearances=true，由 PDF viewer 用系統字型重繪
+        const dict = field.acroField.dict;
+        dict.set(PDFName.of('V'), PDFHexString.fromText(textToSet));
+        dict.delete(PDFName.of('AP'));
+      }
       return true;
     } catch (e) {
       console.warn(`⚠ Missing: ${fieldName}`, e);
@@ -185,8 +198,7 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
     }
   };
 
-  // Tell PDF viewers to regenerate appearance streams for form fields.
-  // This makes filled values actually visible since we don't embed fonts.
+  // 仍保留 NeedAppearances=true 給 CJK 欄位
   try {
     const acroForm = form.acroForm.dict;
     acroForm.set(PDFName.of('NeedAppearances'), pdfDoc.context.obj(true));
@@ -204,8 +216,8 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
 
   // ============ Page 1 - Company Info ============
   safeSetText("fill_1_P.1", br8);
-  // Box 1 公司名稱 - 中英文同一欄
-  const fullCompanyName = [data.name, data.chineseName].filter(Boolean).join("  ");
+  // Box 1 公司名稱 - 英文在上、中文在下（用換行）
+  const fullCompanyName = [data.name, data.chineseName].filter(Boolean).join("\n");
   safeSetText("fill_2_P.1", fullCompanyName);
   // Box 2 商業名稱 Trading Name (Business Name)
   safeSetText("fill_3_P.1", data.tradingName || "");
@@ -258,24 +270,22 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
 
   const expandClassName = (raw: string) => {
     const t = (raw || "").trim();
-    if (!t) return "Ordinary";
+    if (!t) return "ORDINARY SHARES";
     const head = t.split(/[-—]/)[0].trim();
-    if (/^ord(inary)?$/i.test(head)) return "Ordinary";
-    if (/^pref(erence)?$/i.test(head)) return "Preference";
-    if (head.includes("普通")) return "Ordinary 普通股";
-    if (head.includes("優先")) return "Preference 優先股";
-    return head || "Ordinary";
+    if (/^ord(inary)?$/i.test(head) || head.includes("普通")) return "ORDINARY SHARES";
+    if (/^pref(erence)?$/i.test(head) || head.includes("優先")) return "PREFERENCE SHARES";
+    return head.toUpperCase() || "ORDINARY SHARES";
   };
+  // 顯示貨幣（含 $ 號，符合 NAR1 正本格式）
   const detectCurrency = (raw: string) => {
     const m = (raw || "").match(/(HK\$|HKD|US\$|USD|RMB|CNY|GBP|EUR|JPY)/i);
-    if (!m) return "HKD";
+    if (!m) return "HK$";
     const c = m[1].toUpperCase();
-    if (c === "HK$") return "HKD";
-    if (c === "US$") return "USD";
+    if (c === "HKD" || c === "HK$") return "HK$";
+    if (c === "USD" || c === "US$") return "US$";
     return c;
   };
   const detectParValue = (raw: string) => {
-    // Look for currency-prefixed amount like HK$1.00 or HK$100.00
     const m = (raw || "").match(/(?:HK\$|US\$|HKD|USD|RMB|CNY|GBP|EUR|JPY)\s*([\d,]+(?:\.\d+)?)/i);
     if (m) return parseFloat(m[1].replace(/,/g, "")) || 0;
     return 0;
@@ -308,18 +318,18 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
     const totalAmount = info.parValue ? info.shares * info.parValue : 0;
     safeSetText(`fill_${base}_P.2`, info.className);
     safeSetText(`fill_${base + 1}_P.2`, info.currency);
-    safeSetText(`fill_${base + 2}_P.2`, info.shares.toLocaleString());
-    safeSetText(`fill_${base + 3}_P.2`, totalAmount ? totalAmount.toFixed(2) : "");
-    safeSetText(`fill_${base + 4}_P.2`, totalAmount ? totalAmount.toFixed(2) : "");
+    safeSetText(`fill_${base + 2}_P.2`, fmtInt(info.shares));
+    safeSetText(`fill_${base + 3}_P.2`, totalAmount ? fmtAmount(totalAmount) : "");
+    safeSetText(`fill_${base + 4}_P.2`, totalAmount ? fmtAmount(totalAmount) : "");
     totalShares += info.shares;
     totalAmountSum += totalAmount;
     if (!firstCurrency) firstCurrency = info.currency;
   }
   if (shareInfos.length > 0) {
     safeSetText("fill_26_P.2", firstCurrency);
-    safeSetText("fill_27_P.2", totalShares.toLocaleString());
-    safeSetText("fill_28_P.2", totalAmountSum ? totalAmountSum.toFixed(2) : "");
-    safeSetText("fill_29_P.2", totalAmountSum ? totalAmountSum.toFixed(2) : "");
+    safeSetText("fill_27_P.2", fmtInt(totalShares));
+    safeSetText("fill_28_P.2", totalAmountSum ? fmtAmount(totalAmountSum) : "");
+    safeSetText("fill_29_P.2", totalAmountSum ? fmtAmount(totalAmountSum) : "");
   }
 
   // ============ Page 3 - Secretary (Natural Person) 12A ============
@@ -358,57 +368,56 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
     safeSetText("fill_7_P.4", addr.district);
     safeSetText("fill_8_P.4", sec.email || "");
     safeSetText("fill_9_P.4", sec.companyNumberRef || sec.brNumber || "");
+    // 信託或公司服務提供者牌照編號（如為 TCSP 持牌人）
+    if ((sec as any).licenceNumber) {
+      safeSetText("fill_10_P.4", (sec as any).licenceNumber);
+    }
     console.log(`Filled Secretary (Corporate): ${sec.nameEnglish || sec.nameChinese}`);
   }
 
   // ============ Page 5 - Director (Natural Person) 13A ============
+  // 對照: BR=1, 代替=2, 中文姓名=3, 姓氏=4, 名字=5, 前用中=6, 前用英=7, 別名中=8, 別名英=9,
+  //       flat=10, building=11, street=12, district=13, country=14, email=15, hkid=16,
+  //       passport_country=17, passport_no=18
   safeSetText("fill_1_P.5", br8);
   const naturalDirectors = (data.directors || []).filter(d => d.identity === "natural");
   if (naturalDirectors.length > 0) {
     const dir = naturalDirectors[0];
     const { surname, otherNames } = parseEnglishName(dir.nameEnglish);
     safeCheck("cb_1_P.5", true);
-    safeSetText("fill_2_P.5", dir.nameChinese || "");
-    safeSetText("fill_3_P.5", surname);
-    safeSetText("fill_4_P.5", otherNames);
-    // Address
+    safeSetText("fill_3_P.5", dir.nameChinese || "");
+    safeSetText("fill_4_P.5", surname);
+    safeSetText("fill_5_P.5", otherNames);
     const addr = parseAddress(dir.address || '');
-    safeSetText("fill_9_P.5", addr.flat);
-    safeSetText("fill_10_P.5", addr.building);
-    safeSetText("fill_11_P.5", addr.street);
-    safeSetText("fill_12_P.5", addr.district);
-    safeSetText("fill_13_P.5", addr.country);
-    safeSetText("fill_14_P.5", dir.email || "");
-    // HKID
+    safeSetText("fill_10_P.5", addr.flat);
+    safeSetText("fill_11_P.5", addr.building);
+    safeSetText("fill_12_P.5", addr.street);
+    safeSetText("fill_13_P.5", addr.district);
+    safeSetText("fill_14_P.5", addr.country);
+    safeSetText("fill_15_P.5", dir.email || "");
     const hkid = parseHkidPartial(dir.idNumber || '');
-    if (hkid) safeSetText("fill_15_P.5", hkid);
+    if (hkid) safeSetText("fill_16_P.5", hkid);
     console.log(`Filled Director (Natural): ${dir.nameEnglish || dir.nameChinese}`);
   }
 
   // ============ Page 6 - Director (Body Corporate) 13B ============
+  // 對照: BR=1, 代替=2, 中文=3, 英=4, flat=5, building=6, street=7, district=8, country=9, email=10, BR=11
+  // 第二董事: 12=代替, 13=中文, 14=英, 15-19=地址, 20=email, 21=BR
   safeSetText("fill_1_P.6", br8);
   const corporateDirectors = (data.directors || []).filter(d => d.identity === "corporate");
   if (corporateDirectors.length > 0) {
     const dir = corporateDirectors[0];
     safeCheck("cb_1_P.6", true);
-    safeSetText("fill_2_P.6", dir.nameChinese || "");
-    safeSetText("fill_3_P.6", dir.nameEnglish || "");
+    safeSetText("fill_3_P.6", dir.nameChinese || "");
+    safeSetText("fill_4_P.6", dir.nameEnglish || "");
     const addr = parseAddress(dir.address || '');
-    safeSetText("fill_4_P.6", addr.flat);
-    safeSetText("fill_5_P.6", addr.building);
-    safeSetText("fill_6_P.6", addr.street);
-    safeSetText("fill_7_P.6", addr.district);
-    safeSetText("fill_8_P.6", dir.email || "");
-    safeSetText("fill_9_P.6", dir.companyNumberRef || dir.brNumber || "");
-    // Place of incorporation
-    if (dir.placeIncorporated) {
-      const isHK = dir.placeIncorporated.toUpperCase().includes('HONG KONG');
-      safeCheck("cb_3_P.6", isHK);
-      safeCheck("cb_4_P.6", !isHK);
-      if (!isHK) {
-        safeSetText("fill_10_P.6", dir.placeIncorporated);
-      }
-    }
+    safeSetText("fill_5_P.6", addr.flat);
+    safeSetText("fill_6_P.6", addr.building);
+    safeSetText("fill_7_P.6", addr.street);
+    safeSetText("fill_8_P.6", addr.district);
+    safeSetText("fill_9_P.6", addr.country);
+    safeSetText("fill_10_P.6", dir.email || "");
+    safeSetText("fill_11_P.6", dir.companyNumberRef || dir.brNumber || "");
     console.log(`Filled Director (Corporate): ${dir.nameEnglish || dir.nameChinese}`);
   }
 
@@ -429,8 +438,9 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
   // Pick the first share-class info for header (most common case: single class)
   const firstShareInfo = shareInfos[0];
   if (firstShareInfo) {
-    safeSetText("fill_5_P.9", firstShareInfo.className);
-    safeSetText("fill_6_P.9", firstShareInfo.shares.toLocaleString());
+    // 附表一格式：「ORDINARY SHARES (HK$)」
+    safeSetText("fill_5_P.9", `${firstShareInfo.className} (${firstShareInfo.currency})`);
+    safeSetText("fill_6_P.9", fmtInt(firstShareInfo.shares));
   }
 
   // Fill up to 2 members on page 9 (template only contains one schedule page)
@@ -442,7 +452,6 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
     if (slot === 1) {
       safeSetText("fill_7_P.9", sh.nameChinese || "");
       if (isCorp) {
-        // Corporate member uses combined name field (10), leave surname/other blank
         safeSetText("fill_10_P.9", fullName);
       } else {
         safeSetText("fill_8_P.9", surname);
@@ -453,7 +462,7 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
       safeSetText("fill_13_P.9", addr.street);
       safeSetText("fill_14_P.9", addr.district);
       safeSetText("fill_15_P.9", addr.country);
-      safeSetText("fill_16_P.9", (Number(sh.shares) || 0).toLocaleString());
+      safeSetText("fill_16_P.9", fmtInt(Number(sh.shares) || 0));
     } else {
       safeSetText("fill_18_P.9", sh.nameChinese || "");
       if (isCorp) {
@@ -467,7 +476,7 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
       safeSetText("fill_24_P.9", addr.street);
       safeSetText("fill_25_P.9", addr.district);
       safeSetText("fill_26_P.9", addr.country);
-      safeSetText("fill_27_P.9", (Number(sh.shares) || 0).toLocaleString());
+      safeSetText("fill_27_P.9", fmtInt(Number(sh.shares) || 0));
     }
   };
 
@@ -477,32 +486,95 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
   safeSetText("fill_29_P.9", "1");
   safeSetText("fill_30_P.9", "1");
 
-  // Pages 7, 8 (Reserve Director / Service Agent) - BR header only
+  // ============ Pages 7 - Reserve Director (BR header only) ============
   safeSetText("fill_1_P.7", br8);
+
+  // ============ Page 8 - Members + Records + Statement + Signature (正本第8頁) ============
+  // 對照: BR=1, records列1=2, address列1=3, 續頁A=4, B=5, C=6, D=7, E=8,
+  //       附表一=9, 附表二=10, 簽署/姓名=11, 日期=12
   safeSetText("fill_1_P.8", br8);
-  // Pages 11/12/13 are continuation sheets for additional officers — fill BR only
-  safeSetText("fill_4_P.11", br8);
-  safeSetText("fill_4_P.12", br8);
-  safeSetText("fill_4_P.13", br8);
+  // 14 ☑ 非上市公司成員詳情列於附表一
+  safeCheck("cb_1_P.8", true);
+  // 16 ☑ 私人公司陳述
+  safeCheck("cb_4_P.8",
+    (data.companyType?.includes("私人") || data.companyType?.toLowerCase().includes("private")) || false);
 
-  // ============ Pages 14-15 - Declaration & Presenter ============
-  safeSetText("fill_1_P.14", br8);
-  safeSetText("fill_4_P.14", br8);
-  safeSetText("fill_1_P.15", br8);
-  safeSetText("fill_4_P.15", br8);
-
-  // Presenter info typically appears on the declaration pages.
-  // We attempt common candidate field names; non-existent ones are skipped silently.
+  // 續頁頁數
   const presenter = data.presenter || {};
-  if (presenter.name) {
-    safeSetText("fill_2_P.15", presenter.name);
-    safeSetText("fill_5_P.15", presenter.name);
+  const naturalSecCount = (data.secretaries || []).filter(s => s.identity === "natural").length;
+  const corpSecCount = (data.secretaries || []).filter(s => s.identity === "corporate").length;
+  const naturalDirCount = (data.directors || []).filter(d => d.identity === "natural").length;
+  const corpDirCount = (data.directors || []).filter(d => d.identity === "corporate").length;
+  const sheetA = Math.max(0, naturalSecCount - 1); // 續頁 A: 額外自然人秘書
+  const sheetB = Math.max(0, corpSecCount - 1);    // 續頁 B: 額外法人秘書
+  const sheetC = Math.max(0, naturalDirCount - 1); // 續頁 C: 額外自然人董事
+  const sheetD = Math.max(0, Math.ceil(Math.max(0, corpDirCount - 1) / 2)); // 續頁 D: 每頁 2 人
+  const memberCount = (data.shareholders || []).length;
+  const schedulePages = memberCount > 0 ? Math.ceil(memberCount / 2) : 0;
+  if (sheetA > 0) safeSetText("fill_4_P.8", String(sheetA));
+  if (sheetB > 0) safeSetText("fill_5_P.8", String(sheetB));
+  if (sheetC > 0) safeSetText("fill_6_P.8", String(sheetC));
+  if (sheetD > 0) safeSetText("fill_7_P.8", String(sheetD));
+  if (schedulePages > 0) safeSetText("fill_9_P.8", String(schedulePages));
+
+  // 簽署 / 姓名 / 日期
+  if (presenter.name) safeSetText("fill_11_P.8", presenter.name);
+  if (day && month && year) safeSetText("fill_12_P.8", `${day}/${month}/${year}`);
+
+  // ============ Pages 11 - Continuation Sheet A (額外自然人秘書) ============
+  // 對照: day=1, month=2, year=3, BR=4, 中文=5, 姓氏=6, 名字=7, 前用中=8, 前用英=9,
+  //       別名中=10, 別名英=11, flat=12, building=13, street=14, district=15,
+  //       email=16, hkid=17, passport_country=18, passport_no=19, licence=20, reason=21
+  safeSetText("fill_1_P.11", day || "");
+  safeSetText("fill_2_P.11", month || "");
+  safeSetText("fill_3_P.11", year || "");
+  safeSetText("fill_4_P.11", br8);
+
+  // ============ Page 12 - Continuation Sheet B (額外法人秘書) ============
+  safeSetText("fill_1_P.12", day || "");
+  safeSetText("fill_2_P.12", month || "");
+  safeSetText("fill_3_P.12", year || "");
+  safeSetText("fill_4_P.12", br8);
+
+  // ============ Page 13 - Continuation Sheet C (額外自然人董事) ============
+  // 對照: day=1, month=2, year=3, BR=4, 代替=5, 中文=6, 姓氏=7, 名字=8,
+  //       前用中=9, 前用英=10, 別名中=11, 別名英=12, flat=13, building=14, street=15,
+  //       district=16, country=17, email=18, hkid=19, passport_country=20, passport_no=21
+  safeSetText("fill_1_P.13", day || "");
+  safeSetText("fill_2_P.13", month || "");
+  safeSetText("fill_3_P.13", year || "");
+  safeSetText("fill_4_P.13", br8);
+  // 從第 2 個自然人董事開始填續頁 C（每頁一人）
+  const extraDirectors = (data.directors || []).filter(d => d.identity === "natural").slice(1);
+  if (extraDirectors[0]) {
+    const dir = extraDirectors[0];
+    const { surname, otherNames } = parseEnglishName(dir.nameEnglish);
+    safeCheck("cb_1_P.13", true);
+    safeSetText("fill_6_P.13", dir.nameChinese || "");
+    safeSetText("fill_7_P.13", surname);
+    safeSetText("fill_8_P.13", otherNames);
+    const addr = parseAddress(dir.address || '');
+    safeSetText("fill_13_P.13", addr.flat);
+    safeSetText("fill_14_P.13", addr.building);
+    safeSetText("fill_15_P.13", addr.street);
+    safeSetText("fill_16_P.13", addr.district);
+    safeSetText("fill_17_P.13", addr.country);
+    safeSetText("fill_18_P.13", dir.email || "");
+    const hkid = parseHkidPartial(dir.idNumber || '');
+    if (hkid) safeSetText("fill_19_P.13", hkid);
   }
-  if (presenter.address) {
-    safeSetText("fill_3_P.15", presenter.address);
-    safeSetText("fill_6_P.15", presenter.address);
-  }
-  // Note: P.15 only has fill_1..fill_6, no Tel/Fax/Email fields on this page
+
+  // ============ Page 14 - Continuation Sheet D (額外法人董事) ============
+  safeSetText("fill_1_P.14", day || "");
+  safeSetText("fill_2_P.14", month || "");
+  safeSetText("fill_3_P.14", year || "");
+  safeSetText("fill_4_P.14", br8);
+
+  // ============ Page 15 - Schedule 2 (上市公司成員) - BR header only ============
+  safeSetText("fill_1_P.15", day || "");
+  safeSetText("fill_2_P.15", month || "");
+  safeSetText("fill_3_P.15", year || "");
+  safeSetText("fill_4_P.15", br8);
 
   // Keep form interactive so PDF viewer renders CJK with system fonts
   console.log("PDF filled with all data, serializing...");

@@ -21,6 +21,9 @@ interface OfficerRow {
   passport_expiry: string | null;
   whatsapp: string | null;
   email: string | null;
+  passport_file_path: string | null;
+  id_card_file_path: string | null;
+  address_proof_file_path: string | null;
   created_at: string;
 }
 

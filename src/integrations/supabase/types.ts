@@ -471,6 +471,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      link_company_logs_by_hint: { Args: never; Returns: number }
     }
     Enums: {
       app_role: "admin" | "moderator" | "user"

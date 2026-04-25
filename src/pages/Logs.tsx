@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { PageHeader } from '@/components/ui/page-header';
 import { StatCard } from '@/components/ui/stat-card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
 import {
   Select,
   SelectContent,
@@ -19,142 +20,113 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Search, RefreshCw, X, Calendar, ArrowUpDown } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import { Search, RefreshCw, X, FileText, Save, Loader2, Pencil } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
+import { useCompanyLogs, useCompanyLogContent, useUpdateCompanyLog } from '@/hooks/useCompanyLogs';
+import { useCompanies } from '@/hooks/useCompanies';
+import { RichTextEditor } from '@/components/logs/RichTextEditor';
 
-interface LogEntry {
-  id: string;
-  timestamp: string;
-  operation: string;
-  type: string;
-  content: string;
-  companyId?: string;
-  companyName?: string;
-}
-
-const allLogs: LogEntry[] = [
-  { id: '1', timestamp: '2025/11/18 14:30:00', operation: '新增公司', type: '公司', content: '新增公司 TEST COMPANY – OBVIOUS TEST NAME', companyId: '1', companyName: 'TEST COMPANY' },
-  { id: '2', timestamp: '2025/11/18 14:25:00', operation: '更新人員', type: '人員', content: '更新董事資料：測試董事', companyId: '1', companyName: 'TEST COMPANY' },
-  { id: '3', timestamp: '2025/11/18 14:20:00', operation: '建立發票', type: '發票', content: '建立發票 INV-710585，金額 HK$94,596.11', companyId: '1', companyName: 'TEST COMPANY' },
-  { id: '4', timestamp: '2025/11/18 14:15:00', operation: '提交表格', type: '表格', content: '提交 NAR1 周年申報表', companyId: '1', companyName: 'TEST COMPANY' },
-  { id: '5', timestamp: '2025/11/17 16:45:00', operation: '新增人員', type: '人員', content: '新增秘書：李美玲 LEE Mei Ling', companyId: '1', companyName: 'TEST COMPANY' },
-  { id: '6', timestamp: '2025/11/17 15:30:00', operation: '更新公司', type: '公司', content: '更新公司業務性質', companyId: '2', companyName: 'TEST COMPANY 2' },
+const docTypes = [
+  { value: 'all', label: '所有類型' },
+  { value: 'ROD', label: 'ROD（董事登記冊）' },
+  { value: 'ROM', label: 'ROM（成員登記冊）' },
+  { value: 'OTHER', label: '其他' },
 ];
 
-const operationTypes = [
-  { value: 'all', label: '所有操作' },
-  { value: 'company', label: '公司操作' },
-  { value: 'person', label: '人員操作' },
-  { value: 'invoice', label: '發票操作' },
-  { value: 'form', label: '表格操作' },
-];
+const PAGE_SIZE_OPTIONS = [20, 50, 100, 200];
+
+const docTypeBadge = (t: string) => {
+  if (t === 'ROD') return <Badge variant="default">ROD</Badge>;
+  if (t === 'ROM') return <Badge variant="secondary">ROM</Badge>;
+  return <Badge variant="outline">{t}</Badge>;
+};
 
 const Logs = () => {
-  const [searchCompany, setSearchCompany] = useState('');
-  const [operationType, setOperationType] = useState('all');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
-  const [filteredLogs, setFilteredLogs] = useState<LogEntry[]>([]);
-  const [hasSearched, setHasSearched] = useState(false);
-  const [sortNewest, setSortNewest] = useState(true);
+  const [searchInput, setSearchInput] = useState('');
+  const [search, setSearch] = useState('');
+  const [docType, setDocType] = useState('all');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [draftHtml, setDraftHtml] = useState('');
+  const [draftNotes, setDraftNotes] = useState('');
+
+  const { data: logs = [], isLoading, refetch } = useCompanyLogs({ search, docType });
+  const { data: companies = [] } = useCompanies();
+  const { data: openLog } = useCompanyLogContent(openId);
+  const updateLog = useUpdateCompanyLog();
+
+  const companyMap = useMemo(() => {
+    const m = new Map<string, string>();
+    companies.forEach((c) => m.set(c.id, c.name));
+    return m;
+  }, [companies]);
+
+  const totalPages = Math.max(1, Math.ceil(logs.length / pageSize));
+  const pagedLogs = logs.slice((page - 1) * pageSize, page * pageSize);
 
   const handleSearch = () => {
-    let results = [...allLogs];
-    
-    if (searchCompany) {
-      results = results.filter(log => 
-        log.companyName?.toLowerCase().includes(searchCompany.toLowerCase())
-      );
-    }
-    
-    if (operationType !== 'all') {
-      const typeMap: Record<string, string> = {
-        'company': '公司',
-        'person': '人員',
-        'invoice': '發票',
-        'form': '表格',
-      };
-      results = results.filter(log => log.type === typeMap[operationType]);
-    }
-
-    // Sort by timestamp
-    results.sort((a, b) => {
-      const dateA = new Date(a.timestamp.replace(/\//g, '-'));
-      const dateB = new Date(b.timestamp.replace(/\//g, '-'));
-      return sortNewest ? dateB.getTime() - dateA.getTime() : dateA.getTime() - dateB.getTime();
-    });
-    
-    setFilteredLogs(results);
-    setHasSearched(true);
-
-    toast({
-      title: '搜尋完成',
-      description: `找到 ${results.length} 筆記錄`,
-    });
+    setSearch(searchInput.trim());
+    setPage(1);
   };
 
   const handleClear = () => {
-    setSearchCompany('');
-    setOperationType('all');
-    setStartDate('');
-    setEndDate('');
-    setFilteredLogs([]);
-    setHasSearched(false);
-    toast({
-      title: '已清除',
-      description: '搜尋條件已重設',
-    });
+    setSearchInput('');
+    setSearch('');
+    setDocType('all');
+    setPage(1);
   };
 
-  const handleRefresh = () => {
-    if (hasSearched) {
-      handleSearch();
-    }
-    toast({
-      title: '已重新整理',
-      description: '日誌列表已更新',
-    });
+  const handleOpen = (id: string) => {
+    setOpenId(id);
+    setEditing(false);
   };
 
-  const handleToggleSort = () => {
-    setSortNewest(!sortNewest);
-    if (hasSearched) {
-      const sorted = [...filteredLogs].sort((a, b) => {
-        const dateA = new Date(a.timestamp.replace(/\//g, '-'));
-        const dateB = new Date(b.timestamp.replace(/\//g, '-'));
-        return !sortNewest ? dateB.getTime() - dateA.getTime() : dateA.getTime() - dateB.getTime();
+  const handleStartEdit = () => {
+    if (!openLog) return;
+    setDraftHtml(openLog.html_content);
+    setDraftNotes(openLog.notes || '');
+    setEditing(true);
+  };
+
+  const handleSave = async () => {
+    if (!openLog) return;
+    try {
+      await updateLog.mutateAsync({
+        id: openLog.id,
+        html_content: draftHtml,
+        notes: draftNotes,
       });
-      setFilteredLogs(sorted);
+      toast({ title: '已儲存', description: '日誌內容已更新' });
+      setEditing(false);
+    } catch (e: any) {
+      toast({ title: '儲存失敗', description: e.message, variant: 'destructive' });
     }
-    toast({
-      title: sortNewest ? '舊到新排序' : '新到舊排序',
-      description: '已切換排序方式',
-    });
   };
 
-  const displayLogs = hasSearched ? filteredLogs : [];
-
-  // Calculate stats based on selected company
-  const currentCompany = searchCompany || '-';
-  const directorsCount = hasSearched && filteredLogs.some(l => l.type === '人員' && l.content.includes('董事')) ? '有' : '無';
-  const secretariesCount = hasSearched && filteredLogs.some(l => l.type === '人員' && l.content.includes('秘書')) ? '有' : '無';
+  const stats = useMemo(() => {
+    const rod = logs.filter((l) => l.doc_type === 'ROD').length;
+    const rom = logs.filter((l) => l.doc_type === 'ROM').length;
+    const linked = logs.filter((l) => !!l.company_id).length;
+    return { total: logs.length, rod, rom, linked, unlinked: logs.length - linked };
+  }, [logs]);
 
   return (
     <div>
       <PageHeader
         title="公司日誌"
-        description="查看所有公司相關操作記錄和系統活動"
+        description="ROD（董事登記冊）與 ROM（成員登記冊）等公司歷史文件，可線上閱讀與編輯"
         actions={
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={handleSearch}>
-              <Search className="h-4 w-4 mr-2" />
-              搜尋
-            </Button>
-            <Button variant="outline" size="sm" onClick={handleToggleSort}>
-              <ArrowUpDown className="h-4 w-4 mr-2" />
-              {sortNewest ? '最新優先' : '最舊優先'}
-            </Button>
-            <Button variant="outline" size="sm" onClick={handleRefresh}>
+            <Button variant="outline" size="sm" onClick={() => refetch()}>
               <RefreshCw className="h-4 w-4 mr-2" />
               重新整理
             </Button>
@@ -162,87 +134,53 @@ const Logs = () => {
         }
       />
 
-      {/* Search Panel */}
+      {/* Search */}
       <div className="bg-card border border-border rounded-lg p-4 mb-6">
         <div className="flex items-center gap-2 mb-4">
           <Search className="h-4 w-4 text-muted-foreground" />
           <span className="font-medium">搜尋日誌</span>
         </div>
-
-        <div className="grid grid-cols-2 gap-4 mb-4">
-          <div>
-            <Label className="text-sm text-muted-foreground mb-2 block">搜尋公司</Label>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+          <div className="md:col-span-2">
+            <Label className="text-sm text-muted-foreground mb-2 block">公司名稱關鍵字</Label>
             <Input
-              placeholder="搜尋公司名稱或商業登記號碼..."
-              value={searchCompany}
-              onChange={(e) => setSearchCompany(e.target.value)}
+              placeholder="例如 Wingtai、Profit Master..."
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
             />
           </div>
           <div>
-            <Label className="text-sm text-muted-foreground mb-2 block">操作類型</Label>
-            <Select value={operationType} onValueChange={setOperationType}>
+            <Label className="text-sm text-muted-foreground mb-2 block">文件類型</Label>
+            <Select value={docType} onValueChange={(v) => { setDocType(v); setPage(1); }}>
               <SelectTrigger>
-                <SelectValue placeholder="所有操作" />
+                <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {operationTypes.map((type) => (
-                  <SelectItem key={type.value} value={type.value}>
-                    {type.label}
-                  </SelectItem>
+                {docTypes.map((t) => (
+                  <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
         </div>
-
-        <div className="grid grid-cols-2 gap-4 mb-4">
-          <div>
-            <Label className="text-sm text-muted-foreground mb-2 block">開始日期</Label>
-            <div className="relative">
-              <Input
-                type="date"
-                placeholder="年 / 月 / 日"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                className="pr-10"
-              />
-              <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-            </div>
-          </div>
-          <div>
-            <Label className="text-sm text-muted-foreground mb-2 block">結束日期</Label>
-            <div className="relative">
-              <Input
-                type="date"
-                placeholder="年 / 月 / 日"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                className="pr-10"
-              />
-              <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-            </div>
-          </div>
-        </div>
-
         <div className="flex justify-end gap-2">
           <Button variant="outline" size="sm" onClick={handleClear}>
-            <X className="h-4 w-4 mr-1" />
-            清除
+            <X className="h-4 w-4 mr-1" />清除
           </Button>
-          <Button size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90" onClick={handleSearch}>
-            <Search className="h-4 w-4 mr-1" />
-            搜尋
+          <Button size="sm" onClick={handleSearch}>
+            <Search className="h-4 w-4 mr-1" />搜尋
           </Button>
         </div>
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-5 gap-4 mb-6">
-        <StatCard label="當前公司" value={currentCompany} />
-        <StatCard label="總記錄數" value={displayLogs.length} />
-        <StatCard label="目前顯示" value={displayLogs.length} valueClassName="text-primary" />
-        <StatCard label="董事" value={directorsCount} />
-        <StatCard label="秘書" value={secretariesCount} />
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+        <StatCard label="總記錄數" value={stats.total} />
+        <StatCard label="ROD 文件" value={stats.rod} valueClassName="text-primary" />
+        <StatCard label="ROM 文件" value={stats.rom} valueClassName="text-primary" />
+        <StatCard label="已關聯公司" value={stats.linked} />
+        <StatCard label="未關聯" value={stats.unlinked} valueClassName="text-muted-foreground" />
       </div>
 
       {/* Table */}
@@ -250,28 +188,40 @@ const Logs = () => {
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/50">
-              <TableHead className="font-medium w-[180px]">時間</TableHead>
-              <TableHead className="font-medium w-[150px]">操作</TableHead>
-              <TableHead className="font-medium w-[100px]">類型</TableHead>
-              <TableHead className="font-medium">內容</TableHead>
+              <TableHead className="w-[100px]">類型</TableHead>
+              <TableHead className="w-[200px]">公司關鍵字</TableHead>
+              <TableHead>關聯公司</TableHead>
+              <TableHead className="w-[280px]">原始檔名</TableHead>
+              <TableHead className="w-[120px]">來源資料夾</TableHead>
+              <TableHead className="w-[100px] text-right">操作</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {displayLogs.length > 0 ? (
-              displayLogs.map((log) => (
-                <TableRow key={log.id} className="hover:bg-muted/30">
-                  <TableCell className="text-sm">{log.timestamp}</TableCell>
-                  <TableCell className="text-sm font-medium">{log.operation}</TableCell>
-                  <TableCell className="text-sm">{log.type}</TableCell>
-                  <TableCell className="text-sm">{log.content}</TableCell>
+            {isLoading ? (
+              <TableRow><TableCell colSpan={6} className="text-center py-12"><Loader2 className="h-5 w-5 animate-spin inline mr-2" />載入中...</TableCell></TableRow>
+            ) : pagedLogs.length > 0 ? (
+              pagedLogs.map((log) => (
+                <TableRow key={log.id} className="hover:bg-muted/30 cursor-pointer" onClick={() => handleOpen(log.id)}>
+                  <TableCell>{docTypeBadge(log.doc_type)}</TableCell>
+                  <TableCell className="font-medium">{log.company_name_hint}</TableCell>
+                  <TableCell className="text-sm">
+                    {log.company_id ? (
+                      <span className="text-foreground">{companyMap.get(log.company_id) || log.company_id}</span>
+                    ) : (
+                      <span className="text-muted-foreground italic">未關聯</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-sm text-muted-foreground truncate max-w-[280px]">{log.original_filename}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground">{log.source_folder}</TableCell>
+                  <TableCell className="text-right">
+                    <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); handleOpen(log.id); }}>
+                      <FileText className="h-4 w-4 mr-1" />開啟
+                    </Button>
+                  </TableCell>
                 </TableRow>
               ))
             ) : (
-              <TableRow>
-                <TableCell colSpan={4} className="text-center py-12 text-muted-foreground">
-                  沒有找到符合條件的記錄
-                </TableCell>
-              </TableRow>
+              <TableRow><TableCell colSpan={6} className="text-center py-12 text-muted-foreground">沒有找到符合條件的記錄</TableCell></TableRow>
             )}
           </TableBody>
         </Table>
@@ -279,40 +229,89 @@ const Logs = () => {
         {/* Pagination */}
         <div className="flex items-center justify-between px-4 py-3 border-t border-border">
           <div className="text-sm text-muted-foreground">
-            顯示 1 到 {displayLogs.length} 筆，共 {displayLogs.length} 筆資料
+            顯示 {logs.length === 0 ? 0 : (page - 1) * pageSize + 1} – {Math.min(page * pageSize, logs.length)} 筆，共 {logs.length} 筆
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">每頁:</span>
-            <Select defaultValue="20">
-              <SelectTrigger className="w-20 h-8">
-                <SelectValue />
-              </SelectTrigger>
+            <Select value={String(pageSize)} onValueChange={(v) => { setPageSize(Number(v)); setPage(1); }}>
+              <SelectTrigger className="w-24 h-8"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="10">10 筆</SelectItem>
-                <SelectItem value="20">20 筆</SelectItem>
-                <SelectItem value="50">50 筆</SelectItem>
-                <SelectItem value="100">100 筆</SelectItem>
+                {PAGE_SIZE_OPTIONS.map((n) => <SelectItem key={n} value={String(n)}>{n} 筆</SelectItem>)}
               </SelectContent>
             </Select>
-            <div className="flex items-center gap-1 ml-2">
-              <Button variant="outline" size="sm" className="h-8 w-8 p-0" disabled>
-                {'<'}
-              </Button>
-              <Button variant="outline" size="sm" className="h-8 w-8 p-0" disabled>
-                {'|<'}
-              </Button>
-              <span className="px-2 text-sm">1</span>
-              <Button variant="outline" size="sm" className="h-8 w-8 p-0" disabled>
-                {'>|'}
-              </Button>
-              <Button variant="outline" size="sm" className="h-8 w-8 p-0" disabled>
-                {'>'}
-              </Button>
-              <span className="text-sm text-muted-foreground ml-2">頁，共 1 頁</span>
-            </div>
+            <Button variant="outline" size="sm" className="h-8" disabled={page === 1} onClick={() => setPage(1)}>{'<<'}</Button>
+            <Button variant="outline" size="sm" className="h-8" disabled={page === 1} onClick={() => setPage(page - 1)}>{'<'}</Button>
+            <span className="px-2 text-sm">{page} / {totalPages}</span>
+            <Button variant="outline" size="sm" className="h-8" disabled={page >= totalPages} onClick={() => setPage(page + 1)}>{'>'}</Button>
+            <Button variant="outline" size="sm" className="h-8" disabled={page >= totalPages} onClick={() => setPage(totalPages)}>{'>>'}</Button>
           </div>
         </div>
       </div>
+
+      {/* Detail dialog */}
+      <Dialog open={!!openId} onOpenChange={(o) => { if (!o) { setOpenId(null); setEditing(false); } }}>
+        <DialogContent className="max-w-5xl w-[95vw] max-h-[92vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 flex-wrap">
+              {openLog && docTypeBadge(openLog.doc_type)}
+              <span>{openLog?.company_name_hint || '載入中...'}</span>
+              {openLog?.company_id && (
+                <span className="text-sm text-muted-foreground font-normal">
+                  → {companyMap.get(openLog.company_id) || openLog.company_id}
+                </span>
+              )}
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-auto space-y-3">
+            {openLog && (
+              <>
+                <div className="text-xs text-muted-foreground flex items-center gap-3 flex-wrap">
+                  <span>檔案：{openLog.original_filename}</span>
+                  <span>•</span>
+                  <span>來源：{openLog.source_folder}</span>
+                  <span>•</span>
+                  <span>更新於：{new Date(openLog.updated_at).toLocaleString()}</span>
+                </div>
+
+                <RichTextEditor
+                  content={editing ? draftHtml : openLog.html_content}
+                  onChange={(html) => editing && setDraftHtml(html)}
+                  editable={editing}
+                />
+
+                <div>
+                  <Label className="text-sm text-muted-foreground mb-1 block">備註</Label>
+                  <Input
+                    value={editing ? draftNotes : openLog.notes || ''}
+                    onChange={(e) => setDraftNotes(e.target.value)}
+                    disabled={!editing}
+                    placeholder="可加入修訂備註..."
+                  />
+                </div>
+              </>
+            )}
+          </div>
+
+          <DialogFooter className="flex-shrink-0">
+            {!editing ? (
+              <>
+                <Button variant="outline" onClick={() => setOpenId(null)}>關閉</Button>
+                <Button onClick={handleStartEdit}>
+                  <Pencil className="h-4 w-4 mr-1" />編輯
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button variant="outline" onClick={() => setEditing(false)} disabled={updateLog.isPending}>取消</Button>
+                <Button onClick={handleSave} disabled={updateLog.isPending}>
+                  {updateLog.isPending ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Save className="h-4 w-4 mr-1" />}
+                  儲存
+                </Button>
+              </>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

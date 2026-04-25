@@ -177,13 +177,16 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
       const maxLength = field.getMaxLength();
       if (maxLength && textToSet.length > maxLength) textToSet = textToSet.slice(0, maxLength);
 
-      // Set value via hex string (works for both ASCII and CJK) and delete the
-      // pre-built appearance stream so PDF viewers regenerate it with system fonts.
-      // Combined with NeedAppearances=true on the AcroForm, this makes both
-      // English and Chinese text render correctly without embedding fonts.
-      const dict = field.acroField.dict;
-      dict.set(PDFName.of('V'), PDFHexString.fromText(textToSet));
-      dict.delete(PDFName.of('AP'));
+      if (isAsciiOnly(textToSet)) {
+        // 純 ASCII：用標準 setText，使用 PDF 內建字型（Helvetica）正常顯示
+        field.setText(textToSet);
+      } else {
+        // 含中文：用 hex string (UTF-16BE) 並刪除 appearance stream，
+        // 配合 NeedAppearances=true，由 PDF viewer 用系統字型重繪
+        const dict = field.acroField.dict;
+        dict.set(PDFName.of('V'), PDFHexString.fromText(textToSet));
+        dict.delete(PDFName.of('AP'));
+      }
       return true;
     } catch (e) {
       console.warn(`⚠ Missing: ${fieldName}`, e);

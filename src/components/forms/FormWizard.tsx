@@ -247,6 +247,10 @@ const FormWizard = ({ formId, onBack }: FormWizardProps) => {
       name: formData.presenterName || '',
       address: formData.presenterAddress || '',
       contact: formData.presenterContact || '',
+      phone: formData.presenterPhone || '',
+      fax: formData.presenterFax || '',
+      email: formData.presenterEmail || '',
+      reference: formData.presenterReference || '',
     },
   });
 

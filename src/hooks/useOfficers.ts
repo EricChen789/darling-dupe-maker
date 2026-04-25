@@ -16,6 +16,11 @@ interface OfficerRow {
   date_ceased: string | null;
   place_incorporated: string | null;
   company_number_ref: string | null;
+  service_address: string | null;
+  passport_number: string | null;
+  passport_expiry: string | null;
+  whatsapp: string | null;
+  email: string | null;
   created_at: string;
 }
 

@@ -193,11 +193,11 @@ const LogTableView = ({ html }: { html: string }) => {
             <TableHeader>
               <TableRow>
                 <TableHead className="w-12 text-center">#</TableHead>
-                <TableHead className="w-[260px]">姓名 / 名稱</TableHead>
+                <TableHead className="w-[240px]">姓名 / 名稱</TableHead>
                 <TableHead>詳細資料</TableHead>
-                <TableHead className="w-[140px]">職位</TableHead>
-                <TableHead className="w-[140px]">日期</TableHead>
-                <TableHead className="w-[120px]">狀態</TableHead>
+                <TableHead className="w-[120px]">職位</TableHead>
+                <TableHead className="w-[120px]">委任日期</TableHead>
+                <TableHead className="w-[140px]">狀態 / 終止日期</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -207,7 +207,7 @@ const LogTableView = ({ html }: { html: string }) => {
                     {idx + 1}
                   </TableCell>
                   <TableCell className="text-sm font-medium whitespace-pre-wrap break-words">
-                    {entry.name}
+                    {entry.name || '—'}
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">
                     <div className="space-y-0.5">
@@ -217,12 +217,19 @@ const LogTableView = ({ html }: { html: string }) => {
                     </div>
                   </TableCell>
                   <TableCell className="text-sm">{entry.position || '—'}</TableCell>
-                  <TableCell className="text-xs font-mono">
-                    {entry.dates.length ? entry.dates.join(' / ') : '—'}
+                  <TableCell className="text-xs font-mono whitespace-nowrap">
+                    {entry.appointedDates.length ? entry.appointedDates.join(', ') : '—'}
                   </TableCell>
-                  <TableCell className="text-xs">
+                  <TableCell className="text-xs whitespace-nowrap">
                     {entry.status ? (
-                      <Badge variant="outline">{entry.status}</Badge>
+                      <div className="space-y-1">
+                        <Badge variant="outline">{entry.status}</Badge>
+                        {entry.ceasedDates.length > 0 && (
+                          <div className="font-mono text-muted-foreground">
+                            {entry.ceasedDates.join(', ')}
+                          </div>
+                        )}
+                      </div>
                     ) : (
                       <span className="text-muted-foreground">—</span>
                     )}

@@ -210,8 +210,8 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
 
   // ============ Page 1 - Company Info ============
   safeSetText("fill_1_P.1", br8);
-  // Box 1 公司名稱 - 中英文同一欄
-  const fullCompanyName = [data.name, data.chineseName].filter(Boolean).join("  ");
+  // Box 1 公司名稱 - 英文在上、中文在下（用換行）
+  const fullCompanyName = [data.name, data.chineseName].filter(Boolean).join("\n");
   safeSetText("fill_2_P.1", fullCompanyName);
   // Box 2 商業名稱 Trading Name (Business Name)
   safeSetText("fill_3_P.1", data.tradingName || "");

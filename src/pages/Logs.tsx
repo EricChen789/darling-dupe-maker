@@ -241,13 +241,18 @@ const parseRom = (paragraphs: string[]): MemberEntry[] => {
   const starts: number[] = [];
   paragraphs.forEach((p, idx) => { if (p === 'Name') starts.push(idx); });
 
-  // ROM may have continuation pages where the leading "Name" header is stripped and the
-  // next member's name appears directly above an Address paragraph.
+  // Lines appearing before the first "Name" are document/page headers (company title,
+  // Chinese company name, etc.) — skip them whenever they reappear inside a slice
+  // (continuation pages repeat the title rows).
+  const headerSet = new Set(
+    starts.length ? paragraphs.slice(0, starts[0]) : []
+  );
+
   // We'll just split ranges between consecutive "Name" occurrences.
   for (let s = 0; s < starts.length; s++) {
     const start = starts[s];
     const end = s + 1 < starts.length ? starts[s + 1] : n;
-    const slice = paragraphs.slice(start + 1, end);
+    const slice = paragraphs.slice(start + 1, end).filter((p) => !headerSet.has(p));
     const m = newMember();
 
     // Collect name lines until "Address"

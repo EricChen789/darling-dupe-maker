@@ -103,6 +103,62 @@ export type Database = {
           },
         ]
       }
+      company_logs: {
+        Row: {
+          company_id: string | null
+          company_name_hint: string
+          created_at: string
+          doc_date: string
+          doc_type: string
+          html_content: string
+          id: string
+          notes: string
+          original_filename: string
+          source_folder: string
+          storage_path: string
+          text_content: string
+          updated_at: string
+        }
+        Insert: {
+          company_id?: string | null
+          company_name_hint?: string
+          created_at?: string
+          doc_date?: string
+          doc_type?: string
+          html_content?: string
+          id?: string
+          notes?: string
+          original_filename?: string
+          source_folder?: string
+          storage_path?: string
+          text_content?: string
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string | null
+          company_name_hint?: string
+          created_at?: string
+          doc_date?: string
+          doc_type?: string
+          html_content?: string
+          id?: string
+          notes?: string
+          original_filename?: string
+          source_folder?: string
+          storage_path?: string
+          text_content?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_logs_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       officers: {
         Row: {
           address: string | null

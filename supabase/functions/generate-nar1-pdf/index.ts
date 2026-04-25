@@ -412,9 +412,7 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
     console.log(`Filled Director (Corporate): ${dir.nameEnglish || dir.nameChinese}`);
   }
 
-  // ============ Pages 7-8 - BR Number ============
-  safeSetText("fill_1_P.7", br8);
-  safeSetText("fill_1_P.8", br8);
+
 
   // ============ Page 9 - Schedule 1: Members (Non-listed Co), 2 per page ============
   // Header: 1=day, 2=month, 3=year, 4=BR, 5=Class of Shares, 6=Total issued shares of class

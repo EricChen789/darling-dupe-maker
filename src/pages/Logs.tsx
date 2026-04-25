@@ -61,72 +61,114 @@ const stripLogHtml = (value: string): string =>
     .trim();
 
 type LogEntry = {
-  section?: string;
   name: string;
   details: string[];
   position?: string;
-  dates: string[];
+  appointedDates: string[];
   status?: string;
+  ceasedDates: string[];
 };
 
-// Patterns to detect row markers
-const HEADER_NOISE = /^(Date of|Entry \/ Update|Name|Particulars|Remarks|Notes|Entry|No|Position|Date\(s\)|Reason|Ceased|Quorum|Place|Incorporated|Occupation|ID No|Passport|Appointed|\/Meeting|Birth|Service|Residential|Date \/|Address|Telephone|Facsimile|Capacity|Alias|Nationality|Identification|Nature of Control|Correspondence|Date of becoming|Country|Folio|Account|Class|Number of|Amount|Held|Type of)/i;
-const PAGE_NOISE = /^(- ?\d+ ?-|REGISTER OF|Company Number|Company Name)/i;
+// Pure column-header / template lines we drop entirely
+const HEADER_NOISE = new Set([
+  'Date of', 'Entry / Update', 'Name', 'Particulars', 'Remarks / Notes',
+  'Entry', 'No', 'Position', 'Date(s) Appointed', '/Meeting',
+  'Reason / Date(s)', 'Ceased', 'Date(s) Ceased',
+  'Name / Service / Residential Address',
+  'Date / Place Birth / Place', 'Incorporated / Occupation /',
+  'ID No / Passport Details',
+  'Address', 'Security', 'Date', 'Date Ceased', 'Date Entered',
+  '/ Ceased', 'Transaction', 'Type', 'Units', 'Par Value',
+  'Paid Up Value', 'Certificate', 'Balance',
+  'Transferred To/From, Redeemed,', 'Reissued',
+  'Per Share', 'Distinctive Numbers',
+]);
+const PAGE_NOISE_RE = /^(- ?\d+ ?-|REGISTER OF|Company Number|Quorum)/i;
 const SECTION_RE = /^(Significant Controllers|Designated Representatives|Directors?|Secretar(?:y|ies)|Members?|Officers?|Reserve Directors?|Alternate Directors?)$/i;
 const POSITION_RE = /^(Director|Secretary|Reserve Director|Alternate Director|Member|Designated Representative)$/i;
-const DATE_RE = /^\d{2}\/\d{2}\/\d{4}$/;
+const STATUS_RE = /^(Resigned|Ceased|Removed|Deceased|Struck Off)$/i;
+const DATE_RE = /^\d{1,2}\/\d{1,2}\/\d{4}$/;
 const ENTRY_NO_RE = /^\d{1,3}$/;
 
 const parseLogEntries = (html: string): { section: string; entries: LogEntry[] }[] => {
   const paragraphs = (html.match(/<p[^>]*>[\s\S]*?<\/p>/gi) || [])
     .map(stripLogHtml)
     .filter(Boolean)
-    .filter((t) => !PAGE_NOISE.test(t) && !HEADER_NOISE.test(t));
+    .filter((t) => !PAGE_NOISE_RE.test(t) && !HEADER_NOISE.has(t));
 
   const sections: { section: string; entries: LogEntry[] }[] = [];
   let currentSection = '記錄';
   let current: LogEntry | null = null;
+  // 'identity' = collecting name + details; 'post' = after Position, collecting dates/status
+  let phase: 'identity' | 'post' = 'identity';
 
-  const pushCurrent = () => {
-    if (current && (current.name || current.details.length || current.dates.length)) {
-      let bucket = sections.find((s) => s.section === currentSection);
-      if (!bucket) {
-        bucket = { section: currentSection, entries: [] };
-        sections.push(bucket);
-      }
-      bucket.entries.push(current);
+  const ensureSection = () => {
+    let bucket = sections.find((s) => s.section === currentSection);
+    if (!bucket) {
+      bucket = { section: currentSection, entries: [] };
+      sections.push(bucket);
+    }
+    return bucket;
+  };
+
+  const flush = () => {
+    if (current && (current.name || current.details.length)) {
+      ensureSection().entries.push(current);
     }
     current = null;
+    phase = 'identity';
   };
 
   paragraphs.forEach((text) => {
     if (SECTION_RE.test(text)) {
-      pushCurrent();
+      flush();
       currentSection = text;
       return;
     }
 
-    if (ENTRY_NO_RE.test(text)) {
-      pushCurrent();
+    // Entry number after we've seen Position → end of record
+    if (ENTRY_NO_RE.test(text) && phase === 'post') {
+      flush();
       return;
     }
 
-    if (!current) {
-      current = { name: text, details: [], dates: [] };
+    if (DATE_RE.test(text)) {
+      if (!current) current = { name: '', details: [], appointedDates: [], ceasedDates: [] };
+      if (phase === 'post') {
+        if (current.status) current.ceasedDates.push(text);
+        else current.appointedDates.push(text);
+      } else {
+        current.details.push(text);
+      }
+      return;
+    }
+
+    if (STATUS_RE.test(text)) {
+      if (!current) return;
+      current.status = text;
+      phase = 'post';
       return;
     }
 
     if (POSITION_RE.test(text)) {
+      if (!current) current = { name: '', details: [], appointedDates: [], ceasedDates: [] };
       current.position = text;
-    } else if (/^Resigned|^Ceased|^Removed/i.test(text)) {
-      current.status = text;
-    } else if (DATE_RE.test(text)) {
-      current.dates.push(text);
+      phase = 'post';
+      return;
+    }
+
+    // Regular text — if we were in post phase, this starts a new record
+    if (phase === 'post') flush();
+
+    if (!current) {
+      current = { name: text, details: [], appointedDates: [], ceasedDates: [] };
+    } else if (!current.name) {
+      current.name = text;
     } else {
       current.details.push(text);
     }
   });
-  pushCurrent();
+  flush();
 
   return sections;
 };
@@ -151,11 +193,11 @@ const LogTableView = ({ html }: { html: string }) => {
             <TableHeader>
               <TableRow>
                 <TableHead className="w-12 text-center">#</TableHead>
-                <TableHead className="w-[260px]">姓名 / 名稱</TableHead>
+                <TableHead className="w-[240px]">姓名 / 名稱</TableHead>
                 <TableHead>詳細資料</TableHead>
-                <TableHead className="w-[140px]">職位</TableHead>
-                <TableHead className="w-[140px]">日期</TableHead>
-                <TableHead className="w-[120px]">狀態</TableHead>
+                <TableHead className="w-[120px]">職位</TableHead>
+                <TableHead className="w-[120px]">委任日期</TableHead>
+                <TableHead className="w-[140px]">狀態 / 終止日期</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -165,7 +207,7 @@ const LogTableView = ({ html }: { html: string }) => {
                     {idx + 1}
                   </TableCell>
                   <TableCell className="text-sm font-medium whitespace-pre-wrap break-words">
-                    {entry.name}
+                    {entry.name || '—'}
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">
                     <div className="space-y-0.5">
@@ -175,12 +217,19 @@ const LogTableView = ({ html }: { html: string }) => {
                     </div>
                   </TableCell>
                   <TableCell className="text-sm">{entry.position || '—'}</TableCell>
-                  <TableCell className="text-xs font-mono">
-                    {entry.dates.length ? entry.dates.join(' / ') : '—'}
+                  <TableCell className="text-xs font-mono whitespace-nowrap">
+                    {entry.appointedDates.length ? entry.appointedDates.join(', ') : '—'}
                   </TableCell>
-                  <TableCell className="text-xs">
+                  <TableCell className="text-xs whitespace-nowrap">
                     {entry.status ? (
-                      <Badge variant="outline">{entry.status}</Badge>
+                      <div className="space-y-1">
+                        <Badge variant="outline">{entry.status}</Badge>
+                        {entry.ceasedDates.length > 0 && (
+                          <div className="font-mono text-muted-foreground">
+                            {entry.ceasedDates.join(', ')}
+                          </div>
+                        )}
+                      </div>
                     ) : (
                       <span className="text-muted-foreground">—</span>
                     )}

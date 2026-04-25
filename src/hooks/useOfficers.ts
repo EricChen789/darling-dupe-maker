@@ -146,6 +146,9 @@ export function useOfficers() {
             whatsapp: personData.whatsapp || '',
             email: personData.email || '',
             company_number_ref: personData.brNumber || '',
+            passport_file_path: personData.passportFilePath || '',
+            id_card_file_path: personData.idCardFilePath || '',
+            address_proof_file_path: personData.addressProofFilePath || '',
           })
           .eq('id', existingPerson.id);
         if (error) throw error;

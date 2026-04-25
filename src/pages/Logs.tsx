@@ -104,7 +104,7 @@ type ParsedLog =
 const HEADER_NOISE = new Set([
   'Date of', 'Entry / Update', 'Particulars', 'Remarks / Notes',
   'Entry', 'No', 'Date(s) Appointed', '/Meeting',
-  'Reason / Date(s)', 'Date(s) Ceased',
+  'Reason / Date(s)', 'Date(s) Ceased', 'Ceased', 'Position',
   'Name / Service / Residential Address',
   'Date / Place Birth / Place', 'Incorporated / Occupation /',
   'ID No / Passport Details',

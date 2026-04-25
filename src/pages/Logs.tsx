@@ -87,6 +87,8 @@ type MemberEntry = {
   name: string[];            // English + Chinese name lines
   idPassport?: string;
   address: string[];
+  dateOfBirth?: string;
+  passportDetails?: string;
   security?: string;
   dateEntered?: string;
   dateCeased?: string;

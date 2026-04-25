@@ -31,8 +31,8 @@ import { Search, RefreshCw, X, FileText, Save, Loader2, Pencil } from 'lucide-re
 import { toast } from '@/hooks/use-toast';
 import { useCompanyLogs, useCompanyLogContent, useUpdateCompanyLog } from '@/hooks/useCompanyLogs';
 import { useCompanies } from '@/hooks/useCompanies';
-import { RichTextEditor } from '@/components/logs/RichTextEditor';
-import { LogTableView } from '@/components/logs/LogTableView';
+import { RichTextEditor } from '@/components/logs/RichTextEditor.tsx';
+import { LogTableView } from '@/components/logs/LogTableView.tsx';
 
 const docTypes = [
   { value: 'all', label: '所有類型' },

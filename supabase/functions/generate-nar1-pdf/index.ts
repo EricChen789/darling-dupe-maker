@@ -234,14 +234,14 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
   }
 
   // Page 1 - Presenter's Reference block (bottom-left of page 1)
-  // Field offset by -1: 19=Name, 20=Address, 21=Tel, 22=Fax, (Email/Reference TBD)
+  // 19=Name, 20=Address, 21=Tel, 22=Fax, 23=Email, 24=Reference
   const presenterP1 = data.presenter || {};
   if (presenterP1.name) safeSetText("fill_19_P.1", presenterP1.name);
   if (presenterP1.address) safeSetText("fill_20_P.1", presenterP1.address);
-  if (presenterP1.contact) safeSetText("fill_21_P.1", presenterP1.contact);
-  if (presenterP1.reference) {
-    safeSetText("fill_22_P.1", presenterP1.reference);
-  }
+  if (presenterP1.phone) safeSetText("fill_21_P.1", presenterP1.phone);
+  if (presenterP1.fax) safeSetText("fill_22_P.1", presenterP1.fax);
+  if (presenterP1.email) safeSetText("fill_23_P.1", presenterP1.email);
+  if (presenterP1.reference) safeSetText("fill_24_P.1", presenterP1.reference);
 
   // ============ Page 2 - Share Capital ============
   safeSetText("fill_1_P.2", br8);

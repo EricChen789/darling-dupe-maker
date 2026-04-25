@@ -1105,8 +1105,11 @@ const Logs = () => {
   const [pageSize, setPageSize] = useState(20);
   const [openId, setOpenId] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
+  const [editMode, setEditMode] = useState<'table' | 'html'>('table');
   const [draftHtml, setDraftHtml] = useState('');
   const [draftNotes, setDraftNotes] = useState('');
+  const [draftParsed, setDraftParsed] = useState<ParsedLog | null>(null);
+  const [draftPreamble, setDraftPreamble] = useState<string[]>([]);
 
   const { data: logs = [], isLoading, refetch } = useCompanyLogs({ search, docType });
   const { data: companies = [] } = useCompanies();

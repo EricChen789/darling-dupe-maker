@@ -1146,15 +1146,27 @@ const Logs = () => {
     if (!openLog) return;
     setDraftHtml(openLog.html_content);
     setDraftNotes(openLog.notes || '');
+    const parsed = parseLog(openLog.html_content || '');
+    setDraftParsed(parsed);
+    setDraftPreamble(extractPreamble(openLog.html_content || ''));
+    setEditMode(parsed.kind === 'unknown' ? 'html' : 'table');
     setEditing(true);
   };
 
   const handleSave = async () => {
     if (!openLog) return;
     try {
+      let htmlToSave = draftHtml;
+      if (editMode === 'table' && draftParsed) {
+        if (draftParsed.kind === 'rod') {
+          htmlToSave = serializeRod(draftPreamble, draftParsed.sections);
+        } else if (draftParsed.kind === 'rom') {
+          htmlToSave = serializeRom(draftPreamble, draftParsed.members);
+        }
+      }
       await updateLog.mutateAsync({
         id: openLog.id,
-        html_content: draftHtml,
+        html_content: htmlToSave,
         notes: draftNotes,
       });
       toast({ title: '已儲存', description: '日誌內容已更新' });

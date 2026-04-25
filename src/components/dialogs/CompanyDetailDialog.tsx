@@ -96,6 +96,27 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
     }
   }, [selectedPerson]);
 
+  useEffect(() => {
+    if (!company || !selectedSh) return;
+    const freshShareholder = company.shareholders.find(sh => sh.id === selectedSh.id);
+    if (!freshShareholder) return;
+    setSelectedSh(freshShareholder);
+    if (!editingShDetail) {
+      setShForm({
+        name: freshShareholder.name,
+        nameEnglish: freshShareholder.nameEnglish,
+        nameChinese: freshShareholder.nameChinese,
+        shares: freshShareholder.shares,
+        identity: freshShareholder.identity,
+        idNumber: freshShareholder.idNumber || '',
+        address: freshShareholder.address || '',
+        serviceAddress: freshShareholder.serviceAddress || '',
+        email: freshShareholder.email || '',
+        shareType: freshShareholder.shareType || '',
+      });
+    }
+  }, [company, selectedSh, editingShDetail]);
+
   if (!company) return null;
 
   const handleOpenChange = (v: boolean) => {
@@ -219,8 +240,22 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
   };
 
   const handleSaveShareholder = (id: string) => {
-    updateShareholder.mutate({ id, data: { name: shForm.name, name_english: shForm.nameEnglish, name_chinese: shForm.nameChinese, shares: shForm.shares, identity: shForm.identity, id_number: shForm.idNumber, address: shForm.address, service_address: shForm.serviceAddress || shForm.address || regAddrFull, email: shForm.email, share_type: shForm.shareType } }, {
-      onSuccess: () => { toast({ title: '股東已更新' }); setEditingShareholder(null); },
+    const nextShareholder: Shareholder = {
+      id,
+      name: shForm.name || shForm.nameEnglish || shForm.nameChinese,
+      nameEnglish: shForm.nameEnglish,
+      nameChinese: shForm.nameChinese,
+      shares: shForm.shares,
+      identity: shForm.identity as Shareholder['identity'],
+      idNumber: shForm.idNumber,
+      address: shForm.address,
+      serviceAddress: shForm.serviceAddress || shForm.address || regAddrFull,
+      email: shForm.email,
+      shareType: shForm.shareType,
+    };
+
+    updateShareholder.mutate({ id, data: { name: nextShareholder.name, name_english: nextShareholder.nameEnglish, name_chinese: nextShareholder.nameChinese, shares: nextShareholder.shares, identity: nextShareholder.identity, id_number: nextShareholder.idNumber, address: nextShareholder.address, service_address: nextShareholder.serviceAddress, email: nextShareholder.email, share_type: nextShareholder.shareType } }, {
+      onSuccess: () => { toast({ title: '股東已更新' }); setEditingShareholder(null); setEditingShDetail(false); if (selectedSh?.id === id) setSelectedSh(nextShareholder); },
       onError: () => toast({ title: '更新失敗', variant: 'destructive' }),
     });
   };

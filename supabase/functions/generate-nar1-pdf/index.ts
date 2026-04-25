@@ -413,10 +413,7 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
     safeSetText("fill_3_P.15", presenter.address);
     safeSetText("fill_6_P.15", presenter.address);
   }
-  if (presenter.contact) {
-    safeSetText("fill_7_P.15", presenter.contact);
-    safeSetText("fill_8_P.15", presenter.contact);
-  }
+  // Note: P.15 only has fill_1..fill_6, no Tel/Fax/Email fields on this page
 
   // Keep form interactive so PDF viewer renders CJK with system fonts
   console.log("PDF filled with all data, serializing...");

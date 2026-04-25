@@ -486,53 +486,95 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
   safeSetText("fill_29_P.9", "1");
   safeSetText("fill_30_P.9", "1");
 
-  // Pages 7, 8 (Reserve Director / Service Agent) - BR header only
+  // ============ Pages 7 - Reserve Director (BR header only) ============
   safeSetText("fill_1_P.7", br8);
+
+  // ============ Page 8 - Members + Records + Statement + Signature (正本第8頁) ============
+  // 對照: BR=1, records列1=2, address列1=3, 續頁A=4, B=5, C=6, D=7, E=8,
+  //       附表一=9, 附表二=10, 簽署/姓名=11, 日期=12
   safeSetText("fill_1_P.8", br8);
-  // Pages 11/12/13 are continuation sheets for additional officers — fill BR only
-  safeSetText("fill_4_P.11", br8);
-  safeSetText("fill_4_P.12", br8);
-  safeSetText("fill_4_P.13", br8);
-
-  // ============ Page 14 - Declaration & Signature (正本第8頁) ============
-  safeSetText("fill_1_P.14", br8);
-  safeSetText("fill_4_P.14", br8);
   // 14 ☑ 非上市公司成員詳情列於附表一
-  safeCheck("cb_1_P.14", true);
+  safeCheck("cb_1_P.8", true);
   // 16 ☑ 私人公司陳述
-  safeCheck("cb_4_P.14", (data.companyType?.includes("私人") || data.companyType?.toLowerCase().includes("private")) || false);
+  safeCheck("cb_4_P.8",
+    (data.companyType?.includes("私人") || data.companyType?.toLowerCase().includes("private")) || false);
 
-  // 續頁頁數：C = 額外董事人數 (>1 自然人董事時用 C 續頁)；附表一 = 股東頁數
-  const naturalDirCount = (data.directors || []).filter(d => d.identity === "natural").length;
-  const continuationC = Math.max(0, naturalDirCount - 1);
-  const memberCount = (data.shareholders || []).length;
-  const schedulePages = Math.max(1, Math.ceil(memberCount / 2));
-  if (continuationC > 0) safeSetText("fill_15_P.14", String(continuationC));
-  safeSetText("fill_18_P.14", String(schedulePages));
-
-  // 簽署 / 姓名 / 日期：使用提交人資訊
+  // 續頁頁數
   const presenter = data.presenter || {};
-  const signerName = presenter.name || "";
-  if (signerName) {
-    safeSetText("fill_20_P.14", signerName); // 簽署
-    safeSetText("fill_21_P.14", signerName); // 姓名
-  }
-  // 日期 (DD/MM/YYYY) — 使用結算日期
-  if (day && month && year) {
-    safeSetText("fill_22_P.14", `${day}/${month}/${year}`);
+  const naturalSecCount = (data.secretaries || []).filter(s => s.identity === "natural").length;
+  const corpSecCount = (data.secretaries || []).filter(s => s.identity === "corporate").length;
+  const naturalDirCount = (data.directors || []).filter(d => d.identity === "natural").length;
+  const corpDirCount = (data.directors || []).filter(d => d.identity === "corporate").length;
+  const sheetA = Math.max(0, naturalSecCount - 1); // 續頁 A: 額外自然人秘書
+  const sheetB = Math.max(0, corpSecCount - 1);    // 續頁 B: 額外法人秘書
+  const sheetC = Math.max(0, naturalDirCount - 1); // 續頁 C: 額外自然人董事
+  const sheetD = Math.max(0, Math.ceil(Math.max(0, corpDirCount - 1) / 2)); // 續頁 D: 每頁 2 人
+  const memberCount = (data.shareholders || []).length;
+  const schedulePages = memberCount > 0 ? Math.ceil(memberCount / 2) : 0;
+  if (sheetA > 0) safeSetText("fill_4_P.8", String(sheetA));
+  if (sheetB > 0) safeSetText("fill_5_P.8", String(sheetB));
+  if (sheetC > 0) safeSetText("fill_6_P.8", String(sheetC));
+  if (sheetD > 0) safeSetText("fill_7_P.8", String(sheetD));
+  if (schedulePages > 0) safeSetText("fill_9_P.8", String(schedulePages));
+
+  // 簽署 / 姓名 / 日期
+  if (presenter.name) safeSetText("fill_11_P.8", presenter.name);
+  if (day && month && year) safeSetText("fill_12_P.8", `${day}/${month}/${year}`);
+
+  // ============ Pages 11 - Continuation Sheet A (額外自然人秘書) ============
+  // 對照: day=1, month=2, year=3, BR=4, 中文=5, 姓氏=6, 名字=7, 前用中=8, 前用英=9,
+  //       別名中=10, 別名英=11, flat=12, building=13, street=14, district=15,
+  //       email=16, hkid=17, passport_country=18, passport_no=19, licence=20, reason=21
+  safeSetText("fill_1_P.11", day || "");
+  safeSetText("fill_2_P.11", month || "");
+  safeSetText("fill_3_P.11", year || "");
+  safeSetText("fill_4_P.11", br8);
+
+  // ============ Page 12 - Continuation Sheet B (額外法人秘書) ============
+  safeSetText("fill_1_P.12", day || "");
+  safeSetText("fill_2_P.12", month || "");
+  safeSetText("fill_3_P.12", year || "");
+  safeSetText("fill_4_P.12", br8);
+
+  // ============ Page 13 - Continuation Sheet C (額外自然人董事) ============
+  // 對照: day=1, month=2, year=3, BR=4, 代替=5, 中文=6, 姓氏=7, 名字=8,
+  //       前用中=9, 前用英=10, 別名中=11, 別名英=12, flat=13, building=14, street=15,
+  //       district=16, country=17, email=18, hkid=19, passport_country=20, passport_no=21
+  safeSetText("fill_1_P.13", day || "");
+  safeSetText("fill_2_P.13", month || "");
+  safeSetText("fill_3_P.13", year || "");
+  safeSetText("fill_4_P.13", br8);
+  // 從第 2 個自然人董事開始填續頁 C（每頁一人）
+  const extraDirectors = (data.directors || []).filter(d => d.identity === "natural").slice(1);
+  if (extraDirectors[0]) {
+    const dir = extraDirectors[0];
+    const { surname, otherNames } = parseEnglishName(dir.nameEnglish);
+    safeCheck("cb_1_P.13", true);
+    safeSetText("fill_6_P.13", dir.nameChinese || "");
+    safeSetText("fill_7_P.13", surname);
+    safeSetText("fill_8_P.13", otherNames);
+    const addr = parseAddress(dir.address || '');
+    safeSetText("fill_13_P.13", addr.flat);
+    safeSetText("fill_14_P.13", addr.building);
+    safeSetText("fill_15_P.13", addr.street);
+    safeSetText("fill_16_P.13", addr.district);
+    safeSetText("fill_17_P.13", addr.country);
+    safeSetText("fill_18_P.13", dir.email || "");
+    const hkid = parseHkidPartial(dir.idNumber || '');
+    if (hkid) safeSetText("fill_19_P.13", hkid);
   }
 
-  // ============ Page 15 - Presenter's Reference (續) ============
-  safeSetText("fill_1_P.15", br8);
+  // ============ Page 14 - Continuation Sheet D (額外法人董事) ============
+  safeSetText("fill_1_P.14", day || "");
+  safeSetText("fill_2_P.14", month || "");
+  safeSetText("fill_3_P.14", year || "");
+  safeSetText("fill_4_P.14", br8);
+
+  // ============ Page 15 - Schedule 2 (上市公司成員) - BR header only ============
+  safeSetText("fill_1_P.15", day || "");
+  safeSetText("fill_2_P.15", month || "");
+  safeSetText("fill_3_P.15", year || "");
   safeSetText("fill_4_P.15", br8);
-  if (presenter.name) {
-    safeSetText("fill_2_P.15", presenter.name);
-    safeSetText("fill_5_P.15", presenter.name);
-  }
-  if (presenter.address) {
-    safeSetText("fill_3_P.15", presenter.address);
-    safeSetText("fill_6_P.15", presenter.address);
-  }
 
   // Keep form interactive so PDF viewer renders CJK with system fonts
   console.log("PDF filled with all data, serializing...");

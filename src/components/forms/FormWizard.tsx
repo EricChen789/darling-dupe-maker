@@ -243,11 +243,18 @@ const FormWizard = ({ formId, onBack }: FormWizardProps) => {
       shareType: sh.shareClass,
     })),
     returnDate: `${formData.returnDateYear}-${formData.returnDateMonth}-${formData.returnDateDay}`,
-    presenter: {
-      name: formData.presenterName || '',
-      address: formData.presenterAddress || '',
-      contact: formData.presenterContact || '',
-    },
+    presenter: (() => {
+      const p = presenters.find(x => x.id === formData.presenterId);
+      return {
+        name: formData.presenterName || '',
+        address: formData.presenterAddress || '',
+        contact: formData.presenterContact || '',
+        phone: p?.phone || '',
+        fax: p?.fax || '',
+        email: p?.email || '',
+        reference: formData.presenterReference || p?.reference || '',
+      };
+    })(),
   });
 
   const downloadPdfFromInvoke = async (data: any, filename: string) => {

@@ -239,7 +239,8 @@ const parseRod = (paragraphs: string[]): { section: string; entries: OfficerEntr
   const flush = () => {
     if (current) {
       finalizePre(current);
-      if (current.name.length || current.idPassport || current.position) {
+      // Only accept entries with a real Position (filters out preamble/title noise)
+      if (current.position && current.name.length) {
         bucket.entries.push(current);
       }
     }

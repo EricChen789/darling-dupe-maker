@@ -1017,18 +1017,16 @@ async function buildDebugPdf(): Promise<Uint8Array> {
   const scheduleBytes = await fetchTemplate(TEMPLATES.schedule1);
   const doc = await PDFDocument.load(scheduleBytes);
   const { setText, check } = createFormHelpers(doc);
-  const form = doc.getForm();
-  for (const field of form.getFields()) {
-    const name = field.getName();
+  const fields = collectFormFields(doc);
+  for (const name of fields.keys()) {
     if (name.startsWith("fill_")) {
-      // 縮短：去掉前綴，例如 fill_3_P.9 -> 3_P9
       const short = name.replace(/^fill_/, "").replace(/\./g, "");
       setText(name, short);
     } else if (name.startsWith("cb_")) {
       check(name, true);
     }
   }
-  return await doc.save();
+  return await doc.save({ updateFieldAppearances: false });
 }
 
 serve(async (req: Request) => {

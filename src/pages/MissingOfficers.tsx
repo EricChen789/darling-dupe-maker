@@ -45,6 +45,21 @@ type MissingFilter = 'all' | 'director' | 'secretary' | 'both';
 const MissingOfficers = () => {
   const [search, setSearch] = useState('');
   const [missingFilter, setMissingFilter] = useState<MissingFilter>('all');
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+
+  const handleSetInactive = async (id: string, name: string) => {
+    if (!confirm(`確定將「${name}」設為失效 (inactive)?`)) return;
+    setUpdatingId(id);
+    const { error } = await supabase.from('companies').update({ status: 'inactive' }).eq('id', id);
+    setUpdatingId(null);
+    if (error) {
+      toast.error(`更新失敗: ${error.message}`);
+      return;
+    }
+    toast.success(`已將「${name}」設為失效`);
+    queryClient.invalidateQueries({ queryKey: ['missing-officers-companies-v2'] });
+  };
 
   const fetchAll = async <T,>(
     table: 'companies' | 'officers',

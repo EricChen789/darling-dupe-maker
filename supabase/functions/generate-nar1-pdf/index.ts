@@ -161,14 +161,23 @@ const parseAddress = (addr: string) => {
   return { flat, building, street, district, country };
 };
 
-// HKID：NAR1 表格需填入完整身分證號碼（例：A123456(7)）。
-// 只負責標準化格式，不做任何遮罩。
+// HKID：NAR1 表格欄位為 comb 格式（每格一字），需移除括號讓全部字符對齊。
+// 例：A123456(7) → A1234567；AB123456(7) → AB1234567
 const parseHkidPartial = (idNumber: string) => {
   if (!idNumber) return '';
   const cleaned = idNumber.replace(/\s+/g, '').toUpperCase();
-  const m = cleaned.match(/^([A-Z]{1,2})(\d{6})\(?(\d|A)\)?$/);
-  if (m) return `${m[1]}${m[2]}(${m[3]})`;
-  return idNumber.trim();
+  const m = cleaned.match(/^([A-Z]{1,2})(\d{6})\(?([0-9A])\)?$/);
+  if (m) return `${m[1]}${m[2]}${m[3]}`;
+  // 移除任何括號 / 連字符以避免 comb 欄位錯位
+  return cleaned.replace(/[()\-\s]/g, '');
+};
+
+// 護照號碼：NAR1 只填寫前一半（向上取整），保護隱私
+const parsePassportPartial = (passportNumber: string) => {
+  if (!passportNumber) return '';
+  const cleaned = passportNumber.replace(/\s+/g, '').toUpperCase();
+  const half = Math.ceil(cleaned.length / 2);
+  return cleaned.slice(0, half);
 };
 
 async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Uint8Array> {

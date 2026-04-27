@@ -258,9 +258,13 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
       serviceAddress: shForm.serviceAddress || shForm.address || regAddrFull,
       email: shForm.email,
       shareType: shForm.shareType,
+      issuePrice: shForm.issuePrice,
+      currency: shForm.currency,
+      paidUp: shForm.paidUp,
+      unpaid: shForm.unpaid,
     };
 
-    updateShareholder.mutate({ id, data: { name: nextShareholder.name, name_english: nextShareholder.nameEnglish, name_chinese: nextShareholder.nameChinese, shares: nextShareholder.shares, identity: nextShareholder.identity, id_number: nextShareholder.idNumber, address: nextShareholder.address, service_address: nextShareholder.serviceAddress, email: nextShareholder.email, share_type: nextShareholder.shareType } }, {
+    updateShareholder.mutate({ id, data: { name: nextShareholder.name, name_english: nextShareholder.nameEnglish, name_chinese: nextShareholder.nameChinese, shares: nextShareholder.shares, identity: nextShareholder.identity, id_number: nextShareholder.idNumber, address: nextShareholder.address, service_address: nextShareholder.serviceAddress, email: nextShareholder.email, share_type: nextShareholder.shareType, issue_price: shForm.issuePrice, currency: shForm.currency, paid_up: shForm.paidUp, unpaid: shForm.unpaid } }, {
       onSuccess: () => { toast({ title: '股東已更新' }); setEditingShareholder(null); setEditingShDetail(false); if (selectedSh?.id === id) setSelectedSh(nextShareholder); },
       onError: () => toast({ title: '更新失敗', variant: 'destructive' }),
     });

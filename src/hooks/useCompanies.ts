@@ -42,6 +42,7 @@ interface DbOfficer {
   date_ceased: string;
   place_incorporated: string;
   company_number_ref: string;
+  tcsp_number?: string | null;
 }
 
 interface DbShareholder {
@@ -111,6 +112,7 @@ function mapToCompany(
       dateCeased: o.date_ceased || '',
       placeIncorporated: o.place_incorporated || '',
       companyNumberRef: o.company_number_ref || '',
+      tcspNumber: o.tcsp_number || '',
       companies: [],
       createdAt: '',
       updatedAt: '',
@@ -132,6 +134,7 @@ function mapToCompany(
       dateCeased: o.date_ceased || '',
       placeIncorporated: o.place_incorporated || '',
       companyNumberRef: o.company_number_ref || '',
+      tcspNumber: o.tcsp_number || '',
       companies: [],
       createdAt: '',
       updatedAt: '',

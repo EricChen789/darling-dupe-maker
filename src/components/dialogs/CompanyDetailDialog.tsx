@@ -714,6 +714,11 @@ function PersonRow({ person, isSelected, onClick, onDelete }: { person: Person; 
         <Badge variant="outline" className="text-xs">
           {person.identity === 'natural' ? '自然人' : '法人'}
         </Badge>
+        {person.identity === 'corporate' && person.tcspNumber && (
+          <Badge variant="secondary" className="text-xs">
+            TCSP: {person.tcspNumber}
+          </Badge>
+        )}
         <Button variant="ghost" size="sm" className="h-6 px-1.5 hidden group-hover:flex text-destructive"
           onClick={e => { e.stopPropagation(); onDelete(); }}>
           <Trash2 className="h-3 w-3" />

@@ -134,6 +134,7 @@ function mapToCompany(
       dateCeased: o.date_ceased || '',
       placeIncorporated: o.place_incorporated || '',
       companyNumberRef: o.company_number_ref || '',
+      tcspNumber: o.tcsp_number || '',
       companies: [],
       createdAt: '',
       updatedAt: '',

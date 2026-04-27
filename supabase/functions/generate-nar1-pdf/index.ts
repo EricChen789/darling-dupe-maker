@@ -896,6 +896,7 @@ async function buildNAR1Pdf(data: CompanyData): Promise<Uint8Array> {
 
   // 確保最終文件 NeedAppearances=true，讓 Reader 開啟時用 PMingLiU 渲染中文
   enableNeedAppearances(mainDoc);
+  rebuildAcroFormFields(mainDoc);
 
   console.log("Serializing final PDF...");
   const finalBytes = await mainDoc.save({ updateFieldAppearances: false });

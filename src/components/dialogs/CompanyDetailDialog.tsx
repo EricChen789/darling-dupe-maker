@@ -70,7 +70,9 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
   const deleteShareholder = useDeleteShareholder();
 
   useEffect(() => {
-    if (company) {
+    // Only sync form from company when NOT in edit mode, to avoid wiping user input
+    // when the companies query refetches in the background.
+    if (company && !editingCompany) {
       setCompanyForm({
         name: company.name, chineseName: company.chineseName || '', brNumber: company.brNumber, tradingName: company.tradingName,
         businessNature: company.businessNature, companyType: company.companyType, businessCode: company.businessCode,
@@ -80,7 +82,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
         ciFilePath: company.ciFilePath || '', brFilePath: company.brFilePath || '',
       });
     }
-  }, [company]);
+  }, [company, editingCompany]);
 
   useEffect(() => {
     if (selectedPerson) {

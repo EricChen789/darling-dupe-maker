@@ -646,7 +646,7 @@ function fillSchedule1(pdfDoc: PDFDocument, ctx: CommonCtx, members: Shareholder
     const { surname, otherNames } = parseEnglishName(fullName);
     const addr = parseAddress(sh.address || "");
     const base = slot === 1 ? 0 : 12; // 成員 2 偏移 12
-    const f = (n: number) => `fill_${n + base}_P.9`;
+    const f = (n: number) => `fill_${n + base}_P9`;
     safeSetText(f(7), sh.nameChinese || "");
     if (isCorp) {
       safeSetText(f(12), fullName); // 英文公司名
@@ -787,7 +787,7 @@ function fillSheetD(pdfDoc: PDFDocument, ctx: CommonCtx, dirs: OfficerData[], fo
 
   const fillSlot = (dir: OfficerData, slot: 1 | 2) => {
     const base = slot === 1 ? 0 : 12;
-    const f = (n: number) => `fill_${n + base}_P.14`;
+    const f = (n: number) => `fill_${n + base}_P14`;
     safeSetText(f(5), "✓"); // 董事勾選
     safeSetText(f(8), dir.nameChinese || "");
     safeSetText(f(9), dir.nameEnglish || "");

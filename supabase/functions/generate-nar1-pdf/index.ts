@@ -1013,7 +1013,7 @@ async function buildNAR1Pdf(data: CompanyData): Promise<Uint8Array> {
 
 // === Debug 模式 ===
 async function buildDebugPdf(): Promise<Uint8Array> {
-  // 診斷模式：合併所有模板（主表 + 附表 + 續頁），逐個 widget 寫入完整欄位名稱以便視覺化對位
+  // 診斷模式：合併所有模板，每格寫入「欄位名@頁碼」
   const templateUrls = [
     TEMPLATES.main,
     TEMPLATES.schedule1,
@@ -1028,7 +1028,6 @@ async function buildDebugPdf(): Promise<Uint8Array> {
   const mainBytes = await fetchTemplate(TEMPLATES.main);
   const mainDoc = await PDFDocument.load(mainBytes);
 
-  // 合併其他模板到 mainDoc
   for (let i = 1; i < templateUrls.length; i++) {
     try {
       const bytes = await fetchTemplate(templateUrls[i]);
@@ -1040,68 +1039,34 @@ async function buildDebugPdf(): Promise<Uint8Array> {
     }
   }
 
-  enableNeedAppearances(mainDoc);
-
-  // 逐個 widget 寫入「欄位名 + 頁碼」以便視覺化對位
+  // 建立 widget → 頁碼 對照
+  const widgetPageMap = new Map<any, number>();
   const allPages = mainDoc.getPages();
   for (let pageIdx = 0; pageIdx < allPages.length; pageIdx++) {
-    const page = allPages[pageIdx];
-    const pageLabel = `P${pageIdx + 1}`;
-    const annots = page.node.lookup(PDFName.of("Annots")) as any;
+    const annots = allPages[pageIdx].node.lookup(PDFName.of("Annots")) as any;
     if (!annots || typeof annots.size !== "function") continue;
-
     for (let i = 0; i < annots.size(); i++) {
       try {
         const widget = mainDoc.context.lookup(annots.get(i)) as any;
-        if (!widget || typeof widget.get !== "function") continue;
-        const subtype = widget.get(PDFName.of("Subtype"));
-        if (subtype && String(subtype) !== "/Widget") continue;
-
-        const parentRef = widget.get(PDFName.of("Parent"));
-        const field = parentRef ? mainDoc.context.lookup(parentRef) as any : widget;
-        const parentName = field ? decodePdfText(field.get(PDFName.of("T"))) : "";
-        const widgetName = decodePdfText(widget.get(PDFName.of("T")));
-        const labelSrc = widgetName || parentName;
-        if (!labelSrc) continue;
-
-        if (parentRef) detachWidget(widget, field);
-
-        if (labelSrc.startsWith("fill_")) {
-          // 從原始 T 取得真實名稱（avoid decodeText 截斷）並接上頁碼
-          const rawT = widget.get(PDFName.of("T")) || field.get(PDFName.of("T"));
-          let baseName = labelSrc;
-          try {
-            if (rawT && typeof (rawT as any).asString === "function") {
-              const raw = (rawT as any).asString() as string;
-              baseName = raw.replace(/\\(\d{1,3})/g, (_m, oct) => String.fromCharCode(parseInt(oct, 8)));
-            }
-          } catch (_) { /* keep labelSrc */ }
-          // 移除已含的 _P.X 後綴，再附上實際頁碼（例如 fill_1_P → fill_1@P5）
-          const cleanName = baseName.replace(/_P\.?\d+$/, "").replace(/_P$/, "");
-          const fullLabel = `${cleanName}@${pageLabel}`;
-
-          widget.set(PDFName.of("DA"), PDFString.of("/Helv 8 Tf 0 g"));
-          widget.set(PDFName.of("V"), PDFHexString.fromText(fullLabel));
-          widget.delete(PDFName.of("AP"));
-          widget.delete(PDFName.of("MaxLen"));
-          if (field !== widget) field.delete(PDFName.of("MaxLen"));
-        } else if (labelSrc.startsWith("cb_")) {
-          let onState = "Yes";
-          try {
-            const ap = widget.get(PDFName.of("AP")) as any;
-            const apN = ap?.get?.(PDFName.of("N")) as any;
-            const dict = apN?.dict;
-            if (dict && typeof dict.keys === "function") {
-              for (const k of dict.keys()) {
-                const name = String(k).replace(/^\//, "");
-                if (name && name !== "Off") { onState = name; break; }
-              }
-            }
-          } catch (_) { /* fallback */ }
-          widget.set(PDFName.of("V"), PDFName.of(onState));
-          widget.set(PDFName.of("AS"), PDFName.of(onState));
-        }
+        if (widget) widgetPageMap.set(widget, pageIdx + 1);
       } catch (_) { /* skip */ }
+    }
+  }
+
+  const { setText, check } = createFormHelpers(mainDoc);
+  const fields = collectFormFields(mainDoc);
+  const written = new Set<string>();
+  for (const [name, target] of fields.entries()) {
+    if (written.has(name)) continue;
+    written.add(name);
+    const pageNum = widgetPageMap.get(target.widget) || 0;
+    if (name.startsWith("fill_")) {
+      // 移除已含的 _P.X 後綴避免重複
+      const clean = name.replace(/_P\.?\d+$/, "").replace(/_P$/, "");
+      const label = pageNum > 0 ? `${clean}@P${pageNum}` : name;
+      setText(name, label);
+    } else if (name.startsWith("cb_")) {
+      check(name, true);
     }
   }
   return await mainDoc.save({ updateFieldAppearances: false });

@@ -232,6 +232,9 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
           fax: formData.presenterFax || '',
           email: formData.presenterEmail || '',
         },
+        companyRecords: companyRecords
+          .filter(r => r.records.trim() || r.address.trim())
+          .map(r => ({ records: r.records, address: r.address })),
       };
 
       const { data, error } = await supabase.functions.invoke('generate-nar1-pdf', {

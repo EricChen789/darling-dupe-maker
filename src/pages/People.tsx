@@ -219,7 +219,7 @@ const People = () => {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredPeople.map((person) => (
+              {pagePeople.map((person) => (
                 <TableRow key={person.id} className="hover:bg-muted/30">
                   <TableCell className="font-medium">
                     <div>

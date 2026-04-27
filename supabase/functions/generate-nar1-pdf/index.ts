@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { PDFDocument, PDFName, StandardFonts, rgb } from "https://esm.sh/pdf-lib@1.17.1";
+import { PDFDocument, PDFName, PDFHexString, PDFBool, StandardFonts, rgb } from "https://esm.sh/pdf-lib@1.17.1";
 import fontkit from "https://esm.sh/@pdf-lib/fontkit@1.1.1";
 
 const CJK_FONT_URL = "https://uqcsgmmsrgtlcqutaomg.supabase.co/storage/v1/object/public/pdf-templates/NotoSansTC-Regular.ttf";
@@ -405,15 +405,66 @@ function createFormHelpers(pdfDoc: PDFDocument, fonts: Fonts) {
   return { form, safeSetText, safeCheck };
 }
 
-// === Helper（原生 setText 模式）：用於主文件 P.1-P.8，由 PDF reader 渲染中文 fallback 字體
-//     效果與 Acrobat 直接填表相同，中英文視覺最自然 ===
+function enableReaderFieldRendering(pdfDoc: PDFDocument) {
+  try {
+    const acroForm = pdfDoc.catalog.lookup(PDFName.of("AcroForm")) as any;
+    if (acroForm && typeof acroForm.set === "function") {
+      acroForm.set(PDFName.of("NeedAppearances"), PDFBool.True);
+    }
+  } catch (_) { /* ignore malformed AcroForm */ }
+}
+
+// === Helper（原生欄位值模式）：直接寫入 AcroForm /V，由 PDF reader 渲染中文 fallback 字體
+//     避開 pdf-lib getFields() 在官方模板階層欄位上的解析錯誤，效果仍與 Acrobat 直接填表一致 ===
 function createNativeFormHelpers(pdfDoc: PDFDocument) {
-  const form = pdfDoc.getForm();
+  let form: any = null;
+  try { form = pdfDoc.getForm(); } catch (_) { /* low-level fallback below */ }
+  enableReaderFieldRendering(pdfDoc);
+
+  const widgets = new Map<string, { widget: any; field: any }>();
+  const addAlias = (name: string, target: { widget: any; field: any }) => {
+    if (name && !widgets.has(name)) widgets.set(name, target);
+  };
+
+  for (const page of pdfDoc.getPages()) {
+    const annots = page.node.lookup(PDFName.of("Annots")) as any;
+    if (!annots || typeof annots.size !== "function") continue;
+
+    for (let i = 0; i < annots.size(); i++) {
+      try {
+        const widget = pdfDoc.context.lookup(annots.get(i)) as any;
+        if (!widget || typeof widget.get !== "function") continue;
+        const parentRef = widget.get(PDFName.of("Parent"));
+        const field = parentRef ? pdfDoc.context.lookup(parentRef) as any : widget;
+        const parentName = field ? decodePdfText(field.get(PDFName.of("T"))) : "";
+        const widgetName = decodePdfText(widget.get(PDFName.of("T")));
+        const target = { widget, field };
+
+        addAlias(parentName, target);
+        addAlias(widgetName, target);
+        if (parentName && widgetName) addAlias(`${parentName}.${widgetName}`, target);
+        if (widgetName) addAlias(widgetName.replace(/_P\.(\d+)$/g, "_P$1"), target);
+      } catch (_) { /* skip malformed annotation */ }
+    }
+  }
 
   const safeSetText = (fieldName: string, value: string) => {
     try {
-      const tf = form.getTextField(fieldName);
-      tf.setText(value ?? "");
+      if (form) {
+        try {
+          const tf = form.getTextField(fieldName);
+          tf.setText(value ?? "");
+          return true;
+        } catch (_) { /* use low-level writer */ }
+      }
+
+      const target = widgets.get(fieldName);
+      if (!target) throw new Error("widget not found");
+      const encoded = PDFHexString.fromText(value ?? "");
+      target.field.set(PDFName.of("V"), encoded);
+      target.widget.set(PDFName.of("V"), encoded);
+      target.field.delete(PDFName.of("AP"));
+      target.widget.delete(PDFName.of("AP"));
       return true;
     } catch (e) {
       console.warn(`⚠ Missing native field: ${fieldName}`);
@@ -424,7 +475,18 @@ function createNativeFormHelpers(pdfDoc: PDFDocument) {
   const safeCheck = (fieldName: string, shouldCheck: boolean) => {
     if (!shouldCheck) return false;
     try {
-      form.getCheckBox(fieldName).check();
+      if (form) {
+        try {
+          form.getCheckBox(fieldName).check();
+          return true;
+        } catch (_) { /* use low-level writer */ }
+      }
+
+      const target = widgets.get(fieldName);
+      if (!target) return false;
+      target.field.set(PDFName.of("V"), PDFName.of("Yes"));
+      target.widget.set(PDFName.of("AS"), PDFName.of("Yes"));
+      target.widget.delete(PDFName.of("AP"));
       return true;
     } catch {
       return false;

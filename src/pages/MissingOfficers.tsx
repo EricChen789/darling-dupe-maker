@@ -118,11 +118,12 @@ const MissingOfficers = () => {
   }, [rows, search, missingFilter]);
 
   const stats = useMemo(() => {
+    const activeRows = rows.filter((r) => r.status === 'active');
     return {
-      missingDirector: rows.filter((r) => r.missingDirector).length,
-      missingSecretary: rows.filter((r) => r.missingSecretary).length,
-      missingBoth: rows.filter((r) => r.missingDirector && r.missingSecretary).length,
-      total: rows.length,
+      missingDirector: activeRows.filter((r) => r.missingDirector).length,
+      missingSecretary: activeRows.filter((r) => r.missingSecretary).length,
+      missingBoth: activeRows.filter((r) => r.missingDirector && r.missingSecretary).length,
+      total: activeRows.length,
     };
   }, [rows]);
 

@@ -289,26 +289,29 @@ function measureMixed(text: string, fontSize: number, fonts: Fonts): number {
   return w;
 }
 
-// 繪製混合字體一行，回傳結束 x
+// 繪製混合字體一行：逐字符繪製，避免單一缺失 glyph 讓整段失敗
 function drawMixedLine(page: any, text: string, x: number, y: number, fontSize: number, fonts: Fonts) {
   let cursor = x;
-  let buf = "";
-  let bufFont: any = null;
-  const flush = () => {
-    if (!buf || !bufFont) { buf = ""; bufFont = null; return; }
-    try {
-      page.drawText(buf, { x: cursor, y, size: fontSize, font: bufFont, color: rgb(0, 0, 0) });
-      cursor += bufFont.widthOfTextAtSize(buf, fontSize);
-    } catch (_) { /* unsupported glyph */ }
-    buf = "";
-    bufFont = null;
-  };
   for (const ch of text) {
-    const f = (isCjk(ch) && fonts.cjk) ? fonts.cjk : fonts.latin;
-    if (f !== bufFont) { flush(); bufFont = f; }
-    buf += ch;
+    const useCjk = isCjk(ch) && fonts.cjk;
+    const primary = useCjk ? fonts.cjk : fonts.latin;
+    const fallback = useCjk ? fonts.latin : fonts.cjk;
+    const tryDraw = (font: any): boolean => {
+      if (!font) return false;
+      try {
+        page.drawText(ch, { x: cursor, y, size: fontSize, font, color: rgb(0, 0, 0) });
+        cursor += font.widthOfTextAtSize(ch, fontSize);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    if (!tryDraw(primary) && !tryDraw(fallback)) {
+      // 兩個字體都失敗：以空白佔位，避免錯位
+      try { cursor += (primary ?? fonts.latin).widthOfTextAtSize(" ", fontSize); } catch {}
+      console.warn(`Glyph missing for char: ${ch} (U+${ch.charCodeAt(0).toString(16)})`);
+    }
   }
-  flush();
 }
 
 function drawTextInWidget(target: WidgetTarget, rawValue: string, fonts: Fonts) {

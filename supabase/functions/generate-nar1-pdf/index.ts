@@ -1,47 +1,24 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { PDFDocument, PDFName, PDFHexString, PDFString, PDFBool, StandardFonts, rgb } from "https://esm.sh/pdf-lib@1.17.1";
+import { PDFDocument, PDFName, PDFHexString, PDFString, PDFBool, PDFNumber } from "https://esm.sh/pdf-lib@1.17.1";
 
-// Encode form-field value:
-// - Pure ASCII -> PDFString (literal, PDFDocEncoding) so readers render with standard fonts.
-// - Contains non-ASCII (e.g. CJK) -> PDFHexString.fromText (UTF-16BE+BOM, PDF spec compliant).
-function encodeFieldValue(value: string): any {
-  const v = value ?? "";
-  // eslint-disable-next-line no-control-regex
-  const isAscii = /^[\x00-\x7F]*$/.test(v);
-  return isAscii ? PDFString.of(v) : PDFHexString.fromText(v);
-}
-import fontkit from "https://esm.sh/@pdf-lib/fontkit@1.1.1";
+// ============================================================================
+// NAR1 PDF Generator — 原生 AcroForm 模式
+//
+// 策略（與用戶提供的「正確」NAR1 PDF 相同）：
+//  - 不嵌入任何字體（避免 NotoSansTC 12MB 觸發 Edge Function WORKER_LIMIT）
+//  - 模板本身已包含 /PMingLiU (Type0, UniCNS-UTF16-H) 字體資源
+//  - 含中文的欄位：把 widget 的 /DA 設為 "/PMingLiU 12 Tf 0 g"
+//                  並用 PDFHexString.fromText() 寫入 /V (UTF-16BE+BOM)
+//  - 純 ASCII 欄位：保留模板原 /DA (/Helv)，用 PDFString 寫入 /V
+//  - 設置 AcroForm /NeedAppearances = true
+//      → Adobe Reader / Chrome / Preview 開啟時自動以 PMingLiU 渲染中文
+//      → 確保各 PDF 閱讀器顯示一致，不再亂碼
+// ============================================================================
 
-const CJK_FONT_URL = "https://uqcsgmmsrgtlcqutaomg.supabase.co/storage/v1/object/public/pdf-templates/NotoSansTC-Regular.ttf";
-let _cjkFontCache: ArrayBuffer | null = null;
-async function loadCjkFontBytes(): Promise<ArrayBuffer> {
-  if (_cjkFontCache) return _cjkFontCache;
-  const r = await fetch(CJK_FONT_URL);
-  if (!r.ok) throw new Error(`Failed to load CJK font: ${r.status}`);
-  _cjkFontCache = await r.arrayBuffer();
-  return _cjkFontCache;
-}
-
-interface Fonts { latin: any; cjk: any | null; }
-
-async function embedFontsForDoc(doc: PDFDocument, cjkBytes: ArrayBuffer | null): Promise<Fonts> {
-  const latin = await doc.embedFont(StandardFonts.Helvetica);
-  let cjk: any = null;
-  if (cjkBytes) {
-    try {
-      doc.registerFontkit(fontkit);
-      cjk = await doc.embedFont(cjkBytes, { subset: true });
-    } catch (e) {
-      console.warn("CJK font embed failed:", e);
-    }
-  }
-  return { latin, cjk };
-}
-
-function isCjk(ch: string): boolean {
-  const c = ch.charCodeAt(0);
-  return c > 0x7E; // any non-ASCII -> use CJK font
-}
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
 
 function uint8ToBase64(bytes: Uint8Array): string {
   let binary = "";
@@ -53,10 +30,10 @@ function uint8ToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+function isAscii(s: string): boolean {
+  // eslint-disable-next-line no-control-regex
+  return /^[\x00-\x7F]*$/.test(s);
+}
 
 interface OfficerData {
   nameChinese: string;
@@ -108,7 +85,6 @@ interface CompanyData {
   secretaries: OfficerData[];
   shareholders: ShareholderData[];
   returnDate?: string;
-  /** 公司紀錄保存地點（如非保存於註冊辦事處），會觸發附表 E (P.15) */
   companyRecords?: Array<{ records: string; address: string }>;
   presenter?: {
     name?: string;
@@ -123,14 +99,14 @@ interface CompanyData {
 
 const TEMPLATE_BASE = "https://uqcsgmmsrgtlcqutaomg.supabase.co/storage/v1/object/public/pdf-templates";
 const TEMPLATES = {
-  main: `${TEMPLATE_BASE}/NAR1_part1_pages1-8.pdf`,    // 主文件 P.1-P.8
-  schedule1: `${TEMPLATE_BASE}/NAR1_p9_v2.pdf`,        // 附表 1 - 非上市成員（v2: 唯一欄位名）
-  schedule2: `${TEMPLATE_BASE}/NAR1_p10_v2.pdf`,       // 附表 2 - 上市公司成員
-  sheetA: `${TEMPLATE_BASE}/NAR1_p11_v2.pdf`,          // 續頁 A - 額外自然人秘書
-  sheetB: `${TEMPLATE_BASE}/NAR1_p12_v2.pdf`,          // 續頁 B - 額外法人秘書
-  sheetC: `${TEMPLATE_BASE}/NAR1_p13_v2.pdf`,          // 續頁 C - 額外自然人董事
-  sheetD: `${TEMPLATE_BASE}/NAR1_p14_v2.pdf`,          // 續頁 D - 額外法人董事
-  sheetE: `${TEMPLATE_BASE}/NAR1_p15_v2.pdf`,          // 續頁 E - 公司紀錄
+  main: `${TEMPLATE_BASE}/NAR1_part1_pages1-8.pdf`,
+  schedule1: `${TEMPLATE_BASE}/NAR1_p9_v2.pdf`,
+  schedule2: `${TEMPLATE_BASE}/NAR1_p10_v2.pdf`,
+  sheetA: `${TEMPLATE_BASE}/NAR1_p11_v2.pdf`,
+  sheetB: `${TEMPLATE_BASE}/NAR1_p12_v2.pdf`,
+  sheetC: `${TEMPLATE_BASE}/NAR1_p13_v2.pdf`,
+  sheetD: `${TEMPLATE_BASE}/NAR1_p14_v2.pdf`,
+  sheetE: `${TEMPLATE_BASE}/NAR1_p15_v2.pdf`,
 };
 
 async function fetchTemplate(url: string): Promise<ArrayBuffer> {
@@ -210,11 +186,6 @@ const parsePassportPartial = (passportNumber: string) => {
   return cleaned.slice(0, Math.ceil(cleaned.length / 2));
 };
 
-type WidgetTarget = {
-  page: any;
-  rect: { x: number; y: number; width: number; height: number };
-};
-
 const decodePdfText = (value: any): string => {
   if (!value) return "";
   try {
@@ -223,230 +194,11 @@ const decodePdfText = (value: any): string => {
   return String(value).replace(/^\((.*)\)$/s, "$1");
 };
 
-const asNumber = (value: any): number => {
-  if (!value) return 0;
-  if (typeof value.asNumber === "function") return value.asNumber();
-  if (typeof value.numberValue === "number") return value.numberValue;
-  return Number(value) || 0;
-};
-
-function collectWidgetTargets(pdfDoc: PDFDocument): Map<string, WidgetTarget> {
-  const targets = new Map<string, WidgetTarget>();
-
-  const addTarget = (key: string, target: WidgetTarget) => {
-    if (key && !targets.has(key)) targets.set(key, target);
-  };
-
-  for (const page of pdfDoc.getPages()) {
-    const annots = page.node.lookup(PDFName.of("Annots")) as any;
-    if (!annots || typeof annots.size !== "function") continue;
-
-    for (let i = 0; i < annots.size(); i++) {
-      try {
-        const annot = pdfDoc.context.lookup(annots.get(i)) as any;
-        if (!annot || typeof annot.get !== "function") continue;
-
-        const rectObj = annot.lookup(PDFName.of("Rect")) as any;
-        if (!rectObj || typeof rectObj.lookup !== "function") continue;
-        const x1 = asNumber(rectObj.lookup(0));
-        const y1 = asNumber(rectObj.lookup(1));
-        const x2 = asNumber(rectObj.lookup(2));
-        const y2 = asNumber(rectObj.lookup(3));
-        const target: WidgetTarget = {
-          page,
-          rect: { x: Math.min(x1, x2), y: Math.min(y1, y2), width: Math.abs(x2 - x1), height: Math.abs(y2 - y1) },
-        };
-
-        const childName = decodePdfText(annot.get(PDFName.of("T")));
-        const parentRef = annot.get(PDFName.of("Parent"));
-        const parent = parentRef ? pdfDoc.context.lookup(parentRef) as any : undefined;
-        const parentName = parent ? decodePdfText(parent.get(PDFName.of("T"))) : "";
-
-        addTarget(childName, target);
-        addTarget(parentName, target);
-        if (childName) addTarget(childName.replace(/_P\.(\d+)$/g, "_P$1"), target);
-        if (parentName) addTarget(parentName.replace(/_P\.(\d+)$/g, "_P$1"), target);
-        if (parentName && childName) addTarget(`${parentName}.${childName}`, target);
-      } catch (_) { /* skip malformed widget */ }
-    }
-  }
-
-  return targets;
-}
-
-function stripFormAnnotations(pdfDoc: PDFDocument) {
-  for (const page of pdfDoc.getPages()) {
-    page.node.delete(PDFName.of("Annots"));
-  }
-  pdfDoc.catalog.delete(PDFName.of("AcroForm"));
-}
-
-function normalizeDrawableText(value: string): string {
-  return String(value ?? "")
-    .replace(/✓/g, "X")
-    // strip control chars except CR/LF; keep printable ASCII + all unicode
-    .replace(/[\x00-\x09\x0B\x0C\x0E-\x1F\x7F]/g, " ")
-    .replace(/[\t ]+/g, " ")
-    .replace(/ *\n */g, "\n")
-    .trim();
-}
-
-// 量度文字寬度（混合字體）
-function measureMixed(text: string, fontSize: number, fonts: Fonts): number {
-  let w = 0;
-  for (const ch of text) {
-    const f = (isCjk(ch) && fonts.cjk) ? fonts.cjk : fonts.latin;
-    try { w += f.widthOfTextAtSize(ch, fontSize); }
-    catch { /* glyph missing in latin -> skip */ }
-  }
-  return w;
-}
-
-// 繪製混合字體一行：逐字符繪製，避免單一缺失 glyph 讓整段失敗
-function drawMixedLine(page: any, text: string, x: number, y: number, fontSize: number, fonts: Fonts) {
-  let cursor = x;
-  for (const ch of text) {
-    const useCjk = isCjk(ch) && fonts.cjk;
-    const primary = useCjk ? fonts.cjk : fonts.latin;
-    const fallback = useCjk ? fonts.latin : fonts.cjk;
-    const tryDraw = (font: any): boolean => {
-      if (!font) return false;
-      try {
-        page.drawText(ch, { x: cursor, y, size: fontSize, font, color: rgb(0, 0, 0) });
-        cursor += font.widthOfTextAtSize(ch, fontSize);
-        return true;
-      } catch {
-        return false;
-      }
-    };
-    if (!tryDraw(primary) && !tryDraw(fallback)) {
-      // 兩個字體都失敗：以空白佔位，避免錯位
-      try { cursor += (primary ?? fonts.latin).widthOfTextAtSize(" ", fontSize); } catch {}
-      console.warn(`Glyph missing for char: ${ch} (U+${ch.charCodeAt(0).toString(16)})`);
-    }
-  }
-}
-
-function drawTextInWidget(target: WidgetTarget, rawValue: string, fonts: Fonts) {
-  const text = normalizeDrawableText(rawValue);
-  if (!text) return;
-
-  const { page, rect } = target;
-  const padding = Math.min(2.5, Math.max(1, rect.width * 0.03));
-  const clearInset = 0.7;
-  if (rect.width > clearInset * 2 && rect.height > clearInset * 2) {
-    page.drawRectangle({
-      x: rect.x + clearInset,
-      y: rect.y + clearInset,
-      width: rect.width - clearInset * 2,
-      height: rect.height - clearInset * 2,
-      color: rgb(1, 1, 1),
-    });
-  }
-  const isMultiline = text.includes("\n") || rect.height > 24;
-  // 固定字號（早上版本）：不依欄位高度縮放
-  const fontSize = 9;
-  const lineHeight = fontSize + 2;
-  const maxWidth = Math.max(1, rect.width - padding * 2);
-  const maxLines = Math.max(1, Math.floor((rect.height - padding * 2) / lineHeight));
-
-  const fit = (line: string) => {
-    let fitted = line.trim();
-    while (fitted.length > 0 && measureMixed(fitted, fontSize, fonts) > maxWidth) {
-      fitted = fitted.slice(0, -1);
-    }
-    return fitted;
-  };
-
-  const lines: string[] = [];
-  for (const rawLine of text.split(/\r?\n/)) {
-    if (lines.length >= maxLines) break;
-    // 含中文時按字符換行；純拉丁按詞換行
-    const hasCjk = /[^\x00-\x7F]/.test(rawLine);
-    if (hasCjk) {
-      let current = "";
-      for (const ch of rawLine) {
-        const candidate = current + ch;
-        if (measureMixed(candidate, fontSize, fonts) <= maxWidth) current = candidate;
-        else {
-          if (current) lines.push(current);
-          current = ch;
-          if (lines.length >= maxLines) break;
-        }
-      }
-      if (current && lines.length < maxLines) lines.push(fit(current));
-    } else {
-      const words = rawLine.split(" ").filter(Boolean);
-      if (words.length <= 1) { lines.push(fit(rawLine)); continue; }
-      let current = "";
-      for (const word of words) {
-        const candidate = current ? `${current} ${word}` : word;
-        if (measureMixed(candidate, fontSize, fonts) <= maxWidth) current = candidate;
-        else {
-          if (current) lines.push(fit(current));
-          current = word;
-          if (lines.length >= maxLines) break;
-        }
-      }
-      if (current && lines.length < maxLines) lines.push(fit(current));
-    }
-  }
-
-  const startY = isMultiline
-    ? rect.y + rect.height - padding - fontSize
-    : rect.y + Math.max(1, (rect.height - fontSize) / 2 - 1);
-  lines.filter(Boolean).forEach((line, index) => {
-    drawMixedLine(page, line, rect.x + padding, startY - index * lineHeight, fontSize, fonts);
-  });
-}
-
-// === Helper（drawText 模式）：用於附表頁 P.9-P.15，因為這些頁面的欄位有命名衝突 ===
-function createFormHelpers(pdfDoc: PDFDocument, fonts: Fonts) {
-  const form = pdfDoc.getForm();
-  const widgets = collectWidgetTargets(pdfDoc);
-
-  const safeSetText = (fieldName: string, value: string) => {
-    try {
-      const target = widgets.get(fieldName);
-      if (!target) throw new Error("widget not found");
-      drawTextInWidget(target, value ?? "", fonts);
-      return true;
-    } catch (e) {
-      console.warn(`⚠ Missing field: ${fieldName}`);
-      return false;
-    }
-  };
-
-  const safeCheck = (fieldName: string, shouldCheck: boolean) => {
-    if (!shouldCheck) return false;
-    const target = widgets.get(fieldName);
-    if (!target) return false;
-    drawTextInWidget(target, "X", fonts);
-    return true;
-  };
-
-  return { form, safeSetText, safeCheck };
-}
-
-function enableReaderFieldRendering(pdfDoc: PDFDocument) {
-  try {
-    const acroForm = pdfDoc.catalog.lookup(PDFName.of("AcroForm")) as any;
-    if (acroForm && typeof acroForm.set === "function") {
-      acroForm.set(PDFName.of("NeedAppearances"), PDFBool.True);
-    }
-  } catch (_) { /* ignore malformed AcroForm */ }
-}
-
-// === Helper（原生欄位值模式）：直接寫入 AcroForm /V，由 PDF reader 渲染中文 fallback 字體
-//     避開 pdf-lib getFields() 在官方模板階層欄位上的解析錯誤，效果仍與 Acrobat 直接填表一致 ===
-function createNativeFormHelpers(pdfDoc: PDFDocument) {
-  let form: any = null;
-  try { form = pdfDoc.getForm(); } catch (_) { /* low-level fallback below */ }
-  enableReaderFieldRendering(pdfDoc);
-
-  const widgets = new Map<string, { widget: any; field: any }>();
+// 收集所有 widget annotation，並建立多種別名（parent name / widget name / 規範化）→ widget 對照
+function collectFormFields(pdfDoc: PDFDocument): Map<string, { widget: any; field: any }> {
+  const map = new Map<string, { widget: any; field: any }>();
   const addAlias = (name: string, target: { widget: any; field: any }) => {
-    if (name && !widgets.has(name)) widgets.set(name, target);
+    if (name && !map.has(name)) map.set(name, target);
   };
 
   for (const page of pdfDoc.getPages()) {
@@ -457,6 +209,9 @@ function createNativeFormHelpers(pdfDoc: PDFDocument) {
       try {
         const widget = pdfDoc.context.lookup(annots.get(i)) as any;
         if (!widget || typeof widget.get !== "function") continue;
+        const subtype = widget.get(PDFName.of("Subtype"));
+        if (subtype && String(subtype) !== "/Widget") continue;
+
         const parentRef = widget.get(PDFName.of("Parent"));
         const field = parentRef ? pdfDoc.context.lookup(parentRef) as any : widget;
         const parentName = field ? decodePdfText(field.get(PDFName.of("T"))) : "";
@@ -466,65 +221,130 @@ function createNativeFormHelpers(pdfDoc: PDFDocument) {
         addAlias(parentName, target);
         addAlias(widgetName, target);
         if (parentName && widgetName) addAlias(`${parentName}.${widgetName}`, target);
-        if (widgetName) addAlias(widgetName.replace(/_P\.(\d+)$/g, "_P$1"), target);
-      } catch (_) { /* skip malformed annotation */ }
+        // 規範化：fill_4_P.9 ↔ fill_4_P9
+        if (widgetName) {
+          addAlias(widgetName.replace(/_P\.(\d+)$/g, "_P$1"), target);
+          addAlias(widgetName.replace(/_P(\d+)$/g, "_P.$1"), target);
+        }
+        if (parentName) {
+          addAlias(parentName.replace(/_P\.(\d+)$/g, "_P$1"), target);
+          addAlias(parentName.replace(/_P(\d+)$/g, "_P.$1"), target);
+        }
+      } catch (_) { /* skip */ }
     }
   }
+  return map;
+}
 
-  // 把 widget 升級為自包含 terminal field：複製父的繼承屬性（FT/DA/Ff/MaxLen/Q）到 widget，
-  // 移除 Parent 連結，避免多頁共用父 field 時 /V 互相覆蓋。
-  const detachWidgetFromParent = (widget: any, field: any) => {
-    if (widget === field) return; // 已是自包含
-    try {
-      const inheritKeys = ["FT", "DA", "Ff", "MaxLen", "Q", "DV"];
-      for (const k of inheritKeys) {
-        const key = PDFName.of(k);
-        if (!widget.get(key)) {
-          const v = field.get(key);
-          if (v !== undefined && v !== null) widget.set(key, v);
-        }
+// 把 widget 從共享父 field 分離（複製繼承屬性），避免多頁共用父 field 時 /V 互相覆蓋
+function detachWidget(widget: any, field: any) {
+  if (widget === field) return;
+  try {
+    const inheritKeys = ["FT", "DA", "Ff", "MaxLen", "Q", "DV"];
+    for (const k of inheritKeys) {
+      const key = PDFName.of(k);
+      if (!widget.get(key)) {
+        const v = field.get(key);
+        if (v !== undefined && v !== null) widget.set(key, v);
       }
-      widget.delete(PDFName.of("Parent"));
-    } catch (_) { /* best-effort */ }
-  };
+    }
+    widget.delete(PDFName.of("Parent"));
+  } catch (_) { /* best-effort */ }
+}
 
-  const safeSetText = (fieldName: string, value: string) => {
+// 設定 AcroForm /NeedAppearances = true，讓 reader 開啟時自動產生 widget appearance
+function enableNeedAppearances(pdfDoc: PDFDocument) {
+  try {
+    const acroForm = pdfDoc.catalog.lookup(PDFName.of("AcroForm")) as any;
+    if (acroForm && typeof acroForm.set === "function") {
+      acroForm.set(PDFName.of("NeedAppearances"), PDFBool.True);
+    }
+  } catch (_) { /* ignore */ }
+}
+
+// 從原 /DA 保留字號，將字體名換為 /PMingLiU；若失敗則用預設 12pt
+function buildCjkDA(originalDA: string | undefined): string {
+  // /Helv 12 Tf 0 g  -> /PMingLiU 12 Tf 0 g
+  const m = originalDA?.match(/(\d+(?:\.\d+)?)\s+Tf/);
+  const size = m ? m[1] : "12";
+  return `/PMingLiU ${size} Tf 0 g`;
+}
+
+interface FormHelpers {
+  form: any;
+  setText: (fieldName: string, value: string) => boolean;
+  check: (fieldName: string, shouldCheck: boolean) => boolean;
+  selectDropdown: (fieldName: string, value: string) => boolean;
+}
+
+function createFormHelpers(pdfDoc: PDFDocument): FormHelpers {
+  enableNeedAppearances(pdfDoc);
+  let form: any = null;
+  try { form = pdfDoc.getForm(); } catch (_) { /* low-level fallback */ }
+
+  const fields = collectFormFields(pdfDoc);
+
+  const setText = (fieldName: string, value: string): boolean => {
+    const v = (value ?? "").toString();
+    const target = fields.get(fieldName);
+    if (!target) {
+      // 不存在的欄位：只警告，不中斷
+      console.warn(`⚠ Missing field: ${fieldName}`);
+      return false;
+    }
     try {
-      const target = widgets.get(fieldName);
-      if (!target) {
-        console.warn(`⚠ Missing native field: ${fieldName}`);
-        return false;
+      detachWidget(target.widget, target.field);
+
+      if (v.length > 0 && !isAscii(v)) {
+        // 含中文/非 ASCII：切換到 PMingLiU + UTF-16 hex string
+        const da = decodePdfText(target.widget.get(PDFName.of("DA"))) ||
+                   decodePdfText(target.field.get(PDFName.of("DA"))) ||
+                   "/Helv 12 Tf 0 g";
+        const newDA = buildCjkDA(da);
+        target.widget.set(PDFName.of("DA"), PDFString.of(newDA));
+        target.widget.set(PDFName.of("V"), PDFHexString.fromText(v));
+      } else {
+        // 純 ASCII：保留原 DA，用普通 string
+        target.widget.set(PDFName.of("V"), PDFString.of(v));
       }
-      detachWidgetFromParent(target.widget, target.field);
-      const encoded = encodeFieldValue(value ?? "");
-      // 只寫 widget 的 /V（widget 已 detach 為獨立 field），絕不寫共用父 field
-      target.widget.set(PDFName.of("V"), encoded);
+      // 移除舊的 appearance，強制 reader 用 NeedAppearances 重建
       target.widget.delete(PDFName.of("AP"));
       return true;
     } catch (e) {
-      console.warn(`⚠ Failed to set field ${fieldName}: ${e}`);
+      console.warn(`⚠ setText failed for ${fieldName}:`, e);
       return false;
     }
   };
 
-  const safeCheck = (fieldName: string, shouldCheck: boolean) => {
+  const check = (fieldName: string, shouldCheck: boolean): boolean => {
     if (!shouldCheck) return false;
+    const target = fields.get(fieldName);
+    if (!target) return false;
     try {
-      const target = widgets.get(fieldName);
-      if (!target) return false;
-      detachWidgetFromParent(target.widget, target.field);
+      detachWidget(target.widget, target.field);
       target.widget.set(PDFName.of("V"), PDFName.of("Yes"));
       target.widget.set(PDFName.of("AS"), PDFName.of("Yes"));
-      target.widget.delete(PDFName.of("AP"));
       return true;
     } catch {
       return false;
     }
   };
 
-  return { form, safeSetText, safeCheck };
+  const selectDropdown = (fieldName: string, value: string): boolean => {
+    if (!form) return false;
+    try {
+      const dropdown = form.getDropdown(fieldName);
+      const options = dropdown.getOptions();
+      const match = options.find((o: string) => value.includes(o) || o.includes(value));
+      if (match) { dropdown.select(match); return true; }
+    } catch (_) { /* ignore */ }
+    return false;
+  };
+
+  return { form, setText, check, selectDropdown };
 }
 
+// 把附頁的所有欄位重命名（加 suffix），避免合併時跨文件名稱衝突
 function renameAnnotationFields(pdfDoc: PDFDocument, suffix: string) {
   const renamed = new Set<any>();
   for (const page of pdfDoc.getPages()) {
@@ -545,39 +365,12 @@ function renameAnnotationFields(pdfDoc: PDFDocument, suffix: string) {
           obj.set(PDFName.of("T"), PDFHexString.fromText(`${oldName}${suffix}`));
           renamed.add(obj);
         }
-      } catch (_) { /* skip malformed annotation */ }
+      } catch (_) { /* skip */ }
     }
   }
 }
 
-
-// 把 AcroForm 與所有 widget annotations 完全移除，避免 Adobe Reader 用內建字段渲染導致中文亂碼
-function flattenForm(pdfDoc: PDFDocument) {
-  for (const page of pdfDoc.getPages()) {
-    try {
-      const annots = page.node.lookup(PDFName.of("Annots")) as any;
-      if (annots && typeof annots.size === "function") {
-        // 移除所有 Widget annotation，只保留非表單註釋（例如連結）
-        const keep: any[] = [];
-        for (let i = 0; i < annots.size(); i++) {
-          try {
-            const annot = pdfDoc.context.lookup(annots.get(i)) as any;
-            const subtype = annot?.get?.(PDFName.of("Subtype"));
-            const isWidget = subtype && (subtype === PDFName.of("Widget") || String(subtype) === "/Widget");
-            if (!isWidget) keep.push(annots.get(i));
-          } catch (_) { /* skip */ }
-        }
-        if (keep.length === 0) {
-          page.node.delete(PDFName.of("Annots"));
-        }
-      }
-    } catch (_) { /* ignore */ }
-  }
-  try { pdfDoc.catalog.delete(PDFName.of("AcroForm")); } catch (_) { /* ignore */ }
-}
-
-// === 各模板的填寫函式（操作各自的單頁 PDF 副本） ===
-
+// ========== 主文件 P.1-P.8 ==========
 interface CommonCtx {
   br8: string;
   day: string;
@@ -588,162 +381,152 @@ interface CommonCtx {
   shareInfos: Array<{ className: string; currency: string; issuePrice: number; shares: number; paidUp: number; unpaid: number; }>;
 }
 
-// ========== 主文件 P.1-P.8 ==========
-function fillMainDocument(pdfDoc: PDFDocument, ctx: CommonCtx, fonts: Fonts) {
+function fillMainDocument(pdfDoc: PDFDocument, ctx: CommonCtx) {
   const { br8, day, month, year, data, office, shareInfos } = ctx;
-  const { form } = createNativeFormHelpers(pdfDoc);
-  const { safeSetText, safeCheck } = createFormHelpers(pdfDoc, fonts);
+  const { setText, check, selectDropdown } = createFormHelpers(pdfDoc);
 
   // ===== Page 1 =====
-  safeSetText("fill_1_P.1", br8);
+  setText("fill_1_P.1", br8);
   const fullCompanyName = [data.name, data.chineseName].filter(Boolean).join("\n");
-  safeSetText("fill_2_P.1", fullCompanyName);
-  safeSetText("fill_3_P.1", data.tradingName || "");
-  safeCheck("cb_1_P.1", data.companyType?.includes("私人") || data.companyType?.toLowerCase().includes("private") || false);
-  safeCheck("cb_2_P.1", data.companyType?.includes("公眾") || data.companyType?.toLowerCase().includes("public") || false);
-  safeCheck("cb_3_P.1", data.companyType?.includes("擔保") || false);
-  safeSetText("fill_4_P.1", data.businessCode || "");
-  safeSetText("fill_5_P.1", data.businessNature || "");
-  safeSetText("fill_6_P.1", day || "");
-  safeSetText("fill_7_P.1", month || "");
-  safeSetText("fill_8_P.1", year || "");
-  safeSetText("fill_15_P.1", office.flat || "");
-  safeSetText("fill_16_P.1", office.building || "");
-  safeSetText("fill_17_P.1", office.street || "");
-  safeSetText("fill_18_P.1", office.district || "");
-  if (office.region) {
-    try {
-      const dropdown = form.getDropdown("Dropdown1_P.1");
-      const options = dropdown.getOptions();
-      const match = options.find((o: string) => office.region!.includes(o) || o.includes(office.region!));
-      if (match) dropdown.select(match);
-    } catch (_) { /* ignore */ }
-  }
+  setText("fill_2_P.1", fullCompanyName);
+  setText("fill_3_P.1", data.tradingName || "");
+  check("cb_1_P.1", data.companyType?.includes("私人") || data.companyType?.toLowerCase().includes("private") || false);
+  check("cb_2_P.1", data.companyType?.includes("公眾") || data.companyType?.toLowerCase().includes("public") || false);
+  check("cb_3_P.1", data.companyType?.includes("擔保") || false);
+  setText("fill_4_P.1", data.businessCode || "");
+  setText("fill_5_P.1", data.businessNature || "");
+  setText("fill_6_P.1", day || "");
+  setText("fill_7_P.1", month || "");
+  setText("fill_8_P.1", year || "");
+  setText("fill_15_P.1", office.flat || "");
+  setText("fill_16_P.1", office.building || "");
+  setText("fill_17_P.1", office.street || "");
+  setText("fill_18_P.1", office.district || "");
+  if (office.region) selectDropdown("Dropdown1_P.1", office.region);
+
   const presenterP1 = data.presenter || {};
-  if (presenterP1.name) safeSetText("fill_19_P.1", presenterP1.name);
-  if (presenterP1.address) safeSetText("fill_20_P.1", presenterP1.address);
-  if (presenterP1.phone) safeSetText("fill_21_P.1", presenterP1.phone);
-  if (presenterP1.fax) safeSetText("fill_22_P.1", presenterP1.fax);
-  if (presenterP1.email) safeSetText("fill_23_P.1", presenterP1.email);
-  if (presenterP1.reference) safeSetText("fill_24_P.1", presenterP1.reference);
+  if (presenterP1.name) setText("fill_19_P.1", presenterP1.name);
+  if (presenterP1.address) setText("fill_20_P.1", presenterP1.address);
+  if (presenterP1.phone) setText("fill_21_P.1", presenterP1.phone);
+  if (presenterP1.fax) setText("fill_22_P.1", presenterP1.fax);
+  if (presenterP1.email) setText("fill_23_P.1", presenterP1.email);
+  if (presenterP1.reference) setText("fill_24_P.1", presenterP1.reference);
 
   // ===== Page 2 - Share Capital =====
-  safeSetText("fill_1_P.2", br8);
+  setText("fill_1_P.2", br8);
   let totalShares = 0, totalAmountSum = 0, totalPaidUpSum = 0, firstCurrency = "";
   for (let i = 0; i < Math.min(4, shareInfos.length); i++) {
     const info = shareInfos[i];
     const base = 6 + i * 5;
     const issuedAmount = (info.paidUp + info.unpaid) || (info.issuePrice ? info.issuePrice * info.shares : 0);
-    safeSetText(`fill_${base}_P.2`, info.className);
-    safeSetText(`fill_${base + 1}_P.2`, info.currency);
-    safeSetText(`fill_${base + 2}_P.2`, fmtInt(info.shares));
-    safeSetText(`fill_${base + 3}_P.2`, issuedAmount ? fmtAmount(issuedAmount) : "");
-    safeSetText(`fill_${base + 4}_P.2`, info.paidUp ? fmtAmount(info.paidUp) : (issuedAmount ? fmtAmount(issuedAmount) : ""));
+    setText(`fill_${base}_P.2`, info.className);
+    setText(`fill_${base + 1}_P.2`, info.currency);
+    setText(`fill_${base + 2}_P.2`, fmtInt(info.shares));
+    setText(`fill_${base + 3}_P.2`, issuedAmount ? fmtAmount(issuedAmount) : "");
+    setText(`fill_${base + 4}_P.2`, info.paidUp ? fmtAmount(info.paidUp) : (issuedAmount ? fmtAmount(issuedAmount) : ""));
     totalShares += info.shares;
     totalAmountSum += issuedAmount;
     totalPaidUpSum += info.paidUp || issuedAmount;
     if (!firstCurrency) firstCurrency = info.currency;
   }
   if (shareInfos.length > 0) {
-    safeSetText("fill_26_P.2", firstCurrency);
-    safeSetText("fill_27_P.2", fmtInt(totalShares));
-    safeSetText("fill_28_P.2", totalAmountSum ? fmtAmount(totalAmountSum) : "");
-    safeSetText("fill_29_P.2", totalPaidUpSum ? fmtAmount(totalPaidUpSum) : "");
+    setText("fill_26_P.2", firstCurrency);
+    setText("fill_27_P.2", fmtInt(totalShares));
+    setText("fill_28_P.2", totalAmountSum ? fmtAmount(totalAmountSum) : "");
+    setText("fill_29_P.2", totalPaidUpSum ? fmtAmount(totalPaidUpSum) : "");
   }
 
   // ===== Page 3 - Secretary (Natural) - 第一位 =====
-  safeSetText("fill_1_P.3", br8);
+  setText("fill_1_P.3", br8);
   const naturalSecretaries = (data.secretaries || []).filter(s => s.identity === "natural");
   if (naturalSecretaries.length > 0) {
     const sec = naturalSecretaries[0];
     const { surname, otherNames } = parseEnglishName(sec.nameEnglish);
-    safeSetText("fill_2_P.3", sec.nameChinese || "");
-    safeSetText("fill_3_P.3", surname);
-    safeSetText("fill_4_P.3", otherNames);
+    setText("fill_2_P.3", sec.nameChinese || "");
+    setText("fill_3_P.3", surname);
+    setText("fill_4_P.3", otherNames);
     const addr = parseAddress(sec.address || '');
-    safeSetText("fill_9_P.3", addr.flat);
-    safeSetText("fill_10_P.3", addr.building);
-    safeSetText("fill_11_P.3", addr.street);
-    safeSetText("fill_12_P.3", addr.district);
-    safeSetText("fill_13_P.3", sec.email || "");
+    setText("fill_9_P.3", addr.flat);
+    setText("fill_10_P.3", addr.building);
+    setText("fill_11_P.3", addr.street);
+    setText("fill_12_P.3", addr.district);
+    setText("fill_13_P.3", sec.email || "");
     const hkid = parseHkidPartial(sec.idNumber || '');
-    if (hkid) safeSetText("fill_14_P.3", hkid);
+    if (hkid) setText("fill_14_P.3", hkid);
   }
 
   // ===== Page 4 - Secretary (Corporate) - 第一位 =====
-  safeSetText("fill_1_P.4", br8);
+  setText("fill_1_P.4", br8);
   const corporateSecretaries = (data.secretaries || []).filter(s => s.identity === "corporate");
   if (corporateSecretaries.length > 0) {
     const sec = corporateSecretaries[0];
-    safeSetText("fill_2_P.4", sec.nameChinese || "");
-    safeSetText("fill_3_P.4", sec.nameEnglish || "");
+    setText("fill_2_P.4", sec.nameChinese || "");
+    setText("fill_3_P.4", sec.nameEnglish || "");
     const addr = parseAddress(sec.address || '');
-    safeSetText("fill_4_P.4", addr.flat);
-    safeSetText("fill_5_P.4", addr.building);
-    safeSetText("fill_6_P.4", addr.street);
-    safeSetText("fill_7_P.4", addr.district);
-    safeSetText("fill_8_P.4", sec.email || "");
-    safeSetText("fill_9_P.4", sec.companyNumberRef || sec.brNumber || "");
+    setText("fill_4_P.4", addr.flat);
+    setText("fill_5_P.4", addr.building);
+    setText("fill_6_P.4", addr.street);
+    setText("fill_7_P.4", addr.district);
+    setText("fill_8_P.4", sec.email || "");
+    setText("fill_9_P.4", sec.companyNumberRef || sec.brNumber || "");
     const tcsp = sec.tcspNumber || (sec as any).licenceNumber || "";
-    if (tcsp) safeSetText("fill_10_P.4", tcsp);
+    if (tcsp) setText("fill_10_P.4", tcsp);
   }
 
   // ===== Page 5 - Director (Natural) - 第一位 =====
-  safeSetText("fill_1_P.5", br8);
+  setText("fill_1_P.5", br8);
   const naturalDirectors = (data.directors || []).filter(d => d.identity === "natural");
   if (naturalDirectors.length > 0) {
     const dir = naturalDirectors[0];
     const { surname, otherNames } = parseEnglishName(dir.nameEnglish);
-    safeCheck("cb_1_P.5", true);
-    safeSetText("fill_3_P.5", dir.nameChinese || "");
-    safeSetText("fill_4_P.5", surname);
-    safeSetText("fill_5_P.5", otherNames);
-    safeSetText("fill_10_P.5", office.flat || "");
-    safeSetText("fill_11_P.5", office.building || "");
-    safeSetText("fill_12_P.5", office.street || "");
-    safeSetText("fill_13_P.5", office.district || "");
-    safeSetText("fill_14_P.5", office.region || "");
-    safeSetText("fill_15_P.5", dir.email || "");
+    check("cb_1_P.5", true);
+    setText("fill_3_P.5", dir.nameChinese || "");
+    setText("fill_4_P.5", surname);
+    setText("fill_5_P.5", otherNames);
+    setText("fill_10_P.5", office.flat || "");
+    setText("fill_11_P.5", office.building || "");
+    setText("fill_12_P.5", office.street || "");
+    setText("fill_13_P.5", office.district || "");
+    setText("fill_14_P.5", office.region || "");
+    setText("fill_15_P.5", dir.email || "");
     const hkid = parseHkidPartial(dir.idNumber || '');
     if (hkid) {
-      safeSetText("fill_16_P.5", hkid);
+      setText("fill_16_P.5", hkid);
     } else if (dir.passportNumber) {
-      safeSetText("fill_17_P.5", dir.nationality || dir.placeIncorporated || "");
-      safeSetText("fill_18_P.5", parsePassportPartial(dir.passportNumber));
+      setText("fill_17_P.5", dir.nationality || dir.placeIncorporated || "");
+      setText("fill_18_P.5", parsePassportPartial(dir.passportNumber));
     }
   }
 
   // ===== Page 6 - Director (Corporate) - 第一位 =====
-  safeSetText("fill_1_P.6", br8);
+  setText("fill_1_P.6", br8);
   const corporateDirectors = (data.directors || []).filter(d => d.identity === "corporate");
   if (corporateDirectors.length > 0) {
     const dir = corporateDirectors[0];
-    safeCheck("cb_1_P.6", true);
-    safeSetText("fill_3_P.6", dir.nameChinese || "");
-    safeSetText("fill_4_P.6", dir.nameEnglish || "");
-    safeSetText("fill_5_P.6", office.flat || "");
-    safeSetText("fill_6_P.6", office.building || "");
-    safeSetText("fill_7_P.6", office.street || "");
-    safeSetText("fill_8_P.6", office.district || "");
-    safeSetText("fill_9_P.6", office.region || "");
-    safeSetText("fill_10_P.6", dir.email || "");
-    safeSetText("fill_11_P.6", dir.companyNumberRef || dir.brNumber || "");
+    check("cb_1_P.6", true);
+    setText("fill_3_P.6", dir.nameChinese || "");
+    setText("fill_4_P.6", dir.nameEnglish || "");
+    setText("fill_5_P.6", office.flat || "");
+    setText("fill_6_P.6", office.building || "");
+    setText("fill_7_P.6", office.street || "");
+    setText("fill_8_P.6", office.district || "");
+    setText("fill_9_P.6", office.region || "");
+    setText("fill_10_P.6", dir.email || "");
+    setText("fill_11_P.6", dir.companyNumberRef || dir.brNumber || "");
   }
 
-  // ===== Page 7 - Reserve Director (BR header only) =====
-  safeSetText("fill_1_P.7", br8);
+  // ===== Page 7 =====
+  setText("fill_1_P.7", br8);
 
-  // ===== Page 8 - 簽署/續頁數 =====
-  safeSetText("fill_1_P.8", br8);
+  // ===== Page 8 =====
+  setText("fill_1_P.8", br8);
   const memberCount = (data.shareholders || []).filter(sh => (Number(sh.shares) || 0) > 0).length;
   const isListedCo = data.companyType?.includes("上市") || data.companyType?.toLowerCase().includes("listed") || false;
 
-  // 14 ☑ 非上市公司成員詳情列於附表一 / 上市公司則勾附表二
-  if (!isListedCo) safeCheck("cb_1_P.8", true);
-  safeCheck("cb_4_P.8",
+  if (!isListedCo) check("cb_1_P.8", true);
+  check("cb_4_P.8",
     (data.companyType?.includes("私人") || data.companyType?.toLowerCase().includes("private")) || false);
 
-  // 續頁頁數
   const sheetA = Math.max(0, naturalSecretaries.length - 1);
   const sheetB = Math.max(0, corporateSecretaries.length - 1);
   const sheetC = Math.max(0, naturalDirectors.length - 1);
@@ -751,35 +534,30 @@ function fillMainDocument(pdfDoc: PDFDocument, ctx: CommonCtx, fonts: Fonts) {
   const schedulePages = !isListedCo && memberCount > 0 ? Math.ceil(memberCount / 2) : 0;
   const schedule2Pages = isListedCo ? 1 : 0;
 
-  if (sheetA > 0) safeSetText("fill_4_P.8", String(sheetA));
-  if (sheetB > 0) safeSetText("fill_5_P.8", String(sheetB));
-  if (sheetC > 0) safeSetText("fill_6_P.8", String(sheetC));
-  if (sheetD > 0) safeSetText("fill_7_P.8", String(sheetD));
-  if (schedulePages > 0) safeSetText("fill_9_P.8", String(schedulePages));
-  if (schedule2Pages > 0) safeSetText("fill_10_P.8", String(schedule2Pages));
+  if (sheetA > 0) setText("fill_4_P.8", String(sheetA));
+  if (sheetB > 0) setText("fill_5_P.8", String(sheetB));
+  if (sheetC > 0) setText("fill_6_P.8", String(sheetC));
+  if (sheetD > 0) setText("fill_7_P.8", String(sheetD));
+  if (schedulePages > 0) setText("fill_9_P.8", String(schedulePages));
+  if (schedule2Pages > 0) setText("fill_10_P.8", String(schedule2Pages));
 
-  if (presenterP1.name) safeSetText("fill_11_P.8", presenterP1.name);
-  if (day && month && year) safeSetText("fill_12_P.8", `${day}/${month}/${year}`);
+  if (presenterP1.name) setText("fill_11_P.8", presenterP1.name);
+  if (day && month && year) setText("fill_12_P.8", `${day}/${month}/${year}`);
 }
 
 // ========== 附表 1 (P.9): 兩位股東 (非上市公司) ==========
-// 新欄位映射（基於官方模板 widget 閱讀順序）：
-//   1=DD 2=MM 3=YYYY 4=BR 5=股份類別 6=已發行總數
-//   成員1: 7=中文 8=英文姓 9=英文名 10=股數 11=聯名(cb-不可用) 12=英文公司名 13=室 14=大廈 15=街道 16=區/市 17=國家 18=備註
-//   成員2: 19=中文 20=英文姓 21=英文名 22=股數 23=聯名(cb) 24=英文公司名 25=室 26=大廈 27=街道 28=區/市 29=國家 30=備註
-//   31=本頁頁次 32=總頁數
-function fillSchedule1(pdfDoc: PDFDocument, ctx: CommonCtx, members: ShareholderData[], pageNo: number, totalPages: number, fonts: Fonts) {
+function fillSchedule1(pdfDoc: PDFDocument, ctx: CommonCtx, members: ShareholderData[], pageNo: number, totalPages: number) {
   const { br8, day, month, year, shareInfos } = ctx;
-  const { safeSetText } = createFormHelpers(pdfDoc, fonts);
+  const { setText } = createFormHelpers(pdfDoc);
 
-  safeSetText("fill_1_P9", day || "");
-  safeSetText("fill_2_P9", month || "");
-  safeSetText("fill_3_P9", year || "");
-  safeSetText("fill_4_P9", br8);
+  setText("fill_1_P9", day || "");
+  setText("fill_2_P9", month || "");
+  setText("fill_3_P9", year || "");
+  setText("fill_4_P9", br8);
   const firstShareInfo = shareInfos[0];
   if (firstShareInfo) {
-    safeSetText("fill_5_P9", firstShareInfo.className);
-    safeSetText("fill_6_P9", fmtInt(firstShareInfo.shares));
+    setText("fill_5_P9", firstShareInfo.className);
+    setText("fill_6_P9", fmtInt(firstShareInfo.shares));
   }
 
   const fillMember = (sh: ShareholderData, slot: 1 | 2) => {
@@ -787,193 +565,166 @@ function fillSchedule1(pdfDoc: PDFDocument, ctx: CommonCtx, members: Shareholder
     const fullName = sh.nameEnglish || sh.name || "";
     const { surname, otherNames } = parseEnglishName(fullName);
     const addr = parseAddress(sh.address || "");
-    const base = slot === 1 ? 0 : 12; // 成員 2 偏移 12
+    const base = slot === 1 ? 0 : 12;
     const f = (n: number) => `fill_${n + base}_P9`;
-    safeSetText(f(7), sh.nameChinese || "");
+    setText(f(7), sh.nameChinese || "");
     if (isCorp) {
-      safeSetText(f(12), fullName); // 英文公司名
+      setText(f(12), fullName);
     } else {
-      safeSetText(f(8), surname);
-      safeSetText(f(9), otherNames);
+      setText(f(8), surname);
+      setText(f(9), otherNames);
     }
-    safeSetText(f(10), fmtInt(Number(sh.shares) || 0));
-    safeSetText(f(13), addr.flat);
-    safeSetText(f(14), addr.building);
-    safeSetText(f(15), addr.street);
-    safeSetText(f(16), addr.district);
-    safeSetText(f(17), addr.country);
+    setText(f(10), fmtInt(Number(sh.shares) || 0));
+    setText(f(13), addr.flat);
+    setText(f(14), addr.building);
+    setText(f(15), addr.street);
+    setText(f(16), addr.district);
+    setText(f(17), addr.country);
   };
 
   if (members[0]) fillMember(members[0], 1);
   if (members[1]) fillMember(members[1], 2);
-  safeSetText("fill_31_P9", String(pageNo));
-  safeSetText("fill_32_P9", String(totalPages));
+  setText("fill_31_P9", String(pageNo));
+  setText("fill_32_P9", String(totalPages));
 }
 
 // ========== 附表 2 (P.10): 上市公司 ==========
-// 結構與 P.9 類似，但成員多一個「佔比」欄位
-//   1-4 同上, 5=股份類別 6=已發行總數
-//   成員1: 7=中文 8=股數 9=英文姓 10=英文名 11=英文公司名 12=佔比 13=聯名 14=室 15=大廈 16=街 17=區 18=國 19=備註
-//   成員2: 20=中文 21=股數 22=英文姓 23=英文名 24=英文公司名 25=佔比 26=聯名 27=室 28=大廈 29=街 30=區 31=國 32=備註
-//   33=本頁 34=總頁
-function fillSchedule2(pdfDoc: PDFDocument, ctx: CommonCtx, fonts: Fonts) {
+function fillSchedule2(pdfDoc: PDFDocument, ctx: CommonCtx) {
   const { br8, day, month, year, shareInfos } = ctx;
-  const { safeSetText } = createFormHelpers(pdfDoc, fonts);
-  safeSetText("fill_1_P10", day || "");
-  safeSetText("fill_2_P10", month || "");
-  safeSetText("fill_3_P10", year || "");
-  safeSetText("fill_4_P10", br8);
+  const { setText } = createFormHelpers(pdfDoc);
+  setText("fill_1_P10", day || "");
+  setText("fill_2_P10", month || "");
+  setText("fill_3_P10", year || "");
+  setText("fill_4_P10", br8);
   if (shareInfos[0]) {
-    safeSetText("fill_5_P10", shareInfos[0].className);
-    safeSetText("fill_6_P10", fmtInt(shareInfos[0].shares));
+    setText("fill_5_P10", shareInfos[0].className);
+    setText("fill_6_P10", fmtInt(shareInfos[0].shares));
   }
 }
 
-// ========== 續頁 A (P.11): 額外自然人秘書 ==========
-// 1=DD 2=MM 3=YYYY 4=BR
-// 5=中文姓名 6=英文姓 7=英文名 8=前用中文 9=前用英文 10=中文別名 11=英文別名
-// 12=室 13=大廈 14=街道 15=區
-// 16=Email 17=HKID 部分 18=護照簽發國 19=護照部分 20=牌照編號 21=無須持牌 22=原因
-function fillSheetA(pdfDoc: PDFDocument, ctx: CommonCtx, sec: OfficerData, fonts: Fonts) {
+// ========== 續頁 A (P.11) ==========
+function fillSheetA(pdfDoc: PDFDocument, ctx: CommonCtx, sec: OfficerData) {
   const { br8, day, month, year } = ctx;
-  const { safeSetText } = createFormHelpers(pdfDoc, fonts);
-  safeSetText("fill_1_P11", day || "");
-  safeSetText("fill_2_P11", month || "");
-  safeSetText("fill_3_P11", year || "");
-  safeSetText("fill_4_P11", br8);
+  const { setText } = createFormHelpers(pdfDoc);
+  setText("fill_1_P11", day || "");
+  setText("fill_2_P11", month || "");
+  setText("fill_3_P11", year || "");
+  setText("fill_4_P11", br8);
 
   const { surname, otherNames } = parseEnglishName(sec.nameEnglish);
-  safeSetText("fill_5_P11", sec.nameChinese || "");
-  safeSetText("fill_6_P11", surname);
-  safeSetText("fill_7_P11", otherNames);
+  setText("fill_5_P11", sec.nameChinese || "");
+  setText("fill_6_P11", surname);
+  setText("fill_7_P11", otherNames);
   const addr = parseAddress(sec.address || '');
-  safeSetText("fill_12_P11", addr.flat);
-  safeSetText("fill_13_P11", addr.building);
-  safeSetText("fill_14_P11", addr.street);
-  safeSetText("fill_15_P11", addr.district);
-  safeSetText("fill_16_P11", sec.email || "");
+  setText("fill_12_P11", addr.flat);
+  setText("fill_13_P11", addr.building);
+  setText("fill_14_P11", addr.street);
+  setText("fill_15_P11", addr.district);
+  setText("fill_16_P11", sec.email || "");
   const hkid = parseHkidPartial(sec.idNumber || '');
-  if (hkid) safeSetText("fill_17_P11", hkid);
-  if (sec.tcspNumber) safeSetText("fill_20_P11", sec.tcspNumber);
+  if (hkid) setText("fill_17_P11", hkid);
+  if (sec.tcspNumber) setText("fill_20_P11", sec.tcspNumber);
 }
 
-// ========== 續頁 B (P.12): 額外法人秘書 ==========
-// 1=DD 2=MM 3=YYYY 4=BR 5=中文名稱 6=英文名稱
-// 7=室 8=大廈 9=街 10=區 11=Email 12=BR(此秘書) 13=牌照編號 14=無須持牌 15=原因
-function fillSheetB(pdfDoc: PDFDocument, ctx: CommonCtx, sec: OfficerData, fonts: Fonts) {
+// ========== 續頁 B (P.12) ==========
+function fillSheetB(pdfDoc: PDFDocument, ctx: CommonCtx, sec: OfficerData) {
   const { br8, day, month, year } = ctx;
-  const { safeSetText } = createFormHelpers(pdfDoc, fonts);
-  safeSetText("fill_1_P12", day || "");
-  safeSetText("fill_2_P12", month || "");
-  safeSetText("fill_3_P12", year || "");
-  safeSetText("fill_4_P12", br8);
+  const { setText } = createFormHelpers(pdfDoc);
+  setText("fill_1_P12", day || "");
+  setText("fill_2_P12", month || "");
+  setText("fill_3_P12", year || "");
+  setText("fill_4_P12", br8);
 
-  safeSetText("fill_5_P12", sec.nameChinese || "");
-  safeSetText("fill_6_P12", sec.nameEnglish || "");
+  setText("fill_5_P12", sec.nameChinese || "");
+  setText("fill_6_P12", sec.nameEnglish || "");
   const addr = parseAddress(sec.address || '');
-  safeSetText("fill_7_P12", addr.flat);
-  safeSetText("fill_8_P12", addr.building);
-  safeSetText("fill_9_P12", addr.street);
-  safeSetText("fill_10_P12", addr.district);
-  safeSetText("fill_11_P12", sec.email || "");
-  safeSetText("fill_12_P12", sec.companyNumberRef || sec.brNumber || "");
-  if (sec.tcspNumber) safeSetText("fill_13_P12", sec.tcspNumber);
+  setText("fill_7_P12", addr.flat);
+  setText("fill_8_P12", addr.building);
+  setText("fill_9_P12", addr.street);
+  setText("fill_10_P12", addr.district);
+  setText("fill_11_P12", sec.email || "");
+  setText("fill_12_P12", sec.companyNumberRef || sec.brNumber || "");
+  if (sec.tcspNumber) setText("fill_13_P12", sec.tcspNumber);
 }
 
-// ========== 續頁 C (P.13): 額外自然人董事 ==========
-// 1=DD 2=MM 3=YYYY 4=BR
-// 5=董事 6=候補董事 7=代替誰
-// 8=中文姓名 9=英文姓 10=英文名 11=前用中文 12=前用英文 13=中文別名 14=英文別名
-// 15=室 16=大廈 17=街道 18=區/市 19=國家
-// 20=Email 21=HKID 部分 22=護照簽發國 23=護照部分
-function fillSheetC(pdfDoc: PDFDocument, ctx: CommonCtx, dir: OfficerData, fonts: Fonts) {
+// ========== 續頁 C (P.13) ==========
+function fillSheetC(pdfDoc: PDFDocument, ctx: CommonCtx, dir: OfficerData) {
   const { br8, day, month, year, office } = ctx;
-  const { safeSetText } = createFormHelpers(pdfDoc, fonts);
-  safeSetText("fill_1_P13", day || "");
-  safeSetText("fill_2_P13", month || "");
-  safeSetText("fill_3_P13", year || "");
-  safeSetText("fill_4_P13", br8);
+  const { setText } = createFormHelpers(pdfDoc);
+  setText("fill_1_P13", day || "");
+  setText("fill_2_P13", month || "");
+  setText("fill_3_P13", year || "");
+  setText("fill_4_P13", br8);
 
   const { surname, otherNames } = parseEnglishName(dir.nameEnglish);
-  // 註：cb 已被合併成文字欄位，原本的「董事」勾選改用文字 ✓
-  safeSetText("fill_5_P13", "✓");
-  safeSetText("fill_8_P13", dir.nameChinese || "");
-  safeSetText("fill_9_P13", surname);
-  safeSetText("fill_10_P13", otherNames);
-  safeSetText("fill_15_P13", office.flat || "");
-  safeSetText("fill_16_P13", office.building || "");
-  safeSetText("fill_17_P13", office.street || "");
-  safeSetText("fill_18_P13", office.district || "");
-  safeSetText("fill_19_P13", office.region || "");
-  safeSetText("fill_20_P13", dir.email || "");
+  setText("fill_5_P13", "X");
+  setText("fill_8_P13", dir.nameChinese || "");
+  setText("fill_9_P13", surname);
+  setText("fill_10_P13", otherNames);
+  setText("fill_15_P13", office.flat || "");
+  setText("fill_16_P13", office.building || "");
+  setText("fill_17_P13", office.street || "");
+  setText("fill_18_P13", office.district || "");
+  setText("fill_19_P13", office.region || "");
+  setText("fill_20_P13", dir.email || "");
   const hkid = parseHkidPartial(dir.idNumber || '');
   if (hkid) {
-    safeSetText("fill_21_P13", hkid);
+    setText("fill_21_P13", hkid);
   } else if (dir.passportNumber) {
-    safeSetText("fill_22_P13", dir.nationality || dir.placeIncorporated || "");
-    safeSetText("fill_23_P13", parsePassportPartial(dir.passportNumber));
+    setText("fill_22_P13", dir.nationality || dir.placeIncorporated || "");
+    setText("fill_23_P13", parsePassportPartial(dir.passportNumber));
   }
 }
 
-// ========== 續頁 D (P.14): 額外法人董事 (一頁可放 2 位) ==========
-// 1=DD 2=MM 3=YYYY 4=BR
-// 董事1: 5=董事 6=候補 7=代替 8=中文 9=英文 10=室 11=大廈 12=街 13=區 14=國 15=Email 16=BR
-// 董事2: 17=董事 18=候補 19=代替 20=中文 21=英文 22=室 23=大廈 24=街 25=區 26=國 27=Email 28=BR
-function fillSheetD(pdfDoc: PDFDocument, ctx: CommonCtx, dirs: OfficerData[], fonts: Fonts) {
+// ========== 續頁 D (P.14) ==========
+function fillSheetD(pdfDoc: PDFDocument, ctx: CommonCtx, dirs: OfficerData[]) {
   const { br8, day, month, year, office } = ctx;
-  const { safeSetText } = createFormHelpers(pdfDoc, fonts);
-  safeSetText("fill_1_P14", day || "");
-  safeSetText("fill_2_P14", month || "");
-  safeSetText("fill_3_P14", year || "");
-  safeSetText("fill_4_P14", br8);
+  const { setText } = createFormHelpers(pdfDoc);
+  setText("fill_1_P14", day || "");
+  setText("fill_2_P14", month || "");
+  setText("fill_3_P14", year || "");
+  setText("fill_4_P14", br8);
 
   const fillSlot = (dir: OfficerData, slot: 1 | 2) => {
     const base = slot === 1 ? 0 : 12;
     const f = (n: number) => `fill_${n + base}_P14`;
-    safeSetText(f(5), "✓"); // 董事勾選
-    safeSetText(f(8), dir.nameChinese || "");
-    safeSetText(f(9), dir.nameEnglish || "");
-    safeSetText(f(10), office.flat || "");
-    safeSetText(f(11), office.building || "");
-    safeSetText(f(12), office.street || "");
-    safeSetText(f(13), office.district || "");
-    safeSetText(f(14), office.region || "");
-    safeSetText(f(15), dir.email || "");
-    safeSetText(f(16), dir.companyNumberRef || dir.brNumber || "");
+    setText(f(5), "X");
+    setText(f(8), dir.nameChinese || "");
+    setText(f(9), dir.nameEnglish || "");
+    setText(f(10), office.flat || "");
+    setText(f(11), office.building || "");
+    setText(f(12), office.street || "");
+    setText(f(13), office.district || "");
+    setText(f(14), office.region || "");
+    setText(f(15), dir.email || "");
+    setText(f(16), dir.companyNumberRef || dir.brNumber || "");
   };
   if (dirs[0]) fillSlot(dirs[0], 1);
   if (dirs[1]) fillSlot(dirs[1], 2);
 }
 
-// ========== 續頁 E (P.15): 公司紀錄保存地點 ==========
-function fillSheetE(
-  pdfDoc: PDFDocument,
-  ctx: CommonCtx,
-  records: Array<{ records: string; address: string }>,
-  fonts: Fonts,
-) {
-  const { safeSetText } = createFormHelpers(pdfDoc, fonts);
+// ========== 續頁 E (P.15) ==========
+function fillSheetE(pdfDoc: PDFDocument, ctx: CommonCtx, records: Array<{ records: string; address: string }>) {
+  const { setText } = createFormHelpers(pdfDoc);
   const { day, month, year, br8 } = ctx;
-  safeSetText("fill_1_P15", day || "");
-  safeSetText("fill_2_P15", month || "");
-  safeSetText("fill_3_P15", year || "");
-  safeSetText("fill_4_P15", br8);
+  setText("fill_1_P15", day || "");
+  setText("fill_2_P15", month || "");
+  setText("fill_3_P15", year || "");
+  setText("fill_4_P15", br8);
 
-  // 左欄列出紀錄名稱，右欄列出對應地址，以空行分隔多筆
   const recordsText = records.map(r => r.records || "").join("\n\n");
   const addressText = records.map(r => r.address || "").join("\n\n");
-  safeSetText("fill_5_P15", recordsText);
-  safeSetText("fill_6_P15", addressText);
+  setText("fill_5_P15", recordsText);
+  setText("fill_6_P15", addressText);
 }
 
-// === 主流程：建構文件 ===
+// === 主流程 ===
 async function buildNAR1Pdf(data: CompanyData): Promise<Uint8Array> {
   const returnDate = data.returnDate || new Date().toISOString().split("T")[0];
   const [year, month, day] = returnDate.split("-");
   const office = data.registeredOffice || {};
   const br8 = (data.brNumber || "").replace(/[^0-9A-Za-z]/g, "").slice(0, 8);
 
-  // 整理股本資料（給主文件 P.2 + 附表 1 用）
   const normalizeClassName = (raw: string) => {
     const t = (raw || "").trim();
     if (!t) return "ORDINARY SHARES";
@@ -1010,21 +761,11 @@ async function buildNAR1Pdf(data: CompanyData): Promise<Uint8Array> {
 
   const ctx: CommonCtx = { br8, day, month, year, data, office: office as any, shareInfos };
 
-  // 預先載入中文字體（NotoSansTC），啟用 subset 後僅嵌入用到的字符
-  let cjkBytes: ArrayBuffer | null = null;
-  try {
-    cjkBytes = await loadCjkFontBytes();
-    console.log(`✓ CJK font loaded (${(cjkBytes.byteLength / 1024 / 1024).toFixed(1)}MB)`);
-  } catch (e) {
-    console.warn("CJK font unavailable, Chinese characters may not render:", e);
-  }
-
   // 1) 載入主文件
   console.log("Loading main template (P.1-P.8)...");
   const mainBytes = await fetchTemplate(TEMPLATES.main);
   const mainDoc = await PDFDocument.load(mainBytes);
-  const mainFonts = await embedFontsForDoc(mainDoc, cjkBytes);
-  fillMainDocument(mainDoc, ctx, mainFonts);
+  fillMainDocument(mainDoc, ctx);
 
   // 2) 計算需要的續頁
   const isListedCo = data.companyType?.includes("上市") || data.companyType?.toLowerCase().includes("listed") || false;
@@ -1034,10 +775,8 @@ async function buildNAR1Pdf(data: CompanyData): Promise<Uint8Array> {
   const naturalDirectors = (data.directors || []).filter(d => d.identity === "natural");
   const corporateDirectors = (data.directors || []).filter(d => d.identity === "corporate");
 
-  // 附加文件清單，順序：附表 1 → 附表 2 → 續頁 A → B → C → D
-  const attachments: Array<{ url: string; fill: (doc: PDFDocument, fonts: Fonts) => void; label: string }> = [];
+  const attachments: Array<{ url: string; fill: (doc: PDFDocument) => void; label: string }> = [];
 
-  // 附表 1：非上市公司，每頁 2 位股東
   if (!isListedCo && validMembers.length > 0) {
     const totalSch1 = Math.ceil(validMembers.length / 2);
     for (let i = 0; i < totalSch1; i++) {
@@ -1045,77 +784,69 @@ async function buildNAR1Pdf(data: CompanyData): Promise<Uint8Array> {
       const pageNo = i + 1;
       attachments.push({
         url: TEMPLATES.schedule1,
-        fill: (doc, f) => fillSchedule1(doc, ctx, slice, pageNo, totalSch1, f),
+        fill: (doc) => fillSchedule1(doc, ctx, slice, pageNo, totalSch1),
         label: `附表1-${pageNo}/${totalSch1}`,
       });
     }
   }
 
-  // 附表 2：上市公司
   if (isListedCo) {
     attachments.push({
       url: TEMPLATES.schedule2,
-      fill: (doc, f) => fillSchedule2(doc, ctx, f),
+      fill: (doc) => fillSchedule2(doc, ctx),
       label: "附表2",
     });
   }
 
-  // 續頁 A：第二位起的自然人秘書
   for (let i = 1; i < naturalSecretaries.length; i++) {
     const sec = naturalSecretaries[i];
     attachments.push({
       url: TEMPLATES.sheetA,
-      fill: (doc, f) => fillSheetA(doc, ctx, sec, f),
+      fill: (doc) => fillSheetA(doc, ctx, sec),
       label: `續頁A#${i}`,
     });
   }
-  // 續頁 B：第二位起的法人秘書
   for (let i = 1; i < corporateSecretaries.length; i++) {
     const sec = corporateSecretaries[i];
     attachments.push({
       url: TEMPLATES.sheetB,
-      fill: (doc, f) => fillSheetB(doc, ctx, sec, f),
+      fill: (doc) => fillSheetB(doc, ctx, sec),
       label: `續頁B#${i}`,
     });
   }
-  // 續頁 C：第二位起的自然人董事
   for (let i = 1; i < naturalDirectors.length; i++) {
     const dir = naturalDirectors[i];
     attachments.push({
       url: TEMPLATES.sheetC,
-      fill: (doc, f) => fillSheetC(doc, ctx, dir, f),
+      fill: (doc) => fillSheetC(doc, ctx, dir),
       label: `續頁C#${i}`,
     });
   }
-  // 續頁 D：第二位起的法人董事，每頁可放 2 位
   const extraCorpDirs = corporateDirectors.slice(1);
   for (let i = 0; i < extraCorpDirs.length; i += 2) {
     const slice = extraCorpDirs.slice(i, i + 2);
     const pageNo = Math.floor(i / 2) + 1;
     attachments.push({
       url: TEMPLATES.sheetD,
-      fill: (doc, f) => fillSheetD(doc, ctx, slice, f),
+      fill: (doc) => fillSheetD(doc, ctx, slice),
       label: `續頁D#${pageNo}(${slice.length}人)`,
     });
   }
 
-  // 續頁 E：公司紀錄保存地點（如有提供任何一筆有效紀錄）
   const validRecords = (data.companyRecords || []).filter(
     r => (r.records && r.records.trim()) || (r.address && r.address.trim())
   );
   if (validRecords.length > 0) {
     attachments.push({
       url: TEMPLATES.sheetE,
-      fill: (doc, f) => fillSheetE(doc, ctx, validRecords, f),
+      fill: (doc) => fillSheetE(doc, ctx, validRecords),
       label: `續頁E(${validRecords.length}筆)`,
     });
   }
 
   console.log(`Need ${attachments.length} attachment page(s): ${attachments.map(a => a.label).join(", ")}`);
 
-  // 3) 載入並合併每張續頁
-  // 為避免欄位名稱跨文件衝突，每張附加文件先 flatten() 再合入主文件
-  // 同時快取每個模板的 ArrayBuffer，避免重複下載
+  // 3) 合併附頁（每張先重命名欄位以避免衝突）
   const templateCache = new Map<string, ArrayBuffer>();
   let attIdx = 0;
   for (const att of attachments) {
@@ -1125,10 +856,7 @@ async function buildNAR1Pdf(data: CompanyData): Promise<Uint8Array> {
       templateCache.set(att.url, bytes);
     }
     const subDoc = await PDFDocument.load(bytes);
-    const subFonts = await embedFontsForDoc(subDoc, cjkBytes);
-    att.fill(subDoc, subFonts);
-
-    // 為避免多份附表的欄位名衝突，直接從 annotations/parents 低階改名；不使用 getFields()，避免模板解析錯誤造成空白
+    att.fill(subDoc);
     renameAnnotationFields(subDoc, `_a${attIdx}`);
 
     const subPages = await mainDoc.copyPages(subDoc, subDoc.getPageIndices());
@@ -1137,16 +865,16 @@ async function buildNAR1Pdf(data: CompanyData): Promise<Uint8Array> {
     attIdx++;
   }
 
-  // 文字已用嵌入 CJK 字體 drawText 烙印在頁面上；移除所有 widget annotation 與 AcroForm，
-  // 避免 Adobe Reader 嘗試用內建字體渲染表單欄位 /V 而出現中文亂碼或顯示與 Chrome/Preview 不一致
-  flattenForm(mainDoc);
+  // 確保最終文件 NeedAppearances=true，讓 Reader 開啟時用 PMingLiU 渲染中文
+  enableNeedAppearances(mainDoc);
+
   console.log("Serializing final PDF...");
   const finalBytes = await mainDoc.save({ updateFieldAppearances: false });
   console.log(`Final PDF: ${finalBytes.byteLength} bytes, ${mainDoc.getPageCount()} pages`);
   return finalBytes;
 }
 
-// === Debug 模式：在主文件上把每個 fill_X_P.Y 標上欄位編號 ===
+// === Debug 模式 ===
 async function buildDebugPdf(): Promise<Uint8Array> {
   const mainBytes = await fetchTemplate(TEMPLATES.main);
   const mainDoc = await PDFDocument.load(mainBytes);
@@ -1181,8 +909,7 @@ serve(async (req: Request) => {
       });
     }
 
-    const debugMode = requestBody.debugMode === true;
-    if (debugMode) {
+    if (requestBody.debugMode === true) {
       const bytes = await buildDebugPdf();
       return new Response(JSON.stringify({ pdf: uint8ToBase64(bytes) }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },

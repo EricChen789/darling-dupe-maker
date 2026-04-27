@@ -1042,8 +1042,11 @@ async function buildDebugPdf(): Promise<Uint8Array> {
 
   enableNeedAppearances(mainDoc);
 
-  // 逐個 widget 寫入完整名稱（不縮短）
-  for (const page of mainDoc.getPages()) {
+  // 逐個 widget 寫入「欄位名 + 頁碼」以便視覺化對位
+  const allPages = mainDoc.getPages();
+  for (let pageIdx = 0; pageIdx < allPages.length; pageIdx++) {
+    const page = allPages[pageIdx];
+    const pageLabel = `P${pageIdx + 1}`;
     const annots = page.node.lookup(PDFName.of("Annots")) as any;
     if (!annots || typeof annots.size !== "function") continue;
 
@@ -1058,25 +1061,27 @@ async function buildDebugPdf(): Promise<Uint8Array> {
         const field = parentRef ? mainDoc.context.lookup(parentRef) as any : widget;
         const parentName = field ? decodePdfText(field.get(PDFName.of("T"))) : "";
         const widgetName = decodePdfText(widget.get(PDFName.of("T")));
-        const labelSrc = parentName || widgetName;
+        const labelSrc = widgetName || parentName;
         if (!labelSrc) continue;
 
-        // 先 detach widget 避免共享 field 互相覆蓋
         detachWidget(widget, field);
 
         if (labelSrc.startsWith("fill_")) {
-          // 從原始 T 直接取，並反向解析 PDF 八進制 escape (\137 = _, \056 = . 等)
-          const rawT = field.get(PDFName.of("T")) || widget.get(PDFName.of("T"));
-          let labelStr = labelSrc;
+          // 從原始 T 取得真實名稱（avoid decodeText 截斷）並接上頁碼
+          const rawT = widget.get(PDFName.of("T")) || field.get(PDFName.of("T"));
+          let baseName = labelSrc;
           try {
             if (rawT && typeof (rawT as any).asString === "function") {
               const raw = (rawT as any).asString() as string;
-              labelStr = raw.replace(/\\(\d{1,3})/g, (_m, oct) => String.fromCharCode(parseInt(oct, 8)));
+              baseName = raw.replace(/\\(\d{1,3})/g, (_m, oct) => String.fromCharCode(parseInt(oct, 8)));
             }
           } catch (_) { /* keep labelSrc */ }
-          // 強制較小字體 (8pt) 確保完整名稱能放入
+          // 移除已含的 _P.X 後綴，再附上實際頁碼（例如 fill_1_P → fill_1@P5）
+          const cleanName = baseName.replace(/_P\.?\d+$/, "").replace(/_P$/, "");
+          const fullLabel = `${cleanName}@${pageLabel}`;
+
           widget.set(PDFName.of("DA"), PDFString.of("/Helv 8 Tf 0 g"));
-          widget.set(PDFName.of("V"), PDFHexString.fromText(labelStr));
+          widget.set(PDFName.of("V"), PDFHexString.fromText(fullLabel));
           widget.delete(PDFName.of("AP"));
           widget.delete(PDFName.of("MaxLen"));
           if (field !== widget) field.delete(PDFName.of("MaxLen"));

@@ -43,28 +43,37 @@ const MissingOfficers = () => {
   const [search, setSearch] = useState('');
   const [missingFilter, setMissingFilter] = useState<MissingFilter>('all');
 
-  const { data: companies, isLoading: loadingCompanies } = useQuery({
-    queryKey: ['missing-officers-companies'],
-    queryFn: async () => {
+  const fetchAll = async <T,>(
+    table: 'companies' | 'officers',
+    columns: string,
+  ): Promise<T[]> => {
+    const pageSize = 1000;
+    let from = 0;
+    const all: T[] = [];
+    // Loop until a page returns less than pageSize
+    while (true) {
       const { data, error } = await supabase
-        .from('companies')
-        .select('id, name, chinese_name, company_number, ci_number, status')
-        .limit(5000);
+        .from(table)
+        .select(columns)
+        .range(from, from + pageSize - 1);
       if (error) throw error;
-      return (data || []) as CompanyRow[];
-    },
+      const batch = (data || []) as T[];
+      all.push(...batch);
+      if (batch.length < pageSize) break;
+      from += pageSize;
+      if (from > 100000) break; // safety
+    }
+    return all;
+  };
+
+  const { data: companies, isLoading: loadingCompanies } = useQuery({
+    queryKey: ['missing-officers-companies-v2'],
+    queryFn: () => fetchAll<CompanyRow>('companies', 'id, name, chinese_name, company_number, ci_number, status'),
   });
 
   const { data: officers, isLoading: loadingOfficers } = useQuery({
-    queryKey: ['missing-officers-officers'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('officers')
-        .select('company_id, role, date_ceased')
-        .limit(20000);
-      if (error) throw error;
-      return (data || []) as OfficerRow[];
-    },
+    queryKey: ['missing-officers-officers-v2'],
+    queryFn: () => fetchAll<OfficerRow>('officers', 'company_id, role, date_ceased'),
   });
 
   const rows = useMemo(() => {

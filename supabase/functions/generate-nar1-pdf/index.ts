@@ -522,7 +522,8 @@ function fillMainDocument(pdfDoc: PDFDocument, ctx: CommonCtx) {
     const sec = corporateSecretaries[0];
     setText("fill_2_P.4", sec.nameChinese || "");
     setText("fill_3_P.4", sec.nameEnglish || "");
-    const addr = parseAddress(sec.address || '');
+    // 法人秘書要用「服務地址」(service address)，而非註冊辦事處地址
+    const addr = parseAddress(sec.serviceAddress || sec.address || '');
     setText("fill_4_P.4", addr.flat);
     setText("fill_5_P.4", addr.building);
     setText("fill_6_P.4", addr.street);
@@ -539,6 +540,7 @@ function fillMainDocument(pdfDoc: PDFDocument, ctx: CommonCtx) {
   if (naturalDirectors.length > 0) {
     const dir = naturalDirectors[0];
     const { surname, otherNames } = parseEnglishName(dir.nameEnglish);
+    // 23. 身分：剔「董事」(cb_1_P.5)
     check("cb_1_P.5", true);
     setText("fill_3_P.5", dir.nameChinese || "");
     setText("fill_4_P.5", surname);
@@ -583,7 +585,13 @@ function fillMainDocument(pdfDoc: PDFDocument, ctx: CommonCtx) {
   const memberCount = (data.shareholders || []).filter(sh => (Number(sh.shares) || 0) > 0).length;
   const isListedCo = data.companyType?.includes("上市") || data.companyType?.toLowerCase().includes("listed") || false;
 
+  // P.8 勾選：
+  //   cb_1_P.8 = 「非上市公司」(Non-listed company)
+  //   cb_2_P.8 / cb_3_P.8 = 陳述書聲明 (Declarations) — 兩條都要剔
+  //   cb_4_P.8 = 私人公司 (Private company)
   if (!isListedCo) check("cb_1_P.8", true);
+  check("cb_2_P.8", true);
+  check("cb_3_P.8", true);
   check("cb_4_P.8",
     (data.companyType?.includes("私人") || data.companyType?.toLowerCase().includes("private")) || false);
 

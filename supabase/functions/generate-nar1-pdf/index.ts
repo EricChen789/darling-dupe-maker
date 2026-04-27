@@ -175,7 +175,8 @@ const parseHkidPartial = (idNumber: string) => {
 // 護照號碼：NAR1 只填寫前一半（向上取整），保護隱私
 const parsePassportPartial = (passportNumber: string) => {
   if (!passportNumber) return '';
-  const cleaned = passportNumber.replace(/\s+/g, '').toUpperCase();
+  // 移除所有非英數字元（空白、連字號、括號等）後再取頭一半
+  const cleaned = passportNumber.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
   const half = Math.ceil(cleaned.length / 2);
   return cleaned.slice(0, half);
 };

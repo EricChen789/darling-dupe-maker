@@ -1,7 +1,7 @@
 import { format } from 'date-fns';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
-import { LogOut } from 'lucide-react';
+import { LogOut, FileDown } from 'lucide-react';
 
 const Header = () => {
   const now = new Date();
@@ -13,6 +13,12 @@ const Header = () => {
         {user?.email}
       </div>
       <div className="flex items-center gap-4">
+        <Button variant="outline" size="sm" asChild title="下載 NAR1 欄位診斷 PDF">
+          <a href="/nar1_field_diagnostic.pdf" download>
+            <FileDown className="h-4 w-4 mr-2" />
+            診斷 PDF
+          </a>
+        </Button>
         <div className="text-right text-sm text-muted-foreground">
           <div>{format(now, 'HH:mm:ss')}</div>
           <div>{format(now, 'yyyy/M/dd')}</div>

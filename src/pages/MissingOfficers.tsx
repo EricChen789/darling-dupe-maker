@@ -194,7 +194,7 @@ const MissingOfficers = () => {
             <TableBody>
               {filtered.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
                     沒有符合條件的記錄
                   </TableCell>
                 </TableRow>
@@ -205,6 +205,7 @@ const MissingOfficers = () => {
                     <TableCell>{r.chinese_name || '-'}</TableCell>
                     <TableCell className="font-mono text-xs">{r.company_number || '-'}</TableCell>
                     <TableCell className="font-mono text-xs">{r.ci_number || '-'}</TableCell>
+                    <TableCell className="text-xs">{r.incorporation_date || <span className="text-muted-foreground italic">未填寫</span>}</TableCell>
                     <TableCell>
                       <Badge variant={r.status === 'active' || !r.status ? 'default' : 'secondary'}>
                         {r.status === 'inactive' ? '失效' : r.status === 'cancelled' ? '註銷' : '有效'}

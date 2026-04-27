@@ -1137,7 +1137,9 @@ async function buildNAR1Pdf(data: CompanyData): Promise<Uint8Array> {
     attIdx++;
   }
 
-  // 主文件 P.1-P.8 保留 form fields，由 PDF reader 渲染（與 Acrobat 直接填寫效果一致）
+  // 文字已用嵌入 CJK 字體 drawText 烙印在頁面上；移除所有 widget annotation 與 AcroForm，
+  // 避免 Adobe Reader 嘗試用內建字體渲染表單欄位 /V 而出現中文亂碼或顯示與 Chrome/Preview 不一致
+  flattenForm(mainDoc);
   console.log("Serializing final PDF...");
   const finalBytes = await mainDoc.save({ updateFieldAppearances: false });
   console.log(`Final PDF: ${finalBytes.byteLength} bytes, ${mainDoc.getPageCount()} pages`);

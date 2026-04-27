@@ -26,6 +26,7 @@ interface DbCompany {
   br_file_path?: string;
   preferred_presenter_id?: string | null;
   presenter_reference?: string | null;
+  signer_role_id?: string | null;
 }
 
 interface DbPerson {
@@ -193,6 +194,7 @@ function mapToCompany(
     brFilePath: c.br_file_path || '',
     preferredPresenterId: c.preferred_presenter_id || '',
     presenterReference: c.presenter_reference || '',
+    signerRoleId: ((c as any).signer_role_id as string) || '',
     status: (((c as any).status as 'active' | 'inactive' | 'deregistered') || 'active'),
     email: ((c as any).email as string) || '',
     phone: ((c as any).phone as string) || '',
@@ -432,6 +434,7 @@ export function useUpdateCompany() {
           br_file_path: data.brFilePath,
           preferred_presenter_id: data.preferredPresenterId === undefined ? undefined : (data.preferredPresenterId || null),
           presenter_reference: data.presenterReference,
+          signer_role_id: data.signerRoleId === undefined ? undefined : (data.signerRoleId || null),
           status: data.status,
           email: data.email,
           phone: data.phone,

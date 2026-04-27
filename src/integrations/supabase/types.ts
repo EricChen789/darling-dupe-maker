@@ -41,6 +41,7 @@ export type Database = {
           reg_region: string | null
           reg_street: string | null
           register_date: string | null
+          signer_role_id: string | null
           status: string
           trading_name: string | null
           updated_at: string
@@ -71,6 +72,7 @@ export type Database = {
           reg_region?: string | null
           reg_street?: string | null
           register_date?: string | null
+          signer_role_id?: string | null
           status?: string
           trading_name?: string | null
           updated_at?: string
@@ -101,6 +103,7 @@ export type Database = {
           reg_region?: string | null
           reg_street?: string | null
           register_date?: string | null
+          signer_role_id?: string | null
           status?: string
           trading_name?: string | null
           updated_at?: string

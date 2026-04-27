@@ -96,6 +96,10 @@ interface CompanyData {
     fax?: string;
     email?: string;
   };
+  signer?: {
+    name?: string;
+    role?: 'director' | 'secretary' | null;
+  } | null;
 }
 
 const TEMPLATE_BASE = "https://uqcsgmmsrgtlcqutaomg.supabase.co/storage/v1/object/public/pdf-templates";
@@ -603,8 +607,41 @@ function fillMainDocument(pdfDoc: PDFDocument, ctx: CommonCtx) {
   if (schedulePages > 0) setText("fill_9_P.8", String(schedulePages));
   if (schedule2Pages > 0) setText("fill_10_P.8", String(schedule2Pages));
 
-  if (presenterP1.name) setText("fill_11_P.8", presenterP1.name);
+  // 簽署人：優先使用前端傳入的 signer，否則 fallback 至 presenter
+  const signer = data.signer;
+  const signerName = signer?.name || presenterP1.name || "";
+  const signerRole = signer?.role || null;
+  if (signerName) setText("fill_11_P.8", signerName);
   if (day && month && year) setText("fill_12_P.8", `${day}/${month}/${year}`);
+
+  // 在「董事 Director／公司秘書 Company Secretary」上劃線刪除不適用者
+  // 文字位於 P.8 (page index 7)，y(top)≈745.8 (page height 841.68 → y_pdf ≈ 92)
+  //   「董事 Director」    x ≈ 144 - 168
+  //   「／公司秘書 Company Secretary」 x ≈ 165 - 338
+  if (signerRole === 'secretary' || signerRole === 'director') {
+    try {
+      const page8 = pdfDoc.getPage(7);
+      const ph = page8.getHeight();
+      const yLine = ph - 749; // 蓋過文字中段
+      if (signerRole === 'secretary') {
+        // 簽署人是秘書 → 劃掉「董事 Director」
+        page8.drawLine({
+          start: { x: 142, y: yLine },
+          end:   { x: 168, y: yLine },
+          thickness: 1.2,
+        });
+      } else {
+        // 簽署人是董事 → 劃掉「／公司秘書 Company Secretary」
+        page8.drawLine({
+          start: { x: 165, y: yLine },
+          end:   { x: 340, y: yLine },
+          thickness: 1.2,
+        });
+      }
+    } catch (e) {
+      console.warn('Failed to draw strikethrough on P.8:', e);
+    }
+  }
 }
 
 // ========== 附表 1 (P.9): 兩位股東 (非上市公司) ==========

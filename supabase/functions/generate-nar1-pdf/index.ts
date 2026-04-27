@@ -483,14 +483,8 @@ function createNativeFormHelpers(pdfDoc: PDFDocument) {
 
   const safeCheck = (fieldName: string, shouldCheck: boolean) => {
     if (!shouldCheck) return false;
+    // 同樣統一走低階 widget-map，以避免 pdf-lib 在父子階層命名下命中錯誤欄位。
     try {
-      if (form) {
-        try {
-          form.getCheckBox(fieldName).check();
-          return true;
-        } catch (_) { /* use low-level writer */ }
-      }
-
       const target = widgets.get(fieldName);
       if (!target) return false;
       target.field.set(PDFName.of("V"), PDFName.of("Yes"));

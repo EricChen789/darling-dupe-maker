@@ -509,9 +509,9 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                             <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
                               <Badge variant="secondary" className="text-xs">{sh.shares.toLocaleString()} 股</Badge>
                               {sh.shareType && <Badge variant="outline" className="text-xs">{sh.shareType}</Badge>}
-                              {sh.issuePrice && <Badge variant="outline" className="text-xs">每股: {sh.currency || 'HKD'} {sh.issuePrice}</Badge>}
-                              {sh.paidUp && <Badge variant="outline" className="text-xs text-green-700 border-green-300">已繳: {sh.currency || 'HKD'} {sh.paidUp}</Badge>}
-                              {sh.unpaid && <Badge variant="outline" className="text-xs text-orange-700 border-orange-300">未繳: {sh.currency || 'HKD'} {sh.unpaid}</Badge>}
+                              {sh.issuePrice !== undefined && <Badge variant="outline" className="text-xs">每股: {sh.currency || 'HKD'} {sh.issuePrice || '0'}</Badge>}
+                              {sh.paidUp !== undefined && <Badge variant="outline" className="text-xs text-green-700 border-green-300">已繳: {sh.currency || 'HKD'} {sh.paidUp || '0'}</Badge>}
+                              {sh.unpaid !== undefined && <Badge variant="outline" className="text-xs text-orange-700 border-orange-300">未繳: {sh.currency || 'HKD'} {sh.unpaid || '0'}</Badge>}
                             </div>
                           </div>
                           <div className="hidden group-hover:flex gap-1 ml-2 shrink-0">

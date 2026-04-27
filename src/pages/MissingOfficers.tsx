@@ -262,16 +262,19 @@ const MissingOfficers = () => {
                     <TableCell className="font-mono text-xs">{r.ci_number || '-'}</TableCell>
                     <TableCell className="text-xs">{r.incorporation_date || <span className="text-muted-foreground italic">未填寫</span>}</TableCell>
                     <TableCell>
-                      <Button
-                        variant={r.status === 'active' || !r.status ? 'default' : 'secondary'}
-                        size="sm"
-                        className="h-6 px-2 text-xs"
-                        disabled={updatingId === r.id || !(r.status === 'active' || !r.status)}
-                        onClick={() => handleSetInactive(r.id, r.name)}
-                        title="按一下設為失效"
+                      <Select
+                        value={r.status === 'inactive' ? 'inactive' : r.status === 'cancelled' ? 'cancelled' : 'active'}
+                        onValueChange={(v) => handleUpdateStatus(r.id, r.name, v)}
                       >
-                        {updatingId === r.id ? '更新中...' : r.status === 'inactive' ? '失效' : r.status === 'cancelled' ? '註銷' : '有效'}
-                      </Button>
+                        <SelectTrigger className="h-7 w-24 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="active">有效</SelectItem>
+                          <SelectItem value="inactive">失效</SelectItem>
+                          <SelectItem value="cancelled">註銷</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-1">

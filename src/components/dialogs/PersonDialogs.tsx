@@ -203,6 +203,7 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave, onGenerateND2
     passportFilePath: '',
     idCardFilePath: '',
     addressProofFilePath: '',
+    tcspNumber: '',
   });
 
   const originalAddress = person?.address || '';
@@ -225,6 +226,7 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave, onGenerateND2
         passportFilePath: person.passportFilePath || '',
         idCardFilePath: person.idCardFilePath || '',
         addressProofFilePath: person.addressProofFilePath || '',
+        tcspNumber: person.tcspNumber || '',
       });
     } else {
       setFormData({
@@ -243,6 +245,7 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave, onGenerateND2
         passportFilePath: '',
         idCardFilePath: '',
         addressProofFilePath: '',
+        tcspNumber: '',
       });
     }
   }, [person, open]);
@@ -354,15 +357,26 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave, onGenerateND2
               />
             </div>
             {formData.identity === 'corporate' && (
-              <div className="space-y-2">
-                <Label htmlFor="brNumber">商業登記號碼</Label>
-                <Input
-                  id="brNumber"
-                  value={formData.brNumber}
-                  onChange={(e) => setFormData({ ...formData, brNumber: e.target.value })}
-                  placeholder="輸入商業登記號碼"
-                />
-              </div>
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="brNumber">商業登記號碼</Label>
+                  <Input
+                    id="brNumber"
+                    value={formData.brNumber}
+                    onChange={(e) => setFormData({ ...formData, brNumber: e.target.value })}
+                    placeholder="輸入商業登記號碼"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="tcspNumber">TCSP 號碼（信託或公司服務提供者牌照）</Label>
+                  <Input
+                    id="tcspNumber"
+                    value={formData.tcspNumber}
+                    onChange={(e) => setFormData({ ...formData, tcspNumber: e.target.value })}
+                    placeholder="例如 TC003576"
+                  />
+                </div>
+              </>
             )}
             <div className="space-y-2">
               <Label htmlFor="passportNumber">護照號碼</Label>

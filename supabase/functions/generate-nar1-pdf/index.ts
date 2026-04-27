@@ -604,12 +604,12 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
     safeSetText("fill_6_P.13", dir.nameChinese || "");
     safeSetText("fill_7_P.13", surname);
     safeSetText("fill_8_P.13", otherNames);
-    const addr = parseAddress(dir.address || '');
-    safeSetText("fill_13_P.13", addr.flat);
-    safeSetText("fill_14_P.13", addr.building);
-    safeSetText("fill_15_P.13", addr.street);
-    safeSetText("fill_16_P.13", addr.district);
-    safeSetText("fill_17_P.13", addr.country);
+    // 續頁 C 額外董事住址統一使用公司註冊地址
+    safeSetText("fill_13_P.13", office.flat || "");
+    safeSetText("fill_14_P.13", office.building || "");
+    safeSetText("fill_15_P.13", office.street || "");
+    safeSetText("fill_16_P.13", office.district || "");
+    safeSetText("fill_17_P.13", office.region || "");
     safeSetText("fill_18_P.13", dir.email || "");
     const hkid = parseHkidPartial(dir.idNumber || '');
     if (hkid) safeSetText("fill_19_P.13", hkid);

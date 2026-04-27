@@ -616,25 +616,25 @@ function fillMainDocument(pdfDoc: PDFDocument, ctx: CommonCtx) {
 
   // 在「董事 Director／公司秘書 Company Secretary」上劃線刪除不適用者
   // 文字位於 P.8 (page index 7)，y(top)≈745.8 (page height 841.68 → y_pdf ≈ 92)
-  //   「董事 Director」    x ≈ 144 - 168
-  //   「／公司秘書 Company Secretary」 x ≈ 165 - 338
+  //   「董事 Director」整段           x ≈ 144 – 252
+  //   「／公司秘書 Company Secretary」 x ≈ 252 – 339
   if (signerRole === 'secretary' || signerRole === 'director') {
     try {
       const page8 = pdfDoc.getPage(7);
       const ph = page8.getHeight();
       const yLine = ph - 749; // 蓋過文字中段
       if (signerRole === 'secretary') {
-        // 簽署人是秘書 → 劃掉「董事 Director」
+        // 簽署人是秘書 → 劃掉「董事 Director」（中英文同時）
         page8.drawLine({
           start: { x: 142, y: yLine },
-          end:   { x: 168, y: yLine },
+          end:   { x: 253, y: yLine },
           thickness: 1.2,
         });
       } else {
-        // 簽署人是董事 → 劃掉「／公司秘書 Company Secretary」
+        // 簽署人是董事 → 劃掉「／公司秘書 Company Secretary」（中英文同時）
         page8.drawLine({
-          start: { x: 165, y: yLine },
-          end:   { x: 340, y: yLine },
+          start: { x: 252, y: yLine },
+          end:   { x: 339, y: yLine },
           thickness: 1.2,
         });
       }

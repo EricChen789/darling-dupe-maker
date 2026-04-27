@@ -1013,24 +1013,26 @@ async function buildNAR1Pdf(data: CompanyData): Promise<Uint8Array> {
 
 // === Debug 模式 ===
 async function buildDebugPdf(): Promise<Uint8Array> {
-  const mainBytes = await fetchTemplate(TEMPLATES.main);
-  const mainDoc = await PDFDocument.load(mainBytes);
-  const form = mainDoc.getForm();
+  // 診斷模式：只輸出附表一 (P.9)，每個欄位填入編號 1–100 以便視覺化定位
+  const scheduleBytes = await fetchTemplate(TEMPLATES.schedule1);
+  const doc = await PDFDocument.load(scheduleBytes);
+  const form = doc.getForm();
   for (const field of form.getFields()) {
     const name = field.getName();
     if (name.startsWith("fill_")) {
       try {
         const tf = form.getTextField(name);
-        const m = name.match(/fill_(\d+)_P\.(\d+)/);
-        const txt = m ? `${m[1]}.${m[2]}` : name.slice(0, 8);
+        const m = name.match(/fill_(\d+)/);
+        const num = m ? parseInt(m[1], 10) : 0;
+        const txt = num > 0 && num <= 100 ? String(num) : (m ? m[1] : name.slice(0, 6));
         const max = tf.getMaxLength();
-        tf.setText(max && txt.length > max ? (m ? m[1] : txt.slice(0, max)) : txt);
+        tf.setText(max && txt.length > max ? txt.slice(0, max) : txt);
       } catch (_) {}
     } else if (name.startsWith("cb_")) {
       try { form.getCheckBox(name).check(); } catch (_) {}
     }
   }
-  return await mainDoc.save();
+  return await doc.save();
 }
 
 serve(async (req: Request) => {

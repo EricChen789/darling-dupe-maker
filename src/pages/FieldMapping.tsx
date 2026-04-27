@@ -68,15 +68,15 @@ const FieldMapping = () => {
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
-        link.download = 'NAR1-debug-fields.pdf';
+        link.download = 'NAR1-Schedule1-debug.pdf';
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
         URL.revokeObjectURL(url);
 
         toast({
-          title: '測試 PDF 已生成',
-          description: '所有欄位已填入其欄位編號',
+          title: '附表一診斷 PDF 已生成',
+          description: '所有欄位已填入欄位編號 (1–100)',
         });
       }
     } catch (error) {

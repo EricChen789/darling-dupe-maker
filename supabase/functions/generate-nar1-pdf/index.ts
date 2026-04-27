@@ -585,15 +585,9 @@ function fillMainDocument(pdfDoc: PDFDocument, ctx: CommonCtx) {
   const memberCount = (data.shareholders || []).filter(sh => (Number(sh.shares) || 0) > 0).length;
   const isListedCo = data.companyType?.includes("上市") || data.companyType?.toLowerCase().includes("listed") || false;
 
-  // P.8 勾選：
-  //   cb_1_P.8 = 「非上市公司」(Non-listed company)
-  //   cb_2_P.8 / cb_3_P.8 = 陳述書聲明 (Declarations) — 兩條都要剔
-  //   cb_4_P.8 = 私人公司 (Private company)
-  if (!isListedCo) check("cb_1_P.8", true);
-  check("cb_2_P.8", true);
-  check("cb_3_P.8", true);
-  check("cb_4_P.8",
-    (data.companyType?.includes("私人") || data.companyType?.toLowerCase().includes("private")) || false);
+  // P.8 勾選：只剔一格 — cb_4_P.8 = 非上市公司聲明
+  // (cb_1/2/3 為其他選擇性陳述，預設不剔)
+  if (!isListedCo) check("cb_4_P.8", true);
 
   const sheetA = Math.max(0, naturalSecretaries.length - 1);
   const sheetB = Math.max(0, corporateSecretaries.length - 1);

@@ -96,8 +96,14 @@ const MissingOfficers = () => {
       missingSecretary: !secretaryByCompany.has(c.id),
     }));
 
-    // Only keep ones missing at least one AND still active
-    return enriched.filter((c) => (c.missingDirector || c.missingSecretary) && c.status === 'active');
+    // Only keep ones missing at least one AND still active AND not BVI
+    return enriched.filter((c) => {
+      if (!(c.missingDirector || c.missingSecretary)) return false;
+      if (c.status !== 'active') return false;
+      const j = (c.jurisdiction || '').toLowerCase();
+      if (j.includes('bvi') || j.includes('british virgin')) return false;
+      return true;
+    });
   }, [companies, officers]);
 
   const filtered = useMemo(() => {

@@ -233,9 +233,16 @@ const MissingOfficers = () => {
                     <TableCell className="font-mono text-xs">{r.ci_number || '-'}</TableCell>
                     <TableCell className="text-xs">{r.incorporation_date || <span className="text-muted-foreground italic">未填寫</span>}</TableCell>
                     <TableCell>
-                      <Badge variant={r.status === 'active' || !r.status ? 'default' : 'secondary'}>
-                        {r.status === 'inactive' ? '失效' : r.status === 'cancelled' ? '註銷' : '有效'}
-                      </Badge>
+                      <Button
+                        variant={r.status === 'active' || !r.status ? 'default' : 'secondary'}
+                        size="sm"
+                        className="h-6 px-2 text-xs"
+                        disabled={updatingId === r.id || !(r.status === 'active' || !r.status)}
+                        onClick={() => handleSetInactive(r.id, r.name)}
+                        title="按一下設為失效"
+                      >
+                        {updatingId === r.id ? '更新中...' : r.status === 'inactive' ? '失效' : r.status === 'cancelled' ? '註銷' : '有效'}
+                      </Button>
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-1">

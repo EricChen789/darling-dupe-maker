@@ -687,7 +687,7 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
   const sheetB = Math.max(0, corpSecCount - 1);    // 續頁 B: 額外法人秘書
   const sheetC = Math.max(0, naturalDirCount - 1); // 續頁 C: 額外自然人董事
   const sheetD = Math.max(0, Math.ceil(Math.max(0, corpDirCount - 1) / 2)); // 續頁 D: 每頁 2 人
-  const memberCount = (data.shareholders || []).length;
+  const memberCount = (data.shareholders || []).filter(sh => (Number(sh.shares) || 0) > 0).length;
   const schedulePages = memberCount > 0 ? Math.ceil(memberCount / 2) : 0;
   if (sheetA > 0) safeSetText("fill_4_P.8", String(sheetA));
   if (sheetB > 0) safeSetText("fill_5_P.8", String(sheetB));

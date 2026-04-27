@@ -65,6 +65,10 @@ export interface Shareholder {
   serviceAddress?: string;
   email: string;
   shareType?: string;
+  issuePrice?: string;
+  currency?: string;
+  paidUp?: string;
+  unpaid?: string;
 }
 
 export interface SignificantController {

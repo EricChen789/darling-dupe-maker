@@ -414,9 +414,9 @@ interface CommonCtx {
 }
 
 // ========== 主文件 P.1-P.8 ==========
-function fillMainDocument(pdfDoc: PDFDocument, ctx: CommonCtx, helv: any) {
+function fillMainDocument(pdfDoc: PDFDocument, ctx: CommonCtx, fonts: Fonts) {
   const { br8, day, month, year, data, office, shareInfos } = ctx;
-  const { safeSetText, safeCheck, form } = createFormHelpers(pdfDoc, helv);
+  const { safeSetText, safeCheck, form } = createFormHelpers(pdfDoc, fonts);
 
   // ===== Page 1 =====
   safeSetText("fill_1_P.1", br8);
@@ -592,9 +592,9 @@ function fillMainDocument(pdfDoc: PDFDocument, ctx: CommonCtx, helv: any) {
 //   成員1: 7=中文 8=英文姓 9=英文名 10=股數 11=聯名(cb-不可用) 12=英文公司名 13=室 14=大廈 15=街道 16=區/市 17=國家 18=備註
 //   成員2: 19=中文 20=英文姓 21=英文名 22=股數 23=聯名(cb) 24=英文公司名 25=室 26=大廈 27=街道 28=區/市 29=國家 30=備註
 //   31=本頁頁次 32=總頁數
-function fillSchedule1(pdfDoc: PDFDocument, ctx: CommonCtx, members: ShareholderData[], pageNo: number, totalPages: number, helv: any) {
+function fillSchedule1(pdfDoc: PDFDocument, ctx: CommonCtx, members: ShareholderData[], pageNo: number, totalPages: number, fonts: Fonts) {
   const { br8, day, month, year, shareInfos } = ctx;
-  const { safeSetText } = createFormHelpers(pdfDoc, helv);
+  const { safeSetText } = createFormHelpers(pdfDoc, fonts);
 
   safeSetText("fill_1_P.9", day || "");
   safeSetText("fill_2_P.9", month || "");
@@ -640,9 +640,9 @@ function fillSchedule1(pdfDoc: PDFDocument, ctx: CommonCtx, members: Shareholder
 //   成員1: 7=中文 8=股數 9=英文姓 10=英文名 11=英文公司名 12=佔比 13=聯名 14=室 15=大廈 16=街 17=區 18=國 19=備註
 //   成員2: 20=中文 21=股數 22=英文姓 23=英文名 24=英文公司名 25=佔比 26=聯名 27=室 28=大廈 29=街 30=區 31=國 32=備註
 //   33=本頁 34=總頁
-function fillSchedule2(pdfDoc: PDFDocument, ctx: CommonCtx, helv: any) {
+function fillSchedule2(pdfDoc: PDFDocument, ctx: CommonCtx, fonts: Fonts) {
   const { br8, day, month, year, shareInfos } = ctx;
-  const { safeSetText } = createFormHelpers(pdfDoc, helv);
+  const { safeSetText } = createFormHelpers(pdfDoc, fonts);
   safeSetText("fill_1_P.10", day || "");
   safeSetText("fill_2_P.10", month || "");
   safeSetText("fill_3_P.10", year || "");
@@ -658,9 +658,9 @@ function fillSchedule2(pdfDoc: PDFDocument, ctx: CommonCtx, helv: any) {
 // 5=中文姓名 6=英文姓 7=英文名 8=前用中文 9=前用英文 10=中文別名 11=英文別名
 // 12=室 13=大廈 14=街道 15=區
 // 16=Email 17=HKID 部分 18=護照簽發國 19=護照部分 20=牌照編號 21=無須持牌 22=原因
-function fillSheetA(pdfDoc: PDFDocument, ctx: CommonCtx, sec: OfficerData, helv: any) {
+function fillSheetA(pdfDoc: PDFDocument, ctx: CommonCtx, sec: OfficerData, fonts: Fonts) {
   const { br8, day, month, year } = ctx;
-  const { safeSetText } = createFormHelpers(pdfDoc, helv);
+  const { safeSetText } = createFormHelpers(pdfDoc, fonts);
   safeSetText("fill_1_P.11", day || "");
   safeSetText("fill_2_P.11", month || "");
   safeSetText("fill_3_P.11", year || "");
@@ -684,9 +684,9 @@ function fillSheetA(pdfDoc: PDFDocument, ctx: CommonCtx, sec: OfficerData, helv:
 // ========== 續頁 B (P.12): 額外法人秘書 ==========
 // 1=DD 2=MM 3=YYYY 4=BR 5=中文名稱 6=英文名稱
 // 7=室 8=大廈 9=街 10=區 11=Email 12=BR(此秘書) 13=牌照編號 14=無須持牌 15=原因
-function fillSheetB(pdfDoc: PDFDocument, ctx: CommonCtx, sec: OfficerData, helv: any) {
+function fillSheetB(pdfDoc: PDFDocument, ctx: CommonCtx, sec: OfficerData, fonts: Fonts) {
   const { br8, day, month, year } = ctx;
-  const { safeSetText } = createFormHelpers(pdfDoc, helv);
+  const { safeSetText } = createFormHelpers(pdfDoc, fonts);
   safeSetText("fill_1_P.12", day || "");
   safeSetText("fill_2_P.12", month || "");
   safeSetText("fill_3_P.12", year || "");
@@ -710,9 +710,9 @@ function fillSheetB(pdfDoc: PDFDocument, ctx: CommonCtx, sec: OfficerData, helv:
 // 8=中文姓名 9=英文姓 10=英文名 11=前用中文 12=前用英文 13=中文別名 14=英文別名
 // 15=室 16=大廈 17=街道 18=區/市 19=國家
 // 20=Email 21=HKID 部分 22=護照簽發國 23=護照部分
-function fillSheetC(pdfDoc: PDFDocument, ctx: CommonCtx, dir: OfficerData, helv: any) {
+function fillSheetC(pdfDoc: PDFDocument, ctx: CommonCtx, dir: OfficerData, fonts: Fonts) {
   const { br8, day, month, year, office } = ctx;
-  const { safeSetText } = createFormHelpers(pdfDoc, helv);
+  const { safeSetText } = createFormHelpers(pdfDoc, fonts);
   safeSetText("fill_1_P.13", day || "");
   safeSetText("fill_2_P.13", month || "");
   safeSetText("fill_3_P.13", year || "");
@@ -743,9 +743,9 @@ function fillSheetC(pdfDoc: PDFDocument, ctx: CommonCtx, dir: OfficerData, helv:
 // 1=DD 2=MM 3=YYYY 4=BR
 // 董事1: 5=董事 6=候補 7=代替 8=中文 9=英文 10=室 11=大廈 12=街 13=區 14=國 15=Email 16=BR
 // 董事2: 17=董事 18=候補 19=代替 20=中文 21=英文 22=室 23=大廈 24=街 25=區 26=國 27=Email 28=BR
-function fillSheetD(pdfDoc: PDFDocument, ctx: CommonCtx, dirs: OfficerData[], helv: any) {
+function fillSheetD(pdfDoc: PDFDocument, ctx: CommonCtx, dirs: OfficerData[], fonts: Fonts) {
   const { br8, day, month, year, office } = ctx;
-  const { safeSetText } = createFormHelpers(pdfDoc, helv);
+  const { safeSetText } = createFormHelpers(pdfDoc, fonts);
   safeSetText("fill_1_P.14", day || "");
   safeSetText("fill_2_P.14", month || "");
   safeSetText("fill_3_P.14", year || "");
@@ -774,9 +774,9 @@ function fillSheetE(
   pdfDoc: PDFDocument,
   ctx: CommonCtx,
   records: Array<{ records: string; address: string }>,
-  helv: any,
+  fonts: Fonts,
 ) {
-  const { safeSetText } = createFormHelpers(pdfDoc, helv);
+  const { safeSetText } = createFormHelpers(pdfDoc, fonts);
   const { day, month, year, br8 } = ctx;
   safeSetText("fill_1_P.15", day || "");
   safeSetText("fill_2_P.15", month || "");
@@ -834,12 +834,21 @@ async function buildNAR1Pdf(data: CompanyData): Promise<Uint8Array> {
 
   const ctx: CommonCtx = { br8, day, month, year, data, office: office as any, shareInfos };
 
+  // 預先載入中文字體（NotoSansTC），啟用 subset 後僅嵌入用到的字符
+  let cjkBytes: ArrayBuffer | null = null;
+  try {
+    cjkBytes = await loadCjkFontBytes();
+    console.log(`✓ CJK font loaded (${(cjkBytes.byteLength / 1024 / 1024).toFixed(1)}MB)`);
+  } catch (e) {
+    console.warn("CJK font unavailable, Chinese characters may not render:", e);
+  }
+
   // 1) 載入主文件
   console.log("Loading main template (P.1-P.8)...");
   const mainBytes = await fetchTemplate(TEMPLATES.main);
   const mainDoc = await PDFDocument.load(mainBytes);
-  const helv = await mainDoc.embedFont(StandardFonts.Helvetica);
-  fillMainDocument(mainDoc, ctx, helv);
+  const mainFonts = await embedFontsForDoc(mainDoc, cjkBytes);
+  fillMainDocument(mainDoc, ctx, mainFonts);
 
   // 2) 計算需要的續頁
   const isListedCo = data.companyType?.includes("上市") || data.companyType?.toLowerCase().includes("listed") || false;
@@ -850,7 +859,7 @@ async function buildNAR1Pdf(data: CompanyData): Promise<Uint8Array> {
   const corporateDirectors = (data.directors || []).filter(d => d.identity === "corporate");
 
   // 附加文件清單，順序：附表 1 → 附表 2 → 續頁 A → B → C → D
-  const attachments: Array<{ url: string; fill: (doc: PDFDocument, helv: any) => void; label: string }> = [];
+  const attachments: Array<{ url: string; fill: (doc: PDFDocument, fonts: Fonts) => void; label: string }> = [];
 
   // 附表 1：非上市公司，每頁 2 位股東
   if (!isListedCo && validMembers.length > 0) {
@@ -860,7 +869,7 @@ async function buildNAR1Pdf(data: CompanyData): Promise<Uint8Array> {
       const pageNo = i + 1;
       attachments.push({
         url: TEMPLATES.schedule1,
-        fill: (doc, h) => fillSchedule1(doc, ctx, slice, pageNo, totalSch1, h),
+        fill: (doc, f) => fillSchedule1(doc, ctx, slice, pageNo, totalSch1, f),
         label: `附表1-${pageNo}/${totalSch1}`,
       });
     }
@@ -870,7 +879,7 @@ async function buildNAR1Pdf(data: CompanyData): Promise<Uint8Array> {
   if (isListedCo) {
     attachments.push({
       url: TEMPLATES.schedule2,
-      fill: (doc, h) => fillSchedule2(doc, ctx, h),
+      fill: (doc, f) => fillSchedule2(doc, ctx, f),
       label: "附表2",
     });
   }
@@ -880,7 +889,7 @@ async function buildNAR1Pdf(data: CompanyData): Promise<Uint8Array> {
     const sec = naturalSecretaries[i];
     attachments.push({
       url: TEMPLATES.sheetA,
-      fill: (doc, h) => fillSheetA(doc, ctx, sec, h),
+      fill: (doc, f) => fillSheetA(doc, ctx, sec, f),
       label: `續頁A#${i}`,
     });
   }
@@ -889,7 +898,7 @@ async function buildNAR1Pdf(data: CompanyData): Promise<Uint8Array> {
     const sec = corporateSecretaries[i];
     attachments.push({
       url: TEMPLATES.sheetB,
-      fill: (doc, h) => fillSheetB(doc, ctx, sec, h),
+      fill: (doc, f) => fillSheetB(doc, ctx, sec, f),
       label: `續頁B#${i}`,
     });
   }
@@ -898,7 +907,7 @@ async function buildNAR1Pdf(data: CompanyData): Promise<Uint8Array> {
     const dir = naturalDirectors[i];
     attachments.push({
       url: TEMPLATES.sheetC,
-      fill: (doc, h) => fillSheetC(doc, ctx, dir, h),
+      fill: (doc, f) => fillSheetC(doc, ctx, dir, f),
       label: `續頁C#${i}`,
     });
   }
@@ -909,7 +918,7 @@ async function buildNAR1Pdf(data: CompanyData): Promise<Uint8Array> {
     const pageNo = Math.floor(i / 2) + 1;
     attachments.push({
       url: TEMPLATES.sheetD,
-      fill: (doc, h) => fillSheetD(doc, ctx, slice, h),
+      fill: (doc, f) => fillSheetD(doc, ctx, slice, f),
       label: `續頁D#${pageNo}(${slice.length}人)`,
     });
   }
@@ -921,7 +930,7 @@ async function buildNAR1Pdf(data: CompanyData): Promise<Uint8Array> {
   if (validRecords.length > 0) {
     attachments.push({
       url: TEMPLATES.sheetE,
-      fill: (doc, h) => fillSheetE(doc, ctx, validRecords, h),
+      fill: (doc, f) => fillSheetE(doc, ctx, validRecords, f),
       label: `續頁E(${validRecords.length}筆)`,
     });
   }
@@ -940,8 +949,8 @@ async function buildNAR1Pdf(data: CompanyData): Promise<Uint8Array> {
     }
     // 為每次附加都 clone 一份新 doc
     const subDoc = await PDFDocument.load(bytes);
-    const subHelv = await subDoc.embedFont(StandardFonts.Helvetica);
-    att.fill(subDoc, subHelv);
+    const subFonts = await embedFontsForDoc(subDoc, cjkBytes);
+    att.fill(subDoc, subFonts);
     // 填寫已直接畫到頁面內容，移除失效/重名 form annotations，避免覆蓋頁面造成空白。
     stripFormAnnotations(subDoc);
     // 把該文件所有頁面複製到主文件尾端

@@ -1,5 +1,37 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { PDFDocument, PDFName, StandardFonts, rgb } from "https://esm.sh/pdf-lib@1.17.1";
+import fontkit from "https://esm.sh/@pdf-lib/fontkit@1.1.1";
+
+const CJK_FONT_URL = "https://uqcsgmmsrgtlcqutaomg.supabase.co/storage/v1/object/public/pdf-templates/NotoSansTC-Regular.ttf";
+let _cjkFontCache: ArrayBuffer | null = null;
+async function loadCjkFontBytes(): Promise<ArrayBuffer> {
+  if (_cjkFontCache) return _cjkFontCache;
+  const r = await fetch(CJK_FONT_URL);
+  if (!r.ok) throw new Error(`Failed to load CJK font: ${r.status}`);
+  _cjkFontCache = await r.arrayBuffer();
+  return _cjkFontCache;
+}
+
+interface Fonts { latin: any; cjk: any | null; }
+
+async function embedFontsForDoc(doc: PDFDocument, cjkBytes: ArrayBuffer | null): Promise<Fonts> {
+  const latin = await doc.embedFont(StandardFonts.Helvetica);
+  let cjk: any = null;
+  if (cjkBytes) {
+    try {
+      doc.registerFontkit(fontkit);
+      cjk = await doc.embedFont(cjkBytes, { subset: true });
+    } catch (e) {
+      console.warn("CJK font embed failed:", e);
+    }
+  }
+  return { latin, cjk };
+}
+
+function isCjk(ch: string): boolean {
+  const c = ch.charCodeAt(0);
+  return c > 0x7E; // any non-ASCII -> use CJK font
+}
 
 function uint8ToBase64(bytes: Uint8Array): string {
   let binary = "";

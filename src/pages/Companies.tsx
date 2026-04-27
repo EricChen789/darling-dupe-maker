@@ -10,6 +10,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { Search, RefreshCw, Plus, Edit, Trash2, FileText, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card';
 import { Company } from '@/types';
 import { CompanyDialog, DeleteConfirmDialog } from '@/components/dialogs/CompanyDialogs';
 import { CompanyDetailDialog } from '@/components/dialogs/CompanyDetailDialog';

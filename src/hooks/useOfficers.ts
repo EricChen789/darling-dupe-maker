@@ -96,13 +96,13 @@ export function useOfficers() {
 
       // Group by officer identity (name_english + identity + role) to aggregate companies
       // But actually each row is one officer-company link, so we group by unique person
-      const personMap = new Map<string, { officer: OfficerRow; companies: { id: string; name: string; brNumber: string }[] }>();
+      const personMap = new Map<string, { officer: OfficerRow; companies: { id: string; name: string; brNumber: string; incorporationDate?: string }[] }>();
 
       for (const row of officerRows || []) {
         const company = companyMap.get(row.company_id);
         const companyInfo = company
-          ? { id: company.id, name: company.name, brNumber: company.company_number || '' }
-          : { id: row.company_id, name: '未知公司', brNumber: '' };
+          ? { id: company.id, name: company.name, brNumber: company.company_number || '', incorporationDate: company.incorporation_date || '' }
+          : { id: row.company_id, name: '未知公司', brNumber: '', incorporationDate: '' };
 
         // Group officers by normalized english name + role only.
         // identity & chinese name are unreliable (data inconsistencies — same person

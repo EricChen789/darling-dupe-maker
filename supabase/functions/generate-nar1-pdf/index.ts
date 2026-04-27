@@ -1013,17 +1013,59 @@ async function buildNAR1Pdf(data: CompanyData): Promise<Uint8Array> {
 
 // === Debug 模式 ===
 async function buildDebugPdf(): Promise<Uint8Array> {
-  // 診斷模式：只輸出附表一 (P.9)，每個欄位填入完整欄位名稱以便視覺化對位
+  // 診斷模式：只輸出附表一 (P.9)，逐個 widget 寫入其欄位名稱以便視覺化對位
   const scheduleBytes = await fetchTemplate(TEMPLATES.schedule1);
   const doc = await PDFDocument.load(scheduleBytes);
-  const { setText, check } = createFormHelpers(doc);
-  const fields = collectFormFields(doc);
-  for (const name of fields.keys()) {
-    if (name.startsWith("fill_")) {
-      const short = name.replace(/^fill_/, "").replace(/\./g, "");
-      setText(name, short);
-    } else if (name.startsWith("cb_")) {
-      check(name, true);
+  enableNeedAppearances(doc);
+
+  for (const page of doc.getPages()) {
+    const annots = page.node.lookup(PDFName.of("Annots")) as any;
+    if (!annots || typeof annots.size !== "function") continue;
+
+    for (let i = 0; i < annots.size(); i++) {
+      try {
+        const widget = doc.context.lookup(annots.get(i)) as any;
+        if (!widget || typeof widget.get !== "function") continue;
+        const subtype = widget.get(PDFName.of("Subtype"));
+        if (subtype && String(subtype) !== "/Widget") continue;
+
+        const parentRef = widget.get(PDFName.of("Parent"));
+        const field = parentRef ? doc.context.lookup(parentRef) as any : widget;
+        const parentName = field ? decodePdfText(field.get(PDFName.of("T"))) : "";
+        const widgetName = decodePdfText(widget.get(PDFName.of("T")));
+        const fullName = parentName && widgetName ? `${parentName}.${widgetName}` : (parentName || widgetName);
+        if (!fullName) continue;
+
+        // 先 detach widget 避免共享 field 互相覆蓋
+        detachWidget(widget, field);
+
+        if (fullName.startsWith("fill_") || (parentName && parentName.startsWith("fill_"))) {
+          // 縮短版：去掉 fill_ 前綴與點號
+          const label = (parentName || widgetName).replace(/^fill_/, "").replace(/\./g, "");
+          const da = decodePdfText(widget.get(PDFName.of("DA"))) || "/Helv 12 Tf 0 g";
+          widget.set(PDFName.of("DA"), PDFString.of(buildHelvDA(da)));
+          widget.set(PDFName.of("V"), PDFString.of(label));
+          widget.delete(PDFName.of("AP"));
+          widget.delete(PDFName.of("MaxLen"));
+          if (field !== widget) field.delete(PDFName.of("MaxLen"));
+        } else if (fullName.startsWith("cb_") || (parentName && parentName.startsWith("cb_"))) {
+          // 探查 On state
+          let onState = "Yes";
+          try {
+            const ap = widget.get(PDFName.of("AP")) as any;
+            const apN = ap?.get?.(PDFName.of("N")) as any;
+            const dict = apN?.dict;
+            if (dict && typeof dict.keys === "function") {
+              for (const k of dict.keys()) {
+                const name = String(k).replace(/^\//, "");
+                if (name && name !== "Off") { onState = name; break; }
+              }
+            }
+          } catch (_) { /* fallback */ }
+          widget.set(PDFName.of("V"), PDFName.of(onState));
+          widget.set(PDFName.of("AS"), PDFName.of(onState));
+        }
+      } catch (_) { /* skip */ }
     }
   }
   return await doc.save({ updateFieldAppearances: false });

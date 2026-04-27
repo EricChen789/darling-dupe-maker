@@ -54,7 +54,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
   const [addingShareholder, setAddingShareholder] = useState(false);
   const [copyDialogOpen, setCopyDialogOpen] = useState(false);
 
-  const [companyForm, setCompanyForm] = useState({ name: '', chineseName: '', brNumber: '', tradingName: '', businessNature: '', companyType: '', businessCode: '', regFlat: '', regBuilding: '', regStreet: '', regDistrict: '', regRegion: '', incorporationDate: '', jurisdiction: 'Hong Kong', ciFilePath: '', brFilePath: '' });
+  const [companyForm, setCompanyForm] = useState({ name: '', chineseName: '', brNumber: '', tradingName: '', businessNature: '', companyType: '', businessCode: '', regFlat: '', regBuilding: '', regStreet: '', regDistrict: '', regRegion: '', incorporationDate: '', jurisdiction: 'Hong Kong', ciFilePath: '', brFilePath: '', email: '', phone: '' });
   const [uploadingCi, setUploadingCi] = useState(false);
   const [uploadingBr, setUploadingBr] = useState(false);
   const [personForm, setPersonForm] = useState(emptyOfficerForm());
@@ -80,6 +80,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
         regDistrict: company.regDistrict || '', regRegion: company.regRegion || '',
         incorporationDate: company.incorporationDate || '', jurisdiction: company.jurisdiction || 'Hong Kong',
         ciFilePath: company.ciFilePath || '', brFilePath: company.brFilePath || '',
+        email: company.email || '', phone: company.phone || '',
       });
     }
   }, [company, editingCompany]);
@@ -363,6 +364,8 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                     <InfoItem label="業務代碼" value={company.businessCode} />
                     <InfoItem label="成立日期" value={company.incorporationDate} />
                     <InfoItem label="司法管轄區" value={company.jurisdiction} />
+                    <InfoItem label="電郵地址" value={company.email} />
+                    <InfoItem label="電話" value={company.phone} />
                     <div className="col-span-2">
                       <InfoItem label="註冊辦事處地址" value={[company.regFlat, company.regBuilding, company.regStreet, company.regDistrict, company.regRegion].filter(Boolean).join(', ') || '—'} />
                     </div>
@@ -415,6 +418,8 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                         <option value="Cayman Islands" />
                       </datalist>
                     </div>
+                    <div className="space-y-1"><Label className="text-xs">電郵地址</Label><Input type="email" value={companyForm.email} onChange={e => setCompanyForm({ ...companyForm, email: e.target.value })} /></div>
+                    <div className="space-y-1"><Label className="text-xs">電話</Label><Input value={companyForm.phone} onChange={e => setCompanyForm({ ...companyForm, phone: e.target.value })} /></div>
                     <div className="col-span-2 border-t border-border pt-3 mt-2">
                       <Label className="text-xs font-medium">註冊辦事處地址</Label>
                       <div className="grid grid-cols-2 gap-2 mt-2">

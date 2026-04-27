@@ -1,0 +1,1 @@
+ALTER TABLE public.companies ADD COLUMN IF NOT EXISTS email text DEFAULT '', ADD COLUMN IF NOT EXISTS phone text DEFAULT '';

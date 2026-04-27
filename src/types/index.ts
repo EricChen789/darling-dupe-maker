@@ -24,6 +24,8 @@ export interface Company {
   preferredPresenterId?: string;
   presenterReference?: string;
   status?: 'active' | 'inactive' | 'deregistered';
+  email?: string;
+  phone?: string;
 }
 
 export interface Person {

@@ -291,21 +291,29 @@ const People = () => {
         )}
 
         {/* Pagination */}
-        <div className="flex items-center justify-between px-4 py-3 border-t border-border">
-          <div className="text-sm text-muted-foreground">共 {officers.length} 位人員</div>
+        <div className="flex items-center justify-between px-4 py-3 border-t border-border flex-wrap gap-2">
+          <div className="text-sm text-muted-foreground">共 {officers.length} 位人員（篩選後 {filteredPeople.length}）</div>
           <div className="flex items-center gap-2">
             <span className="text-sm text-muted-foreground">每頁:</span>
-            <Select defaultValue="20">
-              <SelectTrigger className="w-20 h-8"><SelectValue /></SelectTrigger>
+            <Select value={String(pageSize)} onValueChange={(v) => setPageSize(Number(v))}>
+              <SelectTrigger className="w-24 h-8"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="10">10 筆</SelectItem>
-                <SelectItem value="20">20 筆</SelectItem>
                 <SelectItem value="50">50 筆</SelectItem>
+                <SelectItem value="100">100 筆</SelectItem>
+                <SelectItem value="200">200 筆</SelectItem>
+                <SelectItem value="500">500 筆</SelectItem>
               </SelectContent>
             </Select>
             <span className="text-sm text-muted-foreground ml-2">
-              顯示 1 到 {filteredPeople.length} 筆，共 {filteredPeople.length} 筆資料
+              {filteredPeople.length === 0 ? '無資料' : `顯示 ${startIdx + 1} 到 ${Math.min(startIdx + pageSize, filteredPeople.length)} 筆`}
             </span>
+            <Button variant="outline" size="sm" className="h-8" disabled={safePage <= 1} onClick={() => setCurrentPage(p => Math.max(1, p - 1))}>
+              上一頁
+            </Button>
+            <span className="text-sm text-muted-foreground">第 {safePage} / {totalPages} 頁</span>
+            <Button variant="outline" size="sm" className="h-8" disabled={safePage >= totalPages} onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}>
+              下一頁
+            </Button>
           </div>
         </div>
       </div>

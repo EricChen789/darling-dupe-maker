@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { PDFDocument, PDFName, PDFString, PDFHexString, StandardFonts } from "https://esm.sh/pdf-lib@1.17.1";
+import { PDFDocument, PDFName, StandardFonts, rgb } from "https://esm.sh/pdf-lib@1.17.1";
 
 function uint8ToBase64(bytes: Uint8Array): string {
   let binary = "";
@@ -168,36 +168,146 @@ const parsePassportPartial = (passportNumber: string) => {
   return cleaned.slice(0, Math.ceil(cleaned.length / 2));
 };
 
+type WidgetTarget = {
+  page: any;
+  rect: { x: number; y: number; width: number; height: number };
+};
+
+const decodePdfText = (value: any): string => {
+  if (!value) return "";
+  try {
+    if (typeof value.decodeText === "function") return value.decodeText();
+  } catch (_) { /* ignore */ }
+  return String(value).replace(/^\((.*)\)$/s, "$1");
+};
+
+const asNumber = (value: any): number => {
+  if (!value) return 0;
+  if (typeof value.asNumber === "function") return value.asNumber();
+  if (typeof value.numberValue === "number") return value.numberValue;
+  return Number(value) || 0;
+};
+
+function collectWidgetTargets(pdfDoc: PDFDocument): Map<string, WidgetTarget> {
+  const targets = new Map<string, WidgetTarget>();
+
+  const addTarget = (key: string, target: WidgetTarget) => {
+    if (key && !targets.has(key)) targets.set(key, target);
+  };
+
+  for (const page of pdfDoc.getPages()) {
+    const annots = page.node.lookup(PDFName.of("Annots")) as any;
+    if (!annots || typeof annots.size !== "function") continue;
+
+    for (let i = 0; i < annots.size(); i++) {
+      try {
+        const annot = pdfDoc.context.lookup(annots.get(i)) as any;
+        if (!annot || typeof annot.get !== "function") continue;
+
+        const rectObj = annot.lookup(PDFName.of("Rect")) as any;
+        if (!rectObj || typeof rectObj.lookup !== "function") continue;
+        const x1 = asNumber(rectObj.lookup(0));
+        const y1 = asNumber(rectObj.lookup(1));
+        const x2 = asNumber(rectObj.lookup(2));
+        const y2 = asNumber(rectObj.lookup(3));
+        const target: WidgetTarget = {
+          page,
+          rect: { x: Math.min(x1, x2), y: Math.min(y1, y2), width: Math.abs(x2 - x1), height: Math.abs(y2 - y1) },
+        };
+
+        const childName = decodePdfText(annot.get(PDFName.of("T")));
+        const parentRef = annot.get(PDFName.of("Parent"));
+        const parent = parentRef ? pdfDoc.context.lookup(parentRef) as any : undefined;
+        const parentName = parent ? decodePdfText(parent.get(PDFName.of("T"))) : "";
+
+        addTarget(childName, target);
+        if (parentName && childName) addTarget(`${parentName}.${childName}`, target);
+      } catch (_) { /* skip malformed widget */ }
+    }
+  }
+
+  return targets;
+}
+
+function stripFormAnnotations(pdfDoc: PDFDocument) {
+  for (const page of pdfDoc.getPages()) {
+    page.node.delete(PDFName.of("Annots"));
+  }
+  pdfDoc.catalog.delete(PDFName.of("AcroForm"));
+}
+
+function normalizeDrawableText(value: string): string {
+  return String(value ?? "")
+    .replace(/✓/g, "X")
+    .replace(/[^\x20-\x7E\r\n]/g, " ")
+    .replace(/[\t ]+/g, " ")
+    .replace(/ *\n */g, "\n")
+    .trim();
+}
+
+function drawTextInWidget(target: WidgetTarget, rawValue: string, font: any) {
+  const text = normalizeDrawableText(rawValue);
+  if (!text) return;
+
+  const { page, rect } = target;
+  const padding = Math.min(2.5, Math.max(1, rect.width * 0.03));
+  const isMultiline = text.includes("\n") || rect.height > 24;
+  const fontSize = Math.min(9, Math.max(5, rect.height * (isMultiline ? 0.32 : 0.56)));
+  const lineHeight = fontSize + 2;
+  const maxWidth = Math.max(1, rect.width - padding * 2);
+  const maxLines = Math.max(1, Math.floor((rect.height - padding * 2) / lineHeight));
+
+  const lines: string[] = [];
+  const fit = (line: string) => {
+    let fitted = line.trim();
+    while (fitted.length > 0 && font.widthOfTextAtSize(fitted, fontSize) > maxWidth) fitted = fitted.slice(0, -1);
+    return fitted;
+  };
+
+  for (const rawLine of text.split(/\r?\n/)) {
+    if (lines.length >= maxLines) break;
+    const words = rawLine.split(" ").filter(Boolean);
+    if (words.length <= 1) {
+      lines.push(fit(rawLine));
+      continue;
+    }
+    let current = "";
+    for (const word of words) {
+      const candidate = current ? `${current} ${word}` : word;
+      if (font.widthOfTextAtSize(candidate, fontSize) <= maxWidth) current = candidate;
+      else {
+        if (current) lines.push(fit(current));
+        current = word;
+        if (lines.length >= maxLines) break;
+      }
+    }
+    if (current && lines.length < maxLines) lines.push(fit(current));
+  }
+
+  const startY = isMultiline
+    ? rect.y + rect.height - padding - fontSize
+    : rect.y + Math.max(1, (rect.height - fontSize) / 2 - 1);
+  lines.filter(Boolean).forEach((line, index) => {
+    page.drawText(line, {
+      x: rect.x + padding,
+      y: startY - index * lineHeight,
+      size: fontSize,
+      font,
+      color: rgb(0, 0, 0),
+    });
+  });
+}
+
 // === Helper: 在 PDFDocument 上建立可重複使用的 fill / check 工具 ===
 function createFormHelpers(pdfDoc: PDFDocument, helv: any) {
   const form = pdfDoc.getForm();
-
-  // 開啟 NeedAppearances 給 CJK
-  try {
-    const acroForm = form.acroForm.dict;
-    acroForm.set(PDFName.of('NeedAppearances'), pdfDoc.context.obj(true));
-  } catch (_) { /* ignore */ }
-
-  const isAsciiOnly = (s: string) => /^[\x00-\x7F]*$/.test(s);
+  const widgets = collectWidgetTargets(pdfDoc);
 
   const safeSetText = (fieldName: string, value: string) => {
     try {
-      const field = form.getTextField(fieldName);
-      let textToSet = value ?? "";
-      const maxLength = field.getMaxLength();
-      if (maxLength && textToSet.length > maxLength) textToSet = textToSet.slice(0, maxLength);
-
-      if (isAsciiOnly(textToSet)) {
-        field.setText(textToSet);
-        try { field.updateAppearances(helv); } catch (_) { /* ignore */ }
-      } else {
-        const dict = field.acroField.dict;
-        dict.set(PDFName.of('V'), PDFHexString.fromText(textToSet));
-        dict.delete(PDFName.of('AP'));
-        for (const widget of field.acroField.getWidgets()) {
-          widget.dict.delete(PDFName.of('AP'));
-        }
-      }
+      const target = widgets.get(fieldName);
+      if (!target) throw new Error("widget not found");
+      drawTextInWidget(target, value ?? "", helv);
       return true;
     } catch (e) {
       console.warn(`⚠ Missing field: ${fieldName}`);
@@ -207,8 +317,10 @@ function createFormHelpers(pdfDoc: PDFDocument, helv: any) {
 
   const safeCheck = (fieldName: string, shouldCheck: boolean) => {
     if (!shouldCheck) return false;
-    try { form.getCheckBox(fieldName).check(); return true; }
-    catch (_) { return false; }
+    const target = widgets.get(fieldName);
+    if (!target) return false;
+    drawTextInWidget(target, "X", helv);
+    return true;
   };
 
   return { form, safeSetText, safeCheck };

@@ -238,7 +238,20 @@ const MissingOfficers = () => {
                   <TableRow key={r.id}>
                     <TableCell className="font-medium">{r.name}</TableCell>
                     <TableCell>{r.chinese_name || '-'}</TableCell>
-                    <TableCell className="text-xs">{r.jurisdiction || <span className="text-muted-foreground italic">未填寫</span>}</TableCell>
+                    <TableCell className="text-xs">
+                      <Select
+                        value={r.jurisdiction === 'BVI' || (r.jurisdiction || '').toLowerCase().includes('bvi') || (r.jurisdiction || '').toLowerCase().includes('british virgin') ? 'BVI' : 'Hong Kong'}
+                        onValueChange={(v) => handleUpdateJurisdiction(r.id, r.name, v)}
+                      >
+                        <SelectTrigger className="h-7 w-28 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Hong Kong">Hong Kong</SelectItem>
+                          <SelectItem value="BVI">BVI</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </TableCell>
                     <TableCell className="font-mono text-xs">{r.company_number || '-'}</TableCell>
                     <TableCell className="font-mono text-xs">{r.ci_number || '-'}</TableCell>
                     <TableCell className="text-xs">{r.incorporation_date || <span className="text-muted-foreground italic">未填寫</span>}</TableCell>

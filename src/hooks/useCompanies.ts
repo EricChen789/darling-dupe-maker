@@ -322,6 +322,7 @@ export function useUpdateCompany() {
           br_file_path: data.brFilePath,
           preferred_presenter_id: data.preferredPresenterId === undefined ? undefined : (data.preferredPresenterId || null),
           presenter_reference: data.presenterReference,
+          status: data.status,
           updated_at: new Date().toISOString(),
         } as any)
         .eq('id', id);

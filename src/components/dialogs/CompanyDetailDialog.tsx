@@ -498,25 +498,32 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                         <InlineShEdit key={i} shForm={shForm} setShForm={setShForm}
                           onSave={() => handleSaveShareholder(sh.id)} onCancel={() => setEditingShareholder(null)} />
                       ) : (
-                        <div key={i} className={`flex items-center justify-between rounded-md border px-3 py-2 text-sm cursor-pointer transition-colors group ${
+                        <div key={i} className={`flex items-start justify-between rounded-md border px-3 py-2 text-sm cursor-pointer transition-colors group ${
                           selectedSh?.id === sh.id ? 'border-primary bg-primary/10' : 'border-border bg-muted/30 hover:bg-muted/60'
                         }`} onClick={() => selectShareholder(sh)}>
-                           <span className="font-medium">{sh.nameEnglish || sh.nameChinese || sh.name}</span>
-                           {sh.nameEnglish && sh.nameChinese && <span className="ml-2 text-muted-foreground">{sh.nameChinese}</span>}
-                          <div className="flex items-center gap-2">
-                            <Badge variant="secondary">{sh.shares.toLocaleString()} 股</Badge>
-                            {sh.shareType && <Badge variant="outline" className="text-xs">{sh.shareType}</Badge>}
-                            <div className="hidden group-hover:flex gap-1">
-                              <Button variant="ghost" size="sm" className="h-6 px-1.5" onClick={e => {
-                                e.stopPropagation(); setEditingShareholder(sh.id);
-                                setShForm({ name: sh.name, nameEnglish: sh.nameEnglish, nameChinese: sh.nameChinese, shares: sh.shares, identity: sh.identity, idNumber: sh.idNumber, address: sh.address, serviceAddress: sh.serviceAddress || '', email: sh.email, shareType: sh.shareType || '', issuePrice: sh.issuePrice || '', currency: sh.currency || 'HKD', paidUp: sh.paidUp || '', unpaid: sh.unpaid || '' });
-                              }}>
-                                <Edit className="h-3 w-3" />
-                              </Button>
-                              <Button variant="ghost" size="sm" className="h-6 px-1.5 text-destructive" onClick={e => { e.stopPropagation(); handleDeleteShareholder(sh); }}>
-                                <Trash2 className="h-3 w-3" />
-                              </Button>
+                          <div className="flex-1 min-w-0">
+                            <div>
+                              <span className="font-medium">{sh.nameEnglish || sh.nameChinese || sh.name}</span>
+                              {sh.nameEnglish && sh.nameChinese && <span className="ml-2 text-muted-foreground">{sh.nameChinese}</span>}
                             </div>
+                            <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                              <Badge variant="secondary" className="text-xs">{sh.shares.toLocaleString()} 股</Badge>
+                              {sh.shareType && <Badge variant="outline" className="text-xs">{sh.shareType}</Badge>}
+                              {sh.issuePrice && <Badge variant="outline" className="text-xs">每股: {sh.currency || 'HKD'} {sh.issuePrice}</Badge>}
+                              {sh.paidUp && <Badge variant="outline" className="text-xs text-green-700 border-green-300">已繳: {sh.currency || 'HKD'} {sh.paidUp}</Badge>}
+                              {sh.unpaid && <Badge variant="outline" className="text-xs text-orange-700 border-orange-300">未繳: {sh.currency || 'HKD'} {sh.unpaid}</Badge>}
+                            </div>
+                          </div>
+                          <div className="hidden group-hover:flex gap-1 ml-2 shrink-0">
+                            <Button variant="ghost" size="sm" className="h-6 px-1.5" onClick={e => {
+                              e.stopPropagation(); setEditingShareholder(sh.id);
+                              setShForm({ name: sh.name, nameEnglish: sh.nameEnglish, nameChinese: sh.nameChinese, shares: sh.shares, identity: sh.identity, idNumber: sh.idNumber, address: sh.address, serviceAddress: sh.serviceAddress || '', email: sh.email, shareType: sh.shareType || '', issuePrice: sh.issuePrice || '', currency: sh.currency || 'HKD', paidUp: sh.paidUp || '', unpaid: sh.unpaid || '' });
+                            }}>
+                              <Edit className="h-3 w-3" />
+                            </Button>
+                            <Button variant="ghost" size="sm" className="h-6 px-1.5 text-destructive" onClick={e => { e.stopPropagation(); handleDeleteShareholder(sh); }}>
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
                           </div>
                         </div>
                       )

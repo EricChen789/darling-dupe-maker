@@ -344,6 +344,7 @@ export type Database = {
           id_card_file_path: string
           id_number: string
           identity: string
+          migration_dedup_key: string | null
           name_chinese: string
           name_english: string
           normalized_key: string | null
@@ -373,6 +374,7 @@ export type Database = {
           id_card_file_path?: string
           id_number?: string
           identity?: string
+          migration_dedup_key?: string | null
           name_chinese?: string
           name_english?: string
           normalized_key?: string | null
@@ -402,6 +404,7 @@ export type Database = {
           id_card_file_path?: string
           id_number?: string
           identity?: string
+          migration_dedup_key?: string | null
           name_chinese?: string
           name_english?: string
           normalized_key?: string | null

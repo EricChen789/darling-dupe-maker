@@ -191,6 +191,7 @@ const MissingOfficers = () => {
               <TableRow>
                 <TableHead>公司名稱</TableHead>
                 <TableHead>中文名稱</TableHead>
+                <TableHead>司法管轄區</TableHead>
                 <TableHead>BR 號碼</TableHead>
                 <TableHead>CI 號碼</TableHead>
                 <TableHead>成立日期</TableHead>
@@ -202,7 +203,7 @@ const MissingOfficers = () => {
             <TableBody>
               {filtered.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
                     沒有符合條件的記錄
                   </TableCell>
                 </TableRow>
@@ -211,6 +212,7 @@ const MissingOfficers = () => {
                   <TableRow key={r.id}>
                     <TableCell className="font-medium">{r.name}</TableCell>
                     <TableCell>{r.chinese_name || '-'}</TableCell>
+                    <TableCell className="text-xs">{r.jurisdiction || <span className="text-muted-foreground italic">未填寫</span>}</TableCell>
                     <TableCell className="font-mono text-xs">{r.company_number || '-'}</TableCell>
                     <TableCell className="font-mono text-xs">{r.ci_number || '-'}</TableCell>
                     <TableCell className="text-xs">{r.incorporation_date || <span className="text-muted-foreground italic">未填寫</span>}</TableCell>

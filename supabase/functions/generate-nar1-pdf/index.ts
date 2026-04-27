@@ -1065,11 +1065,19 @@ async function buildDebugPdf(): Promise<Uint8Array> {
         detachWidget(widget, field);
 
         if (labelSrc.startsWith("fill_")) {
-          // 完整名稱（如 "fill_15_P.1"）
-          const da = decodePdfText(widget.get(PDFName.of("DA"))) || "/Helv 8 Tf 0 g";
-          // 強制較小字體 (8pt) 確保 8 字以上能放入
+          // 從原始 T 直接取 raw 字串（避免 decodeText 截斷句點）
+          const rawT = field.get(PDFName.of("T")) || widget.get(PDFName.of("T"));
+          let labelStr = labelSrc;
+          try {
+            if (rawT && typeof (rawT as any).asString === "function") {
+              labelStr = (rawT as any).asString();
+            } else if (rawT) {
+              labelStr = String(rawT).replace(/^\(/, "").replace(/\)$/, "");
+            }
+          } catch (_) { /* keep labelSrc */ }
+          // 強制較小字體 (8pt) 確保完整名稱能放入
           widget.set(PDFName.of("DA"), PDFString.of("/Helv 8 Tf 0 g"));
-          widget.set(PDFName.of("V"), PDFString.of(labelSrc));
+          widget.set(PDFName.of("V"), PDFHexString.fromText(labelStr));
           widget.delete(PDFName.of("AP"));
           widget.delete(PDFName.of("MaxLen"));
           if (field !== widget) field.delete(PDFName.of("MaxLen"));

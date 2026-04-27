@@ -47,7 +47,7 @@ export interface Person {
   dateCeased?: string;
   placeIncorporated?: string;
   companyNumberRef?: string;
-  companies: { id: string; name: string; brNumber: string }[];
+  companies: { id: string; name: string; brNumber: string; incorporationDate?: string }[];
   createdAt: string;
   updatedAt: string;
 }

@@ -262,6 +262,9 @@ const People = () => {
                               <div key={i} className="rounded-md border border-border p-2 text-xs">
                                 <div className="font-medium">{c.name}</div>
                                 {c.brNumber && <div className="text-muted-foreground">BR: {c.brNumber}</div>}
+                                <div className="text-muted-foreground">
+                                  成立日期: {c.incorporationDate || <span className="italic">未填寫</span>}
+                                </div>
                               </div>
                             ))}
                           </div>

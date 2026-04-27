@@ -1,5 +1,37 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { PDFDocument, PDFName, StandardFonts, rgb } from "https://esm.sh/pdf-lib@1.17.1";
+import fontkit from "https://esm.sh/@pdf-lib/fontkit@1.1.1";
+
+const CJK_FONT_URL = "https://uqcsgmmsrgtlcqutaomg.supabase.co/storage/v1/object/public/pdf-templates/NotoSansTC-Regular.ttf";
+let _cjkFontCache: ArrayBuffer | null = null;
+async function loadCjkFontBytes(): Promise<ArrayBuffer> {
+  if (_cjkFontCache) return _cjkFontCache;
+  const r = await fetch(CJK_FONT_URL);
+  if (!r.ok) throw new Error(`Failed to load CJK font: ${r.status}`);
+  _cjkFontCache = await r.arrayBuffer();
+  return _cjkFontCache;
+}
+
+interface Fonts { latin: any; cjk: any | null; }
+
+async function embedFontsForDoc(doc: PDFDocument, cjkBytes: ArrayBuffer | null): Promise<Fonts> {
+  const latin = await doc.embedFont(StandardFonts.Helvetica);
+  let cjk: any = null;
+  if (cjkBytes) {
+    try {
+      doc.registerFontkit(fontkit);
+      cjk = await doc.embedFont(cjkBytes, { subset: true });
+    } catch (e) {
+      console.warn("CJK font embed failed:", e);
+    }
+  }
+  return { latin, cjk };
+}
+
+function isCjk(ch: string): boolean {
+  const c = ch.charCodeAt(0);
+  return c > 0x7E; // any non-ASCII -> use CJK font
+}
 
 function uint8ToBase64(bytes: Uint8Array): string {
   let binary = "";
@@ -239,13 +271,47 @@ function stripFormAnnotations(pdfDoc: PDFDocument) {
 function normalizeDrawableText(value: string): string {
   return String(value ?? "")
     .replace(/✓/g, "X")
-    .replace(/[^\x20-\x7E\r\n]/g, " ")
+    // strip control chars except CR/LF; keep printable ASCII + all unicode
+    .replace(/[\x00-\x09\x0B\x0C\x0E-\x1F\x7F]/g, " ")
     .replace(/[\t ]+/g, " ")
     .replace(/ *\n */g, "\n")
     .trim();
 }
 
-function drawTextInWidget(target: WidgetTarget, rawValue: string, font: any) {
+// 量度文字寬度（混合字體）
+function measureMixed(text: string, fontSize: number, fonts: Fonts): number {
+  let w = 0;
+  for (const ch of text) {
+    const f = (isCjk(ch) && fonts.cjk) ? fonts.cjk : fonts.latin;
+    try { w += f.widthOfTextAtSize(ch, fontSize); }
+    catch { /* glyph missing in latin -> skip */ }
+  }
+  return w;
+}
+
+// 繪製混合字體一行，回傳結束 x
+function drawMixedLine(page: any, text: string, x: number, y: number, fontSize: number, fonts: Fonts) {
+  let cursor = x;
+  let buf = "";
+  let bufFont: any = null;
+  const flush = () => {
+    if (!buf || !bufFont) { buf = ""; bufFont = null; return; }
+    try {
+      page.drawText(buf, { x: cursor, y, size: fontSize, font: bufFont, color: rgb(0, 0, 0) });
+      cursor += bufFont.widthOfTextAtSize(buf, fontSize);
+    } catch (_) { /* unsupported glyph */ }
+    buf = "";
+    bufFont = null;
+  };
+  for (const ch of text) {
+    const f = (isCjk(ch) && fonts.cjk) ? fonts.cjk : fonts.latin;
+    if (f !== bufFont) { flush(); bufFont = f; }
+    buf += ch;
+  }
+  flush();
+}
+
+function drawTextInWidget(target: WidgetTarget, rawValue: string, fonts: Fonts) {
   const text = normalizeDrawableText(rawValue);
   if (!text) return;
 
@@ -257,49 +323,58 @@ function drawTextInWidget(target: WidgetTarget, rawValue: string, font: any) {
   const maxWidth = Math.max(1, rect.width - padding * 2);
   const maxLines = Math.max(1, Math.floor((rect.height - padding * 2) / lineHeight));
 
-  const lines: string[] = [];
   const fit = (line: string) => {
     let fitted = line.trim();
-    while (fitted.length > 0 && font.widthOfTextAtSize(fitted, fontSize) > maxWidth) fitted = fitted.slice(0, -1);
+    while (fitted.length > 0 && measureMixed(fitted, fontSize, fonts) > maxWidth) {
+      fitted = fitted.slice(0, -1);
+    }
     return fitted;
   };
 
+  const lines: string[] = [];
   for (const rawLine of text.split(/\r?\n/)) {
     if (lines.length >= maxLines) break;
-    const words = rawLine.split(" ").filter(Boolean);
-    if (words.length <= 1) {
-      lines.push(fit(rawLine));
-      continue;
-    }
-    let current = "";
-    for (const word of words) {
-      const candidate = current ? `${current} ${word}` : word;
-      if (font.widthOfTextAtSize(candidate, fontSize) <= maxWidth) current = candidate;
-      else {
-        if (current) lines.push(fit(current));
-        current = word;
-        if (lines.length >= maxLines) break;
+    // 含中文時按字符換行；純拉丁按詞換行
+    const hasCjk = /[^\x00-\x7F]/.test(rawLine);
+    if (hasCjk) {
+      let current = "";
+      for (const ch of rawLine) {
+        const candidate = current + ch;
+        if (measureMixed(candidate, fontSize, fonts) <= maxWidth) current = candidate;
+        else {
+          if (current) lines.push(current);
+          current = ch;
+          if (lines.length >= maxLines) break;
+        }
       }
+      if (current && lines.length < maxLines) lines.push(fit(current));
+    } else {
+      const words = rawLine.split(" ").filter(Boolean);
+      if (words.length <= 1) { lines.push(fit(rawLine)); continue; }
+      let current = "";
+      for (const word of words) {
+        const candidate = current ? `${current} ${word}` : word;
+        if (measureMixed(candidate, fontSize, fonts) <= maxWidth) current = candidate;
+        else {
+          if (current) lines.push(fit(current));
+          current = word;
+          if (lines.length >= maxLines) break;
+        }
+      }
+      if (current && lines.length < maxLines) lines.push(fit(current));
     }
-    if (current && lines.length < maxLines) lines.push(fit(current));
   }
 
   const startY = isMultiline
     ? rect.y + rect.height - padding - fontSize
     : rect.y + Math.max(1, (rect.height - fontSize) / 2 - 1);
   lines.filter(Boolean).forEach((line, index) => {
-    page.drawText(line, {
-      x: rect.x + padding,
-      y: startY - index * lineHeight,
-      size: fontSize,
-      font,
-      color: rgb(0, 0, 0),
-    });
+    drawMixedLine(page, line, rect.x + padding, startY - index * lineHeight, fontSize, fonts);
   });
 }
 
 // === Helper: 在 PDFDocument 上建立可重複使用的 fill / check 工具 ===
-function createFormHelpers(pdfDoc: PDFDocument, helv: any) {
+function createFormHelpers(pdfDoc: PDFDocument, fonts: Fonts) {
   const form = pdfDoc.getForm();
   const widgets = collectWidgetTargets(pdfDoc);
 
@@ -307,7 +382,7 @@ function createFormHelpers(pdfDoc: PDFDocument, helv: any) {
     try {
       const target = widgets.get(fieldName);
       if (!target) throw new Error("widget not found");
-      drawTextInWidget(target, value ?? "", helv);
+      drawTextInWidget(target, value ?? "", fonts);
       return true;
     } catch (e) {
       console.warn(`⚠ Missing field: ${fieldName}`);
@@ -319,7 +394,7 @@ function createFormHelpers(pdfDoc: PDFDocument, helv: any) {
     if (!shouldCheck) return false;
     const target = widgets.get(fieldName);
     if (!target) return false;
-    drawTextInWidget(target, "X", helv);
+    drawTextInWidget(target, "X", fonts);
     return true;
   };
 

@@ -70,22 +70,25 @@ export function useOfficers() {
   const { data: officers = [], isLoading, refetch } = useQuery({
     queryKey: ['officers-people'],
     queryFn: async () => {
-      // Fetch all officers
-      const { data: officerRows, error } = await supabase
-        .from('officers')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(5000);
+      const fetchAll = async <T,>(table: 'officers' | 'companies', columns: string, order?: { col: string; ascending: boolean }): Promise<T[]> => {
+        const pageSize = 1000;
+        let from = 0;
+        const all: T[] = [];
+        while (true) {
+          let q = supabase.from(table).select(columns);
+          if (order) q = q.order(order.col, { ascending: order.ascending });
+          const { data, error } = await q.range(from, from + pageSize - 1);
+          if (error) throw error;
+          const batch = (data || []) as unknown as T[];
+          all.push(...batch);
+          if (batch.length < pageSize) break;
+          from += pageSize;
+        }
+        return all;
+      };
 
-      if (error) throw error;
-
-      // Fetch all companies for mapping
-      const { data: companyRows, error: companyError } = await supabase
-        .from('companies')
-        .select('id, name, company_number')
-        .limit(5000);
-
-      if (companyError) throw companyError;
+      const officerRows = await fetchAll<OfficerRow>('officers', '*', { col: 'created_at', ascending: false });
+      const companyRows = await fetchAll<CompanyRow>('companies', 'id, name, company_number');
 
       const companyMap = new Map<string, CompanyRow>();
       (companyRows || []).forEach(c => companyMap.set(c.id, c));

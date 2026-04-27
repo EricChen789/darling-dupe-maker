@@ -115,6 +115,10 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
         serviceAddress: freshShareholder.serviceAddress || '',
         email: freshShareholder.email || '',
         shareType: freshShareholder.shareType || '',
+        issuePrice: freshShareholder.issuePrice || '',
+        currency: freshShareholder.currency || 'HKD',
+        paidUp: freshShareholder.paidUp || '',
+        unpaid: freshShareholder.unpaid || '',
       });
     }
   }, [company, selectedSh, editingShDetail]);

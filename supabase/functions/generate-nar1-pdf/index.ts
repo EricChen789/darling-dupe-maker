@@ -367,8 +367,23 @@ function createFormHelpers(pdfDoc: PDFDocument): FormHelpers {
     if (!target) return false;
     try {
       detachWidget(target.widget, target.field);
-      target.widget.set(PDFName.of("V"), PDFName.of("Yes"));
-      target.widget.set(PDFName.of("AS"), PDFName.of("Yes"));
+      // Discover the checkbox's "On" state name from its /AP/N dictionary.
+      // Different templates use /Yes, /On, /1, etc. We must match exactly,
+      // otherwise Adobe Reader won't render the checkmark.
+      let onState = "Yes";
+      try {
+        const ap = target.widget.get(PDFName.of("AP")) as any;
+        const apN = ap?.get?.(PDFName.of("N")) as any;
+        const dict = apN?.dict;
+        if (dict && typeof dict.keys === "function") {
+          for (const k of dict.keys()) {
+            const name = String(k).replace(/^\//, "");
+            if (name && name !== "Off") { onState = name; break; }
+          }
+        }
+      } catch (_) { /* fallback to Yes */ }
+      target.widget.set(PDFName.of("V"), PDFName.of(onState));
+      target.widget.set(PDFName.of("AS"), PDFName.of(onState));
       return true;
     } catch {
       return false;

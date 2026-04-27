@@ -377,7 +377,7 @@ function drawTextInWidget(target: WidgetTarget, rawValue: string, fonts: Fonts) 
   });
 }
 
-// === Helper: 在 PDFDocument 上建立可重複使用的 fill / check 工具 ===
+// === Helper（drawText 模式）：用於附表頁 P.9-P.15，因為這些頁面的欄位有命名衝突 ===
 function createFormHelpers(pdfDoc: PDFDocument, fonts: Fonts) {
   const form = pdfDoc.getForm();
   const widgets = collectWidgetTargets(pdfDoc);
@@ -404,6 +404,36 @@ function createFormHelpers(pdfDoc: PDFDocument, fonts: Fonts) {
 
   return { form, safeSetText, safeCheck };
 }
+
+// === Helper（原生 setText 模式）：用於主文件 P.1-P.8，由 PDF reader 渲染中文 fallback 字體
+//     效果與 Acrobat 直接填表相同，中英文視覺最自然 ===
+function createNativeFormHelpers(pdfDoc: PDFDocument) {
+  const form = pdfDoc.getForm();
+
+  const safeSetText = (fieldName: string, value: string) => {
+    try {
+      const tf = form.getTextField(fieldName);
+      tf.setText(value ?? "");
+      return true;
+    } catch (e) {
+      console.warn(`⚠ Missing native field: ${fieldName}`);
+      return false;
+    }
+  };
+
+  const safeCheck = (fieldName: string, shouldCheck: boolean) => {
+    if (!shouldCheck) return false;
+    try {
+      form.getCheckBox(fieldName).check();
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  return { form, safeSetText, safeCheck };
+}
+
 
 // === 各模板的填寫函式（操作各自的單頁 PDF 副本） ===
 

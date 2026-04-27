@@ -253,6 +253,32 @@ const Companies = () => {
                     );
                   })()}
                 </TableCell>
+                <TableCell onClick={(e) => e.stopPropagation()} className="min-w-[110px]">
+                  <Select
+                    value={company.status || 'active'}
+                    onValueChange={(v) => {
+                      updateCompany.mutate(
+                        { id: company.id, data: { status: v as 'active' | 'inactive' | 'deregistered' } },
+                        {
+                          onSuccess: () => toast({ title: '狀態已更新', description: `${company.name}` }),
+                          onError: (e: any) => toast({ title: '更新失敗', description: e.message, variant: 'destructive' }),
+                        }
+                      );
+                    }}
+                  >
+                    <SelectTrigger className={`h-8 text-xs ${
+                      company.status === 'inactive' ? 'border-yellow-500/50 text-yellow-600' :
+                      company.status === 'deregistered' ? 'border-destructive/50 text-destructive' : ''
+                    }`}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="active">有效</SelectItem>
+                      <SelectItem value="inactive">失效</SelectItem>
+                      <SelectItem value="deregistered">註銷</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </TableCell>
                 <TableCell onClick={(e) => e.stopPropagation()}>
                   <div className="flex items-center gap-1">
                     <Button variant="ghost" size="sm" className="h-8 px-2"

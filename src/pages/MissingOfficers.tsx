@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -44,6 +45,21 @@ type MissingFilter = 'all' | 'director' | 'secretary' | 'both';
 const MissingOfficers = () => {
   const [search, setSearch] = useState('');
   const [missingFilter, setMissingFilter] = useState<MissingFilter>('all');
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+
+  const handleSetInactive = async (id: string, name: string) => {
+    if (!confirm(`確定將「${name}」設為失效 (inactive)?`)) return;
+    setUpdatingId(id);
+    const { error } = await supabase.from('companies').update({ status: 'inactive' }).eq('id', id);
+    setUpdatingId(null);
+    if (error) {
+      toast.error(`更新失敗: ${error.message}`);
+      return;
+    }
+    toast.success(`已將「${name}」設為失效`);
+    queryClient.invalidateQueries({ queryKey: ['missing-officers-companies-v2'] });
+  };
 
   const fetchAll = async <T,>(
     table: 'companies' | 'officers',
@@ -217,9 +233,16 @@ const MissingOfficers = () => {
                     <TableCell className="font-mono text-xs">{r.ci_number || '-'}</TableCell>
                     <TableCell className="text-xs">{r.incorporation_date || <span className="text-muted-foreground italic">未填寫</span>}</TableCell>
                     <TableCell>
-                      <Badge variant={r.status === 'active' || !r.status ? 'default' : 'secondary'}>
-                        {r.status === 'inactive' ? '失效' : r.status === 'cancelled' ? '註銷' : '有效'}
-                      </Badge>
+                      <Button
+                        variant={r.status === 'active' || !r.status ? 'default' : 'secondary'}
+                        size="sm"
+                        className="h-6 px-2 text-xs"
+                        disabled={updatingId === r.id || !(r.status === 'active' || !r.status)}
+                        onClick={() => handleSetInactive(r.id, r.name)}
+                        title="按一下設為失效"
+                      >
+                        {updatingId === r.id ? '更新中...' : r.status === 'inactive' ? '失效' : r.status === 'cancelled' ? '註銷' : '有效'}
+                      </Button>
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-1">

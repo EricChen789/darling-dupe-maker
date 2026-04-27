@@ -36,7 +36,7 @@ interface CompanyRow {
 
 function mapOfficerToPerson(
   officer: OfficerRow,
-  companies: { id: string; name: string; brNumber: string }[]
+  companies: { id: string; name: string; brNumber: string; incorporationDate?: string }[]
 ): Person {
   return {
     id: officer.id,

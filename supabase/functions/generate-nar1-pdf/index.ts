@@ -94,12 +94,28 @@ async function listAllFormFields(): Promise<{ fields: Array<{name: string; type:
   return { fields };
 }
 
-// 港式英文姓名格式：姓氏在「最前」（例如 AU KWOK LAM → 姓 AU、名 KWOK LAM）
+// 英文姓名解析：
+// - 支援 "SURNAME, GIVEN NAMES"（逗號分隔）格式
+// - 也支援港式 "SURNAME GIVEN NAMES"（純空白分隔，姓氏在最前）
+// - 自動去除多餘逗號 / 空白，避免欄位出現前置逗號
 const parseEnglishName = (fullName: string) => {
-  const parts = (fullName || "").trim().split(/\s+/).filter(Boolean);
+  const cleaned = (fullName || "").replace(/\s+/g, " ").trim();
+  if (!cleaned) return { surname: "", otherNames: "" };
+  // 先嘗試以逗號切分（最常見的香港股東格式：CHAN, YING CHUNG）
+  if (cleaned.includes(",")) {
+    const segs = cleaned.split(",").map(s => s.trim()).filter(Boolean);
+    if (segs.length >= 2) {
+      return { surname: segs[0], otherNames: segs.slice(1).join(" ") };
+    }
+    if (segs.length === 1) {
+      return { surname: segs[0], otherNames: "" };
+    }
+  }
+  // 退回空白分隔
+  const parts = cleaned.split(/\s+/).filter(Boolean);
   if (parts.length === 0) return { surname: "", otherNames: "" };
-  const surname = parts[0];
-  const otherNames = parts.slice(1).join(" ");
+  const surname = parts[0].replace(/,+$/g, "");
+  const otherNames = parts.slice(1).join(" ").replace(/^,+\s*/, "");
   return { surname, otherNames };
 };
 
@@ -423,12 +439,12 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
     safeSetText("fill_3_P.5", dir.nameChinese || "");
     safeSetText("fill_4_P.5", surname);
     safeSetText("fill_5_P.5", otherNames);
-    const addr = parseAddress(dir.address || '');
-    safeSetText("fill_10_P.5", addr.flat);
-    safeSetText("fill_11_P.5", addr.building);
-    safeSetText("fill_12_P.5", addr.street);
-    safeSetText("fill_13_P.5", addr.district);
-    safeSetText("fill_14_P.5", addr.country);
+    // 董事住址統一使用公司註冊地址
+    safeSetText("fill_10_P.5", office.flat || "");
+    safeSetText("fill_11_P.5", office.building || "");
+    safeSetText("fill_12_P.5", office.street || "");
+    safeSetText("fill_13_P.5", office.district || "");
+    safeSetText("fill_14_P.5", office.region || "");
     safeSetText("fill_15_P.5", dir.email || "");
     const hkid = parseHkidPartial(dir.idNumber || '');
     if (hkid) safeSetText("fill_16_P.5", hkid);
@@ -445,12 +461,12 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
     safeCheck("cb_1_P.6", true);
     safeSetText("fill_3_P.6", dir.nameChinese || "");
     safeSetText("fill_4_P.6", dir.nameEnglish || "");
-    const addr = parseAddress(dir.address || '');
-    safeSetText("fill_5_P.6", addr.flat);
-    safeSetText("fill_6_P.6", addr.building);
-    safeSetText("fill_7_P.6", addr.street);
-    safeSetText("fill_8_P.6", addr.district);
-    safeSetText("fill_9_P.6", addr.country);
+    // 法人董事住址統一使用公司註冊地址
+    safeSetText("fill_5_P.6", office.flat || "");
+    safeSetText("fill_6_P.6", office.building || "");
+    safeSetText("fill_7_P.6", office.street || "");
+    safeSetText("fill_8_P.6", office.district || "");
+    safeSetText("fill_9_P.6", office.region || "");
     safeSetText("fill_10_P.6", dir.email || "");
     safeSetText("fill_11_P.6", dir.companyNumberRef || dir.brNumber || "");
     console.log(`Filled Director (Corporate): ${dir.nameEnglish || dir.nameChinese}`);
@@ -588,12 +604,12 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
     safeSetText("fill_6_P.13", dir.nameChinese || "");
     safeSetText("fill_7_P.13", surname);
     safeSetText("fill_8_P.13", otherNames);
-    const addr = parseAddress(dir.address || '');
-    safeSetText("fill_13_P.13", addr.flat);
-    safeSetText("fill_14_P.13", addr.building);
-    safeSetText("fill_15_P.13", addr.street);
-    safeSetText("fill_16_P.13", addr.district);
-    safeSetText("fill_17_P.13", addr.country);
+    // 續頁 C 額外董事住址統一使用公司註冊地址
+    safeSetText("fill_13_P.13", office.flat || "");
+    safeSetText("fill_14_P.13", office.building || "");
+    safeSetText("fill_15_P.13", office.street || "");
+    safeSetText("fill_16_P.13", office.district || "");
+    safeSetText("fill_17_P.13", office.region || "");
     safeSetText("fill_18_P.13", dir.email || "");
     const hkid = parseHkidPartial(dir.idNumber || '');
     if (hkid) safeSetText("fill_19_P.13", hkid);

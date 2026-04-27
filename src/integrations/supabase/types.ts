@@ -266,6 +266,161 @@ export type Database = {
           },
         ]
       }
+      person_company_roles: {
+        Row: {
+          company_id: string
+          created_at: string
+          currency: string
+          date_appointed: string
+          date_ceased: string
+          id: string
+          issue_price: string
+          notes: string
+          paid_up: string
+          person_id: string
+          role: string
+          service_address_override: string
+          share_type: string
+          shares: number
+          unpaid: string
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          currency?: string
+          date_appointed?: string
+          date_ceased?: string
+          id?: string
+          issue_price?: string
+          notes?: string
+          paid_up?: string
+          person_id: string
+          role: string
+          service_address_override?: string
+          share_type?: string
+          shares?: number
+          unpaid?: string
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          currency?: string
+          date_appointed?: string
+          date_ceased?: string
+          id?: string
+          issue_price?: string
+          notes?: string
+          paid_up?: string
+          person_id?: string
+          role?: string
+          service_address_override?: string
+          share_type?: string
+          shares?: number
+          unpaid?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "person_company_roles_person_id_fkey"
+            columns: ["person_id"]
+            isOneToOne: false
+            referencedRelation: "persons"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      persons: {
+        Row: {
+          address: string
+          address_proof_file_path: string
+          alias_chinese: string
+          alias_english: string
+          company_number_ref: string
+          created_at: string
+          email: string
+          id: string
+          id_card_file_path: string
+          id_number: string
+          identity: string
+          name_chinese: string
+          name_english: string
+          normalized_key: string | null
+          notes: string
+          passport_country: string
+          passport_expiry: string
+          passport_file_path: string
+          passport_number: string
+          phone: string
+          place_incorporated: string
+          previous_name_chinese: string
+          previous_name_english: string
+          service_address: string
+          tcsp_number: string
+          updated_at: string
+          whatsapp: string
+        }
+        Insert: {
+          address?: string
+          address_proof_file_path?: string
+          alias_chinese?: string
+          alias_english?: string
+          company_number_ref?: string
+          created_at?: string
+          email?: string
+          id?: string
+          id_card_file_path?: string
+          id_number?: string
+          identity?: string
+          name_chinese?: string
+          name_english?: string
+          normalized_key?: string | null
+          notes?: string
+          passport_country?: string
+          passport_expiry?: string
+          passport_file_path?: string
+          passport_number?: string
+          phone?: string
+          place_incorporated?: string
+          previous_name_chinese?: string
+          previous_name_english?: string
+          service_address?: string
+          tcsp_number?: string
+          updated_at?: string
+          whatsapp?: string
+        }
+        Update: {
+          address?: string
+          address_proof_file_path?: string
+          alias_chinese?: string
+          alias_english?: string
+          company_number_ref?: string
+          created_at?: string
+          email?: string
+          id?: string
+          id_card_file_path?: string
+          id_number?: string
+          identity?: string
+          name_chinese?: string
+          name_english?: string
+          normalized_key?: string | null
+          notes?: string
+          passport_country?: string
+          passport_expiry?: string
+          passport_file_path?: string
+          passport_number?: string
+          phone?: string
+          place_incorporated?: string
+          previous_name_chinese?: string
+          previous_name_english?: string
+          service_address?: string
+          tcsp_number?: string
+          updated_at?: string
+          whatsapp?: string
+        }
+        Relationships: []
+      }
       presenters: {
         Row: {
           address: string | null

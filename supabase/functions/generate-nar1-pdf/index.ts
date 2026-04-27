@@ -27,6 +27,7 @@ interface OfficerData {
   dateAppointed?: string;
   placeIncorporated?: string;
   companyNumberRef?: string;
+  tcspNumber?: string;
 }
 
 interface ShareholderData {

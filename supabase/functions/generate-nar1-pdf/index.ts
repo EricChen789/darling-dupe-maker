@@ -66,6 +66,8 @@ interface CompanyData {
   secretaries: OfficerData[];
   shareholders: ShareholderData[];
   returnDate?: string;
+  /** 公司紀錄保存地點（如非保存於註冊辦事處），會觸發附表 E (P.15) */
+  companyRecords?: Array<{ records: string; address: string }>;
   presenter?: {
     name?: string;
     address?: string;

@@ -38,6 +38,10 @@ interface ShareholderData {
   idNumber?: string;
   address?: string;
   shareType?: string;
+  currency?: string;
+  issuePrice?: string;
+  paidUp?: string;
+  unpaid?: string;
 }
 
 interface CompanyData {

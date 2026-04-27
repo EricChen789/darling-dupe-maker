@@ -278,6 +278,8 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
       shares: shForm.shares, identity: shForm.identity, id_number: shForm.idNumber,
       address: shForm.address, service_address: shForm.serviceAddress || shForm.address || regAddrFull,
       email: shForm.email, share_type: shForm.shareType,
+      issue_price: shForm.issuePrice, currency: shForm.currency,
+      paid_up: shForm.paidUp, unpaid: shForm.unpaid,
     }, {
       onSuccess: () => {
         toast({ title: '股東已新增' });

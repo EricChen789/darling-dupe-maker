@@ -166,6 +166,19 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
     setIsGenerating(true);
 
     try {
+      // 解析簽署人：明確選擇 → 第一個秘書 → 第一個董事
+      const explicitId = company.signerRoleId || '';
+      const allOfficers = [...company.secretaries, ...company.directors];
+      const explicitOfficer = explicitId ? allOfficers.find(o => o.id === explicitId) : null;
+      const fallback = company.secretaries[0] || company.directors[0] || null;
+      const signer = explicitOfficer || fallback;
+      const signerRole: 'director' | 'secretary' | null = signer
+        ? (company.secretaries.some(s => s.id === signer.id) ? 'secretary' : 'director')
+        : null;
+      const signerName = signer
+        ? (signer.nameEnglish || signer.nameChinese || '')
+        : (formData.presenterName || '');
+
       const payload = {
         name: company.name,
         chineseName: company.chineseName || '',
@@ -236,6 +249,7 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
         companyRecords: companyRecords
           .filter(r => r.records.trim() || r.address.trim())
           .map(r => ({ records: r.records, address: r.address })),
+        signer: signer ? { name: signerName, role: signerRole } : null,
       };
 
       const { data, error } = await supabase.functions.invoke('generate-nar1-pdf', {

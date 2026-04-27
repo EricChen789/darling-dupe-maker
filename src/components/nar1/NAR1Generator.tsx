@@ -185,6 +185,8 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
           dateAppointed: d.dateAppointed || '',
           placeIncorporated: d.placeIncorporated || '',
           companyNumberRef: d.companyNumberRef || '',
+          passportNumber: d.passportNumber || '',
+          nationality: (d as any).nationality || d.placeIncorporated || '',
         })),
         secretaries: company.secretaries.map(s => ({
           nameChinese: s.nameChinese,

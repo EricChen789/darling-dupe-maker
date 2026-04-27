@@ -753,11 +753,8 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
   safeSetText("fill_3_P.14", year || "");
   safeSetText("fill_4_P.14", br8);
 
-  // ============ Page 15 - Schedule 2 (上市公司成員) - BR header only ============
-  safeSetText("fill_1_P.15", day || "");
-  safeSetText("fill_2_P.15", month || "");
-  safeSetText("fill_3_P.15", year || "");
-  safeSetText("fill_4_P.15", br8);
+  // ============ Page 15 - Schedule 2 (上市公司專用) - 不填寫 ============
+  // 附表二僅適用於上市公司，本系統服務私人公司，故完全留空
 
   // Keep form interactive so PDF viewer renders CJK with system fonts
   console.log("PDF filled with all data, serializing...");

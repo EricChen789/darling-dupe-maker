@@ -61,6 +61,16 @@ const MissingOfficers = () => {
     queryClient.invalidateQueries({ queryKey: ['missing-officers-companies-v2'] });
   };
 
+  const handleUpdateJurisdiction = async (id: string, name: string, jurisdiction: string) => {
+    const { error } = await supabase.from('companies').update({ jurisdiction }).eq('id', id);
+    if (error) {
+      toast.error(`更新失敗: ${error.message}`);
+      return;
+    }
+    toast.success(`已將「${name}」司法管轄區改為 ${jurisdiction}`);
+    queryClient.invalidateQueries({ queryKey: ['missing-officers-companies-v2'] });
+  };
+
   const fetchAll = async <T,>(
     table: 'companies' | 'officers',
     columns: string,

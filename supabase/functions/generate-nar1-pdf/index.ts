@@ -450,7 +450,7 @@ interface CommonCtx {
 // ========== 主文件 P.1-P.8 ==========
 function fillMainDocument(pdfDoc: PDFDocument, ctx: CommonCtx, fonts: Fonts) {
   const { br8, day, month, year, data, office, shareInfos } = ctx;
-  const { safeSetText, safeCheck, form } = createFormHelpers(pdfDoc, fonts);
+  const { safeSetText, safeCheck, form } = createNativeFormHelpers(pdfDoc);
 
   // ===== Page 1 =====
   safeSetText("fill_1_P.1", br8);

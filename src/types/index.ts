@@ -50,6 +50,10 @@ export interface Person {
   placeIncorporated?: string;
   companyNumberRef?: string;
   tcspNumber?: string;
+  previousNameChinese?: string;
+  previousNameEnglish?: string;
+  aliasChinese?: string;
+  aliasEnglish?: string;
   companies: { id: string; name: string; brNumber: string; incorporationDate?: string }[];
   createdAt: string;
   updatedAt: string;

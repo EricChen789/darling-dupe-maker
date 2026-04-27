@@ -25,6 +25,10 @@ interface OfficerRow {
   id_card_file_path: string | null;
   address_proof_file_path: string | null;
   tcsp_number: string | null;
+  previous_name_chinese: string | null;
+  previous_name_english: string | null;
+  alias_chinese: string | null;
+  alias_english: string | null;
   created_at: string;
 }
 
@@ -61,6 +65,10 @@ function mapOfficerToPerson(
     placeIncorporated: officer.place_incorporated || undefined,
     companyNumberRef: officer.company_number_ref || undefined,
     tcspNumber: officer.tcsp_number || undefined,
+    previousNameChinese: officer.previous_name_chinese || undefined,
+    previousNameEnglish: officer.previous_name_english || undefined,
+    aliasChinese: officer.alias_chinese || undefined,
+    aliasEnglish: officer.alias_english || undefined,
     companies,
     createdAt: new Date(officer.created_at).toLocaleDateString('zh-TW'),
     updatedAt: new Date(officer.created_at).toLocaleDateString('zh-TW'),
@@ -165,6 +173,10 @@ export function useOfficers() {
             id_card_file_path: personData.idCardFilePath || '',
             address_proof_file_path: personData.addressProofFilePath || '',
             tcsp_number: personData.tcspNumber || '',
+            previous_name_chinese: personData.previousNameChinese || '',
+            previous_name_english: personData.previousNameEnglish || '',
+            alias_chinese: personData.aliasChinese || '',
+            alias_english: personData.aliasEnglish || '',
           })
           .eq('id', existingPerson.id);
         if (error) throw error;

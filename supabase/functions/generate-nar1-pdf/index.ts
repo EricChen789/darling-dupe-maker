@@ -634,7 +634,7 @@ function fillMainDocument(pdfDoc: PDFDocument, ctx: CommonCtx) {
         // 簽署人是董事 → 劃掉「／公司秘書 Company Secretary」（中英文同時）
         page8.drawLine({
           start: { x: 252, y: yLine },
-          end:   { x: 339, y: yLine },
+          end:   { x: 332, y: yLine },
           thickness: 1.2,
         });
       }

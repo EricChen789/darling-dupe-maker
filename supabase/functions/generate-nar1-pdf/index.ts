@@ -608,13 +608,26 @@ function fillMainDocument(pdfDoc: PDFDocument, ctx: CommonCtx) {
 }
 
 // ========== 附表 1 (P.9): 兩位股東 (非上市公司) ==========
-// 重要：附表一的欄位 parent 名稱用 fill_X_P.9（帶點）。每個股東欄位佈局如下：
-//   slot 1 (offset 0):  中文名7, 姓氏8, OtherNames9, 股數16, cb_1(共同持有),
-//                       合資人說明12, 地址 13/14/15/16/17 (flat/building/street/district/country),
-//                       Remarks 18
-//   slot 2 (offset 11): 中文名19, 姓氏20, OtherNames21, 股數27, cb_2,
-//                       合資人說明24, 地址 25/26/27/28/29, Remarks 30
-//   頁碼: 31 (current), 32 (total)
+// 實際 P.9 欄位佈局（依據模板坐標分析）：
+//   日期: fill_1(DD), fill_2(MM), fill_3(YYYY)
+//   BR 號碼: fill_4 (整段一格)
+//   股份類別 (整頁共用): fill_5
+//   該類別之股份總數: fill_6
+//   slot1 (上半頁):
+//     中文名 fill_7, 姓 fill_8, 名 fill_9
+//     共同持有人姓名 fill_10
+//     地址: 室/樓 fill_11, 大廈 fill_12, 街道 fill_13, 區 fill_14, 國家 fill_15
+//     持有股份數目 fill_16
+//     備註 fill_17
+//     共同持有勾選 cb_1
+//   slot2 (下半頁):
+//     中文名 fill_18, 姓 fill_19, 名 fill_20
+//     共同持有人姓名 fill_21
+//     地址: fill_22, fill_23, fill_24, fill_25, fill_26
+//     持有股份數目 fill_27
+//     備註 fill_28
+//     共同持有勾選 cb_2
+//   頁碼: fill_29 (current), fill_30 (total)
 function fillSchedule1(pdfDoc: PDFDocument, ctx: CommonCtx, members: ShareholderData[], pageNo: number, totalPages: number) {
   const { br8, day, month, year, shareInfos } = ctx;
   const { setText } = createFormHelpers(pdfDoc);
@@ -629,13 +642,11 @@ function fillSchedule1(pdfDoc: PDFDocument, ctx: CommonCtx, members: Shareholder
     setText("fill_6_P.9", fmtInt(firstShareInfo.shares));
   }
 
-  // slot1: name=7, surname=8, other=9, shares=16, addr=13-17
-  // slot2: name=19, surname=20, other=21, shares=27, addr=25-29
-  // slot1 parent names: name=7, surname=8, other=9, shares=10, joint=12, flat=13, building=14, street=15, district=16, country=17, remarks=18
-  // slot2 parent names: name=19, surname=20, other=21, shares=22, joint=24, flat=25, building=26, street=27, district=28, country=29, remarks=30
+  // slot1: name=7, surname=8, other=9, shares=16, flat=11, building=12, street=13, district=14, country=15
+  // slot2: name=18, surname=19, other=20, shares=27, flat=22, building=23, street=24, district=25, country=26
   const SLOT_FIELDS = [
-    { name: 7,  surname: 8,  other: 9,  shares: 10, flat: 13, building: 14, street: 15, district: 16, country: 17 },
-    { name: 19, surname: 20, other: 21, shares: 22, flat: 25, building: 26, street: 27, district: 28, country: 29 },
+    { name: 7,  surname: 8,  other: 9,  shares: 16, flat: 11, building: 12, street: 13, district: 14, country: 15 },
+    { name: 18, surname: 19, other: 20, shares: 27, flat: 22, building: 23, street: 24, district: 25, country: 26 },
   ];
 
   const fillMember = (sh: ShareholderData, slotIdx: 0 | 1) => {
@@ -644,12 +655,10 @@ function fillSchedule1(pdfDoc: PDFDocument, ctx: CommonCtx, members: Shareholder
     const fullName = sh.nameEnglish || sh.name || "";
     const { surname, otherNames } = parseEnglishName(fullName);
     const addr = parseAddress(sh.address || "");
-    // 國家：若解析不到則預設「香港 Hong Kong」
     const country = addr.country || "香港 Hong Kong";
 
     setText(`fill_${F.name}_P.9`, sh.nameChinese || "");
     if (isCorp) {
-      // 法人股東：英文名寫滿姓氏欄（Surname 欄較窄，Other Names 欄較寬）
       setText(`fill_${F.surname}_P.9`, fullName);
     } else {
       setText(`fill_${F.surname}_P.9`, surname);
@@ -665,8 +674,8 @@ function fillSchedule1(pdfDoc: PDFDocument, ctx: CommonCtx, members: Shareholder
 
   if (members[0]) fillMember(members[0], 0);
   if (members[1]) fillMember(members[1], 1);
-  setText("fill_31_P.9", String(pageNo));
-  setText("fill_32_P.9", String(totalPages));
+  setText("fill_29_P.9", String(pageNo));
+  setText("fill_30_P.9", String(totalPages));
 }
 
 // ========== 附表 2 (P.10): 上市公司 ==========

@@ -333,6 +333,16 @@ function drawTextInWidget(target: WidgetTarget, rawValue: string, fonts: Fonts) 
 
   const { page, rect } = target;
   const padding = Math.min(2.5, Math.max(1, rect.width * 0.03));
+  const clearInset = 0.7;
+  if (rect.width > clearInset * 2 && rect.height > clearInset * 2) {
+    page.drawRectangle({
+      x: rect.x + clearInset,
+      y: rect.y + clearInset,
+      width: rect.width - clearInset * 2,
+      height: rect.height - clearInset * 2,
+      color: rgb(1, 1, 1),
+    });
+  }
   const isMultiline = text.includes("\n") || rect.height > 24;
   // 固定字號（早上版本）：不依欄位高度縮放
   const fontSize = 9;

@@ -722,13 +722,15 @@ async function buildNAR1Pdf(data: CompanyData): Promise<Uint8Array> {
       label: `續頁C#${i}`,
     });
   }
-  // 續頁 D：第二位起的法人董事
-  for (let i = 1; i < corporateDirectors.length; i++) {
-    const dir = corporateDirectors[i];
+  // 續頁 D：第二位起的法人董事，每頁可放 2 位
+  const extraCorpDirs = corporateDirectors.slice(1);
+  for (let i = 0; i < extraCorpDirs.length; i += 2) {
+    const slice = extraCorpDirs.slice(i, i + 2);
+    const pageNo = Math.floor(i / 2) + 1;
     attachments.push({
       url: TEMPLATES.sheetD,
-      fill: (doc, h) => fillSheetD(doc, ctx, dir, h),
-      label: `續頁D#${i}`,
+      fill: (doc, h) => fillSheetD(doc, ctx, slice, h),
+      label: `續頁D#${pageNo}(${slice.length}人)`,
     });
   }
 

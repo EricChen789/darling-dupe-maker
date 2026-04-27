@@ -668,6 +668,9 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                   <InfoItem label="身份證號碼" value={selectedSh.idNumber} />
                   <InfoItem label="持股數量" value={selectedSh.shares.toLocaleString() + ' 股'} />
                   <InfoItem label="股份類別" value={selectedSh.shareType || ''} />
+                  <InfoItem label="每股發行價" value={selectedSh.issuePrice ? `${selectedSh.currency || 'HKD'} ${selectedSh.issuePrice}` : ''} />
+                  <InfoItem label="已繳付股本" value={selectedSh.paidUp ? `${selectedSh.currency || 'HKD'} ${selectedSh.paidUp}` : ''} />
+                  <InfoItem label="未繳付股本" value={selectedSh.unpaid ? `${selectedSh.currency || 'HKD'} ${selectedSh.unpaid}` : ''} />
                   <InfoItem label="地址" value={selectedSh.address} />
                   <InfoItem label="電郵" value={selectedSh.email} />
                 </div>

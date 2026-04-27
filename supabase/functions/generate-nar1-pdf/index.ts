@@ -42,6 +42,7 @@ interface OfficerData {
   identity: 'natural' | 'corporate';
   brNumber?: string;
   address?: string;
+  serviceAddress?: string;
   idNumber?: string;
   dateAppointed?: string;
   placeIncorporated?: string;

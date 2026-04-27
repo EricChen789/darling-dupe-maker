@@ -85,18 +85,26 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
   }, [company, editingCompany]);
 
   useEffect(() => {
-    if (selectedPerson) {
-      setPersonForm({
-        nameEnglish: selectedPerson.nameEnglish, nameChinese: selectedPerson.nameChinese,
-        identity: selectedPerson.identity, idNumber: selectedPerson.idNumber || '',
-        address: selectedPerson.address || '',
-        serviceAddress: selectedPerson.serviceAddress || '',
-        dateAppointed: selectedPerson.dateAppointed || '',
-        dateCeased: selectedPerson.dateCeased || '', placeIncorporated: selectedPerson.placeIncorporated || '',
-        companyNumberRef: selectedPerson.companyNumberRef || '',
-      });
+    if (!selectedPerson) return;
+    // 從最新的 company 資料中找回對應人員（mutation 成功後 query 會 invalidate 並重 fetch）
+    const fresh = company
+      ? [...company.directors, ...company.secretaries].find(p => p.id === selectedPerson.id)
+      : null;
+    const source = fresh ? { ...fresh, roleLabel: (selectedPerson as any).roleLabel } : selectedPerson;
+    if (fresh && fresh !== selectedPerson) {
+      setSelectedPerson(source as any);
     }
-  }, [selectedPerson]);
+    setPersonForm({
+      nameEnglish: source.nameEnglish, nameChinese: source.nameChinese,
+      identity: source.identity, idNumber: source.idNumber || '',
+      address: source.address || '',
+      serviceAddress: source.serviceAddress || '',
+      dateAppointed: source.dateAppointed || '',
+      dateCeased: source.dateCeased || '', placeIncorporated: source.placeIncorporated || '',
+      companyNumberRef: source.companyNumberRef || '',
+    });
+  }, [selectedPerson?.id, company]);
+
 
   useEffect(() => {
     if (!company || !selectedSh) return;

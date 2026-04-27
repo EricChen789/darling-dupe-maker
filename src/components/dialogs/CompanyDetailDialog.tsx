@@ -503,7 +503,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                             <div className="hidden group-hover:flex gap-1">
                               <Button variant="ghost" size="sm" className="h-6 px-1.5" onClick={e => {
                                 e.stopPropagation(); setEditingShareholder(sh.id);
-                                setShForm({ name: sh.name, nameEnglish: sh.nameEnglish, nameChinese: sh.nameChinese, shares: sh.shares, identity: sh.identity, idNumber: sh.idNumber, address: sh.address, serviceAddress: sh.serviceAddress || '', email: sh.email, shareType: sh.shareType || '' });
+                                setShForm({ name: sh.name, nameEnglish: sh.nameEnglish, nameChinese: sh.nameChinese, shares: sh.shares, identity: sh.identity, idNumber: sh.idNumber, address: sh.address, serviceAddress: sh.serviceAddress || '', email: sh.email, shareType: sh.shareType || '', issuePrice: sh.issuePrice || '', currency: sh.currency || 'HKD', paidUp: sh.paidUp || '', unpaid: sh.unpaid || '' });
                               }}>
                                 <Edit className="h-3 w-3" />
                               </Button>

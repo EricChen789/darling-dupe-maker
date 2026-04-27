@@ -42,6 +42,7 @@ interface DbOfficer {
   date_ceased: string;
   place_incorporated: string;
   company_number_ref: string;
+  tcsp_number?: string | null;
 }
 
 interface DbShareholder {

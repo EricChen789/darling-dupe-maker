@@ -319,46 +319,58 @@ export type Database = {
           address: string | null
           company_id: string
           created_at: string
+          currency: string | null
           email: string | null
           id: string
           id_number: string | null
           identity: string
+          issue_price: string | null
           name: string
           name_chinese: string | null
           name_english: string | null
+          paid_up: string | null
           service_address: string | null
           share_type: string | null
           shares: number
+          unpaid: string | null
         }
         Insert: {
           address?: string | null
           company_id: string
           created_at?: string
+          currency?: string | null
           email?: string | null
           id?: string
           id_number?: string | null
           identity?: string
+          issue_price?: string | null
           name?: string
           name_chinese?: string | null
           name_english?: string | null
+          paid_up?: string | null
           service_address?: string | null
           share_type?: string | null
           shares?: number
+          unpaid?: string | null
         }
         Update: {
           address?: string | null
           company_id?: string
           created_at?: string
+          currency?: string | null
           email?: string | null
           id?: string
           id_number?: string | null
           identity?: string
+          issue_price?: string | null
           name?: string
           name_chinese?: string | null
           name_english?: string | null
+          paid_up?: string | null
           service_address?: string | null
           share_type?: string | null
           shares?: number
+          unpaid?: string | null
         }
         Relationships: [
           {

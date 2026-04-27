@@ -41,7 +41,7 @@ interface CompanyDetailDialogProps {
 }
 
 const emptyOfficerForm = () => ({ nameEnglish: '', nameChinese: '', identity: 'natural', idNumber: '', address: '', serviceAddress: '', dateAppointed: '', dateCeased: '', placeIncorporated: '', companyNumberRef: '' });
-const emptyShForm = () => ({ name: '', nameEnglish: '', nameChinese: '', shares: 0, identity: 'natural', idNumber: '', address: '', serviceAddress: '', email: '', shareType: '' });
+const emptyShForm = () => ({ name: '', nameEnglish: '', nameChinese: '', shares: 0, identity: 'natural', idNumber: '', address: '', serviceAddress: '', email: '', shareType: '', issuePrice: '', currency: 'HKD', paidUp: '', unpaid: '' });
 
 export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDetailDialogProps) => {
   const [selectedPerson, setSelectedPerson] = useState<(Person & { roleLabel: string }) | null>(null);
@@ -115,6 +115,10 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
         serviceAddress: freshShareholder.serviceAddress || '',
         email: freshShareholder.email || '',
         shareType: freshShareholder.shareType || '',
+        issuePrice: freshShareholder.issuePrice || '',
+        currency: freshShareholder.currency || 'HKD',
+        paidUp: freshShareholder.paidUp || '',
+        unpaid: freshShareholder.unpaid || '',
       });
     }
   }, [company, selectedSh, editingShDetail]);
@@ -138,7 +142,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
   const selectShareholder = (sh: Shareholder) => {
     setSelectedPerson(null); setEditingPerson(false);
     setSelectedSh(sh);
-    setShForm({ name: sh.name, nameEnglish: sh.nameEnglish, nameChinese: sh.nameChinese, shares: sh.shares, identity: sh.identity, idNumber: sh.idNumber, address: sh.address, serviceAddress: sh.serviceAddress || '', email: sh.email, shareType: sh.shareType || '' });
+    setShForm({ name: sh.name, nameEnglish: sh.nameEnglish, nameChinese: sh.nameChinese, shares: sh.shares, identity: sh.identity, idNumber: sh.idNumber, address: sh.address, serviceAddress: sh.serviceAddress || '', email: sh.email, shareType: sh.shareType || '', issuePrice: sh.issuePrice || '', currency: sh.currency || 'HKD', paidUp: sh.paidUp || '', unpaid: sh.unpaid || '' });
     setEditingShDetail(true);
   };
 
@@ -254,9 +258,13 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
       serviceAddress: shForm.serviceAddress || shForm.address || regAddrFull,
       email: shForm.email,
       shareType: shForm.shareType,
+      issuePrice: shForm.issuePrice,
+      currency: shForm.currency,
+      paidUp: shForm.paidUp,
+      unpaid: shForm.unpaid,
     };
 
-    updateShareholder.mutate({ id, data: { name: nextShareholder.name, name_english: nextShareholder.nameEnglish, name_chinese: nextShareholder.nameChinese, shares: nextShareholder.shares, identity: nextShareholder.identity, id_number: nextShareholder.idNumber, address: nextShareholder.address, service_address: nextShareholder.serviceAddress, email: nextShareholder.email, share_type: nextShareholder.shareType } }, {
+    updateShareholder.mutate({ id, data: { name: nextShareholder.name, name_english: nextShareholder.nameEnglish, name_chinese: nextShareholder.nameChinese, shares: nextShareholder.shares, identity: nextShareholder.identity, id_number: nextShareholder.idNumber, address: nextShareholder.address, service_address: nextShareholder.serviceAddress, email: nextShareholder.email, share_type: nextShareholder.shareType, issue_price: shForm.issuePrice, currency: shForm.currency, paid_up: shForm.paidUp, unpaid: shForm.unpaid } }, {
       onSuccess: () => { toast({ title: '股東已更新' }); setEditingShareholder(null); setEditingShDetail(false); if (selectedSh?.id === id) setSelectedSh(nextShareholder); },
       onError: () => toast({ title: '更新失敗', variant: 'destructive' }),
     });
@@ -270,6 +278,8 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
       shares: shForm.shares, identity: shForm.identity, id_number: shForm.idNumber,
       address: shForm.address, service_address: shForm.serviceAddress || shForm.address || regAddrFull,
       email: shForm.email, share_type: shForm.shareType,
+      issue_price: shForm.issuePrice, currency: shForm.currency,
+      paid_up: shForm.paidUp, unpaid: shForm.unpaid,
     }, {
       onSuccess: () => {
         toast({ title: '股東已新增' });
@@ -499,7 +509,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                             <div className="hidden group-hover:flex gap-1">
                               <Button variant="ghost" size="sm" className="h-6 px-1.5" onClick={e => {
                                 e.stopPropagation(); setEditingShareholder(sh.id);
-                                setShForm({ name: sh.name, nameEnglish: sh.nameEnglish, nameChinese: sh.nameChinese, shares: sh.shares, identity: sh.identity, idNumber: sh.idNumber, address: sh.address, serviceAddress: sh.serviceAddress || '', email: sh.email, shareType: sh.shareType || '' });
+                                setShForm({ name: sh.name, nameEnglish: sh.nameEnglish, nameChinese: sh.nameChinese, shares: sh.shares, identity: sh.identity, idNumber: sh.idNumber, address: sh.address, serviceAddress: sh.serviceAddress || '', email: sh.email, shareType: sh.shareType || '', issuePrice: sh.issuePrice || '', currency: sh.currency || 'HKD', paidUp: sh.paidUp || '', unpaid: sh.unpaid || '' });
                               }}>
                                 <Edit className="h-3 w-3" />
                               </Button>
@@ -625,6 +635,8 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                       shares: selectedSh.shares, identity: selectedSh.identity, idNumber: selectedSh.idNumber || '',
                       address: selectedSh.address || '', serviceAddress: selectedSh.serviceAddress || '',
                       email: selectedSh.email || '', shareType: selectedSh.shareType || '',
+                      issuePrice: selectedSh.issuePrice || '', currency: selectedSh.currency || 'HKD',
+                      paidUp: selectedSh.paidUp || '', unpaid: selectedSh.unpaid || '',
                     });
                     setEditingShDetail(true);
                   }}>
@@ -656,6 +668,9 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                   <InfoItem label="身份證號碼" value={selectedSh.idNumber} />
                   <InfoItem label="持股數量" value={selectedSh.shares.toLocaleString() + ' 股'} />
                   <InfoItem label="股份類別" value={selectedSh.shareType || ''} />
+                  <InfoItem label="每股發行價" value={selectedSh.issuePrice ? `${selectedSh.currency || 'HKD'} ${selectedSh.issuePrice}` : ''} />
+                  <InfoItem label="已繳付股本" value={selectedSh.paidUp ? `${selectedSh.currency || 'HKD'} ${selectedSh.paidUp}` : ''} />
+                  <InfoItem label="未繳付股本" value={selectedSh.unpaid ? `${selectedSh.currency || 'HKD'} ${selectedSh.unpaid}` : ''} />
                   <InfoItem label="地址" value={selectedSh.address} />
                   <InfoItem label="電郵" value={selectedSh.email} />
                 </div>
@@ -676,6 +691,10 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                   <div className="space-y-1"><Label className="text-xs">身份證號碼</Label><Input value={shForm.idNumber} onChange={e => setShForm({ ...shForm, idNumber: e.target.value })} /></div>
                   <div className="space-y-1"><Label className="text-xs">持股數量</Label><Input type="number" value={shForm.shares} onChange={e => setShForm({ ...shForm, shares: parseInt(e.target.value) || 0 })} /></div>
                   <div className="space-y-1"><Label className="text-xs">股份類別</Label><Input value={shForm.shareType} onChange={e => setShForm({ ...shForm, shareType: e.target.value })} placeholder="e.g. Ordinary 普通股" /></div>
+                  <div className="space-y-1"><Label className="text-xs">貨幣</Label><Input value={shForm.currency} onChange={e => setShForm({ ...shForm, currency: e.target.value })} placeholder="HKD" /></div>
+                  <div className="space-y-1"><Label className="text-xs">每股發行價</Label><Input value={shForm.issuePrice} onChange={e => setShForm({ ...shForm, issuePrice: e.target.value })} placeholder="e.g. 1.00" /></div>
+                  <div className="space-y-1"><Label className="text-xs">已繳付股本</Label><Input value={shForm.paidUp} onChange={e => setShForm({ ...shForm, paidUp: e.target.value })} placeholder="Amount paid up" /></div>
+                  <div className="space-y-1"><Label className="text-xs">未繳付股本</Label><Input value={shForm.unpaid} onChange={e => setShForm({ ...shForm, unpaid: e.target.value })} placeholder="Amount unpaid" /></div>
                   <div className="col-span-2 space-y-1"><Label className="text-xs">居住地址</Label><Textarea value={shForm.address} onChange={e => setShForm({ ...shForm, address: e.target.value })} rows={2} /></div>
                   <div className="col-span-2 space-y-1">
                     <div className="flex items-center justify-between">
@@ -769,7 +788,7 @@ function NewOfficerForm({ form, setForm, onSave, onCancel }: {
   );
 }
 
-type ShFormType = { name: string; nameEnglish: string; nameChinese: string; shares: number; identity: string; idNumber: string; address: string; serviceAddress: string; email: string; shareType: string };
+type ShFormType = { name: string; nameEnglish: string; nameChinese: string; shares: number; identity: string; idNumber: string; address: string; serviceAddress: string; email: string; shareType: string; issuePrice: string; currency: string; paidUp: string; unpaid: string };
 
 function NewShareholderForm({ form, setForm, onSave, onCancel }: {
   form: ShFormType; setForm: (f: ShFormType) => void; onSave: () => void; onCancel: () => void;
@@ -793,6 +812,10 @@ function NewShareholderForm({ form, setForm, onSave, onCancel }: {
         <div className="space-y-1"><Label className="text-xs">證件號碼</Label><Input value={form.idNumber} onChange={e => setForm({ ...form, idNumber: e.target.value })} placeholder="ID / Passport No." /></div>
         <div className="space-y-1"><Label className="text-xs">股數</Label><Input type="number" value={form.shares} onChange={e => setForm({ ...form, shares: parseInt(e.target.value) || 0 })} /></div>
         <div className="space-y-1"><Label className="text-xs">股份類別</Label><Input value={form.shareType} onChange={e => setForm({ ...form, shareType: e.target.value })} placeholder="e.g. Ordinary 普通股" /></div>
+        <div className="space-y-1"><Label className="text-xs">貨幣</Label><Input value={form.currency} onChange={e => setForm({ ...form, currency: e.target.value })} placeholder="HKD" /></div>
+        <div className="space-y-1"><Label className="text-xs">每股發行價</Label><Input value={form.issuePrice} onChange={e => setForm({ ...form, issuePrice: e.target.value })} placeholder="e.g. 1.00" /></div>
+        <div className="space-y-1"><Label className="text-xs">已繳付股本</Label><Input value={form.paidUp} onChange={e => setForm({ ...form, paidUp: e.target.value })} placeholder="Amount paid up" /></div>
+        <div className="space-y-1"><Label className="text-xs">未繳付股本</Label><Input value={form.unpaid} onChange={e => setForm({ ...form, unpaid: e.target.value })} placeholder="Amount unpaid" /></div>
         <div className="space-y-1"><Label className="text-xs">電郵</Label><Input value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></div>
         <div className="col-span-2 space-y-1"><Label className="text-xs">居住地址</Label><Textarea value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} rows={2} placeholder="地址 Address" /></div>
         <div className="col-span-2 space-y-1"><Label className="text-xs">服務地址 (預設同註冊辦事處)</Label><Textarea value={form.serviceAddress} onChange={e => setForm({ ...form, serviceAddress: e.target.value })} rows={2} placeholder="留空則自動使用註冊辦事處地址" /></div>
@@ -816,6 +839,10 @@ function InlineShEdit({ shForm, setShForm, onSave, onCancel }: {
         <div className="space-y-1"><Label className="text-xs">身份證號碼</Label><Input value={shForm.idNumber} onChange={e => setShForm({ ...shForm, idNumber: e.target.value })} /></div>
         <div className="space-y-1"><Label className="text-xs">股數</Label><Input type="number" value={shForm.shares} onChange={e => setShForm({ ...shForm, shares: parseInt(e.target.value) || 0 })} /></div>
         <div className="col-span-2 space-y-1"><Label className="text-xs">股份類別</Label><Input value={shForm.shareType} onChange={e => setShForm({ ...shForm, shareType: e.target.value })} /></div>
+        <div className="space-y-1"><Label className="text-xs">貨幣</Label><Input value={shForm.currency} onChange={e => setShForm({ ...shForm, currency: e.target.value })} placeholder="HKD" /></div>
+        <div className="space-y-1"><Label className="text-xs">每股發行價</Label><Input value={shForm.issuePrice} onChange={e => setShForm({ ...shForm, issuePrice: e.target.value })} /></div>
+        <div className="space-y-1"><Label className="text-xs">已繳付股本</Label><Input value={shForm.paidUp} onChange={e => setShForm({ ...shForm, paidUp: e.target.value })} /></div>
+        <div className="space-y-1"><Label className="text-xs">未繳付股本</Label><Input value={shForm.unpaid} onChange={e => setShForm({ ...shForm, unpaid: e.target.value })} /></div>
         <div className="col-span-2 space-y-1"><Label className="text-xs">地址</Label><Input value={shForm.address} onChange={e => setShForm({ ...shForm, address: e.target.value })} /></div>
       </div>
       <div className="flex gap-1 justify-end">

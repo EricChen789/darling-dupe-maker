@@ -58,6 +58,10 @@ interface DbShareholder {
   service_address?: string;
   email: string;
   share_type: string;
+  issue_price?: string;
+  currency?: string;
+  paid_up?: string;
+  unpaid?: string;
 }
 
 async function fetchAllRows<T>(
@@ -152,6 +156,10 @@ function mapToCompany(
     serviceAddress: s.service_address || '',
     email: s.email || '',
     shareType: s.share_type || '',
+    issuePrice: s.issue_price || '',
+    currency: s.currency || 'HKD',
+    paidUp: s.paid_up || '',
+    unpaid: s.unpaid || '',
   }));
 
   return {
@@ -412,7 +420,7 @@ export function useDeleteOfficer() {
 export function useAddShareholder() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (data: { company_id: string; name: string; name_english?: string; name_chinese?: string; shares: number; identity?: string; id_number?: string; address?: string; service_address?: string; email?: string; share_type?: string }) => {
+    mutationFn: async (data: { company_id: string; name: string; name_english?: string; name_chinese?: string; shares: number; identity?: string; id_number?: string; address?: string; service_address?: string; email?: string; share_type?: string; issue_price?: string; currency?: string; paid_up?: string; unpaid?: string }) => {
       const { error } = await supabase.from('shareholders').insert(data as any);
       if (error) throw error;
     },
@@ -423,7 +431,7 @@ export function useAddShareholder() {
 export function useUpdateShareholder() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: { name?: string; name_english?: string; name_chinese?: string; shares?: number; identity?: string; id_number?: string; address?: string; service_address?: string; email?: string; share_type?: string } }) => {
+    mutationFn: async ({ id, data }: { id: string; data: { name?: string; name_english?: string; name_chinese?: string; shares?: number; identity?: string; id_number?: string; address?: string; service_address?: string; email?: string; share_type?: string; issue_price?: string; currency?: string; paid_up?: string; unpaid?: string } }) => {
       const { error } = await supabase.from('shareholders').update(data as any).eq('id', id);
       if (error) throw error;
     },

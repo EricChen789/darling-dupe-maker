@@ -175,13 +175,66 @@ const Companies = () => {
       />
 
       {showSearch && (
-        <div className="bg-card border border-border rounded-lg p-4 mb-6">
+        <div className="bg-card border border-border rounded-lg p-4 mb-6 space-y-3">
           <div className="flex items-center gap-4">
             <div className="flex-1">
               <Input placeholder="搜尋公司名稱、商業登記號碼或商業名稱..." value={searchTerm}
                 onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }} />
             </div>
-            <Button variant="outline" size="sm" onClick={() => setSearchTerm('')}>清除</Button>
+            <Button variant="outline" size="sm" onClick={resetFilters}>重置全部</Button>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">司法管轄區</label>
+              <Select value={jurisdictionFilter} onValueChange={(v) => { setJurisdictionFilter(v); setCurrentPage(1); }}>
+                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部</SelectItem>
+                  <SelectItem value="Hong Kong">Hong Kong</SelectItem>
+                  <SelectItem value="BVI">BVI</SelectItem>
+                  <SelectItem value="Seychelles">Seychelles</SelectItem>
+                  <SelectItem value="Others">Others</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">狀態</label>
+              <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setCurrentPage(1); }}>
+                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部</SelectItem>
+                  <SelectItem value="active">有效</SelectItem>
+                  <SelectItem value="inactive">失效</SelectItem>
+                  <SelectItem value="deregistered">註銷</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">提交人</label>
+              <Select value={presenterFilter} onValueChange={(v) => { setPresenterFilter(v); setCurrentPage(1); }}>
+                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部</SelectItem>
+                  <SelectItem value="none">未指定</SelectItem>
+                  {presenters.map(p => (
+                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">董事/秘書</label>
+              <Select value={missingFilter} onValueChange={(v) => { setMissingFilter(v); setCurrentPage(1); }}>
+                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部</SelectItem>
+                  <SelectItem value="any">缺董事或秘書</SelectItem>
+                  <SelectItem value="director">缺董事</SelectItem>
+                  <SelectItem value="secretary">缺秘書</SelectItem>
+                  <SelectItem value="none">齊全</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </div>
       )}

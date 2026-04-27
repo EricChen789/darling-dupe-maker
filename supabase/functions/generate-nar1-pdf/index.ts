@@ -439,12 +439,12 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
     safeSetText("fill_3_P.5", dir.nameChinese || "");
     safeSetText("fill_4_P.5", surname);
     safeSetText("fill_5_P.5", otherNames);
-    const addr = parseAddress(dir.address || '');
-    safeSetText("fill_10_P.5", addr.flat);
-    safeSetText("fill_11_P.5", addr.building);
-    safeSetText("fill_12_P.5", addr.street);
-    safeSetText("fill_13_P.5", addr.district);
-    safeSetText("fill_14_P.5", addr.country);
+    // 董事住址統一使用公司註冊地址
+    safeSetText("fill_10_P.5", office.flat || "");
+    safeSetText("fill_11_P.5", office.building || "");
+    safeSetText("fill_12_P.5", office.street || "");
+    safeSetText("fill_13_P.5", office.district || "");
+    safeSetText("fill_14_P.5", office.region || "");
     safeSetText("fill_15_P.5", dir.email || "");
     const hkid = parseHkidPartial(dir.idNumber || '');
     if (hkid) safeSetText("fill_16_P.5", hkid);

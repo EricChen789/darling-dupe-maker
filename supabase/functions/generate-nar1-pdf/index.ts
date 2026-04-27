@@ -461,12 +461,12 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
     safeCheck("cb_1_P.6", true);
     safeSetText("fill_3_P.6", dir.nameChinese || "");
     safeSetText("fill_4_P.6", dir.nameEnglish || "");
-    const addr = parseAddress(dir.address || '');
-    safeSetText("fill_5_P.6", addr.flat);
-    safeSetText("fill_6_P.6", addr.building);
-    safeSetText("fill_7_P.6", addr.street);
-    safeSetText("fill_8_P.6", addr.district);
-    safeSetText("fill_9_P.6", addr.country);
+    // 法人董事住址統一使用公司註冊地址
+    safeSetText("fill_5_P.6", office.flat || "");
+    safeSetText("fill_6_P.6", office.building || "");
+    safeSetText("fill_7_P.6", office.street || "");
+    safeSetText("fill_8_P.6", office.district || "");
+    safeSetText("fill_9_P.6", office.region || "");
     safeSetText("fill_10_P.6", dir.email || "");
     safeSetText("fill_11_P.6", dir.companyNumberRef || dir.brNumber || "");
     console.log(`Filled Director (Corporate): ${dir.nameEnglish || dir.nameChinese}`);

@@ -341,9 +341,16 @@ function createFormHelpers(pdfDoc: PDFDocument): FormHelpers {
       const da = decodePdfText(target.widget.get(PDFName.of("DA"))) ||
                  decodePdfText(target.field.get(PDFName.of("DA"))) ||
                  "/Helv 12 Tf 0 g";
-      const safeValue = toAdobeSafeText(v);
-      target.widget.set(PDFName.of("DA"), PDFString.of(buildHelvDA(da)));
-      target.widget.set(PDFName.of("V"), PDFString.of(safeValue));
+
+      if (v.length > 0 && !isAscii(v)) {
+        // 含中文：用模板內建 /PMingLiU (Type0/UniCNS-UTF16-H)，/V 用 UTF-16BE hex string
+        target.widget.set(PDFName.of("DA"), PDFString.of(buildCjkDA(da)));
+        target.widget.set(PDFName.of("V"), PDFHexString.fromText(v));
+      } else {
+        // 純 ASCII：保留 Helv
+        target.widget.set(PDFName.of("DA"), PDFString.of(buildHelvDA(da)));
+        target.widget.set(PDFName.of("V"), PDFString.of(v));
+      }
       // 移除舊的 appearance，強制 reader 用 NeedAppearances 重建
       target.widget.delete(PDFName.of("AP"));
       return true;

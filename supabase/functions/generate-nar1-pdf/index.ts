@@ -470,7 +470,7 @@ function createNativeFormHelpers(pdfDoc: PDFDocument) {
 
       const target = widgets.get(fieldName);
       if (!target) throw new Error("widget not found");
-      const encoded = PDFHexString.fromText(value ?? "");
+      const encoded = encodeFieldValue(value ?? "");
       target.field.set(PDFName.of("V"), encoded);
       target.widget.set(PDFName.of("V"), encoded);
       target.field.delete(PDFName.of("AP"));

@@ -199,16 +199,47 @@ const Companies = () => {
                     ) : <span className="text-muted-foreground">-</span>}
                   </div>
                 </TableCell>
-                <TableCell className="max-w-[150px]">
-                  <div className="text-xs space-y-0.5">
-                    {company.shareholders.length > 0 ? (
-                      company.shareholders.map((sh, i) => (
-                        <div key={i} className="truncate">
-                          {sh.name} <span className="text-muted-foreground">({sh.shares} 股)</span>
+                <TableCell className="max-w-[150px]" onClick={(e) => e.stopPropagation()}>
+                  {company.shareholders.length > 0 ? (
+                    <HoverCard openDelay={150} closeDelay={100}>
+                      <HoverCardTrigger asChild>
+                        <div className="text-xs space-y-0.5 cursor-help">
+                          {company.shareholders.map((sh, i) => (
+                            <div key={i} className="truncate">
+                              {sh.name} <span className="text-muted-foreground">({sh.shares.toLocaleString()} 股)</span>
+                            </div>
+                          ))}
                         </div>
-                      ))
-                    ) : <span className="text-muted-foreground">-</span>}
-                  </div>
+                      </HoverCardTrigger>
+                      <HoverCardContent side="left" align="start" className="w-96 max-h-[60vh] overflow-auto p-3">
+                        <div className="text-sm font-semibold mb-2 pb-2 border-b">
+                          {company.name} — 股東持股明細
+                        </div>
+                        {(() => {
+                          const total = company.shareholders.reduce((s, x) => s + (x.shares || 0), 0);
+                          return (
+                            <div className="space-y-1.5 text-xs">
+                              {company.shareholders.map((sh, i) => {
+                                const pct = total > 0 ? ((sh.shares || 0) / total * 100) : 0;
+                                return (
+                                  <div key={i} className="flex justify-between gap-2">
+                                    <span className="flex-1 break-words">{sh.name}</span>
+                                    <span className="text-muted-foreground whitespace-nowrap tabular-nums">
+                                      {(sh.shares || 0).toLocaleString()} 股 · {pct.toFixed(2)}%
+                                    </span>
+                                  </div>
+                                );
+                              })}
+                              <div className="flex justify-between gap-2 pt-2 mt-2 border-t font-semibold">
+                                <span>總計</span>
+                                <span className="tabular-nums">{total.toLocaleString()} 股 · 100.00%</span>
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </HoverCardContent>
+                    </HoverCard>
+                  ) : <span className="text-muted-foreground text-xs">-</span>}
                 </TableCell>
                 <TableCell className="min-w-[180px]">
                   {(() => {

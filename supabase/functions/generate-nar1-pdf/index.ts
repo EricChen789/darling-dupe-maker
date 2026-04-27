@@ -975,26 +975,38 @@ async function buildNAR1Pdf(data: CompanyData): Promise<Uint8Array> {
   // 為避免欄位名稱跨文件衝突，每張附加文件先 flatten() 再合入主文件
   // 同時快取每個模板的 ArrayBuffer，避免重複下載
   const templateCache = new Map<string, ArrayBuffer>();
+  let attIdx = 0;
   for (const att of attachments) {
     let bytes = templateCache.get(att.url);
     if (!bytes) {
       bytes = await fetchTemplate(att.url);
       templateCache.set(att.url, bytes);
     }
-    // 為每次附加都 clone 一份新 doc
     const subDoc = await PDFDocument.load(bytes);
     const subFonts = await embedFontsForDoc(subDoc, cjkBytes);
     att.fill(subDoc, subFonts);
-    // flatten 附表：把 form fields 燒進頁面內容，避免跨文件欄位名稱衝突
+
+    // 為避免多份附表的欄位名衝突，幫此 subDoc 的所有欄位加上唯一後綴（fill 完後才改名）
     try {
-      subDoc.getForm().flatten();
+      const subForm = subDoc.getForm();
+      const suffix = `_a${attIdx}`;
+      for (const field of subForm.getFields()) {
+        try {
+          const oldName = field.getName();
+          (field as any).acroField.dict.set(
+            PDFName.of("T"),
+            (subDoc.context as any).obj(oldName + suffix),
+          );
+        } catch (_) { /* ignore */ }
+      }
     } catch (e) {
-      console.warn(`flatten failed for ${att.label}:`, e);
+      console.warn("rename fields failed:", e);
     }
-    // 把該文件所有頁面複製到主文件尾端
+
     const subPages = await mainDoc.copyPages(subDoc, subDoc.getPageIndices());
     for (const p of subPages) mainDoc.addPage(p);
     console.log(`✓ Appended ${att.label}`);
+    attIdx++;
   }
 
   // 主文件 P.1-P.8 保留 form fields，由 PDF reader 渲染（與 Acrobat 直接填寫效果一致）

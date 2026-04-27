@@ -553,6 +553,51 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
                 </div>
               </div>
             </div>
+
+            {/* 附表 E (P.15) — 公司紀錄保存地點 */}
+            <div className="space-y-3 border border-border rounded-lg p-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="font-medium text-sm">公司紀錄保存地點（附表 E / P.15）</h4>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    如有公司紀錄並非保存於上述註冊辦事處，請列出。留空則不附加 P.15。
+                  </p>
+                </div>
+                <Button type="button" size="sm" variant="outline" onClick={addRecord}>
+                  + 新增一筆
+                </Button>
+              </div>
+              {companyRecords.length === 0 && (
+                <p className="text-xs text-muted-foreground italic">尚未新增任何紀錄。</p>
+              )}
+              {companyRecords.map((r, i) => (
+                <div key={i} className="grid grid-cols-2 gap-3 items-start border-t border-border/40 pt-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs">公司紀錄 Company Records</Label>
+                    <Textarea
+                      rows={3}
+                      placeholder="例如：Register of Members"
+                      value={r.records}
+                      onChange={e => updateRecord(i, 'records', e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">地址 Address</Label>
+                    <Textarea
+                      rows={3}
+                      placeholder="保存該紀錄的完整地址"
+                      value={r.address}
+                      onChange={e => updateRecord(i, 'address', e.target.value)}
+                    />
+                  </div>
+                  <div className="col-span-2 flex justify-end">
+                    <Button type="button" size="sm" variant="ghost" onClick={() => removeRecord(i)}>
+                      移除
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
 

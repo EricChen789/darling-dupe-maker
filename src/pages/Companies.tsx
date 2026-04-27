@@ -157,6 +157,7 @@ const Companies = () => {
               <TableHead className="font-medium">秘書</TableHead>
               <TableHead className="font-medium">股東</TableHead>
               <TableHead className="font-medium">提交人 Presenter</TableHead>
+              <TableHead className="font-medium">狀態</TableHead>
               <TableHead className="font-medium">操作</TableHead>
             </TableRow>
           </TableHeader>

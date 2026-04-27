@@ -496,6 +496,31 @@ function createNativeFormHelpers(pdfDoc: PDFDocument) {
   return { form, safeSetText, safeCheck };
 }
 
+function renameAnnotationFields(pdfDoc: PDFDocument, suffix: string) {
+  const renamed = new Set<any>();
+  for (const page of pdfDoc.getPages()) {
+    const annots = page.node.lookup(PDFName.of("Annots")) as any;
+    if (!annots || typeof annots.size !== "function") continue;
+
+    for (let i = 0; i < annots.size(); i++) {
+      try {
+        const widget = pdfDoc.context.lookup(annots.get(i)) as any;
+        if (!widget || typeof widget.get !== "function") continue;
+        const parentRef = widget.get(PDFName.of("Parent"));
+        const field = parentRef ? pdfDoc.context.lookup(parentRef) as any : widget;
+
+        for (const obj of [field, widget]) {
+          if (!obj || renamed.has(obj) || typeof obj.get !== "function") continue;
+          const oldName = decodePdfText(obj.get(PDFName.of("T")));
+          if (!oldName || oldName.endsWith(suffix)) continue;
+          obj.set(PDFName.of("T"), PDFHexString.fromText(`${oldName}${suffix}`));
+          renamed.add(obj);
+        }
+      } catch (_) { /* skip malformed annotation */ }
+    }
+  }
+}
+
 
 // === 各模板的填寫函式（操作各自的單頁 PDF 副本） ===
 

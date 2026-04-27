@@ -89,7 +89,7 @@ export function useOfficers() {
       };
 
       const officerRows = await fetchAll<OfficerRow>('officers', '*', { col: 'created_at', ascending: false });
-      const companyRows = await fetchAll<CompanyRow>('companies', 'id, name, company_number');
+      const companyRows = await fetchAll<CompanyRow>('companies', 'id, name, company_number, incorporation_date');
 
       const companyMap = new Map<string, CompanyRow>();
       (companyRows || []).forEach(c => companyMap.set(c.id, c));

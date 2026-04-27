@@ -197,6 +197,7 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
           dateAppointed: s.dateAppointed || '',
           placeIncorporated: s.placeIncorporated || '',
           companyNumberRef: s.companyNumberRef || '',
+          tcspNumber: s.tcspNumber || '',
         })),
         shareholders: company.shareholders.map(sh => ({
           name: sh.name,

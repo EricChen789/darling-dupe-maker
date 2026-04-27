@@ -637,9 +637,11 @@ function fillSchedule1(pdfDoc: PDFDocument, ctx: CommonCtx, members: Shareholder
 
   // slot1: name=7, surname=8, other=9, shares=16, addr=13-17
   // slot2: name=19, surname=20, other=21, shares=27, addr=25-29
+  // slot1 parent names: name=7, surname=8, other=9, shares=10, joint=12, flat=13, building=14, street=15, district=16, country=17, remarks=18
+  // slot2 parent names: name=19, surname=20, other=21, shares=22, joint=24, flat=25, building=26, street=27, district=28, country=29, remarks=30
   const SLOT_FIELDS = [
-    { name: 7,  surname: 8,  other: 9,  shares: 16, flat: 13, building: 14, street: 15, district: 16, country: 17 },
-    { name: 19, surname: 20, other: 21, shares: 27, flat: 25, building: 26, street: 27, district: 28, country: 29 },
+    { name: 7,  surname: 8,  other: 9,  shares: 10, flat: 13, building: 14, street: 15, district: 16, country: 17 },
+    { name: 19, surname: 20, other: 21, shares: 22, flat: 25, building: 26, street: 27, district: 28, country: 29 },
   ];
 
   const fillMember = (sh: ShareholderData, slotIdx: 0 | 1) => {

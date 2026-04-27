@@ -701,6 +701,18 @@ async function buildNAR1Pdf(data: CompanyData): Promise<Uint8Array> {
     });
   }
 
+  // 續頁 E：公司紀錄保存地點（如有提供任何一筆有效紀錄）
+  const validRecords = (data.companyRecords || []).filter(
+    r => (r.records && r.records.trim()) || (r.address && r.address.trim())
+  );
+  if (validRecords.length > 0) {
+    attachments.push({
+      url: TEMPLATES.sheetE,
+      fill: (doc, h) => fillSheetE(doc, ctx, validRecords, h),
+      label: `續頁E(${validRecords.length}筆)`,
+    });
+  }
+
   console.log(`Need ${attachments.length} attachment page(s): ${attachments.map(a => a.label).join(", ")}`);
 
   // 3) 載入並合併每張續頁

@@ -1026,7 +1026,7 @@ async function buildDebugPdf(): Promise<Uint8Array> {
       check(name, true);
     }
   }
-  return await doc.save();
+  return await doc.save({ updateFieldAppearances: false });
 }
 
 serve(async (req: Request) => {

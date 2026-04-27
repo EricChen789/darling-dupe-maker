@@ -30,6 +30,7 @@ type CompanyRow = {
   ci_number: string | null;
   status: string | null;
   incorporation_date: string | null;
+  jurisdiction: string | null;
 };
 
 type OfficerRow = {
@@ -69,7 +70,7 @@ const MissingOfficers = () => {
 
   const { data: companies, isLoading: loadingCompanies } = useQuery({
     queryKey: ['missing-officers-companies-v2'],
-    queryFn: () => fetchAll<CompanyRow>('companies', 'id, name, chinese_name, company_number, ci_number, status, incorporation_date'),
+    queryFn: () => fetchAll<CompanyRow>('companies', 'id, name, chinese_name, company_number, ci_number, status, incorporation_date, jurisdiction'),
   });
 
   const { data: officers, isLoading: loadingOfficers } = useQuery({
@@ -95,8 +96,14 @@ const MissingOfficers = () => {
       missingSecretary: !secretaryByCompany.has(c.id),
     }));
 
-    // Only keep ones missing at least one AND still active
-    return enriched.filter((c) => (c.missingDirector || c.missingSecretary) && c.status === 'active');
+    // Only keep ones missing at least one AND still active AND not BVI
+    return enriched.filter((c) => {
+      if (!(c.missingDirector || c.missingSecretary)) return false;
+      if (c.status !== 'active') return false;
+      const j = (c.jurisdiction || '').toLowerCase();
+      if (j.includes('bvi') || j.includes('british virgin')) return false;
+      return true;
+    });
   }, [companies, officers]);
 
   const filtered = useMemo(() => {
@@ -184,6 +191,7 @@ const MissingOfficers = () => {
               <TableRow>
                 <TableHead>公司名稱</TableHead>
                 <TableHead>中文名稱</TableHead>
+                <TableHead>司法管轄區</TableHead>
                 <TableHead>BR 號碼</TableHead>
                 <TableHead>CI 號碼</TableHead>
                 <TableHead>成立日期</TableHead>
@@ -195,7 +203,7 @@ const MissingOfficers = () => {
             <TableBody>
               {filtered.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
                     沒有符合條件的記錄
                   </TableCell>
                 </TableRow>
@@ -204,6 +212,7 @@ const MissingOfficers = () => {
                   <TableRow key={r.id}>
                     <TableCell className="font-medium">{r.name}</TableCell>
                     <TableCell>{r.chinese_name || '-'}</TableCell>
+                    <TableCell className="text-xs">{r.jurisdiction || <span className="text-muted-foreground italic">未填寫</span>}</TableCell>
                     <TableCell className="font-mono text-xs">{r.company_number || '-'}</TableCell>
                     <TableCell className="font-mono text-xs">{r.ci_number || '-'}</TableCell>
                     <TableCell className="text-xs">{r.incorporation_date || <span className="text-muted-foreground italic">未填寫</span>}</TableCell>

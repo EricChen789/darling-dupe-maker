@@ -142,6 +142,7 @@ function mapToCompany(
     brFilePath: c.br_file_path || '',
     preferredPresenterId: c.preferred_presenter_id || '',
     presenterReference: c.presenter_reference || '',
+    status: (c.status as 'active' | 'inactive' | 'deregistered') || 'active',
   };
 }
 

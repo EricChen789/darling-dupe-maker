@@ -135,6 +135,13 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
 
   if (!company) return null;
 
+  // 計算實際生效的簽署人 ID（明確選擇 → 第一秘書 → 第一董事）
+  const explicitSignerId = company.signerRoleId || '';
+  const allOfficerIds = [...company.secretaries, ...company.directors].map(o => o.id);
+  const effectiveSignerId = (explicitSignerId && allOfficerIds.includes(explicitSignerId))
+    ? explicitSignerId
+    : (company.secretaries[0]?.id || company.directors[0]?.id || '');
+
   const handleOpenChange = (v: boolean) => {
     if (!v) {
       setSelectedPerson(null); setSelectedSh(null); setEditingCompany(false);
@@ -760,7 +767,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
   );
 };
 
-function PersonRow({ person, isSelected, onClick, onDelete }: { person: Person; isSelected: boolean; onClick: () => void; onDelete: () => void }) {
+function PersonRow({ person, isSelected, isSigner, onClick, onDelete }: { person: Person; isSelected: boolean; isSigner?: boolean; onClick: () => void; onDelete: () => void }) {
   return (
     <div
       className={`flex items-center justify-between rounded-md border px-3 py-2 text-sm cursor-pointer transition-colors group ${
@@ -768,11 +775,20 @@ function PersonRow({ person, isSelected, onClick, onDelete }: { person: Person; 
       }`}
       onClick={onClick}
     >
-      <div>
-        <span className="font-medium">{person.nameEnglish || person.nameChinese}</span>
-        {person.nameEnglish && person.nameChinese && (
-          <span className="ml-2 text-muted-foreground">{person.nameChinese}</span>
+      <div className="flex items-center gap-2">
+        {isSigner && (
+          <span
+            className="inline-block h-2 w-2 rounded-full bg-destructive shrink-0"
+            title="NAR1 簽署人"
+            aria-label="NAR1 簽署人"
+          />
         )}
+        <div>
+          <span className="font-medium">{person.nameEnglish || person.nameChinese}</span>
+          {person.nameEnglish && person.nameChinese && (
+            <span className="ml-2 text-muted-foreground">{person.nameChinese}</span>
+          )}
+        </div>
       </div>
       <div className="flex items-center gap-2">
         <Badge variant="outline" className="text-xs">

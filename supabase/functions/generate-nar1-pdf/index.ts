@@ -614,46 +614,63 @@ function fillMainDocument(pdfDoc: PDFDocument, ctx: CommonCtx) {
 }
 
 // ========== 附表 1 (P.9): 兩位股東 (非上市公司) ==========
+// 重要：附表一的欄位 parent 名稱用 fill_X_P.9（帶點）。每個股東欄位佈局如下：
+//   slot 1 (offset 0):  中文名7, 姓氏8, OtherNames9, 股數16, cb_1(共同持有),
+//                       合資人說明12, 地址 13/14/15/16/17 (flat/building/street/district/country),
+//                       Remarks 18
+//   slot 2 (offset 11): 中文名19, 姓氏20, OtherNames21, 股數27, cb_2,
+//                       合資人說明24, 地址 25/26/27/28/29, Remarks 30
+//   頁碼: 31 (current), 32 (total)
 function fillSchedule1(pdfDoc: PDFDocument, ctx: CommonCtx, members: ShareholderData[], pageNo: number, totalPages: number) {
   const { br8, day, month, year, shareInfos } = ctx;
   const { setText } = createFormHelpers(pdfDoc);
 
-  setText("fill_1_P9", day || "");
-  setText("fill_2_P9", month || "");
-  setText("fill_3_P9", year || "");
-  setText("fill_4_P9", br8);
+  setText("fill_1_P.9", day || "");
+  setText("fill_2_P.9", month || "");
+  setText("fill_3_P.9", year || "");
+  setText("fill_4_P.9", br8);
   const firstShareInfo = shareInfos[0];
   if (firstShareInfo) {
-    setText("fill_5_P9", firstShareInfo.className);
-    setText("fill_6_P9", fmtInt(firstShareInfo.shares));
+    setText("fill_5_P.9", firstShareInfo.className);
+    setText("fill_6_P.9", fmtInt(firstShareInfo.shares));
   }
 
-  const fillMember = (sh: ShareholderData, slot: 1 | 2) => {
+  // slot1: name=7, surname=8, other=9, shares=16, addr=13-17
+  // slot2: name=19, surname=20, other=21, shares=27, addr=25-29
+  const SLOT_FIELDS = [
+    { name: 7,  surname: 8,  other: 9,  shares: 16, flat: 13, building: 14, street: 15, district: 16, country: 17 },
+    { name: 19, surname: 20, other: 21, shares: 27, flat: 25, building: 26, street: 27, district: 28, country: 29 },
+  ];
+
+  const fillMember = (sh: ShareholderData, slotIdx: 0 | 1) => {
+    const F = SLOT_FIELDS[slotIdx];
     const isCorp = sh.identity === "corporate";
     const fullName = sh.nameEnglish || sh.name || "";
     const { surname, otherNames } = parseEnglishName(fullName);
     const addr = parseAddress(sh.address || "");
-    const base = slot === 1 ? 0 : 12;
-    const f = (n: number) => `fill_${n + base}_P9`;
-    setText(f(7), sh.nameChinese || "");
+    // 國家：若解析不到則預設「香港 Hong Kong」
+    const country = addr.country || "香港 Hong Kong";
+
+    setText(`fill_${F.name}_P.9`, sh.nameChinese || "");
     if (isCorp) {
-      setText(f(12), fullName);
+      // 法人股東：英文名寫滿姓氏欄（Surname 欄較窄，Other Names 欄較寬）
+      setText(`fill_${F.surname}_P.9`, fullName);
     } else {
-      setText(f(8), surname);
-      setText(f(9), otherNames);
+      setText(`fill_${F.surname}_P.9`, surname);
+      setText(`fill_${F.other}_P.9`, otherNames);
     }
-    setText(f(10), fmtInt(Number(sh.shares) || 0));
-    setText(f(13), addr.flat);
-    setText(f(14), addr.building);
-    setText(f(15), addr.street);
-    setText(f(16), addr.district);
-    setText(f(17), addr.country);
+    setText(`fill_${F.shares}_P.9`, fmtInt(Number(sh.shares) || 0));
+    setText(`fill_${F.flat}_P.9`, addr.flat);
+    setText(`fill_${F.building}_P.9`, addr.building);
+    setText(`fill_${F.street}_P.9`, addr.street);
+    setText(`fill_${F.district}_P.9`, addr.district);
+    setText(`fill_${F.country}_P.9`, country);
   };
 
-  if (members[0]) fillMember(members[0], 1);
-  if (members[1]) fillMember(members[1], 2);
-  setText("fill_31_P9", String(pageNo));
-  setText("fill_32_P9", String(totalPages));
+  if (members[0]) fillMember(members[0], 0);
+  if (members[1]) fillMember(members[1], 1);
+  setText("fill_31_P.9", String(pageNo));
+  setText("fill_32_P.9", String(totalPages));
 }
 
 // ========== 附表 2 (P.10): 上市公司 ==========

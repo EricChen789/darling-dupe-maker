@@ -157,6 +157,7 @@ const Companies = () => {
               <TableHead className="font-medium">秘書</TableHead>
               <TableHead className="font-medium">股東</TableHead>
               <TableHead className="font-medium">提交人 Presenter</TableHead>
+              <TableHead className="font-medium">狀態</TableHead>
               <TableHead className="font-medium">操作</TableHead>
             </TableRow>
           </TableHeader>
@@ -251,6 +252,32 @@ const Companies = () => {
                       <span className="text-xs text-destructive">未指定</span>
                     );
                   })()}
+                </TableCell>
+                <TableCell onClick={(e) => e.stopPropagation()} className="min-w-[110px]">
+                  <Select
+                    value={company.status || 'active'}
+                    onValueChange={(v) => {
+                      updateCompany.mutate(
+                        { id: company.id, data: { status: v as 'active' | 'inactive' | 'deregistered' } },
+                        {
+                          onSuccess: () => toast({ title: '狀態已更新', description: `${company.name}` }),
+                          onError: (e: any) => toast({ title: '更新失敗', description: e.message, variant: 'destructive' }),
+                        }
+                      );
+                    }}
+                  >
+                    <SelectTrigger className={`h-8 text-xs ${
+                      company.status === 'inactive' ? 'border-yellow-500/50 text-yellow-600' :
+                      company.status === 'deregistered' ? 'border-destructive/50 text-destructive' : ''
+                    }`}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="active">有效</SelectItem>
+                      <SelectItem value="inactive">失效</SelectItem>
+                      <SelectItem value="deregistered">註銷</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </TableCell>
                 <TableCell onClick={(e) => e.stopPropagation()}>
                   <div className="flex items-center gap-1">

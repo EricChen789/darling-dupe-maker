@@ -33,6 +33,12 @@ const Companies = () => {
   const [pageSize, setPageSize] = useState(20);
   const [currentPage, setCurrentPage] = useState(1);
 
+  // Filters
+  const [jurisdictionFilter, setJurisdictionFilter] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [presenterFilter, setPresenterFilter] = useState<string>('all');
+  const [missingFilter, setMissingFilter] = useState<string>('all'); // all | director | secretary | any | none
+
   const { data: companies = [], isLoading, refetch } = useCompanies();
   const { data: presenters = [] } = usePresenters();
   const defaultPresenterId = presenters.find(p => p.name === 'Twinsail Consultants Limited')?.id || '';
@@ -53,11 +59,52 @@ const Companies = () => {
     );
   };
 
-  const filteredCompanies = companies.filter(company =>
-    company.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    company.brNumber.includes(searchTerm) ||
-    company.tradingName.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const normalizeJurisdiction = (j?: string): string => {
+    const v = (j || '').toLowerCase();
+    if (v.includes('bvi') || v.includes('british virgin')) return 'BVI';
+    if (v.includes('seychelles')) return 'Seychelles';
+    if (v.includes('hong kong')) return 'Hong Kong';
+    return j ? 'Others' : 'Hong Kong';
+  };
+
+  const filteredCompanies = useMemo(() => companies.filter(company => {
+    const term = searchTerm.toLowerCase();
+    if (term) {
+      const match = company.name.toLowerCase().includes(term) ||
+        (company.brNumber || '').includes(searchTerm) ||
+        (company.tradingName || '').toLowerCase().includes(term);
+      if (!match) return false;
+    }
+    if (jurisdictionFilter !== 'all') {
+      if (normalizeJurisdiction(company.jurisdiction) !== jurisdictionFilter) return false;
+    }
+    if (statusFilter !== 'all') {
+      if ((company.status || 'active') !== statusFilter) return false;
+    }
+    if (presenterFilter !== 'all') {
+      if (presenterFilter === 'none') {
+        if (company.preferredPresenterId) return false;
+      } else if (company.preferredPresenterId !== presenterFilter) return false;
+    }
+    if (missingFilter !== 'all') {
+      const noDir = company.directors.length === 0;
+      const noSec = company.secretaries.length === 0;
+      if (missingFilter === 'director' && !noDir) return false;
+      if (missingFilter === 'secretary' && !noSec) return false;
+      if (missingFilter === 'any' && !(noDir || noSec)) return false;
+      if (missingFilter === 'none' && (noDir || noSec)) return false;
+    }
+    return true;
+  }), [companies, searchTerm, jurisdictionFilter, statusFilter, presenterFilter, missingFilter]);
+
+  const resetFilters = () => {
+    setSearchTerm('');
+    setJurisdictionFilter('all');
+    setStatusFilter('all');
+    setPresenterFilter('all');
+    setMissingFilter('all');
+    setCurrentPage(1);
+  };
 
   const totalPages = Math.max(1, Math.ceil(filteredCompanies.length / pageSize));
   const safeCurrentPage = Math.min(currentPage, totalPages);

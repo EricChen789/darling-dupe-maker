@@ -551,6 +551,31 @@ function renameAnnotationFields(pdfDoc: PDFDocument, suffix: string) {
 }
 
 
+// 把 AcroForm 與所有 widget annotations 完全移除，避免 Adobe Reader 用內建字段渲染導致中文亂碼
+function flattenForm(pdfDoc: PDFDocument) {
+  for (const page of pdfDoc.getPages()) {
+    try {
+      const annots = page.node.lookup(PDFName.of("Annots")) as any;
+      if (annots && typeof annots.size === "function") {
+        // 移除所有 Widget annotation，只保留非表單註釋（例如連結）
+        const keep: any[] = [];
+        for (let i = 0; i < annots.size(); i++) {
+          try {
+            const annot = pdfDoc.context.lookup(annots.get(i)) as any;
+            const subtype = annot?.get?.(PDFName.of("Subtype"));
+            const isWidget = subtype && (subtype === PDFName.of("Widget") || String(subtype) === "/Widget");
+            if (!isWidget) keep.push(annots.get(i));
+          } catch (_) { /* skip */ }
+        }
+        if (keep.length === 0) {
+          page.node.delete(PDFName.of("Annots"));
+        }
+      }
+    } catch (_) { /* ignore */ }
+  }
+  try { pdfDoc.catalog.delete(PDFName.of("AcroForm")); } catch (_) { /* ignore */ }
+}
+
 // === 各模板的填寫函式（操作各自的單頁 PDF 副本） ===
 
 interface CommonCtx {
@@ -1112,7 +1137,9 @@ async function buildNAR1Pdf(data: CompanyData): Promise<Uint8Array> {
     attIdx++;
   }
 
-  // 主文件 P.1-P.8 保留 form fields，由 PDF reader 渲染（與 Acrobat 直接填寫效果一致）
+  // 文字已用嵌入 CJK 字體 drawText 烙印在頁面上；移除所有 widget annotation 與 AcroForm，
+  // 避免 Adobe Reader 嘗試用內建字體渲染表單欄位 /V 而出現中文亂碼或顯示與 Chrome/Preview 不一致
+  flattenForm(mainDoc);
   console.log("Serializing final PDF...");
   const finalBytes = await mainDoc.save({ updateFieldAppearances: false });
   console.log(`Final PDF: ${finalBytes.byteLength} bytes, ${mainDoc.getPageCount()} pages`);

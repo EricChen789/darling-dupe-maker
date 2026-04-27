@@ -24,6 +24,7 @@ interface OfficerRow {
   passport_file_path: string | null;
   id_card_file_path: string | null;
   address_proof_file_path: string | null;
+  tcsp_number: string | null;
   created_at: string;
 }
 
@@ -59,6 +60,7 @@ function mapOfficerToPerson(
     dateCeased: officer.date_ceased || undefined,
     placeIncorporated: officer.place_incorporated || undefined,
     companyNumberRef: officer.company_number_ref || undefined,
+    tcspNumber: officer.tcsp_number || undefined,
     companies,
     createdAt: new Date(officer.created_at).toLocaleDateString('zh-TW'),
     updatedAt: new Date(officer.created_at).toLocaleDateString('zh-TW'),
@@ -162,6 +164,7 @@ export function useOfficers() {
             passport_file_path: personData.passportFilePath || '',
             id_card_file_path: personData.idCardFilePath || '',
             address_proof_file_path: personData.addressProofFilePath || '',
+            tcsp_number: personData.tcspNumber || '',
           })
           .eq('id', existingPerson.id);
         if (error) throw error;

@@ -801,7 +801,7 @@ function fillSchedule2(pdfDoc: PDFDocument, ctx: CommonCtx, fonts: Fonts) {
 // 16=Email 17=HKID 部分 18=護照簽發國 19=護照部分 20=牌照編號 21=無須持牌 22=原因
 function fillSheetA(pdfDoc: PDFDocument, ctx: CommonCtx, sec: OfficerData, fonts: Fonts) {
   const { br8, day, month, year } = ctx;
-  const { safeSetText } = createNativeFormHelpers(pdfDoc);
+  const { safeSetText } = createFormHelpers(pdfDoc, fonts);
   safeSetText("fill_1_P11", day || "");
   safeSetText("fill_2_P11", month || "");
   safeSetText("fill_3_P11", year || "");
@@ -827,7 +827,7 @@ function fillSheetA(pdfDoc: PDFDocument, ctx: CommonCtx, sec: OfficerData, fonts
 // 7=室 8=大廈 9=街 10=區 11=Email 12=BR(此秘書) 13=牌照編號 14=無須持牌 15=原因
 function fillSheetB(pdfDoc: PDFDocument, ctx: CommonCtx, sec: OfficerData, fonts: Fonts) {
   const { br8, day, month, year } = ctx;
-  const { safeSetText } = createNativeFormHelpers(pdfDoc);
+  const { safeSetText } = createFormHelpers(pdfDoc, fonts);
   safeSetText("fill_1_P12", day || "");
   safeSetText("fill_2_P12", month || "");
   safeSetText("fill_3_P12", year || "");
@@ -853,7 +853,7 @@ function fillSheetB(pdfDoc: PDFDocument, ctx: CommonCtx, sec: OfficerData, fonts
 // 20=Email 21=HKID 部分 22=護照簽發國 23=護照部分
 function fillSheetC(pdfDoc: PDFDocument, ctx: CommonCtx, dir: OfficerData, fonts: Fonts) {
   const { br8, day, month, year, office } = ctx;
-  const { safeSetText } = createNativeFormHelpers(pdfDoc);
+  const { safeSetText } = createFormHelpers(pdfDoc, fonts);
   safeSetText("fill_1_P13", day || "");
   safeSetText("fill_2_P13", month || "");
   safeSetText("fill_3_P13", year || "");

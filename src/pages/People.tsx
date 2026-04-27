@@ -62,6 +62,8 @@ const People = () => {
   const startIdx = (safePage - 1) * pageSize;
   const pagePeople = filteredPeople.slice(startIdx, startIdx + pageSize);
 
+  useEffect(() => { setCurrentPage(1); }, [searchTerm, pageSize]);
+
   const getIdentityLabel = (identity: string) => {
     return identity === 'natural' ? '自然人' : '法人';
   };

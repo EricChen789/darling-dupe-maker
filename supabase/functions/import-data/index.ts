@@ -144,48 +144,114 @@ Deno.serve(async (req) => {
       const companyId = inserted.id;
       existingBrSet.add(br); // Prevent duplicates within same batch
 
-      // Insert officers
+      // Helper: find or create person in central master
+      const findOrCreatePerson = async (input: {
+        identity?: string;
+        name_english: string;
+        name_chinese?: string;
+        id_number?: string;
+        address?: string;
+        email?: string;
+        place_incorporated?: string;
+        company_number_ref?: string;
+      }): Promise<string | null> => {
+        const identity = input.identity || "natural";
+        const nameEng = (input.name_english || "").trim();
+        const nameZh = (input.name_chinese || "").trim();
+        const idNum = (input.id_number || "").trim();
+        if (!nameEng && !nameZh) return null;
+
+        // Try by id_number
+        if (idNum) {
+          const { data } = await supabase.from("persons").select("id").eq("id_number", idNum).limit(1);
+          if (data && data.length > 0) return data[0].id;
+        }
+        // Try by normalized english name
+        if (nameEng) {
+          const normKey = nameEng.toLowerCase().replace(/[^a-z0-9]/g, "");
+          if (normKey) {
+            const { data } = await supabase.from("persons").select("id, name_chinese, identity").eq("normalized_key", normKey);
+            if (data && data.length > 0) {
+              if (identity === "corporate") {
+                const corp = data.find((d: any) => d.identity === "corporate");
+                if (corp) return corp.id;
+              } else {
+                const exact = data.find((d: any) => d.identity === "natural" && d.name_chinese === nameZh);
+                if (exact) return exact.id;
+                if (!nameZh) {
+                  const anyNat = data.find((d: any) => d.identity === "natural");
+                  if (anyNat) return anyNat.id;
+                }
+              }
+            }
+          }
+        }
+        // Create new
+        const { data: created, error } = await supabase
+          .from("persons")
+          .insert({
+            identity, name_english: nameEng, name_chinese: nameZh, id_number: idNum,
+            address: input.address || "", email: input.email || "",
+            place_incorporated: input.place_incorporated || "",
+            company_number_ref: input.company_number_ref || "",
+          })
+          .select("id").single();
+        if (error) {
+          results.errors.push(`Create person ${nameEng}: ${error.message}`);
+          return null;
+        }
+        return created.id;
+      };
+
+      // Insert officers as person_company_roles
       if (company.officers && company.officers.length > 0) {
-        const officerRows = company.officers.map((o) => ({
-          company_id: companyId,
-          role: o.role || "director",
-          identity: o.identity || "natural",
-          name_english: o.name_english || "",
-          name_chinese: o.name_chinese || "",
-          id_number: o.id_number || "",
-          address: o.address || "",
-          date_appointed: o.date_appointed || null,
-          date_ceased: o.date_ceased || null,
-          place_incorporated: o.place_incorporated || "",
-          company_number_ref: o.company_number_ref || "",
-        }));
-
-        const { error: offErr } = await supabase.from("officers").insert(officerRows);
-        if (offErr) {
-          results.errors.push(`Officers for ${br}: ${offErr.message}`);
+        const roleRows: any[] = [];
+        for (const o of company.officers) {
+          const personId = await findOrCreatePerson({
+            identity: o.identity, name_english: o.name_english, name_chinese: o.name_chinese,
+            id_number: o.id_number, address: o.address,
+            place_incorporated: o.place_incorporated, company_number_ref: o.company_number_ref,
+          });
+          if (!personId) continue;
+          roleRows.push({
+            person_id: personId,
+            company_id: companyId,
+            role: o.role || "director",
+            date_appointed: o.date_appointed || "",
+            date_ceased: o.date_ceased || "",
+          });
+        }
+        if (roleRows.length > 0) {
+          const { error: offErr } = await supabase.from("person_company_roles").insert(roleRows);
+          if (offErr) results.errors.push(`Officer roles for ${br}: ${offErr.message}`);
         }
       }
 
-      // Insert shareholders
+      // Insert shareholders as person_company_roles
       if (company.shareholders && company.shareholders.length > 0) {
-        const shRows = company.shareholders.map((s) => ({
-          company_id: companyId,
-          name: s.name || s.name_english || s.name_chinese || "",
-          name_english: s.name_english || "",
-          name_chinese: s.name_chinese || "",
-          shares: s.shares || 0,
-          identity: s.identity || "natural",
-          id_number: s.id_number || "",
-          address: s.address || "",
-          email: s.email || "",
-          share_type: s.share_type || "",
-        }));
-
-        const { error: shErr } = await supabase.from("shareholders").insert(shRows);
-        if (shErr) {
-          results.errors.push(`Shareholders for ${br}: ${shErr.message}`);
+        const roleRows: any[] = [];
+        for (const s of company.shareholders) {
+          const personId = await findOrCreatePerson({
+            identity: s.identity,
+            name_english: s.name_english || s.name,
+            name_chinese: s.name_chinese,
+            id_number: s.id_number, address: s.address, email: s.email,
+          });
+          if (!personId) continue;
+          roleRows.push({
+            person_id: personId,
+            company_id: companyId,
+            role: "shareholder",
+            shares: s.shares || 0,
+            share_type: s.share_type || "",
+          });
+        }
+        if (roleRows.length > 0) {
+          const { error: shErr } = await supabase.from("person_company_roles").insert(roleRows);
+          if (shErr) results.errors.push(`Shareholder roles for ${br}: ${shErr.message}`);
         }
       }
+
 
       results.imported++;
     }

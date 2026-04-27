@@ -114,13 +114,13 @@ interface CompanyData {
 const TEMPLATE_BASE = "https://uqcsgmmsrgtlcqutaomg.supabase.co/storage/v1/object/public/pdf-templates";
 const TEMPLATES = {
   main: `${TEMPLATE_BASE}/NAR1_part1_pages1-8.pdf`,    // 主文件 P.1-P.8
-  schedule1: `${TEMPLATE_BASE}/NAR1_p9.pdf`,           // 附表 1 - 非上市成員
-  schedule2: `${TEMPLATE_BASE}/NAR1_p10.pdf`,          // 附表 2 - 上市公司成員
-  sheetA: `${TEMPLATE_BASE}/NAR1_p11.pdf`,             // 續頁 A - 額外自然人秘書
-  sheetB: `${TEMPLATE_BASE}/NAR1_p12.pdf`,             // 續頁 B - 額外法人秘書
-  sheetC: `${TEMPLATE_BASE}/NAR1_p13.pdf`,             // 續頁 C - 額外自然人董事
-  sheetD: `${TEMPLATE_BASE}/NAR1_p14.pdf`,             // 續頁 D - 額外法人董事
-  sheetE: `${TEMPLATE_BASE}/NAR1_p15.pdf`,             // 續頁 E - 待定
+  schedule1: `${TEMPLATE_BASE}/NAR1_p9_v2.pdf`,        // 附表 1 - 非上市成員（v2: 唯一欄位名）
+  schedule2: `${TEMPLATE_BASE}/NAR1_p10_v2.pdf`,       // 附表 2 - 上市公司成員
+  sheetA: `${TEMPLATE_BASE}/NAR1_p11_v2.pdf`,          // 續頁 A - 額外自然人秘書
+  sheetB: `${TEMPLATE_BASE}/NAR1_p12_v2.pdf`,          // 續頁 B - 額外法人秘書
+  sheetC: `${TEMPLATE_BASE}/NAR1_p13_v2.pdf`,          // 續頁 C - 額外自然人董事
+  sheetD: `${TEMPLATE_BASE}/NAR1_p14_v2.pdf`,          // 續頁 D - 額外法人董事
+  sheetE: `${TEMPLATE_BASE}/NAR1_p15_v2.pdf`,          // 續頁 E - 公司紀錄
 };
 
 async function fetchTemplate(url: string): Promise<ArrayBuffer> {

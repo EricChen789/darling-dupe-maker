@@ -1065,14 +1065,13 @@ async function buildDebugPdf(): Promise<Uint8Array> {
         detachWidget(widget, field);
 
         if (labelSrc.startsWith("fill_")) {
-          // 從原始 T 直接取 raw 字串（避免 decodeText 截斷句點）
+          // 從原始 T 直接取，並反向解析 PDF 八進制 escape (\137 = _, \056 = . 等)
           const rawT = field.get(PDFName.of("T")) || widget.get(PDFName.of("T"));
           let labelStr = labelSrc;
           try {
             if (rawT && typeof (rawT as any).asString === "function") {
-              labelStr = (rawT as any).asString();
-            } else if (rawT) {
-              labelStr = String(rawT).replace(/^\(/, "").replace(/\)$/, "");
+              const raw = (rawT as any).asString() as string;
+              labelStr = raw.replace(/\\(\d{1,3})/g, (_m, oct) => String.fromCharCode(parseInt(oct, 8)));
             }
           } catch (_) { /* keep labelSrc */ }
           // 強制較小字體 (8pt) 確保完整名稱能放入

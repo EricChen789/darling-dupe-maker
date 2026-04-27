@@ -985,16 +985,19 @@ async function buildNAR1Pdf(data: CompanyData): Promise<Uint8Array> {
     const subDoc = await PDFDocument.load(bytes);
     const subFonts = await embedFontsForDoc(subDoc, cjkBytes);
     att.fill(subDoc, subFonts);
-    // 填寫已直接畫到頁面內容，移除失效/重名 form annotations，避免覆蓋頁面造成空白。
-    stripFormAnnotations(subDoc);
+    // flatten 附表：把 form fields 燒進頁面內容，避免跨文件欄位名稱衝突
+    try {
+      subDoc.getForm().flatten();
+    } catch (e) {
+      console.warn(`flatten failed for ${att.label}:`, e);
+    }
     // 把該文件所有頁面複製到主文件尾端
     const subPages = await mainDoc.copyPages(subDoc, subDoc.getPageIndices());
     for (const p of subPages) mainDoc.addPage(p);
     console.log(`✓ Appended ${att.label}`);
   }
 
-  stripFormAnnotations(mainDoc);
-
+  // 主文件 P.1-P.8 保留 form fields，由 PDF reader 渲染（與 Acrobat 直接填寫效果一致）
   console.log("Serializing final PDF...");
   const finalBytes = await mainDoc.save({ updateFieldAppearances: false });
   console.log(`Final PDF: ${finalBytes.byteLength} bytes, ${mainDoc.getPageCount()} pages`);

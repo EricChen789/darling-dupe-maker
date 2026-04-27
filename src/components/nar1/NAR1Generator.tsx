@@ -202,6 +202,7 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
           identity: s.identity,
           brNumber: s.brNumber,
           address: s.address || '',
+          serviceAddress: (s as any).serviceAddress || (s as any).service_address || '',
           idNumber: s.idNumber || '',
           dateAppointed: s.dateAppointed || '',
           placeIncorporated: s.placeIncorporated || '',

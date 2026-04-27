@@ -42,6 +42,7 @@ interface OfficerData {
   identity: 'natural' | 'corporate';
   brNumber?: string;
   address?: string;
+  serviceAddress?: string;
   idNumber?: string;
   dateAppointed?: string;
   placeIncorporated?: string;
@@ -366,8 +367,23 @@ function createFormHelpers(pdfDoc: PDFDocument): FormHelpers {
     if (!target) return false;
     try {
       detachWidget(target.widget, target.field);
-      target.widget.set(PDFName.of("V"), PDFName.of("Yes"));
-      target.widget.set(PDFName.of("AS"), PDFName.of("Yes"));
+      // Discover the checkbox's "On" state name from its /AP/N dictionary.
+      // Different templates use /Yes, /On, /1, etc. We must match exactly,
+      // otherwise Adobe Reader won't render the checkmark.
+      let onState = "Yes";
+      try {
+        const ap = target.widget.get(PDFName.of("AP")) as any;
+        const apN = ap?.get?.(PDFName.of("N")) as any;
+        const dict = apN?.dict;
+        if (dict && typeof dict.keys === "function") {
+          for (const k of dict.keys()) {
+            const name = String(k).replace(/^\//, "");
+            if (name && name !== "Off") { onState = name; break; }
+          }
+        }
+      } catch (_) { /* fallback to Yes */ }
+      target.widget.set(PDFName.of("V"), PDFName.of(onState));
+      target.widget.set(PDFName.of("AS"), PDFName.of(onState));
       return true;
     } catch {
       return false;
@@ -506,7 +522,8 @@ function fillMainDocument(pdfDoc: PDFDocument, ctx: CommonCtx) {
     const sec = corporateSecretaries[0];
     setText("fill_2_P.4", sec.nameChinese || "");
     setText("fill_3_P.4", sec.nameEnglish || "");
-    const addr = parseAddress(sec.address || '');
+    // 法人秘書要用「服務地址」(service address)，而非註冊辦事處地址
+    const addr = parseAddress(sec.serviceAddress || sec.address || '');
     setText("fill_4_P.4", addr.flat);
     setText("fill_5_P.4", addr.building);
     setText("fill_6_P.4", addr.street);
@@ -523,6 +540,7 @@ function fillMainDocument(pdfDoc: PDFDocument, ctx: CommonCtx) {
   if (naturalDirectors.length > 0) {
     const dir = naturalDirectors[0];
     const { surname, otherNames } = parseEnglishName(dir.nameEnglish);
+    // 23. 身分：剔「董事」(cb_1_P.5)
     check("cb_1_P.5", true);
     setText("fill_3_P.5", dir.nameChinese || "");
     setText("fill_4_P.5", surname);
@@ -567,7 +585,13 @@ function fillMainDocument(pdfDoc: PDFDocument, ctx: CommonCtx) {
   const memberCount = (data.shareholders || []).filter(sh => (Number(sh.shares) || 0) > 0).length;
   const isListedCo = data.companyType?.includes("上市") || data.companyType?.toLowerCase().includes("listed") || false;
 
+  // P.8 勾選：
+  //   cb_1_P.8 = 「非上市公司」(Non-listed company)
+  //   cb_2_P.8 / cb_3_P.8 = 陳述書聲明 (Declarations) — 兩條都要剔
+  //   cb_4_P.8 = 私人公司 (Private company)
   if (!isListedCo) check("cb_1_P.8", true);
+  check("cb_2_P.8", true);
+  check("cb_3_P.8", true);
   check("cb_4_P.8",
     (data.companyType?.includes("私人") || data.companyType?.toLowerCase().includes("private")) || false);
 
@@ -590,46 +614,65 @@ function fillMainDocument(pdfDoc: PDFDocument, ctx: CommonCtx) {
 }
 
 // ========== 附表 1 (P.9): 兩位股東 (非上市公司) ==========
+// 重要：附表一的欄位 parent 名稱用 fill_X_P.9（帶點）。每個股東欄位佈局如下：
+//   slot 1 (offset 0):  中文名7, 姓氏8, OtherNames9, 股數16, cb_1(共同持有),
+//                       合資人說明12, 地址 13/14/15/16/17 (flat/building/street/district/country),
+//                       Remarks 18
+//   slot 2 (offset 11): 中文名19, 姓氏20, OtherNames21, 股數27, cb_2,
+//                       合資人說明24, 地址 25/26/27/28/29, Remarks 30
+//   頁碼: 31 (current), 32 (total)
 function fillSchedule1(pdfDoc: PDFDocument, ctx: CommonCtx, members: ShareholderData[], pageNo: number, totalPages: number) {
   const { br8, day, month, year, shareInfos } = ctx;
   const { setText } = createFormHelpers(pdfDoc);
 
-  setText("fill_1_P9", day || "");
-  setText("fill_2_P9", month || "");
-  setText("fill_3_P9", year || "");
-  setText("fill_4_P9", br8);
+  setText("fill_1_P.9", day || "");
+  setText("fill_2_P.9", month || "");
+  setText("fill_3_P.9", year || "");
+  setText("fill_4_P.9", br8);
   const firstShareInfo = shareInfos[0];
   if (firstShareInfo) {
-    setText("fill_5_P9", firstShareInfo.className);
-    setText("fill_6_P9", fmtInt(firstShareInfo.shares));
+    setText("fill_5_P.9", firstShareInfo.className);
+    setText("fill_6_P.9", fmtInt(firstShareInfo.shares));
   }
 
-  const fillMember = (sh: ShareholderData, slot: 1 | 2) => {
+  // slot1: name=7, surname=8, other=9, shares=16, addr=13-17
+  // slot2: name=19, surname=20, other=21, shares=27, addr=25-29
+  // slot1 parent names: name=7, surname=8, other=9, shares=10, joint=12, flat=13, building=14, street=15, district=16, country=17, remarks=18
+  // slot2 parent names: name=19, surname=20, other=21, shares=22, joint=24, flat=25, building=26, street=27, district=28, country=29, remarks=30
+  const SLOT_FIELDS = [
+    { name: 7,  surname: 8,  other: 9,  shares: 10, flat: 13, building: 14, street: 15, district: 16, country: 17 },
+    { name: 19, surname: 20, other: 21, shares: 22, flat: 25, building: 26, street: 27, district: 28, country: 29 },
+  ];
+
+  const fillMember = (sh: ShareholderData, slotIdx: 0 | 1) => {
+    const F = SLOT_FIELDS[slotIdx];
     const isCorp = sh.identity === "corporate";
     const fullName = sh.nameEnglish || sh.name || "";
     const { surname, otherNames } = parseEnglishName(fullName);
     const addr = parseAddress(sh.address || "");
-    const base = slot === 1 ? 0 : 12;
-    const f = (n: number) => `fill_${n + base}_P9`;
-    setText(f(7), sh.nameChinese || "");
+    // 國家：若解析不到則預設「香港 Hong Kong」
+    const country = addr.country || "香港 Hong Kong";
+
+    setText(`fill_${F.name}_P.9`, sh.nameChinese || "");
     if (isCorp) {
-      setText(f(12), fullName);
+      // 法人股東：英文名寫滿姓氏欄（Surname 欄較窄，Other Names 欄較寬）
+      setText(`fill_${F.surname}_P.9`, fullName);
     } else {
-      setText(f(8), surname);
-      setText(f(9), otherNames);
+      setText(`fill_${F.surname}_P.9`, surname);
+      setText(`fill_${F.other}_P.9`, otherNames);
     }
-    setText(f(10), fmtInt(Number(sh.shares) || 0));
-    setText(f(13), addr.flat);
-    setText(f(14), addr.building);
-    setText(f(15), addr.street);
-    setText(f(16), addr.district);
-    setText(f(17), addr.country);
+    setText(`fill_${F.shares}_P.9`, fmtInt(Number(sh.shares) || 0));
+    setText(`fill_${F.flat}_P.9`, addr.flat);
+    setText(`fill_${F.building}_P.9`, addr.building);
+    setText(`fill_${F.street}_P.9`, addr.street);
+    setText(`fill_${F.district}_P.9`, addr.district);
+    setText(`fill_${F.country}_P.9`, country);
   };
 
-  if (members[0]) fillMember(members[0], 1);
-  if (members[1]) fillMember(members[1], 2);
-  setText("fill_31_P9", String(pageNo));
-  setText("fill_32_P9", String(totalPages));
+  if (members[0]) fillMember(members[0], 0);
+  if (members[1]) fillMember(members[1], 1);
+  setText("fill_31_P.9", String(pageNo));
+  setText("fill_32_P.9", String(totalPages));
 }
 
 // ========== 附表 2 (P.10): 上市公司 ==========
@@ -691,32 +734,38 @@ function fillSheetB(pdfDoc: PDFDocument, ctx: CommonCtx, sec: OfficerData) {
   if (sec.tcspNumber) setText("fill_13_P12", sec.tcspNumber);
 }
 
-// ========== 續頁 C (P.13) ==========
+// ========== 續頁 C (P.13) - 自然人董事 ==========
+// 注意：模板中 widget name 與 parent name 數字錯位，必須統一用 parent name (fill_X_P.13)。
+// Parent 對照（依 Y 座標）：
+//   8=中文名, 9=姓氏, 10=Other Names, 15-19=地址(flat/building/street/district/country),
+//   20=email, 21=HKID, 22=passport country, 23=passport no
+// Checkbox: cb_1 (董事), cb_2 (候補董事)
 function fillSheetC(pdfDoc: PDFDocument, ctx: CommonCtx, dir: OfficerData) {
   const { br8, day, month, year, office } = ctx;
-  const { setText } = createFormHelpers(pdfDoc);
-  setText("fill_1_P13", day || "");
-  setText("fill_2_P13", month || "");
-  setText("fill_3_P13", year || "");
-  setText("fill_4_P13", br8);
+  const { setText, check } = createFormHelpers(pdfDoc);
+  setText("fill_1_P.13", day || "");
+  setText("fill_2_P.13", month || "");
+  setText("fill_3_P.13", year || "");
+  setText("fill_4_P.13", br8);
 
   const { surname, otherNames } = parseEnglishName(dir.nameEnglish);
-  setText("fill_5_P13", "X");
-  setText("fill_8_P13", dir.nameChinese || "");
-  setText("fill_9_P13", surname);
-  setText("fill_10_P13", otherNames);
-  setText("fill_15_P13", office.flat || "");
-  setText("fill_16_P13", office.building || "");
-  setText("fill_17_P13", office.street || "");
-  setText("fill_18_P13", office.district || "");
-  setText("fill_19_P13", office.region || "");
-  setText("fill_20_P13", dir.email || "");
+  // 23. 身分：剔「董事」
+  check("cb_1_P.13", true);
+  setText("fill_8_P.13", dir.nameChinese || "");
+  setText("fill_9_P.13", surname);
+  setText("fill_10_P.13", otherNames);
+  setText("fill_15_P.13", office.flat || "");
+  setText("fill_16_P.13", office.building || "");
+  setText("fill_17_P.13", office.street || "");
+  setText("fill_18_P.13", office.district || "");
+  setText("fill_19_P.13", office.region || "");
+  setText("fill_20_P.13", dir.email || "");
   const hkid = parseHkidPartial(dir.idNumber || '');
   if (hkid) {
-    setText("fill_21_P13", hkid);
+    setText("fill_21_P.13", hkid);
   } else if (dir.passportNumber) {
-    setText("fill_22_P13", dir.nationality || dir.placeIncorporated || "");
-    setText("fill_23_P13", parsePassportPartial(dir.passportNumber));
+    setText("fill_22_P.13", dir.nationality || dir.placeIncorporated || "");
+    setText("fill_23_P.13", parsePassportPartial(dir.passportNumber));
   }
 }
 
@@ -821,26 +870,7 @@ async function buildNAR1Pdf(data: CompanyData): Promise<Uint8Array> {
 
   const attachments: Array<{ url: string; fill: (doc: PDFDocument) => void; label: string }> = [];
 
-  if (!isListedCo && validMembers.length > 0) {
-    const totalSch1 = Math.ceil(validMembers.length / 2);
-    for (let i = 0; i < totalSch1; i++) {
-      const slice = validMembers.slice(i * 2, i * 2 + 2);
-      const pageNo = i + 1;
-      attachments.push({
-        url: TEMPLATES.schedule1,
-        fill: (doc) => fillSchedule1(doc, ctx, slice, pageNo, totalSch1),
-        label: `附表1-${pageNo}/${totalSch1}`,
-      });
-    }
-  }
-
-  if (isListedCo) {
-    attachments.push({
-      url: TEMPLATES.schedule2,
-      fill: (doc) => fillSchedule2(doc, ctx),
-      label: "附表2",
-    });
-  }
+  // === 順序：先續頁 A/B/C/D/E，最後才放附表一 / 附表二 ===
 
   for (let i = 1; i < naturalSecretaries.length; i++) {
     const sec = naturalSecretaries[i];
@@ -885,6 +915,28 @@ async function buildNAR1Pdf(data: CompanyData): Promise<Uint8Array> {
       url: TEMPLATES.sheetE,
       fill: (doc) => fillSheetE(doc, ctx, validRecords),
       label: `續頁E(${validRecords.length}筆)`,
+    });
+  }
+
+  // 附表一 / 附表二 — 放在所有續頁之後（最後）
+  if (!isListedCo && validMembers.length > 0) {
+    const totalSch1 = Math.ceil(validMembers.length / 2);
+    for (let i = 0; i < totalSch1; i++) {
+      const slice = validMembers.slice(i * 2, i * 2 + 2);
+      const pageNo = i + 1;
+      attachments.push({
+        url: TEMPLATES.schedule1,
+        fill: (doc) => fillSchedule1(doc, ctx, slice, pageNo, totalSch1),
+        label: `附表1-${pageNo}/${totalSch1}`,
+      });
+    }
+  }
+
+  if (isListedCo) {
+    attachments.push({
+      url: TEMPLATES.schedule2,
+      fill: (doc) => fillSchedule2(doc, ctx),
+      label: "附表2",
     });
   }
 

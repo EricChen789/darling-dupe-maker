@@ -734,32 +734,38 @@ function fillSheetB(pdfDoc: PDFDocument, ctx: CommonCtx, sec: OfficerData) {
   if (sec.tcspNumber) setText("fill_13_P12", sec.tcspNumber);
 }
 
-// ========== 續頁 C (P.13) ==========
+// ========== 續頁 C (P.13) - 自然人董事 ==========
+// 注意：模板中 widget name 與 parent name 數字錯位，必須統一用 parent name (fill_X_P.13)。
+// Parent 對照（依 Y 座標）：
+//   8=中文名, 9=姓氏, 10=Other Names, 15-19=地址(flat/building/street/district/country),
+//   20=email, 21=HKID, 22=passport country, 23=passport no
+// Checkbox: cb_1 (董事), cb_2 (候補董事)
 function fillSheetC(pdfDoc: PDFDocument, ctx: CommonCtx, dir: OfficerData) {
   const { br8, day, month, year, office } = ctx;
-  const { setText } = createFormHelpers(pdfDoc);
-  setText("fill_1_P13", day || "");
-  setText("fill_2_P13", month || "");
-  setText("fill_3_P13", year || "");
-  setText("fill_4_P13", br8);
+  const { setText, check } = createFormHelpers(pdfDoc);
+  setText("fill_1_P.13", day || "");
+  setText("fill_2_P.13", month || "");
+  setText("fill_3_P.13", year || "");
+  setText("fill_4_P.13", br8);
 
   const { surname, otherNames } = parseEnglishName(dir.nameEnglish);
-  setText("fill_5_P13", "X");
-  setText("fill_8_P13", dir.nameChinese || "");
-  setText("fill_9_P13", surname);
-  setText("fill_10_P13", otherNames);
-  setText("fill_15_P13", office.flat || "");
-  setText("fill_16_P13", office.building || "");
-  setText("fill_17_P13", office.street || "");
-  setText("fill_18_P13", office.district || "");
-  setText("fill_19_P13", office.region || "");
-  setText("fill_20_P13", dir.email || "");
+  // 23. 身分：剔「董事」
+  check("cb_1_P.13", true);
+  setText("fill_8_P.13", dir.nameChinese || "");
+  setText("fill_9_P.13", surname);
+  setText("fill_10_P.13", otherNames);
+  setText("fill_15_P.13", office.flat || "");
+  setText("fill_16_P.13", office.building || "");
+  setText("fill_17_P.13", office.street || "");
+  setText("fill_18_P.13", office.district || "");
+  setText("fill_19_P.13", office.region || "");
+  setText("fill_20_P.13", dir.email || "");
   const hkid = parseHkidPartial(dir.idNumber || '');
   if (hkid) {
-    setText("fill_21_P13", hkid);
+    setText("fill_21_P.13", hkid);
   } else if (dir.passportNumber) {
-    setText("fill_22_P13", dir.nationality || dir.placeIncorporated || "");
-    setText("fill_23_P13", parsePassportPartial(dir.passportNumber));
+    setText("fill_22_P.13", dir.nationality || dir.placeIncorporated || "");
+    setText("fill_23_P.13", parsePassportPartial(dir.passportNumber));
   }
 }
 

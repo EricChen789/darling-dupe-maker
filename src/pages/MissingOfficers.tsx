@@ -29,6 +29,7 @@ type CompanyRow = {
   company_number: string | null;
   ci_number: string | null;
   status: string | null;
+  incorporation_date: string | null;
 };
 
 type OfficerRow = {
@@ -68,7 +69,7 @@ const MissingOfficers = () => {
 
   const { data: companies, isLoading: loadingCompanies } = useQuery({
     queryKey: ['missing-officers-companies-v2'],
-    queryFn: () => fetchAll<CompanyRow>('companies', 'id, name, chinese_name, company_number, ci_number, status'),
+    queryFn: () => fetchAll<CompanyRow>('companies', 'id, name, chinese_name, company_number, ci_number, status, incorporation_date'),
   });
 
   const { data: officers, isLoading: loadingOfficers } = useQuery({
@@ -184,6 +185,7 @@ const MissingOfficers = () => {
                 <TableHead>中文名稱</TableHead>
                 <TableHead>BR 號碼</TableHead>
                 <TableHead>CI 號碼</TableHead>
+                <TableHead>成立日期</TableHead>
                 <TableHead>狀態</TableHead>
                 <TableHead>缺失欄位</TableHead>
                 <TableHead className="text-right">操作</TableHead>
@@ -192,7 +194,7 @@ const MissingOfficers = () => {
             <TableBody>
               {filtered.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
                     沒有符合條件的記錄
                   </TableCell>
                 </TableRow>
@@ -203,6 +205,7 @@ const MissingOfficers = () => {
                     <TableCell>{r.chinese_name || '-'}</TableCell>
                     <TableCell className="font-mono text-xs">{r.company_number || '-'}</TableCell>
                     <TableCell className="font-mono text-xs">{r.ci_number || '-'}</TableCell>
+                    <TableCell className="text-xs">{r.incorporation_date || <span className="text-muted-foreground italic">未填寫</span>}</TableCell>
                     <TableCell>
                       <Badge variant={r.status === 'active' || !r.status ? 'default' : 'secondary'}>
                         {r.status === 'inactive' ? '失效' : r.status === 'cancelled' ? '註銷' : '有效'}

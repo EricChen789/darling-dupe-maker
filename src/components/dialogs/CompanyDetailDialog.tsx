@@ -629,6 +629,8 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                       shares: selectedSh.shares, identity: selectedSh.identity, idNumber: selectedSh.idNumber || '',
                       address: selectedSh.address || '', serviceAddress: selectedSh.serviceAddress || '',
                       email: selectedSh.email || '', shareType: selectedSh.shareType || '',
+                      issuePrice: selectedSh.issuePrice || '', currency: selectedSh.currency || 'HKD',
+                      paidUp: selectedSh.paidUp || '', unpaid: selectedSh.unpaid || '',
                     });
                     setEditingShDetail(true);
                   }}>

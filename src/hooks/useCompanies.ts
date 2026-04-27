@@ -58,6 +58,10 @@ interface DbShareholder {
   service_address?: string;
   email: string;
   share_type: string;
+  issue_price?: string;
+  currency?: string;
+  paid_up?: string;
+  unpaid?: string;
 }
 
 async function fetchAllRows<T>(

@@ -458,21 +458,34 @@ function createNativeFormHelpers(pdfDoc: PDFDocument) {
     }
   }
 
+  // 把 widget 升級為自包含 terminal field：複製父的繼承屬性（FT/DA/Ff/MaxLen/Q）到 widget，
+  // 移除 Parent 連結，避免多頁共用父 field 時 /V 互相覆蓋。
+  const detachWidgetFromParent = (widget: any, field: any) => {
+    if (widget === field) return; // 已是自包含
+    try {
+      const inheritKeys = ["FT", "DA", "Ff", "MaxLen", "Q", "DV"];
+      for (const k of inheritKeys) {
+        const key = PDFName.of(k);
+        if (!widget.get(key)) {
+          const v = field.get(key);
+          if (v !== undefined && v !== null) widget.set(key, v);
+        }
+      }
+      widget.delete(PDFName.of("Parent"));
+    } catch (_) { /* best-effort */ }
+  };
+
   const safeSetText = (fieldName: string, value: string) => {
-    // 一律走低階 widget-map 寫入，避免 pdf-lib getTextField 在父子階層欄位
-    // 名稱（如 fill_15_P.1，父=fill_15_P 子=1，且多個父共用子名 "1"）下
-    // 將值寫入錯誤欄位的問題。widget-map 的 key 由 `${parentName}.${widgetName}`
-    // 決定性地組成，可確保唯一且精準命中。
     try {
       const target = widgets.get(fieldName);
       if (!target) {
         console.warn(`⚠ Missing native field: ${fieldName}`);
         return false;
       }
+      detachWidgetFromParent(target.widget, target.field);
       const encoded = encodeFieldValue(value ?? "");
-      target.field.set(PDFName.of("V"), encoded);
+      // 只寫 widget 的 /V（widget 已 detach 為獨立 field），絕不寫共用父 field
       target.widget.set(PDFName.of("V"), encoded);
-      target.field.delete(PDFName.of("AP"));
       target.widget.delete(PDFName.of("AP"));
       return true;
     } catch (e) {
@@ -483,11 +496,11 @@ function createNativeFormHelpers(pdfDoc: PDFDocument) {
 
   const safeCheck = (fieldName: string, shouldCheck: boolean) => {
     if (!shouldCheck) return false;
-    // 同樣統一走低階 widget-map，以避免 pdf-lib 在父子階層命名下命中錯誤欄位。
     try {
       const target = widgets.get(fieldName);
       if (!target) return false;
-      target.field.set(PDFName.of("V"), PDFName.of("Yes"));
+      detachWidgetFromParent(target.widget, target.field);
+      target.widget.set(PDFName.of("V"), PDFName.of("Yes"));
       target.widget.set(PDFName.of("AS"), PDFName.of("Yes"));
       target.widget.delete(PDFName.of("AP"));
       return true;

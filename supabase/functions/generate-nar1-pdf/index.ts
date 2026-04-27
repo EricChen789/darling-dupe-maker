@@ -235,6 +235,11 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
         const dict = field.acroField.dict;
         dict.set(PDFName.of('V'), PDFHexString.fromText(textToSet));
         dict.delete(PDFName.of('AP'));
+        // 部分 NAR1 欄位把外觀層放在 widget annotation；只刪 field AP
+        // 會令第 5 頁 / 續頁等中文姓名仍顯示為空白或舊值。
+        for (const widget of field.acroField.getWidgets()) {
+          widget.dict.delete(PDFName.of('AP'));
+        }
       }
       return true;
     } catch (e) {

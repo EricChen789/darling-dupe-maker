@@ -509,8 +509,8 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
   // Pick the first share-class info for header (most common case: single class)
   const firstShareInfo = shareInfos[0];
   if (firstShareInfo) {
-    // 附表一格式：「ORDINARY SHARES (HK$)」
-    safeSetText("fill_5_P.9", `${firstShareInfo.className} (${firstShareInfo.currency})`);
+    // 附表一格式：「ORDINARY SHARES」（不顯示貨幣）
+    safeSetText("fill_5_P.9", firstShareInfo.className);
     safeSetText("fill_6_P.9", fmtInt(firstShareInfo.shares));
   }
 

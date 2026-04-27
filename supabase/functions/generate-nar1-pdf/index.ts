@@ -1016,18 +1016,16 @@ async function buildDebugPdf(): Promise<Uint8Array> {
   // 診斷模式：只輸出附表一 (P.9)，每個欄位填入完整欄位名稱以便視覺化對位
   const scheduleBytes = await fetchTemplate(TEMPLATES.schedule1);
   const doc = await PDFDocument.load(scheduleBytes);
+  const { setText, check } = createFormHelpers(doc);
   const form = doc.getForm();
   for (const field of form.getFields()) {
     const name = field.getName();
     if (name.startsWith("fill_")) {
-      try {
-        const tf = form.getTextField(name);
-        const max = tf.getMaxLength();
-        const txt = max && name.length > max ? name.slice(0, max) : name;
-        tf.setText(txt);
-      } catch (_) {}
+      // 縮短：去掉前綴，例如 fill_3_P.9 -> 3_P9
+      const short = name.replace(/^fill_/, "").replace(/\./g, "");
+      setText(name, short);
     } else if (name.startsWith("cb_")) {
-      try { form.getCheckBox(name).check(); } catch (_) {}
+      check(name, true);
     }
   }
   return await doc.save();

@@ -21,6 +21,7 @@ export type Database = {
           business_nature: string | null
           chinese_name: string | null
           ci_file_path: string | null
+          ci_number: string
           company_group: string | null
           company_number: string | null
           company_type: string | null
@@ -48,6 +49,7 @@ export type Database = {
           business_nature?: string | null
           chinese_name?: string | null
           ci_file_path?: string | null
+          ci_number?: string
           company_group?: string | null
           company_number?: string | null
           company_type?: string | null
@@ -75,6 +77,7 @@ export type Database = {
           business_nature?: string | null
           chinese_name?: string | null
           ci_file_path?: string | null
+          ci_number?: string
           company_group?: string | null
           company_number?: string | null
           company_type?: string | null

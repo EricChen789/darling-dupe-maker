@@ -3,6 +3,7 @@ export interface Company {
   name: string;
   chineseName?: string;
   brNumber: string;
+  ciNumber?: string;
   tradingName: string;
   businessNature: string;
   directors: Person[];

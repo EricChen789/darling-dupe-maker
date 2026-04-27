@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { PDFDocument, PDFName, PDFHexString, PDFString, PDFBool, PDFNumber } from "https://esm.sh/pdf-lib@1.17.1";
+import { PDFDocument, PDFName, PDFHexString, PDFString, PDFBool, PDFNumber, PDFArray } from "https://esm.sh/pdf-lib@1.17.1";
 
 // ============================================================================
 // NAR1 PDF Generator — 原生 AcroForm 模式
@@ -240,6 +240,8 @@ function collectFormFields(pdfDoc: PDFDocument): Map<string, { widget: any; fiel
 function detachWidget(widget: any, field: any) {
   if (widget === field) return;
   try {
+    const parentName = decodePdfText(field.get(PDFName.of("T")));
+    const widgetName = decodePdfText(widget.get(PDFName.of("T")));
     const inheritKeys = ["FT", "DA", "Ff", "MaxLen", "Q", "DV"];
     for (const k of inheritKeys) {
       const key = PDFName.of(k);
@@ -248,8 +250,35 @@ function detachWidget(widget: any, field: any) {
         if (v !== undefined && v !== null) widget.set(key, v);
       }
     }
+    if (parentName && widgetName) widget.set(PDFName.of("T"), PDFString.of(`${parentName}.${widgetName}`));
     widget.delete(PDFName.of("Parent"));
   } catch (_) { /* best-effort */ }
+}
+
+// PDF readers such as Adobe only render fields listed in AcroForm /Fields.
+// After detaching widgets, rebuild /Fields with the actual page widget refs.
+function rebuildAcroFormFields(pdfDoc: PDFDocument) {
+  try {
+    const acroForm = pdfDoc.catalog.lookup(PDFName.of("AcroForm")) as any;
+    if (!acroForm || typeof acroForm.set !== "function") return;
+    const fields = PDFArray.withContext(pdfDoc.context);
+    for (const page of pdfDoc.getPages()) {
+      const annots = page.node.lookup(PDFName.of("Annots")) as any;
+      if (!annots || typeof annots.size !== "function") continue;
+      for (let i = 0; i < annots.size(); i++) {
+        const ref = annots.get(i);
+        const widget = pdfDoc.context.lookup(ref) as any;
+        if (!widget || typeof widget.get !== "function") continue;
+        if (String(widget.get(PDFName.of("Subtype"))) !== "/Widget") continue;
+        if (!widget.get(PDFName.of("FT"))) continue;
+        fields.push(ref);
+      }
+    }
+    acroForm.set(PDFName.of("Fields"), fields);
+    acroForm.set(PDFName.of("NeedAppearances"), PDFBool.True);
+  } catch (e) {
+    console.warn("⚠ Could not rebuild AcroForm fields:", e);
+  }
 }
 
 // 設定 AcroForm /NeedAppearances = true，讓 reader 開啟時自動產生 widget appearance
@@ -268,6 +297,20 @@ function buildCjkDA(originalDA: string | undefined): string {
   const m = originalDA?.match(/(\d+(?:\.\d+)?)\s+Tf/);
   const size = m ? m[1] : "12";
   return `/PMingLiU ${size} Tf 0 g`;
+}
+
+function buildHelvDA(originalDA: string | undefined): string {
+  const m = originalDA?.match(/(\d+(?:\.\d+)?)\s+Tf/);
+  const size = m ? m[1] : "12";
+  return `/Helv ${size} Tf 0 g`;
+}
+
+function toAdobeSafeText(value: string): string {
+  return value
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(line => line && isAscii(line))
+    .join("\n");
 }
 
 interface FormHelpers {
@@ -295,18 +338,12 @@ function createFormHelpers(pdfDoc: PDFDocument): FormHelpers {
     try {
       detachWidget(target.widget, target.field);
 
-      if (v.length > 0 && !isAscii(v)) {
-        // 含中文/非 ASCII：切換到 PMingLiU + UTF-16 hex string
-        const da = decodePdfText(target.widget.get(PDFName.of("DA"))) ||
-                   decodePdfText(target.field.get(PDFName.of("DA"))) ||
-                   "/Helv 12 Tf 0 g";
-        const newDA = buildCjkDA(da);
-        target.widget.set(PDFName.of("DA"), PDFString.of(newDA));
-        target.widget.set(PDFName.of("V"), PDFHexString.fromText(v));
-      } else {
-        // 純 ASCII：保留原 DA，用普通 string
-        target.widget.set(PDFName.of("V"), PDFString.of(v));
-      }
+      const da = decodePdfText(target.widget.get(PDFName.of("DA"))) ||
+                 decodePdfText(target.field.get(PDFName.of("DA"))) ||
+                 "/Helv 12 Tf 0 g";
+      const safeValue = toAdobeSafeText(v);
+      target.widget.set(PDFName.of("DA"), PDFString.of(buildHelvDA(da)));
+      target.widget.set(PDFName.of("V"), PDFString.of(safeValue));
       // 移除舊的 appearance，強制 reader 用 NeedAppearances 重建
       target.widget.delete(PDFName.of("AP"));
       return true;
@@ -867,6 +904,7 @@ async function buildNAR1Pdf(data: CompanyData): Promise<Uint8Array> {
 
   // 確保最終文件 NeedAppearances=true，讓 Reader 開啟時用 PMingLiU 渲染中文
   enableNeedAppearances(mainDoc);
+  rebuildAcroFormFields(mainDoc);
 
   console.log("Serializing final PDF...");
   const finalBytes = await mainDoc.save({ updateFieldAppearances: false });

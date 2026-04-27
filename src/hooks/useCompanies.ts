@@ -188,6 +188,8 @@ function mapToCompany(
     preferredPresenterId: c.preferred_presenter_id || '',
     presenterReference: c.presenter_reference || '',
     status: (((c as any).status as 'active' | 'inactive' | 'deregistered') || 'active'),
+    email: ((c as any).email as string) || '',
+    phone: ((c as any).phone as string) || '',
   };
 }
 
@@ -266,6 +268,8 @@ export function useAddCompany() {
           reg_region: data.regRegion || '香港 Hong Kong',
           preferred_presenter_id: data.preferredPresenterId || null,
           presenter_reference: data.presenterReference || '',
+          email: data.email || '',
+          phone: data.phone || '',
         } as any)
         .select()
         .single();
@@ -360,6 +364,8 @@ export function useUpdateCompany() {
           preferred_presenter_id: data.preferredPresenterId === undefined ? undefined : (data.preferredPresenterId || null),
           presenter_reference: data.presenterReference,
           status: data.status,
+          email: data.email,
+          phone: data.phone,
           updated_at: new Date().toISOString(),
         } as any)
         .eq('id', id);

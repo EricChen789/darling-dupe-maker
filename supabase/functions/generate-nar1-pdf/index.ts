@@ -629,7 +629,12 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
     safeSetText("fill_17_P.13", office.region || "");
     safeSetText("fill_18_P.13", dir.email || "");
     const hkid = parseHkidPartial(dir.idNumber || '');
-    if (hkid) safeSetText("fill_19_P.13", hkid);
+    if (hkid) {
+      safeSetText("fill_19_P.13", hkid);
+    } else if (dir.passportNumber) {
+      safeSetText("fill_20_P.13", dir.nationality || dir.placeIncorporated || "");
+      safeSetText("fill_21_P.13", parsePassportPartial(dir.passportNumber));
+    }
   }
 
   // ============ Page 14 - Continuation Sheet D (額外法人董事) ============

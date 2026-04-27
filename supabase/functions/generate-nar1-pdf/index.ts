@@ -1013,43 +1013,67 @@ async function buildNAR1Pdf(data: CompanyData): Promise<Uint8Array> {
 
 // === Debug 模式 ===
 async function buildDebugPdf(): Promise<Uint8Array> {
-  // 診斷模式：只輸出附表一 (P.9)，逐個 widget 寫入其欄位名稱以便視覺化對位
-  const scheduleBytes = await fetchTemplate(TEMPLATES.schedule1);
-  const doc = await PDFDocument.load(scheduleBytes);
-  enableNeedAppearances(doc);
+  // 診斷模式：合併所有模板（主表 + 附表 + 續頁），逐個 widget 寫入完整欄位名稱以便視覺化對位
+  const templateUrls = [
+    TEMPLATES.main,
+    TEMPLATES.schedule1,
+    TEMPLATES.schedule2,
+    TEMPLATES.sheetA,
+    TEMPLATES.sheetB,
+    TEMPLATES.sheetC,
+    TEMPLATES.sheetD,
+    TEMPLATES.sheetE,
+  ];
 
-  for (const page of doc.getPages()) {
+  const mainBytes = await fetchTemplate(TEMPLATES.main);
+  const mainDoc = await PDFDocument.load(mainBytes);
+
+  // 合併其他模板到 mainDoc
+  for (let i = 1; i < templateUrls.length; i++) {
+    try {
+      const bytes = await fetchTemplate(templateUrls[i]);
+      const sub = await PDFDocument.load(bytes);
+      const pages = await mainDoc.copyPages(sub, sub.getPageIndices());
+      for (const p of pages) mainDoc.addPage(p);
+    } catch (e) {
+      console.warn(`Skip template ${templateUrls[i]}:`, e);
+    }
+  }
+
+  enableNeedAppearances(mainDoc);
+
+  // 逐個 widget 寫入完整名稱（不縮短）
+  for (const page of mainDoc.getPages()) {
     const annots = page.node.lookup(PDFName.of("Annots")) as any;
     if (!annots || typeof annots.size !== "function") continue;
 
     for (let i = 0; i < annots.size(); i++) {
       try {
-        const widget = doc.context.lookup(annots.get(i)) as any;
+        const widget = mainDoc.context.lookup(annots.get(i)) as any;
         if (!widget || typeof widget.get !== "function") continue;
         const subtype = widget.get(PDFName.of("Subtype"));
         if (subtype && String(subtype) !== "/Widget") continue;
 
         const parentRef = widget.get(PDFName.of("Parent"));
-        const field = parentRef ? doc.context.lookup(parentRef) as any : widget;
+        const field = parentRef ? mainDoc.context.lookup(parentRef) as any : widget;
         const parentName = field ? decodePdfText(field.get(PDFName.of("T"))) : "";
         const widgetName = decodePdfText(widget.get(PDFName.of("T")));
-        const fullName = parentName && widgetName ? `${parentName}.${widgetName}` : (parentName || widgetName);
-        if (!fullName) continue;
+        const labelSrc = parentName || widgetName;
+        if (!labelSrc) continue;
 
         // 先 detach widget 避免共享 field 互相覆蓋
         detachWidget(widget, field);
 
-        if (fullName.startsWith("fill_") || (parentName && parentName.startsWith("fill_"))) {
-          // 縮短版：去掉 fill_ 前綴與點號
-          const label = (parentName || widgetName).replace(/^fill_/, "").replace(/\./g, "");
-          const da = decodePdfText(widget.get(PDFName.of("DA"))) || "/Helv 12 Tf 0 g";
-          widget.set(PDFName.of("DA"), PDFString.of(buildHelvDA(da)));
-          widget.set(PDFName.of("V"), PDFString.of(label));
+        if (labelSrc.startsWith("fill_")) {
+          // 完整名稱（如 "fill_15_P.1"）
+          const da = decodePdfText(widget.get(PDFName.of("DA"))) || "/Helv 8 Tf 0 g";
+          // 強制較小字體 (8pt) 確保 8 字以上能放入
+          widget.set(PDFName.of("DA"), PDFString.of("/Helv 8 Tf 0 g"));
+          widget.set(PDFName.of("V"), PDFString.of(labelSrc));
           widget.delete(PDFName.of("AP"));
           widget.delete(PDFName.of("MaxLen"));
           if (field !== widget) field.delete(PDFName.of("MaxLen"));
-        } else if (fullName.startsWith("cb_") || (parentName && parentName.startsWith("cb_"))) {
-          // 探查 On state
+        } else if (labelSrc.startsWith("cb_")) {
           let onState = "Yes";
           try {
             const ap = widget.get(PDFName.of("AP")) as any;
@@ -1068,7 +1092,7 @@ async function buildDebugPdf(): Promise<Uint8Array> {
       } catch (_) { /* skip */ }
     }
   }
-  return await doc.save({ updateFieldAppearances: false });
+  return await mainDoc.save({ updateFieldAppearances: false });
 }
 
 serve(async (req: Request) => {

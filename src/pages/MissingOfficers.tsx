@@ -95,8 +95,8 @@ const MissingOfficers = () => {
       missingSecretary: !secretaryByCompany.has(c.id),
     }));
 
-    // Only keep ones missing at least one
-    return enriched.filter((c) => c.missingDirector || c.missingSecretary);
+    // Only keep ones missing at least one AND still active
+    return enriched.filter((c) => (c.missingDirector || c.missingSecretary) && c.status === 'active');
   }, [companies, officers]);
 
   const filtered = useMemo(() => {

@@ -416,7 +416,7 @@ interface CommonCtx {
 // ========== 主文件 P.1-P.8 ==========
 function fillMainDocument(pdfDoc: PDFDocument, ctx: CommonCtx, fonts: Fonts) {
   const { br8, day, month, year, data, office, shareInfos } = ctx;
-  const { safeSetText, safeCheck, form } = createFormHelpers(pdfDoc, helv);
+  const { safeSetText, safeCheck, form } = createFormHelpers(pdfDoc, fonts);
 
   // ===== Page 1 =====
   safeSetText("fill_1_P.1", br8);
@@ -594,7 +594,7 @@ function fillMainDocument(pdfDoc: PDFDocument, ctx: CommonCtx, fonts: Fonts) {
 //   31=本頁頁次 32=總頁數
 function fillSchedule1(pdfDoc: PDFDocument, ctx: CommonCtx, members: ShareholderData[], pageNo: number, totalPages: number, fonts: Fonts) {
   const { br8, day, month, year, shareInfos } = ctx;
-  const { safeSetText } = createFormHelpers(pdfDoc, helv);
+  const { safeSetText } = createFormHelpers(pdfDoc, fonts);
 
   safeSetText("fill_1_P.9", day || "");
   safeSetText("fill_2_P.9", month || "");
@@ -642,7 +642,7 @@ function fillSchedule1(pdfDoc: PDFDocument, ctx: CommonCtx, members: Shareholder
 //   33=本頁 34=總頁
 function fillSchedule2(pdfDoc: PDFDocument, ctx: CommonCtx, fonts: Fonts) {
   const { br8, day, month, year, shareInfos } = ctx;
-  const { safeSetText } = createFormHelpers(pdfDoc, helv);
+  const { safeSetText } = createFormHelpers(pdfDoc, fonts);
   safeSetText("fill_1_P.10", day || "");
   safeSetText("fill_2_P.10", month || "");
   safeSetText("fill_3_P.10", year || "");
@@ -660,7 +660,7 @@ function fillSchedule2(pdfDoc: PDFDocument, ctx: CommonCtx, fonts: Fonts) {
 // 16=Email 17=HKID 部分 18=護照簽發國 19=護照部分 20=牌照編號 21=無須持牌 22=原因
 function fillSheetA(pdfDoc: PDFDocument, ctx: CommonCtx, sec: OfficerData, fonts: Fonts) {
   const { br8, day, month, year } = ctx;
-  const { safeSetText } = createFormHelpers(pdfDoc, helv);
+  const { safeSetText } = createFormHelpers(pdfDoc, fonts);
   safeSetText("fill_1_P.11", day || "");
   safeSetText("fill_2_P.11", month || "");
   safeSetText("fill_3_P.11", year || "");
@@ -686,7 +686,7 @@ function fillSheetA(pdfDoc: PDFDocument, ctx: CommonCtx, sec: OfficerData, fonts
 // 7=室 8=大廈 9=街 10=區 11=Email 12=BR(此秘書) 13=牌照編號 14=無須持牌 15=原因
 function fillSheetB(pdfDoc: PDFDocument, ctx: CommonCtx, sec: OfficerData, fonts: Fonts) {
   const { br8, day, month, year } = ctx;
-  const { safeSetText } = createFormHelpers(pdfDoc, helv);
+  const { safeSetText } = createFormHelpers(pdfDoc, fonts);
   safeSetText("fill_1_P.12", day || "");
   safeSetText("fill_2_P.12", month || "");
   safeSetText("fill_3_P.12", year || "");
@@ -712,7 +712,7 @@ function fillSheetB(pdfDoc: PDFDocument, ctx: CommonCtx, sec: OfficerData, fonts
 // 20=Email 21=HKID 部分 22=護照簽發國 23=護照部分
 function fillSheetC(pdfDoc: PDFDocument, ctx: CommonCtx, dir: OfficerData, fonts: Fonts) {
   const { br8, day, month, year, office } = ctx;
-  const { safeSetText } = createFormHelpers(pdfDoc, helv);
+  const { safeSetText } = createFormHelpers(pdfDoc, fonts);
   safeSetText("fill_1_P.13", day || "");
   safeSetText("fill_2_P.13", month || "");
   safeSetText("fill_3_P.13", year || "");
@@ -745,7 +745,7 @@ function fillSheetC(pdfDoc: PDFDocument, ctx: CommonCtx, dir: OfficerData, fonts
 // 董事2: 17=董事 18=候補 19=代替 20=中文 21=英文 22=室 23=大廈 24=街 25=區 26=國 27=Email 28=BR
 function fillSheetD(pdfDoc: PDFDocument, ctx: CommonCtx, dirs: OfficerData[], fonts: Fonts) {
   const { br8, day, month, year, office } = ctx;
-  const { safeSetText } = createFormHelpers(pdfDoc, helv);
+  const { safeSetText } = createFormHelpers(pdfDoc, fonts);
   safeSetText("fill_1_P.14", day || "");
   safeSetText("fill_2_P.14", month || "");
   safeSetText("fill_3_P.14", year || "");
@@ -776,7 +776,7 @@ function fillSheetE(
   records: Array<{ records: string; address: string }>,
   fonts: Fonts,
 ) {
-  const { safeSetText } = createFormHelpers(pdfDoc, helv);
+  const { safeSetText } = createFormHelpers(pdfDoc, fonts);
   const { day, month, year, br8 } = ctx;
   safeSetText("fill_1_P.15", day || "");
   safeSetText("fill_2_P.15", month || "");

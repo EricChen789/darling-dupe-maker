@@ -812,6 +812,10 @@ function NewShareholderForm({ form, setForm, onSave, onCancel }: {
         <div className="space-y-1"><Label className="text-xs">證件號碼</Label><Input value={form.idNumber} onChange={e => setForm({ ...form, idNumber: e.target.value })} placeholder="ID / Passport No." /></div>
         <div className="space-y-1"><Label className="text-xs">股數</Label><Input type="number" value={form.shares} onChange={e => setForm({ ...form, shares: parseInt(e.target.value) || 0 })} /></div>
         <div className="space-y-1"><Label className="text-xs">股份類別</Label><Input value={form.shareType} onChange={e => setForm({ ...form, shareType: e.target.value })} placeholder="e.g. Ordinary 普通股" /></div>
+        <div className="space-y-1"><Label className="text-xs">貨幣</Label><Input value={form.currency} onChange={e => setForm({ ...form, currency: e.target.value })} placeholder="HKD" /></div>
+        <div className="space-y-1"><Label className="text-xs">每股發行價</Label><Input value={form.issuePrice} onChange={e => setForm({ ...form, issuePrice: e.target.value })} placeholder="e.g. 1.00" /></div>
+        <div className="space-y-1"><Label className="text-xs">已繳付股本</Label><Input value={form.paidUp} onChange={e => setForm({ ...form, paidUp: e.target.value })} placeholder="Amount paid up" /></div>
+        <div className="space-y-1"><Label className="text-xs">未繳付股本</Label><Input value={form.unpaid} onChange={e => setForm({ ...form, unpaid: e.target.value })} placeholder="Amount unpaid" /></div>
         <div className="space-y-1"><Label className="text-xs">電郵</Label><Input value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></div>
         <div className="col-span-2 space-y-1"><Label className="text-xs">居住地址</Label><Textarea value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} rows={2} placeholder="地址 Address" /></div>
         <div className="col-span-2 space-y-1"><Label className="text-xs">服務地址 (預設同註冊辦事處)</Label><Textarea value={form.serviceAddress} onChange={e => setForm({ ...form, serviceAddress: e.target.value })} rows={2} placeholder="留空則自動使用註冊辦事處地址" /></div>

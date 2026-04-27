@@ -94,12 +94,28 @@ async function listAllFormFields(): Promise<{ fields: Array<{name: string; type:
   return { fields };
 }
 
-// 港式英文姓名格式：姓氏在「最前」（例如 AU KWOK LAM → 姓 AU、名 KWOK LAM）
+// 英文姓名解析：
+// - 支援 "SURNAME, GIVEN NAMES"（逗號分隔）格式
+// - 也支援港式 "SURNAME GIVEN NAMES"（純空白分隔，姓氏在最前）
+// - 自動去除多餘逗號 / 空白，避免欄位出現前置逗號
 const parseEnglishName = (fullName: string) => {
-  const parts = (fullName || "").trim().split(/\s+/).filter(Boolean);
+  const cleaned = (fullName || "").replace(/\s+/g, " ").trim();
+  if (!cleaned) return { surname: "", otherNames: "" };
+  // 先嘗試以逗號切分（最常見的香港股東格式：CHAN, YING CHUNG）
+  if (cleaned.includes(",")) {
+    const segs = cleaned.split(",").map(s => s.trim()).filter(Boolean);
+    if (segs.length >= 2) {
+      return { surname: segs[0], otherNames: segs.slice(1).join(" ") };
+    }
+    if (segs.length === 1) {
+      return { surname: segs[0], otherNames: "" };
+    }
+  }
+  // 退回空白分隔
+  const parts = cleaned.split(/\s+/).filter(Boolean);
   if (parts.length === 0) return { surname: "", otherNames: "" };
-  const surname = parts[0];
-  const otherNames = parts.slice(1).join(" ");
+  const surname = parts[0].replace(/,+$/g, "");
+  const otherNames = parts.slice(1).join(" ").replace(/^,+\s*/, "");
   return { surname, otherNames };
 };
 

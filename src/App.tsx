@@ -14,6 +14,7 @@ import Logs from "./pages/Logs";
 import Settings from "./pages/Settings";
 import FieldMapping from "./pages/FieldMapping";
 import Repair from "./pages/Repair";
+import MissingOfficers from "./pages/MissingOfficers";
 import Presenters from "./pages/Presenters";
 import Auth from "./pages/Auth";
 import ResetPassword from "./pages/ResetPassword";
@@ -67,6 +68,7 @@ const App = () => (
               <Route path="logs" element={<Logs />} />
               <Route path="field-mapping" element={<FieldMapping />} />
               <Route path="repair" element={<Repair />} />
+              <Route path="missing-officers" element={<MissingOfficers />} />
               <Route path="settings" element={<Settings />} />
             </Route>
             <Route path="*" element={<NotFound />} />

@@ -150,6 +150,7 @@ const Companies = () => {
             <TableRow className="bg-muted/50">
               <TableHead className="font-medium">公司名稱</TableHead>
               <TableHead className="font-medium">商業登記號碼</TableHead>
+              <TableHead className="font-medium">CI Number</TableHead>
               <TableHead className="font-medium">司法管轄區</TableHead>
               <TableHead className="font-medium">成立日期</TableHead>
               <TableHead className="font-medium">商業名稱</TableHead>

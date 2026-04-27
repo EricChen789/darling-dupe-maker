@@ -834,12 +834,21 @@ async function buildNAR1Pdf(data: CompanyData): Promise<Uint8Array> {
 
   const ctx: CommonCtx = { br8, day, month, year, data, office: office as any, shareInfos };
 
+  // 預先載入中文字體（NotoSansTC），啟用 subset 後僅嵌入用到的字符
+  let cjkBytes: ArrayBuffer | null = null;
+  try {
+    cjkBytes = await loadCjkFontBytes();
+    console.log(`✓ CJK font loaded (${(cjkBytes.byteLength / 1024 / 1024).toFixed(1)}MB)`);
+  } catch (e) {
+    console.warn("CJK font unavailable, Chinese characters may not render:", e);
+  }
+
   // 1) 載入主文件
   console.log("Loading main template (P.1-P.8)...");
   const mainBytes = await fetchTemplate(TEMPLATES.main);
   const mainDoc = await PDFDocument.load(mainBytes);
-  const helv = await mainDoc.embedFont(StandardFonts.Helvetica);
-  fillMainDocument(mainDoc, ctx, helv);
+  const mainFonts = await embedFontsForDoc(mainDoc, cjkBytes);
+  fillMainDocument(mainDoc, ctx, mainFonts);
 
   // 2) 計算需要的續頁
   const isListedCo = data.companyType?.includes("上市") || data.companyType?.toLowerCase().includes("listed") || false;

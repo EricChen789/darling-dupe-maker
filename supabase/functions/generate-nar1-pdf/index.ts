@@ -556,7 +556,8 @@ interface CommonCtx {
 // ========== 主文件 P.1-P.8 ==========
 function fillMainDocument(pdfDoc: PDFDocument, ctx: CommonCtx, fonts: Fonts) {
   const { br8, day, month, year, data, office, shareInfos } = ctx;
-  const { safeSetText, safeCheck, form } = createNativeFormHelpers(pdfDoc);
+  const { form } = createNativeFormHelpers(pdfDoc);
+  const { safeSetText, safeCheck } = createFormHelpers(pdfDoc, fonts);
 
   // ===== Page 1 =====
   safeSetText("fill_1_P.1", br8);
@@ -734,7 +735,7 @@ function fillMainDocument(pdfDoc: PDFDocument, ctx: CommonCtx, fonts: Fonts) {
 //   31=本頁頁次 32=總頁數
 function fillSchedule1(pdfDoc: PDFDocument, ctx: CommonCtx, members: ShareholderData[], pageNo: number, totalPages: number, fonts: Fonts) {
   const { br8, day, month, year, shareInfos } = ctx;
-  const { safeSetText } = createNativeFormHelpers(pdfDoc);
+  const { safeSetText } = createFormHelpers(pdfDoc, fonts);
 
   safeSetText("fill_1_P9", day || "");
   safeSetText("fill_2_P9", month || "");
@@ -782,7 +783,7 @@ function fillSchedule1(pdfDoc: PDFDocument, ctx: CommonCtx, members: Shareholder
 //   33=本頁 34=總頁
 function fillSchedule2(pdfDoc: PDFDocument, ctx: CommonCtx, fonts: Fonts) {
   const { br8, day, month, year, shareInfos } = ctx;
-  const { safeSetText } = createNativeFormHelpers(pdfDoc);
+  const { safeSetText } = createFormHelpers(pdfDoc, fonts);
   safeSetText("fill_1_P10", day || "");
   safeSetText("fill_2_P10", month || "");
   safeSetText("fill_3_P10", year || "");

@@ -30,6 +30,7 @@ type CompanyRow = {
   ci_number: string | null;
   status: string | null;
   incorporation_date: string | null;
+  jurisdiction: string | null;
 };
 
 type OfficerRow = {

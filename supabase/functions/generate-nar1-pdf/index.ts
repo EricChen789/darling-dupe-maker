@@ -321,7 +321,8 @@ function drawTextInWidget(target: WidgetTarget, rawValue: string, fonts: Fonts) 
   const { page, rect } = target;
   const padding = Math.min(2.5, Math.max(1, rect.width * 0.03));
   const isMultiline = text.includes("\n") || rect.height > 24;
-  const fontSize = Math.min(9, Math.max(5, rect.height * (isMultiline ? 0.32 : 0.56)));
+  // 固定字號（早上版本）：不依欄位高度縮放
+  const fontSize = 9;
   const lineHeight = fontSize + 2;
   const maxWidth = Math.max(1, rect.width - padding * 2);
   const maxLines = Math.max(1, Math.floor((rect.height - padding * 2) / lineHeight));

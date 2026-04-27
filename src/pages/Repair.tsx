@@ -83,53 +83,56 @@ const Repair = () => {
   const [editForm, setEditForm] = useState<{ name_english: string; name_chinese: string; address: string }>({ name_english: '', name_chinese: '', address: '' });
   const [deleteTarget, setDeleteTarget] = useState<OfficerRecord | null>(null);
 
-  // Fetch all officers + companies (paginated to bypass 1000-row default)
+  // Fetch all persons + their company assignments (paginated)
   const { data: officers = [], isLoading } = useQuery({
-    queryKey: ['repair-officers'],
+    queryKey: ['repair-persons'],
     queryFn: async () => {
-      // Paginate officers
-      const allOfficers: any[] = [];
-      let from = 0;
-      const pageSize = 1000;
-      while (true) {
-        const { data, error } = await supabase
-          .from('officers')
-          .select('*')
-          .order('created_at', { ascending: false })
-          .range(from, from + pageSize - 1);
-        if (error) throw error;
-        if (!data || data.length === 0) break;
-        allOfficers.push(...data);
-        if (data.length < pageSize) break;
-        from += pageSize;
-      }
+      const fetchAll = async <T,>(table: 'persons' | 'person_company_roles' | 'companies', columns = '*'): Promise<T[]> => {
+        const all: T[] = [];
+        let from = 0;
+        const pageSize = 1000;
+        while (true) {
+          const { data, error } = await supabase.from(table).select(columns).range(from, from + pageSize - 1);
+          if (error) throw error;
+          if (!data || data.length === 0) break;
+          all.push(...(data as unknown as T[]));
+          if (data.length < pageSize) break;
+          from += pageSize;
+        }
+        return all;
+      };
 
-      // Paginate companies
-      const allCompanies: any[] = [];
-      from = 0;
-      while (true) {
-        const { data, error } = await supabase
-          .from('companies')
-          .select('id, name, company_number')
-          .range(from, from + pageSize - 1);
-        if (error) throw error;
-        if (!data || data.length === 0) break;
-        allCompanies.push(...data);
-        if (data.length < pageSize) break;
-        from += pageSize;
-      }
+      const [persons, roles, companies] = await Promise.all([
+        fetchAll<any>('persons'),
+        fetchAll<any>('person_company_roles'),
+        fetchAll<any>('companies', 'id, name, company_number'),
+      ]);
 
       const companyMap = new Map(
-        allCompanies.map(c => [c.id, { name: c.name, number: c.company_number }])
+        companies.map((c: any) => [c.id, { name: c.name, number: c.company_number }])
       );
+      const personMap = new Map<string, any>(persons.map((p: any) => [p.id, p]));
 
-      return allOfficers.map(o => {
-        const company = companyMap.get(o.company_id);
+      // For each role row, expose a record shaped like the old officer format,
+      // but `id` here is the role id (so deletes only remove the assignment).
+      return roles.map((r: any) => {
+        const p = personMap.get(r.person_id);
+        const company = companyMap.get(r.company_id) as { name?: string; number?: string } | undefined;
         return {
-          ...o,
+          id: r.id,
+          person_id: r.person_id,
+          company_id: r.company_id,
+          name_english: p?.name_english || '',
+          name_chinese: p?.name_chinese || '',
+          role: r.role,
+          address: p?.address || '',
+          identity: p?.identity || 'natural',
+          id_number: p?.id_number || '',
+          date_appointed: r.date_appointed || '',
+          date_ceased: r.date_ceased || '',
           company_name: company?.name || '未知公司',
           company_number: company?.number || '',
-        } as OfficerRecord;
+        } as OfficerRecord & { person_id: string };
       });
     },
   });
@@ -151,7 +154,6 @@ const Repair = () => {
     } else if (issueFilter === 'no_address') {
       list = list.filter(o => !o.address || !o.address.trim());
     } else {
-      // Show all problematic records
       list = list.filter(o => isBadName(o.name_english) || !o.address || !o.address.trim());
     }
     if (search) {
@@ -166,34 +168,40 @@ const Repair = () => {
     return list;
   }, [officers, issueFilter, search]);
 
-  // Update mutation
+  // Update mutation — updates the underlying person (shared across companies)
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Record<string, string | null> }) => {
-      const { error } = await supabase.from('officers').update(data).eq('id', id);
+      // id here is role id; lookup person_id then update the person
+      const rec = officers.find(o => o.id === id) as (OfficerRecord & { person_id?: string }) | undefined;
+      const personId = rec?.person_id;
+      if (!personId) throw new Error('找不到對應人員');
+      const { error } = await supabase.from('persons').update(data).eq('id', personId);
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['repair-officers'] });
-      queryClient.invalidateQueries({ queryKey: ['officers-people'] });
+      queryClient.invalidateQueries({ queryKey: ['repair-persons'] });
+      queryClient.invalidateQueries({ queryKey: ['persons-list'] });
+      queryClient.invalidateQueries({ queryKey: ['companies'] });
       setEditingId(null);
-      toast({ title: '已更新', description: '記錄已成功修復' });
+      toast({ title: '已更新', description: '記錄已成功修復（將同步至此人所有相關公司）' });
     },
     onError: (err: Error) => {
       toast({ title: '更新失敗', description: err.message, variant: 'destructive' });
     },
   });
 
-  // Delete mutation
+  // Delete mutation — only removes this company's role, keeps the person
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase.from('officers').delete().eq('id', id);
+      const { error } = await supabase.from('person_company_roles').delete().eq('id', id);
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['repair-officers'] });
-      queryClient.invalidateQueries({ queryKey: ['officers-people'] });
+      queryClient.invalidateQueries({ queryKey: ['repair-persons'] });
+      queryClient.invalidateQueries({ queryKey: ['persons-list'] });
+      queryClient.invalidateQueries({ queryKey: ['companies'] });
       setDeleteTarget(null);
-      toast({ title: '已刪除', description: '垃圾記錄已移除' });
+      toast({ title: '已刪除', description: '已從此公司移除（人員主檔保留）' });
     },
   });
 

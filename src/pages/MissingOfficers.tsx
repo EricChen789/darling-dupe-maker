@@ -34,7 +34,7 @@ type CompanyRow = {
   jurisdiction: string | null;
 };
 
-type OfficerRow = {
+type RoleRow = {
   company_id: string;
   role: string;
   date_ceased: string | null;
@@ -70,7 +70,7 @@ const MissingOfficers = () => {
   };
 
   const fetchAll = async <T,>(
-    table: 'companies' | 'officers',
+    table: 'companies' | 'person_company_roles',
     columns: string,
   ): Promise<T[]> => {
     const pageSize = 1000;
@@ -98,8 +98,8 @@ const MissingOfficers = () => {
   });
 
   const { data: officers, isLoading: loadingOfficers } = useQuery({
-    queryKey: ['missing-officers-officers-v2'],
-    queryFn: () => fetchAll<OfficerRow>('officers', 'company_id, role, date_ceased'),
+    queryKey: ['missing-officers-roles-v3'],
+    queryFn: () => fetchAll<RoleRow>('person_company_roles', 'company_id, role, date_ceased'),
   });
 
   const rows = useMemo(() => {

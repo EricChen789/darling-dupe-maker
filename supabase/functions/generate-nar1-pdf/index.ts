@@ -1064,7 +1064,9 @@ async function buildDebugPdf(): Promise<Uint8Array> {
         const labelSrc = widgetName || parentName;
         if (!labelSrc) continue;
 
-        detachWidget(widget, field);
+        // detach 只在有 parent ref 時做
+        if (parentRef) detachWidget(widget, field);
+        console.log(`[debug] page=${pageIdx + 1} widgetName=${widgetName} parentName=${parentName} labelSrc=${labelSrc}`);
 
         if (labelSrc.startsWith("fill_")) {
           // 從原始 T 取得真實名稱（avoid decodeText 截斷）並接上頁碼

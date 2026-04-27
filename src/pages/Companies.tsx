@@ -210,21 +210,15 @@ const Companies = () => {
                     ) : <span className="text-muted-foreground">-</span>}
                   </div>
                 </TableCell>
-                <TableCell onClick={(e) => e.stopPropagation()} className="min-w-[180px]">
-                  <Select
-                    value={company.preferredPresenterId || '__none__'}
-                    onValueChange={(v) => handleQuickPresenterChange(company, v === '__none__' ? '' : v)}
-                  >
-                    <SelectTrigger className={`h-8 text-xs ${!company.preferredPresenterId ? 'border-destructive/50 text-destructive' : ''}`}>
-                      <SelectValue placeholder="未指定" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__">— 未指定 —</SelectItem>
-                      {presenters.map(p => (
-                        <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                <TableCell className="min-w-[180px]">
+                  {(() => {
+                    const p = presenters.find(x => x.id === company.preferredPresenterId);
+                    return p ? (
+                      <span className="text-xs">{p.name}</span>
+                    ) : (
+                      <span className="text-xs text-destructive">未指定</span>
+                    );
+                  })()}
                 </TableCell>
                 <TableCell onClick={(e) => e.stopPropagation()}>
                   <div className="flex items-center gap-1">

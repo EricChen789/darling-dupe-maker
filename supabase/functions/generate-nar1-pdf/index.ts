@@ -870,26 +870,7 @@ async function buildNAR1Pdf(data: CompanyData): Promise<Uint8Array> {
 
   const attachments: Array<{ url: string; fill: (doc: PDFDocument) => void; label: string }> = [];
 
-  if (!isListedCo && validMembers.length > 0) {
-    const totalSch1 = Math.ceil(validMembers.length / 2);
-    for (let i = 0; i < totalSch1; i++) {
-      const slice = validMembers.slice(i * 2, i * 2 + 2);
-      const pageNo = i + 1;
-      attachments.push({
-        url: TEMPLATES.schedule1,
-        fill: (doc) => fillSchedule1(doc, ctx, slice, pageNo, totalSch1),
-        label: `附表1-${pageNo}/${totalSch1}`,
-      });
-    }
-  }
-
-  if (isListedCo) {
-    attachments.push({
-      url: TEMPLATES.schedule2,
-      fill: (doc) => fillSchedule2(doc, ctx),
-      label: "附表2",
-    });
-  }
+  // === 順序：先續頁 A/B/C/D/E，最後才放附表一 / 附表二 ===
 
   for (let i = 1; i < naturalSecretaries.length; i++) {
     const sec = naturalSecretaries[i];
@@ -934,6 +915,28 @@ async function buildNAR1Pdf(data: CompanyData): Promise<Uint8Array> {
       url: TEMPLATES.sheetE,
       fill: (doc) => fillSheetE(doc, ctx, validRecords),
       label: `續頁E(${validRecords.length}筆)`,
+    });
+  }
+
+  // 附表一 / 附表二 — 放在所有續頁之後（最後）
+  if (!isListedCo && validMembers.length > 0) {
+    const totalSch1 = Math.ceil(validMembers.length / 2);
+    for (let i = 0; i < totalSch1; i++) {
+      const slice = validMembers.slice(i * 2, i * 2 + 2);
+      const pageNo = i + 1;
+      attachments.push({
+        url: TEMPLATES.schedule1,
+        fill: (doc) => fillSchedule1(doc, ctx, slice, pageNo, totalSch1),
+        label: `附表1-${pageNo}/${totalSch1}`,
+      });
+    }
+  }
+
+  if (isListedCo) {
+    attachments.push({
+      url: TEMPLATES.schedule2,
+      fill: (doc) => fillSchedule2(doc, ctx),
+      label: "附表2",
     });
   }
 

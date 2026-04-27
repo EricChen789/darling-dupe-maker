@@ -949,8 +949,8 @@ async function buildNAR1Pdf(data: CompanyData): Promise<Uint8Array> {
     }
     // 為每次附加都 clone 一份新 doc
     const subDoc = await PDFDocument.load(bytes);
-    const subHelv = await subDoc.embedFont(StandardFonts.Helvetica);
-    att.fill(subDoc, subHelv);
+    const subFonts = await embedFontsForDoc(subDoc, cjkBytes);
+    att.fill(subDoc, subFonts);
     // 填寫已直接畫到頁面內容，移除失效/重名 form annotations，避免覆蓋頁面造成空白。
     stripFormAnnotations(subDoc);
     // 把該文件所有頁面複製到主文件尾端

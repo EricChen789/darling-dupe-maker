@@ -263,6 +263,9 @@ function collectWidgetTargets(pdfDoc: PDFDocument): Map<string, WidgetTarget> {
         const parentName = parent ? decodePdfText(parent.get(PDFName.of("T"))) : "";
 
         addTarget(childName, target);
+        addTarget(parentName, target);
+        if (childName) addTarget(childName.replace(/_P\.(\d+)$/g, "_P$1"), target);
+        if (parentName) addTarget(parentName.replace(/_P\.(\d+)$/g, "_P$1"), target);
         if (parentName && childName) addTarget(`${parentName}.${childName}`, target);
       } catch (_) { /* skip malformed widget */ }
     }
@@ -330,6 +333,16 @@ function drawTextInWidget(target: WidgetTarget, rawValue: string, fonts: Fonts) 
 
   const { page, rect } = target;
   const padding = Math.min(2.5, Math.max(1, rect.width * 0.03));
+  const clearInset = 0.7;
+  if (rect.width > clearInset * 2 && rect.height > clearInset * 2) {
+    page.drawRectangle({
+      x: rect.x + clearInset,
+      y: rect.y + clearInset,
+      width: rect.width - clearInset * 2,
+      height: rect.height - clearInset * 2,
+      color: rgb(1, 1, 1),
+    });
+  }
   const isMultiline = text.includes("\n") || rect.height > 24;
   // 固定字號（早上版本）：不依欄位高度縮放
   const fontSize = 9;
@@ -553,7 +566,8 @@ interface CommonCtx {
 // ========== 主文件 P.1-P.8 ==========
 function fillMainDocument(pdfDoc: PDFDocument, ctx: CommonCtx, fonts: Fonts) {
   const { br8, day, month, year, data, office, shareInfos } = ctx;
-  const { safeSetText, safeCheck, form } = createNativeFormHelpers(pdfDoc);
+  const { form } = createNativeFormHelpers(pdfDoc);
+  const { safeSetText, safeCheck } = createFormHelpers(pdfDoc, fonts);
 
   // ===== Page 1 =====
   safeSetText("fill_1_P.1", br8);
@@ -731,7 +745,7 @@ function fillMainDocument(pdfDoc: PDFDocument, ctx: CommonCtx, fonts: Fonts) {
 //   31=本頁頁次 32=總頁數
 function fillSchedule1(pdfDoc: PDFDocument, ctx: CommonCtx, members: ShareholderData[], pageNo: number, totalPages: number, fonts: Fonts) {
   const { br8, day, month, year, shareInfos } = ctx;
-  const { safeSetText } = createNativeFormHelpers(pdfDoc);
+  const { safeSetText } = createFormHelpers(pdfDoc, fonts);
 
   safeSetText("fill_1_P9", day || "");
   safeSetText("fill_2_P9", month || "");
@@ -779,7 +793,7 @@ function fillSchedule1(pdfDoc: PDFDocument, ctx: CommonCtx, members: Shareholder
 //   33=本頁 34=總頁
 function fillSchedule2(pdfDoc: PDFDocument, ctx: CommonCtx, fonts: Fonts) {
   const { br8, day, month, year, shareInfos } = ctx;
-  const { safeSetText } = createNativeFormHelpers(pdfDoc);
+  const { safeSetText } = createFormHelpers(pdfDoc, fonts);
   safeSetText("fill_1_P10", day || "");
   safeSetText("fill_2_P10", month || "");
   safeSetText("fill_3_P10", year || "");
@@ -797,7 +811,7 @@ function fillSchedule2(pdfDoc: PDFDocument, ctx: CommonCtx, fonts: Fonts) {
 // 16=Email 17=HKID 部分 18=護照簽發國 19=護照部分 20=牌照編號 21=無須持牌 22=原因
 function fillSheetA(pdfDoc: PDFDocument, ctx: CommonCtx, sec: OfficerData, fonts: Fonts) {
   const { br8, day, month, year } = ctx;
-  const { safeSetText } = createNativeFormHelpers(pdfDoc);
+  const { safeSetText } = createFormHelpers(pdfDoc, fonts);
   safeSetText("fill_1_P11", day || "");
   safeSetText("fill_2_P11", month || "");
   safeSetText("fill_3_P11", year || "");
@@ -823,7 +837,7 @@ function fillSheetA(pdfDoc: PDFDocument, ctx: CommonCtx, sec: OfficerData, fonts
 // 7=室 8=大廈 9=街 10=區 11=Email 12=BR(此秘書) 13=牌照編號 14=無須持牌 15=原因
 function fillSheetB(pdfDoc: PDFDocument, ctx: CommonCtx, sec: OfficerData, fonts: Fonts) {
   const { br8, day, month, year } = ctx;
-  const { safeSetText } = createNativeFormHelpers(pdfDoc);
+  const { safeSetText } = createFormHelpers(pdfDoc, fonts);
   safeSetText("fill_1_P12", day || "");
   safeSetText("fill_2_P12", month || "");
   safeSetText("fill_3_P12", year || "");
@@ -849,7 +863,7 @@ function fillSheetB(pdfDoc: PDFDocument, ctx: CommonCtx, sec: OfficerData, fonts
 // 20=Email 21=HKID 部分 22=護照簽發國 23=護照部分
 function fillSheetC(pdfDoc: PDFDocument, ctx: CommonCtx, dir: OfficerData, fonts: Fonts) {
   const { br8, day, month, year, office } = ctx;
-  const { safeSetText } = createNativeFormHelpers(pdfDoc);
+  const { safeSetText } = createFormHelpers(pdfDoc, fonts);
   safeSetText("fill_1_P13", day || "");
   safeSetText("fill_2_P13", month || "");
   safeSetText("fill_3_P13", year || "");
@@ -882,7 +896,7 @@ function fillSheetC(pdfDoc: PDFDocument, ctx: CommonCtx, dir: OfficerData, fonts
 // 董事2: 17=董事 18=候補 19=代替 20=中文 21=英文 22=室 23=大廈 24=街 25=區 26=國 27=Email 28=BR
 function fillSheetD(pdfDoc: PDFDocument, ctx: CommonCtx, dirs: OfficerData[], fonts: Fonts) {
   const { br8, day, month, year, office } = ctx;
-  const { safeSetText } = createNativeFormHelpers(pdfDoc);
+  const { safeSetText } = createFormHelpers(pdfDoc, fonts);
   safeSetText("fill_1_P14", day || "");
   safeSetText("fill_2_P14", month || "");
   safeSetText("fill_3_P14", year || "");
@@ -913,7 +927,7 @@ function fillSheetE(
   records: Array<{ records: string; address: string }>,
   fonts: Fonts,
 ) {
-  const { safeSetText } = createNativeFormHelpers(pdfDoc);
+  const { safeSetText } = createFormHelpers(pdfDoc, fonts);
   const { day, month, year, br8 } = ctx;
   safeSetText("fill_1_P15", day || "");
   safeSetText("fill_2_P15", month || "");

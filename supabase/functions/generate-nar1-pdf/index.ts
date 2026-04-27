@@ -551,6 +551,34 @@ function fillSheetD(pdfDoc: PDFDocument, ctx: CommonCtx, dir: OfficerData, helv:
   safeSetText("fill_14_P.14", dir.companyNumberRef || dir.brNumber || "");
 }
 
+// ========== 續頁 E (P.15): 公司紀錄保存地點 ==========
+function fillSheetE(
+  pdfDoc: PDFDocument,
+  ctx: CommonCtx,
+  records: Array<{ records: string; address: string }>,
+  helv: any,
+) {
+  const form = pdfDoc.getForm();
+  const safeSetText = (n: string, v: string) => {
+    try {
+      const f = form.getTextField(n);
+      f.setText(v || "");
+      try { f.updateAppearances(helv); } catch { /* ignore */ }
+    } catch { /* field may not exist */ }
+  };
+  const { day, month, year, br8 } = ctx;
+  safeSetText("fill_1_P.15", day || "");
+  safeSetText("fill_2_P.15", month || "");
+  safeSetText("fill_3_P.15", year || "");
+  safeSetText("fill_4_P.15", br8);
+
+  // 左欄列出紀錄名稱，右欄列出對應地址，以空行分隔多筆
+  const recordsText = records.map(r => r.records || "").join("\n\n");
+  const addressText = records.map(r => r.address || "").join("\n\n");
+  safeSetText("fill_5_P.15", recordsText);
+  safeSetText("fill_6_P.15", addressText);
+}
+
 // === 主流程：建構文件 ===
 async function buildNAR1Pdf(data: CompanyData): Promise<Uint8Array> {
   const returnDate = data.returnDate || new Date().toISOString().split("T")[0];

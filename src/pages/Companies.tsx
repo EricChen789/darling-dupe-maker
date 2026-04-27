@@ -173,6 +173,7 @@ const Companies = () => {
                   )}
                 </TableCell>
                 <TableCell>{company.brNumber}</TableCell>
+                <TableCell className="text-xs whitespace-nowrap">{company.ciNumber || <span className="text-muted-foreground">-</span>}</TableCell>
                 <TableCell className="text-xs">
                   {company.jurisdiction ? (
                     <span className={company.jurisdiction !== 'Hong Kong' ? 'font-medium text-primary' : ''}>{company.jurisdiction}</span>

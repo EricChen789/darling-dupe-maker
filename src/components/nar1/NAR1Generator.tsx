@@ -207,6 +207,10 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
           idNumber: sh.idNumber || '',
           address: sh.address || '',
           shareType: sh.shareType || '',
+          currency: sh.currency || 'HKD',
+          issuePrice: sh.issuePrice || '',
+          paidUp: sh.paidUp || '',
+          unpaid: sh.unpaid || '',
         })),
         returnDate: formData.returnDate,
         presenter: {

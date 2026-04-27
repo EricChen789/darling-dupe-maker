@@ -701,14 +701,7 @@ function fillSheetE(
   records: Array<{ records: string; address: string }>,
   helv: any,
 ) {
-  const form = pdfDoc.getForm();
-  const safeSetText = (n: string, v: string) => {
-    try {
-      const f = form.getTextField(n);
-      f.setText(v || "");
-      try { f.updateAppearances(helv); } catch { /* ignore */ }
-    } catch { /* field may not exist */ }
-  };
+  const { safeSetText } = createFormHelpers(pdfDoc, helv);
   const { day, month, year, br8 } = ctx;
   safeSetText("fill_1_P.15", day || "");
   safeSetText("fill_2_P.15", month || "");
@@ -874,17 +867,15 @@ async function buildNAR1Pdf(data: CompanyData): Promise<Uint8Array> {
     const subDoc = await PDFDocument.load(bytes);
     const subHelv = await subDoc.embedFont(StandardFonts.Helvetica);
     att.fill(subDoc, subHelv);
-    // Flatten：把 form fields 燒進頁面，避免和主文件 / 其他續頁重名衝突
-    try {
-      subDoc.getForm().flatten();
-    } catch (e) {
-      console.warn(`⚠ flatten failed for ${att.label}:`, e);
-    }
+    // 填寫已直接畫到頁面內容，移除失效/重名 form annotations，避免覆蓋頁面造成空白。
+    stripFormAnnotations(subDoc);
     // 把該文件所有頁面複製到主文件尾端
     const subPages = await mainDoc.copyPages(subDoc, subDoc.getPageIndices());
     for (const p of subPages) mainDoc.addPage(p);
     console.log(`✓ Appended ${att.label}`);
   }
+
+  stripFormAnnotations(mainDoc);
 
   console.log("Serializing final PDF...");
   const finalBytes = await mainDoc.save({ updateFieldAppearances: false });

@@ -386,9 +386,18 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
 
           {/* Share Capital Summary (Page 2 of NAR1) */}
           {company.shareholders.length > 0 && (() => {
+            const normalizeShareClass = (raw?: string) => {
+              const t = (raw || '').trim();
+              if (!t) return 'Ordinary 普通股';
+              const upper = t.toUpperCase().replace(/\s+/g, ' ');
+              if (upper === 'ORD' || upper === 'ORD0' || upper === 'ORDINARY' || upper.startsWith('ORDINARY ') || upper === 'ORDINARY 普通股') {
+                return 'Ordinary 普通股';
+              }
+              return t;
+            };
             const map = new Map<string, { className: string; currency: string; shares: number; paidUp: number; unpaid: number; issuePrice: string }>();
             for (const sh of company.shareholders) {
-              const className = sh.shareType?.trim() || 'Ordinary 普通股';
+              const className = normalizeShareClass(sh.shareType);
               const currency = sh.currency?.trim() || 'HKD';
               const issuePrice = sh.issuePrice?.trim() || '';
               const key = `${className}||${currency}||${issuePrice}`;

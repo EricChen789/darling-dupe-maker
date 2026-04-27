@@ -1073,22 +1073,8 @@ async function buildNAR1Pdf(data: CompanyData): Promise<Uint8Array> {
     const subFonts = await embedFontsForDoc(subDoc, cjkBytes);
     att.fill(subDoc, subFonts);
 
-    // 為避免多份附表的欄位名衝突，幫此 subDoc 的所有欄位加上唯一後綴（fill 完後才改名）
-    try {
-      const subForm = subDoc.getForm();
-      const suffix = `_a${attIdx}`;
-      for (const field of subForm.getFields()) {
-        try {
-          const oldName = field.getName();
-          (field as any).acroField.dict.set(
-            PDFName.of("T"),
-            (subDoc.context as any).obj(oldName + suffix),
-          );
-        } catch (_) { /* ignore */ }
-      }
-    } catch (e) {
-      console.warn("rename fields failed:", e);
-    }
+    // 為避免多份附表的欄位名衝突，直接從 annotations/parents 低階改名；不使用 getFields()，避免模板解析錯誤造成空白
+    renameAnnotationFields(subDoc, `_a${attIdx}`);
 
     const subPages = await mainDoc.copyPages(subDoc, subDoc.getPageIndices());
     for (const p of subPages) mainDoc.addPage(p);

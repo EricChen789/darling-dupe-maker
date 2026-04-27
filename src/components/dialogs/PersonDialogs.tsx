@@ -204,6 +204,10 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave, onGenerateND2
     idCardFilePath: '',
     addressProofFilePath: '',
     tcspNumber: '',
+    previousNameChinese: '',
+    previousNameEnglish: '',
+    aliasChinese: '',
+    aliasEnglish: '',
   });
 
   const originalAddress = person?.address || '';
@@ -227,6 +231,10 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave, onGenerateND2
         idCardFilePath: person.idCardFilePath || '',
         addressProofFilePath: person.addressProofFilePath || '',
         tcspNumber: person.tcspNumber || '',
+        previousNameChinese: person.previousNameChinese || '',
+        previousNameEnglish: person.previousNameEnglish || '',
+        aliasChinese: person.aliasChinese || '',
+        aliasEnglish: person.aliasEnglish || '',
       });
     } else {
       setFormData({
@@ -246,6 +254,10 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave, onGenerateND2
         idCardFilePath: '',
         addressProofFilePath: '',
         tcspNumber: '',
+        previousNameChinese: '',
+        previousNameEnglish: '',
+        aliasChinese: '',
+        aliasEnglish: '',
       });
     }
   }, [person, open]);
@@ -308,6 +320,42 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave, onGenerateND2
                 value={formData.nameEnglish}
                 onChange={(e) => setFormData({ ...formData, nameEnglish: e.target.value })}
                 placeholder="輸入英文姓名"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="previousNameChinese">前用中文姓名</Label>
+              <Input
+                id="previousNameChinese"
+                value={formData.previousNameChinese}
+                onChange={(e) => setFormData({ ...formData, previousNameChinese: e.target.value })}
+                placeholder="輸入前用中文姓名（如有）"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="previousNameEnglish">前用英文姓名</Label>
+              <Input
+                id="previousNameEnglish"
+                value={formData.previousNameEnglish}
+                onChange={(e) => setFormData({ ...formData, previousNameEnglish: e.target.value })}
+                placeholder="輸入前用英文姓名（如有）"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="aliasChinese">別名（中文）</Label>
+              <Input
+                id="aliasChinese"
+                value={formData.aliasChinese}
+                onChange={(e) => setFormData({ ...formData, aliasChinese: e.target.value })}
+                placeholder="輸入中文別名（如有）"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="aliasEnglish">別名（英文）</Label>
+              <Input
+                id="aliasEnglish"
+                value={formData.aliasEnglish}
+                onChange={(e) => setFormData({ ...formData, aliasEnglish: e.target.value })}
+                placeholder="輸入英文別名（如有）"
               />
             </div>
             <div className="space-y-2">

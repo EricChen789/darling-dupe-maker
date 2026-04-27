@@ -175,6 +175,8 @@ export type Database = {
         Row: {
           address: string | null
           address_proof_file_path: string | null
+          alias_chinese: string | null
+          alias_english: string | null
           company_id: string
           company_number_ref: string | null
           created_at: string
@@ -191,6 +193,8 @@ export type Database = {
           passport_file_path: string | null
           passport_number: string | null
           place_incorporated: string | null
+          previous_name_chinese: string | null
+          previous_name_english: string | null
           role: string
           service_address: string | null
           tcsp_number: string | null
@@ -199,6 +203,8 @@ export type Database = {
         Insert: {
           address?: string | null
           address_proof_file_path?: string | null
+          alias_chinese?: string | null
+          alias_english?: string | null
           company_id: string
           company_number_ref?: string | null
           created_at?: string
@@ -215,6 +221,8 @@ export type Database = {
           passport_file_path?: string | null
           passport_number?: string | null
           place_incorporated?: string | null
+          previous_name_chinese?: string | null
+          previous_name_english?: string | null
           role: string
           service_address?: string | null
           tcsp_number?: string | null
@@ -223,6 +231,8 @@ export type Database = {
         Update: {
           address?: string | null
           address_proof_file_path?: string | null
+          alias_chinese?: string | null
+          alias_english?: string | null
           company_id?: string
           company_number_ref?: string | null
           created_at?: string
@@ -239,6 +249,8 @@ export type Database = {
           passport_file_path?: string | null
           passport_number?: string | null
           place_incorporated?: string | null
+          previous_name_chinese?: string | null
+          previous_name_english?: string | null
           role?: string
           service_address?: string | null
           tcsp_number?: string | null

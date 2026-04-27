@@ -288,18 +288,42 @@ const Companies = () => {
                 <TableCell className="max-w-[180px]">
                   <div className="text-xs space-y-0.5">
                     {company.directors.length > 0 ? (
-                      company.directors.map((d, i) => (
-                        <div key={i} className="truncate">{d.nameEnglish || d.nameChinese}</div>
-                      ))
+                      (() => {
+                        const allIds = [...company.directors.map(d => d.id), ...company.secretaries.map(s => s.id)];
+                        const explicit = (company as any).signerRoleId as string | undefined;
+                        const effectiveSignerId = (explicit && allIds.includes(explicit))
+                          ? explicit
+                          : (company.secretaries[0]?.id || company.directors[0]?.id || '');
+                        return company.directors.map((d, i) => (
+                          <div key={i} className="truncate flex items-center gap-1">
+                            {d.id === effectiveSignerId && (
+                              <span className="inline-block h-1.5 w-1.5 rounded-full bg-destructive shrink-0" title="NAR1 簽署人" />
+                            )}
+                            <span className="truncate">{d.nameEnglish || d.nameChinese}</span>
+                          </div>
+                        ));
+                      })()
                     ) : <span className="text-muted-foreground">-</span>}
                   </div>
                 </TableCell>
                 <TableCell className="max-w-[180px]">
                   <div className="text-xs space-y-0.5">
                     {company.secretaries.length > 0 ? (
-                      company.secretaries.map((s, i) => (
-                        <div key={i} className="truncate">{s.nameEnglish || s.nameChinese}</div>
-                      ))
+                      (() => {
+                        const allIds = [...company.directors.map(d => d.id), ...company.secretaries.map(s => s.id)];
+                        const explicit = (company as any).signerRoleId as string | undefined;
+                        const effectiveSignerId = (explicit && allIds.includes(explicit))
+                          ? explicit
+                          : (company.secretaries[0]?.id || company.directors[0]?.id || '');
+                        return company.secretaries.map((s, i) => (
+                          <div key={i} className="truncate flex items-center gap-1">
+                            {s.id === effectiveSignerId && (
+                              <span className="inline-block h-1.5 w-1.5 rounded-full bg-destructive shrink-0" title="NAR1 簽署人" />
+                            )}
+                            <span className="truncate">{s.nameEnglish || s.nameChinese}</span>
+                          </div>
+                        ));
+                      })()
                     ) : <span className="text-muted-foreground">-</span>}
                   </div>
                 </TableCell>

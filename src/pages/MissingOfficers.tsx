@@ -144,7 +144,7 @@ const MissingOfficers = () => {
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <StatCard label="總缺失公司" value={stats.total} />
+        <StatCard label="總缺失，依然有效的公司" value={stats.total} />
         <StatCard label="缺董事" value={stats.missingDirector} tone="amber" />
         <StatCard label="缺秘書" value={stats.missingSecretary} tone="amber" />
         <StatCard label="兩者皆缺" value={stats.missingBoth} tone="red" />

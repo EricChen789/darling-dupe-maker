@@ -120,12 +120,12 @@ const MissingOfficers = () => {
       missingSecretary: !secretaryByCompany.has(c.id),
     }));
 
-    // Only keep ones missing at least one AND still active AND not BVI
+    // Only keep ones missing at least one AND still active AND jurisdiction = Hong Kong
     return enriched.filter((c) => {
       if (!(c.missingDirector || c.missingSecretary)) return false;
       if (c.status !== 'active') return false;
       const j = (c.jurisdiction || '').toLowerCase();
-      if (j.includes('bvi') || j.includes('british virgin')) return false;
+      if (!j.includes('hong kong')) return false;
       return true;
     });
   }, [companies, officers]);

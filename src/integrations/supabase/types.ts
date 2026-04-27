@@ -26,10 +26,12 @@ export type Database = {
           company_number: string | null
           company_type: string | null
           created_at: string
+          email: string | null
           id: string
           incorporation_date: string | null
           jurisdiction: string | null
           name: string
+          phone: string | null
           preferred_presenter_id: string | null
           presenter_reference: string | null
           quorum: string | null
@@ -54,10 +56,12 @@ export type Database = {
           company_number?: string | null
           company_type?: string | null
           created_at?: string
+          email?: string | null
           id?: string
           incorporation_date?: string | null
           jurisdiction?: string | null
           name: string
+          phone?: string | null
           preferred_presenter_id?: string | null
           presenter_reference?: string | null
           quorum?: string | null
@@ -82,10 +86,12 @@ export type Database = {
           company_number?: string | null
           company_type?: string | null
           created_at?: string
+          email?: string | null
           id?: string
           incorporation_date?: string | null
           jurisdiction?: string | null
           name?: string
+          phone?: string | null
           preferred_presenter_id?: string | null
           presenter_reference?: string | null
           quorum?: string | null

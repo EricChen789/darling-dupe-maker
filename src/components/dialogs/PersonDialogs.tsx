@@ -204,6 +204,10 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave, onGenerateND2
     idCardFilePath: '',
     addressProofFilePath: '',
     tcspNumber: '',
+    previousNameChinese: '',
+    previousNameEnglish: '',
+    aliasChinese: '',
+    aliasEnglish: '',
   });
 
   const originalAddress = person?.address || '';
@@ -227,6 +231,10 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave, onGenerateND2
         idCardFilePath: person.idCardFilePath || '',
         addressProofFilePath: person.addressProofFilePath || '',
         tcspNumber: person.tcspNumber || '',
+        previousNameChinese: person.previousNameChinese || '',
+        previousNameEnglish: person.previousNameEnglish || '',
+        aliasChinese: person.aliasChinese || '',
+        aliasEnglish: person.aliasEnglish || '',
       });
     } else {
       setFormData({
@@ -246,6 +254,10 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave, onGenerateND2
         idCardFilePath: '',
         addressProofFilePath: '',
         tcspNumber: '',
+        previousNameChinese: '',
+        previousNameEnglish: '',
+        aliasChinese: '',
+        aliasEnglish: '',
       });
     }
   }, [person, open]);

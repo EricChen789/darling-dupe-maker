@@ -77,6 +77,13 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
     presenterContact: '',
   });
 
+  // 附表 E (P.15) 公司紀錄保存地點 — 留空則不附加 P.15
+  const [companyRecords, setCompanyRecords] = useState<Array<{ records: string; address: string }>>([]);
+  const addRecord = () => setCompanyRecords(prev => [...prev, { records: '', address: '' }]);
+  const removeRecord = (i: number) => setCompanyRecords(prev => prev.filter((_, idx) => idx !== i));
+  const updateRecord = (i: number, key: 'records' | 'address', val: string) =>
+    setCompanyRecords(prev => prev.map((r, idx) => (idx === i ? { ...r, [key]: val } : r)));
+
   // 當 company 變更（開啟對話框時），重新計算結算日期、帶入註冊地址 + Presenter
   useEffect(() => {
     if (company) {

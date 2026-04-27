@@ -28,6 +28,8 @@ interface OfficerData {
   placeIncorporated?: string;
   companyNumberRef?: string;
   tcspNumber?: string;
+  passportNumber?: string;
+  nationality?: string;
 }
 
 interface ShareholderData {

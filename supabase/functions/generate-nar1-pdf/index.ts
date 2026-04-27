@@ -96,6 +96,10 @@ interface CompanyData {
     fax?: string;
     email?: string;
   };
+  signer?: {
+    name?: string;
+    role?: 'director' | 'secretary' | null;
+  } | null;
 }
 
 const TEMPLATE_BASE = "https://uqcsgmmsrgtlcqutaomg.supabase.co/storage/v1/object/public/pdf-templates";

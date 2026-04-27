@@ -156,6 +156,10 @@ function mapToCompany(
     serviceAddress: s.service_address || '',
     email: s.email || '',
     shareType: s.share_type || '',
+    issuePrice: s.issue_price || '',
+    currency: s.currency || 'HKD',
+    paidUp: s.paid_up || '',
+    unpaid: s.unpaid || '',
   }));
 
   return {

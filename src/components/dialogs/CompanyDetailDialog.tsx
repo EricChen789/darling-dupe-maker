@@ -691,6 +691,10 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                   <div className="space-y-1"><Label className="text-xs">身份證號碼</Label><Input value={shForm.idNumber} onChange={e => setShForm({ ...shForm, idNumber: e.target.value })} /></div>
                   <div className="space-y-1"><Label className="text-xs">持股數量</Label><Input type="number" value={shForm.shares} onChange={e => setShForm({ ...shForm, shares: parseInt(e.target.value) || 0 })} /></div>
                   <div className="space-y-1"><Label className="text-xs">股份類別</Label><Input value={shForm.shareType} onChange={e => setShForm({ ...shForm, shareType: e.target.value })} placeholder="e.g. Ordinary 普通股" /></div>
+                  <div className="space-y-1"><Label className="text-xs">貨幣</Label><Input value={shForm.currency} onChange={e => setShForm({ ...shForm, currency: e.target.value })} placeholder="HKD" /></div>
+                  <div className="space-y-1"><Label className="text-xs">每股發行價</Label><Input value={shForm.issuePrice} onChange={e => setShForm({ ...shForm, issuePrice: e.target.value })} placeholder="e.g. 1.00" /></div>
+                  <div className="space-y-1"><Label className="text-xs">已繳付股本</Label><Input value={shForm.paidUp} onChange={e => setShForm({ ...shForm, paidUp: e.target.value })} placeholder="Amount paid up" /></div>
+                  <div className="space-y-1"><Label className="text-xs">未繳付股本</Label><Input value={shForm.unpaid} onChange={e => setShForm({ ...shForm, unpaid: e.target.value })} placeholder="Amount unpaid" /></div>
                   <div className="col-span-2 space-y-1"><Label className="text-xs">居住地址</Label><Textarea value={shForm.address} onChange={e => setShForm({ ...shForm, address: e.target.value })} rows={2} /></div>
                   <div className="col-span-2 space-y-1">
                     <div className="flex items-center justify-between">

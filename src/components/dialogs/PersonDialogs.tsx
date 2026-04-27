@@ -358,6 +358,8 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave, onGenerateND2
                 placeholder="輸入英文別名（如有）"
               />
             </div>
+            <div className="space-y-2">
+              <Label htmlFor="identity">身份類型</Label>
               <Select
                 value={formData.identity}
                 onValueChange={(value: 'natural' | 'corporate') =>

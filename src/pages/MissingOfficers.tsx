@@ -48,16 +48,14 @@ const MissingOfficers = () => {
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
-  const handleSetInactive = async (id: string, name: string) => {
-    if (!confirm(`確定將「${name}」設為失效 (inactive)?`)) return;
-    setUpdatingId(id);
-    const { error } = await supabase.from('companies').update({ status: 'inactive' }).eq('id', id);
-    setUpdatingId(null);
+  const handleUpdateStatus = async (id: string, name: string, status: string) => {
+    const { error } = await supabase.from('companies').update({ status }).eq('id', id);
     if (error) {
       toast.error(`更新失敗: ${error.message}`);
       return;
     }
-    toast.success(`已將「${name}」設為失效`);
+    const label = status === 'inactive' ? '失效' : status === 'cancelled' ? '註銷' : '有效';
+    toast.success(`已將「${name}」狀態改為 ${label}`);
     queryClient.invalidateQueries({ queryKey: ['missing-officers-companies-v2'] });
   };
 
@@ -264,16 +262,19 @@ const MissingOfficers = () => {
                     <TableCell className="font-mono text-xs">{r.ci_number || '-'}</TableCell>
                     <TableCell className="text-xs">{r.incorporation_date || <span className="text-muted-foreground italic">未填寫</span>}</TableCell>
                     <TableCell>
-                      <Button
-                        variant={r.status === 'active' || !r.status ? 'default' : 'secondary'}
-                        size="sm"
-                        className="h-6 px-2 text-xs"
-                        disabled={updatingId === r.id || !(r.status === 'active' || !r.status)}
-                        onClick={() => handleSetInactive(r.id, r.name)}
-                        title="按一下設為失效"
+                      <Select
+                        value={r.status === 'inactive' ? 'inactive' : r.status === 'cancelled' ? 'cancelled' : 'active'}
+                        onValueChange={(v) => handleUpdateStatus(r.id, r.name, v)}
                       >
-                        {updatingId === r.id ? '更新中...' : r.status === 'inactive' ? '失效' : r.status === 'cancelled' ? '註銷' : '有效'}
-                      </Button>
+                        <SelectTrigger className="h-7 w-24 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="active">有效</SelectItem>
+                          <SelectItem value="inactive">失效</SelectItem>
+                          <SelectItem value="cancelled">註銷</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-1">

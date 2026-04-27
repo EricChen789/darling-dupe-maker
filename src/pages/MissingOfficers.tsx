@@ -70,7 +70,7 @@ const MissingOfficers = () => {
 
   const { data: companies, isLoading: loadingCompanies } = useQuery({
     queryKey: ['missing-officers-companies-v2'],
-    queryFn: () => fetchAll<CompanyRow>('companies', 'id, name, chinese_name, company_number, ci_number, status, incorporation_date'),
+    queryFn: () => fetchAll<CompanyRow>('companies', 'id, name, chinese_name, company_number, ci_number, status, incorporation_date, jurisdiction'),
   });
 
   const { data: officers, isLoading: loadingOfficers } = useQuery({

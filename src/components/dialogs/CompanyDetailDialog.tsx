@@ -421,6 +421,28 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                     </div>
                     <div className="space-y-1"><Label className="text-xs">電郵地址</Label><Input type="email" value={companyForm.email} onChange={e => setCompanyForm({ ...companyForm, email: e.target.value })} /></div>
                     <div className="space-y-1"><Label className="text-xs">電話</Label><Input value={companyForm.phone} onChange={e => setCompanyForm({ ...companyForm, phone: e.target.value })} /></div>
+                    <div className="col-span-2 space-y-1">
+                      <Label className="text-xs">公司簽署人 (NAR1)</Label>
+                      <Select
+                        value={companyForm.signerRoleId || '__auto__'}
+                        onValueChange={v => setCompanyForm({ ...companyForm, signerRoleId: v === '__auto__' ? '' : v })}
+                      >
+                        <SelectTrigger><SelectValue placeholder="自動 (秘書優先，否則第一董事)" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__auto__">自動 — 秘書優先，否則第一董事</SelectItem>
+                          {company.secretaries.map(s => (
+                            <SelectItem key={s.id} value={s.id}>
+                              秘書：{s.nameEnglish || s.nameChinese || '(無名稱)'}
+                            </SelectItem>
+                          ))}
+                          {company.directors.map(d => (
+                            <SelectItem key={d.id} value={d.id}>
+                              董事：{d.nameEnglish || d.nameChinese || '(無名稱)'}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
                     <div className="col-span-2 border-t border-border pt-3 mt-2">
                       <Label className="text-xs font-medium">註冊辦事處地址</Label>
                       <div className="grid grid-cols-2 gap-2 mt-2">

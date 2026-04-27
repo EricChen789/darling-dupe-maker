@@ -486,6 +486,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                   <div className="grid gap-2">
                     {company.directors.map((d, i) => (
                       <PersonRow key={i} person={d} isSelected={selectedPerson?.id === d.id}
+                        isSigner={effectiveSignerId === d.id}
                         onClick={() => selectPerson(d, '董事')}
                         onDelete={() => handleDeleteOfficer(d, '董事')} />
                     ))}
@@ -506,6 +507,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                   <div className="grid gap-2">
                     {company.secretaries.map((s, i) => (
                       <PersonRow key={i} person={s} isSelected={selectedPerson?.id === s.id}
+                        isSigner={effectiveSignerId === s.id}
                         onClick={() => selectPerson(s, '秘書')}
                         onDelete={() => handleDeleteOfficer(s, '秘書')} />
                     ))}

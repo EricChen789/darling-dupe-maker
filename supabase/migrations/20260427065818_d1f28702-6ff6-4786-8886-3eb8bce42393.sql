@@ -1,0 +1,1 @@
+ALTER TABLE public.officers ADD COLUMN IF NOT EXISTS tcsp_number text DEFAULT '';

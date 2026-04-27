@@ -187,6 +187,7 @@ export type Database = {
           place_incorporated: string | null
           role: string
           service_address: string | null
+          tcsp_number: string | null
           whatsapp: string | null
         }
         Insert: {
@@ -210,6 +211,7 @@ export type Database = {
           place_incorporated?: string | null
           role: string
           service_address?: string | null
+          tcsp_number?: string | null
           whatsapp?: string | null
         }
         Update: {
@@ -233,6 +235,7 @@ export type Database = {
           place_incorporated?: string | null
           role?: string
           service_address?: string | null
+          tcsp_number?: string | null
           whatsapp?: string | null
         }
         Relationships: [

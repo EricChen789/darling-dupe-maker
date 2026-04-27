@@ -123,6 +123,7 @@ function mapToCompany(
     name: c.name,
     chineseName: c.chinese_name || '',
     brNumber: c.company_number,
+    ciNumber: ((c as any).ci_number as string) || '',
     tradingName: c.trading_name || '',
     businessNature: c.business_nature || '',
     directors,

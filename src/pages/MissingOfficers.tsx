@@ -240,15 +240,23 @@ const MissingOfficers = () => {
                     <TableCell>{r.chinese_name || '-'}</TableCell>
                     <TableCell className="text-xs">
                       <Select
-                        value={r.jurisdiction === 'BVI' || (r.jurisdiction || '').toLowerCase().includes('bvi') || (r.jurisdiction || '').toLowerCase().includes('british virgin') ? 'BVI' : 'Hong Kong'}
+                        value={(() => {
+                          const j = (r.jurisdiction || '').toLowerCase();
+                          if (j.includes('bvi') || j.includes('british virgin')) return 'BVI';
+                          if (j.includes('seychelles')) return 'Seychelles';
+                          if (j.includes('hong kong')) return 'Hong Kong';
+                          return r.jurisdiction ? 'Others' : 'Hong Kong';
+                        })()}
                         onValueChange={(v) => handleUpdateJurisdiction(r.id, r.name, v)}
                       >
-                        <SelectTrigger className="h-7 w-28 text-xs">
+                        <SelectTrigger className="h-7 w-32 text-xs">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="Hong Kong">Hong Kong</SelectItem>
                           <SelectItem value="BVI">BVI</SelectItem>
+                          <SelectItem value="Seychelles">Seychelles</SelectItem>
+                          <SelectItem value="Others">Others</SelectItem>
                         </SelectContent>
                       </Select>
                     </TableCell>

@@ -161,15 +161,12 @@ const parseAddress = (addr: string) => {
   return { flat, building, street, district, country };
 };
 
-// HKID：NAR1 表格欄位為 comb 格式（每格一字），需移除括號讓全部字符對齊。
-// 例：A123456(7) → A1234567；AB123456(7) → AB1234567
+// HKID：NAR1 第 5 頁與 C 續頁只填寫前 4 個字元以保護隱私。
+// 例：A123456(7) → A123；AB123456(7) → AB12
 const parseHkidPartial = (idNumber: string) => {
   if (!idNumber) return '';
-  const cleaned = idNumber.replace(/\s+/g, '').toUpperCase();
-  const m = cleaned.match(/^([A-Z]{1,2})(\d{6})\(?([0-9A])\)?$/);
-  if (m) return `${m[1]}${m[2]}${m[3]}`;
-  // 移除任何括號 / 連字符以避免 comb 欄位錯位
-  return cleaned.replace(/[()\-\s]/g, '');
+  const cleaned = idNumber.replace(/[()\-\s]/g, '').toUpperCase();
+  return cleaned.slice(0, 4);
 };
 
 // 護照號碼：NAR1 只填寫前一半（向上取整），保護隱私

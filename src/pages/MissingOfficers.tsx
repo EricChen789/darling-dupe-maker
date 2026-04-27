@@ -185,6 +185,7 @@ const MissingOfficers = () => {
                 <TableHead>中文名稱</TableHead>
                 <TableHead>BR 號碼</TableHead>
                 <TableHead>CI 號碼</TableHead>
+                <TableHead>成立日期</TableHead>
                 <TableHead>狀態</TableHead>
                 <TableHead>缺失欄位</TableHead>
                 <TableHead className="text-right">操作</TableHead>

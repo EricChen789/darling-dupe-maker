@@ -48,16 +48,14 @@ const MissingOfficers = () => {
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
-  const handleSetInactive = async (id: string, name: string) => {
-    if (!confirm(`確定將「${name}」設為失效 (inactive)?`)) return;
-    setUpdatingId(id);
-    const { error } = await supabase.from('companies').update({ status: 'inactive' }).eq('id', id);
-    setUpdatingId(null);
+  const handleUpdateStatus = async (id: string, name: string, status: string) => {
+    const { error } = await supabase.from('companies').update({ status }).eq('id', id);
     if (error) {
       toast.error(`更新失敗: ${error.message}`);
       return;
     }
-    toast.success(`已將「${name}」設為失效`);
+    const label = status === 'inactive' ? '失效' : status === 'cancelled' ? '註銷' : '有效';
+    toast.success(`已將「${name}」狀態改為 ${label}`);
     queryClient.invalidateQueries({ queryKey: ['missing-officers-companies-v2'] });
   };
 

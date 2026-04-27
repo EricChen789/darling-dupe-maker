@@ -879,7 +879,7 @@ async function buildNAR1Pdf(data: CompanyData): Promise<Uint8Array> {
   if (isListedCo) {
     attachments.push({
       url: TEMPLATES.schedule2,
-      fill: (doc, h) => fillSchedule2(doc, ctx, h),
+      fill: (doc, f) => fillSchedule2(doc, ctx, f),
       label: "附表2",
     });
   }

@@ -31,6 +31,7 @@ interface CompanyRow {
   id: string;
   name: string;
   company_number: string | null;
+  incorporation_date: string | null;
 }
 
 function mapOfficerToPerson(

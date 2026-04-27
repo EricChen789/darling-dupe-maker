@@ -46,12 +46,21 @@ const People = () => {
   const [nd2bPerson, setNd2bPerson] = useState<Person | null>(null);
   const [nd2bNewAddress, setNd2bNewAddress] = useState('');
   
+  // Pagination
+  const [pageSize, setPageSize] = useState(100);
+  const [currentPage, setCurrentPage] = useState(1);
+
   const filteredPeople = officers.filter(person =>
     person.nameChinese.toLowerCase().includes(searchTerm.toLowerCase()) ||
     person.nameEnglish.toLowerCase().includes(searchTerm.toLowerCase()) ||
     person.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
     (person.brNumber && person.brNumber.includes(searchTerm))
   );
+
+  const totalPages = Math.max(1, Math.ceil(filteredPeople.length / pageSize));
+  const safePage = Math.min(currentPage, totalPages);
+  const startIdx = (safePage - 1) * pageSize;
+  const pagePeople = filteredPeople.slice(startIdx, startIdx + pageSize);
 
   const getIdentityLabel = (identity: string) => {
     return identity === 'natural' ? '自然人' : '法人';

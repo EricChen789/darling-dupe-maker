@@ -118,11 +118,12 @@ const MissingOfficers = () => {
   }, [rows, search, missingFilter]);
 
   const stats = useMemo(() => {
+    const activeRows = rows.filter((r) => r.status === 'active');
     return {
-      missingDirector: rows.filter((r) => r.missingDirector).length,
-      missingSecretary: rows.filter((r) => r.missingSecretary).length,
-      missingBoth: rows.filter((r) => r.missingDirector && r.missingSecretary).length,
-      total: rows.length,
+      missingDirector: activeRows.filter((r) => r.missingDirector).length,
+      missingSecretary: activeRows.filter((r) => r.missingSecretary).length,
+      missingBoth: activeRows.filter((r) => r.missingDirector && r.missingSecretary).length,
+      total: activeRows.length,
     };
   }, [rows]);
 
@@ -143,7 +144,7 @@ const MissingOfficers = () => {
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <StatCard label="總缺失公司" value={stats.total} />
+        <StatCard label="總缺失，依然有效的公司" value={stats.total} />
         <StatCard label="缺董事" value={stats.missingDirector} tone="amber" />
         <StatCard label="缺秘書" value={stats.missingSecretary} tone="amber" />
         <StatCard label="兩者皆缺" value={stats.missingBoth} tone="red" />

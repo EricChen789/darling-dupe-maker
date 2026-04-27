@@ -324,18 +324,13 @@ function createFormHelpers(pdfDoc: PDFDocument): FormHelpers {
     try {
       detachWidget(target.widget, target.field);
 
-      if (v.length > 0 && !isAscii(v)) {
-        // 含中文/非 ASCII：切換到 PMingLiU + UTF-16 hex string
-        const da = decodePdfText(target.widget.get(PDFName.of("DA"))) ||
-                   decodePdfText(target.field.get(PDFName.of("DA"))) ||
-                   "/Helv 12 Tf 0 g";
-        const newDA = buildCjkDA(da);
-        target.widget.set(PDFName.of("DA"), PDFString.of(newDA));
-        target.widget.set(PDFName.of("V"), PDFHexString.fromText(v));
-      } else {
-        // 純 ASCII：保留原 DA，用普通 string
-        target.widget.set(PDFName.of("V"), PDFString.of(v));
-      }
+      // 模板欄位預設使用 /PMingLiU Type0 (UniCNS-UTF16-H)，所有文字都必須用 UTF-16 hex string；
+      // 若 ASCII 用 PDFString，Adobe/Poppler 會把 bytes 當 CJK 編碼解讀而變亂碼。
+      const da = decodePdfText(target.widget.get(PDFName.of("DA"))) ||
+                 decodePdfText(target.field.get(PDFName.of("DA"))) ||
+                 "/Helv 12 Tf 0 g";
+      target.widget.set(PDFName.of("DA"), PDFString.of(buildCjkDA(da)));
+      target.widget.set(PDFName.of("V"), PDFHexString.fromText(v));
       // 移除舊的 appearance，強制 reader 用 NeedAppearances 重建
       target.widget.delete(PDFName.of("AP"));
       return true;

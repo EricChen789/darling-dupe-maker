@@ -1,5 +1,15 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { PDFDocument, PDFName, PDFHexString, PDFBool, StandardFonts, rgb } from "https://esm.sh/pdf-lib@1.17.1";
+import { PDFDocument, PDFName, PDFHexString, PDFString, PDFBool, StandardFonts, rgb } from "https://esm.sh/pdf-lib@1.17.1";
+
+// Encode form-field value:
+// - Pure ASCII -> PDFString (literal, PDFDocEncoding) so readers render with standard fonts.
+// - Contains non-ASCII (e.g. CJK) -> PDFHexString.fromText (UTF-16BE+BOM, PDF spec compliant).
+function encodeFieldValue(value: string): any {
+  const v = value ?? "";
+  // eslint-disable-next-line no-control-regex
+  const isAscii = /^[\x00-\x7F]*$/.test(v);
+  return isAscii ? PDFString.of(v) : PDFHexString.fromText(v);
+}
 import fontkit from "https://esm.sh/@pdf-lib/fontkit@1.1.1";
 
 const CJK_FONT_URL = "https://uqcsgmmsrgtlcqutaomg.supabase.co/storage/v1/object/public/pdf-templates/NotoSansTC-Regular.ttf";

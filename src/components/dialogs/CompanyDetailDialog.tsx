@@ -54,7 +54,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
   const [addingShareholder, setAddingShareholder] = useState(false);
   const [copyDialogOpen, setCopyDialogOpen] = useState(false);
 
-  const [companyForm, setCompanyForm] = useState({ name: '', chineseName: '', brNumber: '', tradingName: '', businessNature: '', companyType: '', businessCode: '', regFlat: '', regBuilding: '', regStreet: '', regDistrict: '', regRegion: '', incorporationDate: '', jurisdiction: 'Hong Kong', ciFilePath: '', brFilePath: '', email: '', phone: '' });
+  const [companyForm, setCompanyForm] = useState({ name: '', chineseName: '', brNumber: '', tradingName: '', businessNature: '', companyType: '', businessCode: '', regFlat: '', regBuilding: '', regStreet: '', regDistrict: '', regRegion: '', incorporationDate: '', jurisdiction: 'Hong Kong', ciFilePath: '', brFilePath: '', email: '', phone: '', signerRoleId: '' });
   const [uploadingCi, setUploadingCi] = useState(false);
   const [uploadingBr, setUploadingBr] = useState(false);
   const [personForm, setPersonForm] = useState(emptyOfficerForm());
@@ -81,6 +81,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
         incorporationDate: company.incorporationDate || '', jurisdiction: company.jurisdiction || 'Hong Kong',
         ciFilePath: company.ciFilePath || '', brFilePath: company.brFilePath || '',
         email: company.email || '', phone: company.phone || '',
+        signerRoleId: company.signerRoleId || '',
       });
     }
   }, [company, editingCompany]);

@@ -458,7 +458,13 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
     safeSetText("fill_14_P.5", office.region || "");
     safeSetText("fill_15_P.5", dir.email || "");
     const hkid = parseHkidPartial(dir.idNumber || '');
-    if (hkid) safeSetText("fill_16_P.5", hkid);
+    if (hkid) {
+      safeSetText("fill_16_P.5", hkid);
+    } else if (dir.passportNumber) {
+      // 沒有香港身份證 → 填寫護照（發行國家 + 前一半號碼）
+      safeSetText("fill_17_P.5", dir.nationality || dir.placeIncorporated || "");
+      safeSetText("fill_18_P.5", parsePassportPartial(dir.passportNumber));
+    }
     console.log(`Filled Director (Natural): ${dir.nameEnglish || dir.nameChinese}`);
   }
 

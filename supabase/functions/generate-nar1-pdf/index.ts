@@ -263,6 +263,9 @@ function collectWidgetTargets(pdfDoc: PDFDocument): Map<string, WidgetTarget> {
         const parentName = parent ? decodePdfText(parent.get(PDFName.of("T"))) : "";
 
         addTarget(childName, target);
+        addTarget(parentName, target);
+        if (childName) addTarget(childName.replace(/_P\.(\d+)$/g, "_P$1"), target);
+        if (parentName) addTarget(parentName.replace(/_P\.(\d+)$/g, "_P$1"), target);
         if (parentName && childName) addTarget(`${parentName}.${childName}`, target);
       } catch (_) { /* skip malformed widget */ }
     }

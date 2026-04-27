@@ -365,10 +365,14 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
                       <span className="text-xs bg-secondary text-secondary-foreground px-2 py-0.5 rounded-full">
                         {sh.shares.toLocaleString()} 股
                       </span>
+                      {sh.shareType && <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">{sh.shareType}</span>}
+                      {sh.currency && <span className="text-xs bg-muted px-2 py-0.5 rounded-full">{sh.currency}</span>}
                     </div>
                     <div className="ml-8 text-xs text-muted-foreground space-y-0.5">
                       {sh.address && <div>地址：{sh.address}</div>}
-                      {sh.shareType && <div>股份類別：{sh.shareType}</div>}
+                      {sh.issuePrice && <div>每股發行價：{sh.currency || 'HKD'} {sh.issuePrice}</div>}
+                      {sh.paidUp !== undefined && sh.paidUp !== '' && <div>已繳付：{sh.currency || 'HKD'} {sh.paidUp}</div>}
+                      {sh.unpaid !== undefined && sh.unpaid !== '' && <div>未繳付：{sh.currency || 'HKD'} {sh.unpaid}</div>}
                       {sh.idNumber && <div>證件號碼：{sh.idNumber}</div>}
                     </div>
                   </div>
@@ -376,6 +380,55 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
               </div>
             </div>
           )}
+
+          {/* Share Capital Summary (Page 2 of NAR1) */}
+          {company.shareholders.length > 0 && (() => {
+            const map = new Map<string, { className: string; currency: string; shares: number; paidUp: number; unpaid: number; issuePrice: string }>();
+            for (const sh of company.shareholders) {
+              const className = sh.shareType?.trim() || 'Ordinary 普通股';
+              const currency = sh.currency?.trim() || 'HKD';
+              const issuePrice = sh.issuePrice?.trim() || '';
+              const key = `${className}||${currency}||${issuePrice}`;
+              const existing = map.get(key) || { className, currency, shares: 0, paidUp: 0, unpaid: 0, issuePrice };
+              existing.shares += Number(sh.shares) || 0;
+              existing.paidUp += parseFloat(sh.paidUp || '0') || 0;
+              existing.unpaid += parseFloat(sh.unpaid || '0') || 0;
+              map.set(key, existing);
+            }
+            const rows = Array.from(map.values());
+            return (
+              <div className="space-y-2">
+                <h4 className="font-medium text-sm">股本表格 (NAR1 第 2 頁)</h4>
+                <div className="bg-muted/30 rounded-lg p-3 overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-border text-left text-muted-foreground">
+                        <th className="py-1 pr-2">股份類別</th>
+                        <th className="py-1 pr-2">貨幣</th>
+                        <th className="py-1 pr-2 text-right">每股發行價</th>
+                        <th className="py-1 pr-2 text-right">股份總數</th>
+                        <th className="py-1 pr-2 text-right">已繳付</th>
+                        <th className="py-1 text-right">未繳付</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((r, i) => (
+                        <tr key={i} className="border-b border-border/40">
+                          <td className="py-1 pr-2 font-medium">{r.className}</td>
+                          <td className="py-1 pr-2">{r.currency}</td>
+                          <td className="py-1 pr-2 text-right">{r.issuePrice || '-'}</td>
+                          <td className="py-1 pr-2 text-right">{r.shares.toLocaleString()}</td>
+                          <td className="py-1 pr-2 text-right">{r.paidUp.toLocaleString()}</td>
+                          <td className="py-1 text-right">{r.unpaid.toLocaleString()}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <p className="mt-2 text-xs text-muted-foreground">系統會按「股份類別 + 貨幣 + 每股發行價」自動分組，最多顯示 4 行於 NAR1 第 2 頁。</p>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Additional Form Fields */}
           <div className="space-y-4">

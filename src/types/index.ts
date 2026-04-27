@@ -22,6 +22,7 @@ export interface Company {
   brFilePath?: string;
   preferredPresenterId?: string;
   presenterReference?: string;
+  status?: 'active' | 'inactive' | 'deregistered';
 }
 
 export interface Person {

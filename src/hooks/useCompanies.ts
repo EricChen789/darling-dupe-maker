@@ -7,6 +7,8 @@ interface DbCompany {
   name: string;
   chinese_name: string;
   company_number: string;
+  ci_number: string;
+  status: string;
   trading_name: string;
   business_nature: string;
   company_type: string;
@@ -55,6 +57,37 @@ interface DbShareholder {
   service_address?: string;
   email: string;
   share_type: string;
+}
+
+async function fetchAllRows<T>(
+  table: 'companies' | 'officers' | 'shareholders',
+  columns = '*',
+  orderColumn?: string,
+): Promise<T[]> {
+  const pageSize = 1000;
+  const all: T[] = [];
+  let from = 0;
+
+  while (true) {
+    let query = supabase
+      .from(table)
+      .select(columns);
+
+    if (orderColumn) {
+      query = query.order(orderColumn);
+    }
+
+    const { data, error } = await query.range(from, from + pageSize - 1);
+    if (error) throw error;
+
+    const batch = (data || []) as T[];
+    all.push(...batch);
+    if (batch.length < pageSize) break;
+
+    from += pageSize;
+  }
+
+  return all;
 }
 
 function mapToCompany(
@@ -151,39 +184,31 @@ export function useCompanies() {
   return useQuery({
     queryKey: ['companies'],
     queryFn: async (): Promise<Company[]> => {
-      const { data: companies, error: cErr } = await supabase
-        .from('companies')
-        .select('*')
-        .order('name')
-        .limit(2000);
+      const companies = await fetchAllRows<DbCompany>('companies', '*', 'name');
 
-      if (cErr) throw cErr;
-      if (!companies || companies.length === 0) return [];
+      if (companies.length === 0) return [];
 
       // Fetch all officers and shareholders (no filtering needed, just get all)
-      const [officersRes, shareholdersRes] = await Promise.all([
-        supabase.from('officers').select('*').limit(5000),
-        supabase.from('shareholders').select('*').limit(5000),
+      const [officers, shareholders] = await Promise.all([
+        fetchAllRows<DbOfficer>('officers'),
+        fetchAllRows<DbShareholder>('shareholders'),
       ]);
 
-      if (officersRes.error) throw officersRes.error;
-      if (shareholdersRes.error) throw shareholdersRes.error;
-
       const officersByCompany = new Map<string, DbOfficer[]>();
-      for (const o of (officersRes.data || []) as DbOfficer[]) {
+      for (const o of officers) {
         const list = officersByCompany.get(o.company_id) || [];
         list.push(o);
         officersByCompany.set(o.company_id, list);
       }
 
       const shByCompany = new Map<string, DbShareholder[]>();
-      for (const s of (shareholdersRes.data || []) as DbShareholder[]) {
+      for (const s of shareholders) {
         const list = shByCompany.get(s.company_id) || [];
         list.push(s);
         shByCompany.set(s.company_id, list);
       }
 
-      return (companies as DbCompany[]).map(c =>
+      return companies.map(c =>
         mapToCompany(
           c,
           officersByCompany.get(c.id) || [],

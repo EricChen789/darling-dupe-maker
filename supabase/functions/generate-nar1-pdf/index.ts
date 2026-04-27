@@ -459,17 +459,16 @@ function createNativeFormHelpers(pdfDoc: PDFDocument) {
   }
 
   const safeSetText = (fieldName: string, value: string) => {
+    // 一律走低階 widget-map 寫入，避免 pdf-lib getTextField 在父子階層欄位
+    // 名稱（如 fill_15_P.1，父=fill_15_P 子=1，且多個父共用子名 "1"）下
+    // 將值寫入錯誤欄位的問題。widget-map 的 key 由 `${parentName}.${widgetName}`
+    // 決定性地組成，可確保唯一且精準命中。
     try {
-      if (form) {
-        try {
-          const tf = form.getTextField(fieldName);
-          tf.setText(value ?? "");
-          return true;
-        } catch (_) { /* use low-level writer */ }
-      }
-
       const target = widgets.get(fieldName);
-      if (!target) throw new Error("widget not found");
+      if (!target) {
+        console.warn(`⚠ Missing native field: ${fieldName}`);
+        return false;
+      }
       const encoded = encodeFieldValue(value ?? "");
       target.field.set(PDFName.of("V"), encoded);
       target.widget.set(PDFName.of("V"), encoded);
@@ -477,7 +476,7 @@ function createNativeFormHelpers(pdfDoc: PDFDocument) {
       target.widget.delete(PDFName.of("AP"));
       return true;
     } catch (e) {
-      console.warn(`⚠ Missing native field: ${fieldName}`);
+      console.warn(`⚠ Failed to set field ${fieldName}: ${e}`);
       return false;
     }
   };

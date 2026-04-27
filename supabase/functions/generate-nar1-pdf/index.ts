@@ -551,11 +551,118 @@ async function fillPdfTemplate(data: CompanyData, debugMode = false): Promise<Ui
     }
   };
 
-  const memberList = (data.shareholders || []).slice(0, 2);
-  if (memberList[0]) fillMember(memberList[0], 1);
-  if (memberList[1]) fillMember(memberList[1], 2);
+  // 過濾掉 0 股的股東（不在附表一出現）
+  const validMembers = (data.shareholders || []).filter(sh => (Number(sh.shares) || 0) > 0);
+  const totalSchedulePages = Math.max(1, Math.ceil(validMembers.length / 2));
+
+  // 第一張附表一（P.9）填前兩位
+  if (validMembers[0]) fillMember(validMembers[0], 1);
+  if (validMembers[1]) fillMember(validMembers[1], 2);
   safeSetText("fill_29_P.9", "1");
-  safeSetText("fill_30_P.9", "1");
+  safeSetText("fill_30_P.9", String(totalSchedulePages));
+
+  // 如果股東 > 2，複製附表一頁面插入額外股東（每張 2 人）
+  // 策略：複製 P.9 到新頁面，但因 form field 名稱會衝突，
+  // 改用直接在頁面上繪製文字（純 ASCII 用 Helvetica；中文交由 viewer 略過）
+  if (validMembers.length > 2) {
+    const page9Index = 8; // P.9 是第 9 頁（0-indexed = 8）
+    const pages = pdfDoc.getPages();
+    const sourcePage = pages[page9Index];
+    if (sourcePage) {
+      // 取得 P.9 上各 form field 的 widget 座標，作為新頁繪製文字位置的參考
+      const fieldRects: Record<string, { x: number; y: number; w: number; h: number; page: number }> = {};
+      const allFields = form.getFields();
+      for (const f of allFields) {
+        const name = f.getName();
+        if (!name.endsWith("_P.9")) continue;
+        for (const widget of (f as any).acroField.getWidgets()) {
+          const rect = widget.getRectangle();
+          fieldRects[name] = { x: rect.x, y: rect.y, w: rect.width, h: rect.height, page: page9Index };
+          break;
+        }
+      }
+
+      // 取得頁面內容資源（複製字體等）
+      const drawAscii = (page: any, text: string, x: number, y: number, h: number) => {
+        if (!text) return;
+        const safe = text.replace(/[^\x00-\x7F]/g, ""); // 僅 ASCII（中文跳過避免字體錯誤）
+        if (!safe) return;
+        const fontSize = Math.min(10, h * 0.6);
+        page.drawText(safe, { x: x + 2, y: y + (h - fontSize) / 2 + 1, size: fontSize, font: helv });
+      };
+
+      // 額外頁數量
+      const extraPagesNeeded = totalSchedulePages - 1;
+      for (let p = 0; p < extraPagesNeeded; p++) {
+        // 複製 P.9 為新頁（不含 form annotations 以避免欄位衝突）
+        const [copied] = await pdfDoc.copyPages(pdfDoc, [page9Index]);
+        // 移除新頁的 widget annotations（避免 form field 重名）
+        try {
+          copied.node.delete(PDFName.of("Annots"));
+        } catch (_) { /* ignore */ }
+        // 插入到 P.9 之後
+        pdfDoc.insertPage(page9Index + 1 + p, copied);
+
+        const slot1 = validMembers[2 + p * 2];
+        const slot2 = validMembers[2 + p * 2 + 1];
+
+        const drawMemberOnExtraPage = (sh: ShareholderData | undefined, slot: 1 | 2) => {
+          if (!sh) return;
+          const isCorp = sh.identity === "corporate";
+          const fullName = sh.nameEnglish || sh.name || "";
+          const { surname, otherNames } = parseEnglishName(fullName);
+          const addr = parseAddress(sh.address || "");
+          const fieldNames = slot === 1
+            ? { cn: "fill_7_P.9", sn: "fill_8_P.9", on: "fill_9_P.9", full: "fill_10_P.9",
+                fl: "fill_11_P.9", bd: "fill_12_P.9", st: "fill_13_P.9", dt: "fill_14_P.9",
+                co: "fill_15_P.9", sh: "fill_16_P.9" }
+            : { cn: "fill_18_P.9", sn: "fill_19_P.9", on: "fill_20_P.9", full: "fill_21_P.9",
+                fl: "fill_22_P.9", bd: "fill_23_P.9", st: "fill_24_P.9", dt: "fill_25_P.9",
+                co: "fill_26_P.9", sh: "fill_27_P.9" };
+
+          const draw = (key: keyof typeof fieldNames, txt: string) => {
+            const r = fieldRects[fieldNames[key]];
+            if (!r) return;
+            drawAscii(copied, txt, r.x, r.y, r.h);
+          };
+
+          if (isCorp) {
+            draw("full", fullName);
+          } else {
+            draw("sn", surname);
+            draw("on", otherNames);
+          }
+          draw("fl", addr.flat);
+          draw("bd", addr.building);
+          draw("st", addr.street);
+          draw("dt", addr.district);
+          draw("co", addr.country);
+          draw("sh", fmtInt(Number(sh.shares) || 0));
+        };
+
+        // 頁首：日期 + BR + 股份類別 + 總數
+        const drawHeader = () => {
+          const headerFields = ["fill_1_P.9","fill_2_P.9","fill_3_P.9","fill_4_P.9","fill_5_P.9","fill_6_P.9"];
+          const values = [day || "", month || "", year || "", br8,
+                          firstShareInfo?.className || "",
+                          firstShareInfo ? fmtInt(firstShareInfo.shares) : ""];
+          headerFields.forEach((fn, i) => {
+            const r = fieldRects[fn];
+            if (r) drawAscii(copied, values[i], r.x, r.y, r.h);
+          });
+          // 頁碼
+          const r29 = fieldRects["fill_29_P.9"];
+          const r30 = fieldRects["fill_30_P.9"];
+          if (r29) drawAscii(copied, String(2 + p), r29.x, r29.y, r29.h);
+          if (r30) drawAscii(copied, String(totalSchedulePages), r30.x, r30.y, r30.h);
+        };
+
+        drawHeader();
+        drawMemberOnExtraPage(slot1, 1);
+        drawMemberOnExtraPage(slot2, 2);
+      }
+    }
+  }
 
   // ============ Pages 7 - Reserve Director (BR header only) ============
   safeSetText("fill_1_P.7", br8);

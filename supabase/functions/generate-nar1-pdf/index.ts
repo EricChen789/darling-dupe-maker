@@ -299,6 +299,20 @@ function buildCjkDA(originalDA: string | undefined): string {
   return `/PMingLiU ${size} Tf 0 g`;
 }
 
+function buildHelvDA(originalDA: string | undefined): string {
+  const m = originalDA?.match(/(\d+(?:\.\d+)?)\s+Tf/);
+  const size = m ? m[1] : "12";
+  return `/Helv ${size} Tf 0 g`;
+}
+
+function toAdobeSafeText(value: string): string {
+  return value
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(line => line && isAscii(line))
+    .join("\n");
+}
+
 interface FormHelpers {
   form: any;
   setText: (fieldName: string, value: string) => boolean;
@@ -324,13 +338,12 @@ function createFormHelpers(pdfDoc: PDFDocument): FormHelpers {
     try {
       detachWidget(target.widget, target.field);
 
-      // 模板欄位預設使用 /PMingLiU Type0 (UniCNS-UTF16-H)，所有文字都必須用 UTF-16 hex string；
-      // 若 ASCII 用 PDFString，Adobe/Poppler 會把 bytes 當 CJK 編碼解讀而變亂碼。
       const da = decodePdfText(target.widget.get(PDFName.of("DA"))) ||
                  decodePdfText(target.field.get(PDFName.of("DA"))) ||
                  "/Helv 12 Tf 0 g";
-      target.widget.set(PDFName.of("DA"), PDFString.of(buildCjkDA(da)));
-      target.widget.set(PDFName.of("V"), PDFHexString.fromText(v));
+      const safeValue = toAdobeSafeText(v);
+      target.widget.set(PDFName.of("DA"), PDFString.of(buildHelvDA(da)));
+      target.widget.set(PDFName.of("V"), PDFString.of(safeValue));
       // 移除舊的 appearance，強制 reader 用 NeedAppearances 重建
       target.widget.delete(PDFName.of("AP"));
       return true;

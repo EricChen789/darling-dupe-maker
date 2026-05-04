@@ -68,6 +68,7 @@ interface DbRole {
   issue_price: string;
   paid_up: string;
   unpaid: string;
+  is_reserve?: boolean;
 }
 
 async function fetchAllRows<T>(
@@ -118,6 +119,7 @@ function buildPersonForRole(p: DbPerson, r: DbRole, role: 'director' | 'secretar
     previousNameEnglish: p.previous_name_english || '',
     aliasChinese: p.alias_chinese || '',
     aliasEnglish: p.alias_english || '',
+    isReserve: !!r.is_reserve,
     companies: [],
     createdAt: '',
     updatedAt: '',

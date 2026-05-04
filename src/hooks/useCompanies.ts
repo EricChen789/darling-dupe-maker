@@ -459,7 +459,7 @@ export function useUpdateCompany() {
 export function useAddOfficer() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (data: { company_id: string; name_english: string; name_chinese?: string; role: string; identity?: string; id_number?: string; address?: string; service_address?: string; date_appointed?: string; date_ceased?: string; place_incorporated?: string; company_number_ref?: string; is_reserve?: boolean }) => {
+    mutationFn: async (data: { company_id: string; name_english: string; name_chinese?: string; role: string; identity?: string; id_number?: string; address?: string; service_address?: string; date_appointed?: string; date_ceased?: string; place_incorporated?: string; company_number_ref?: string; is_reserve?: boolean; date_of_birth?: string }) => {
       const personId = await findOrCreatePerson({
         identity: data.identity,
         nameEnglish: data.name_english,
@@ -470,6 +470,9 @@ export function useAddOfficer() {
         placeIncorporated: data.place_incorporated,
         companyNumberRef: data.company_number_ref,
       });
+      if (data.date_of_birth) {
+        await supabase.from('persons').update({ date_of_birth: data.date_of_birth } as any).eq('id', personId);
+      }
       const { error } = await supabase.from('person_company_roles').insert({
         person_id: personId,
         company_id: data.company_id,

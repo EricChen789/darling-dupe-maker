@@ -31,13 +31,26 @@ export default function Reminders() {
 
   const [editing, setEditing] = useState<Partial<Reminder> | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
   const today = new Date(); today.setHours(0, 0, 0, 0);
-  const enriched = useMemo(() => reminders.map(r => {
-    const due = r.due_date ? new Date(r.due_date) : null;
-    const isOverdue = !!due && r.status === 'pending' && due < today;
-    return { ...r, _isOverdue: isOverdue, _company: companies.find(c => c.id === r.company_id) };
-  }), [reminders, companies, today]);
+  const enriched = useMemo(() => {
+    let list = reminders.map(r => {
+      const due = r.due_date ? new Date(r.due_date) : null;
+      const isOverdue = !!due && r.status === 'pending' && due < today;
+      return { ...r, _isOverdue: isOverdue, _company: companies.find(c => c.id === r.company_id) };
+    });
+    if (statusFilter !== 'all') {
+      list = list.filter(r => statusFilter === 'overdue' ? r._isOverdue : r.status === statusFilter);
+    }
+    list.sort((a, b) => {
+      const da = a.due_date || ''; const db = b.due_date || '';
+      return sortDir === 'asc' ? da.localeCompare(db) : db.localeCompare(da);
+    });
+    return list;
+  }, [reminders, companies, today, statusFilter, sortDir]);
+
 
   const handleAutoGenerate = async () => {
     setGenerating(true);

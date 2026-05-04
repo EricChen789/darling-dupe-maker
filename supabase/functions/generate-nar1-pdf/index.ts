@@ -705,7 +705,9 @@ function fillSchedule1(pdfDoc: PDFDocument, ctx: CommonCtx, members: Shareholder
     const fullName = sh.nameEnglish || sh.name || "";
     const { surname, otherNames } = parseEnglishName(fullName);
     const addr = parseAddress(sh.address || "");
-    const country = addr.country || "香港 Hong Kong";
+    // 防呆：若 district/country 看起來是純數字（誤入的股份/金額），清空避免寫到地址欄
+    const safeStr = (v: string) => (v && /^[\d,.\s]+$/.test(v) ? "" : v);
+    const country = safeStr(addr.country) || "香港 Hong Kong";
 
     setText(`fill_${F.name}_P.9`, sh.nameChinese || "");
     if (isCorp) {
@@ -714,11 +716,13 @@ function fillSchedule1(pdfDoc: PDFDocument, ctx: CommonCtx, members: Shareholder
       setText(`fill_${F.surname}_P.9`, surname);
       setText(`fill_${F.other}_P.9`, otherNames);
     }
-    setText(`fill_${F.shares}_P.9`, fmtInt(Number(sh.shares) || 0));
-    setText(`fill_${F.flat}_P.9`, addr.flat);
-    setText(`fill_${F.building}_P.9`, addr.building);
-    setText(`fill_${F.street}_P.9`, addr.street);
-    setText(`fill_${F.district}_P.9`, addr.district);
+    // 持有股份數目（永遠寫入正確欄位 — 即使 0 也明確寫 "0"）
+    const sharesNum = Number(sh.shares) || 0;
+    setText(`fill_${F.shares}_P.9`, sharesNum > 0 ? fmtInt(sharesNum) : "0");
+    setText(`fill_${F.flat}_P.9`, safeStr(addr.flat));
+    setText(`fill_${F.building}_P.9`, safeStr(addr.building));
+    setText(`fill_${F.street}_P.9`, safeStr(addr.street));
+    setText(`fill_${F.district}_P.9`, safeStr(addr.district));
     setText(`fill_${F.country}_P.9`, country);
   };
 

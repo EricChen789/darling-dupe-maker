@@ -33,6 +33,7 @@ import {
 } from '@/hooks/useCompanies';
 import { SCRTab } from './SCRTab';
 import { CopyFromCompanyDialog } from './CopyFromCompanyDialog';
+import { useSecretaryTemplates } from '@/hooks/useSecretaryTemplates';
 
 interface CompanyDetailDialogProps {
   open: boolean;

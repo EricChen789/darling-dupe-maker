@@ -52,6 +52,7 @@ interface DbPerson {
   passport_file_path: string;
   id_card_file_path: string;
   address_proof_file_path: string;
+  date_of_birth?: string;
 }
 
 interface DbRole {
@@ -120,6 +121,7 @@ function buildPersonForRole(p: DbPerson, r: DbRole, role: 'director' | 'secretar
     aliasChinese: p.alias_chinese || '',
     aliasEnglish: p.alias_english || '',
     isReserve: !!r.is_reserve,
+    dateOfBirth: p.date_of_birth || '',
     companies: [],
     createdAt: '',
     updatedAt: '',

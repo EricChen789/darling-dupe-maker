@@ -730,8 +730,8 @@ function fillSchedule1(pdfDoc: PDFDocument, ctx: CommonCtx, members: Shareholder
 
   if (members[0]) fillMember(members[0], 0);
   if (members[1]) fillMember(members[1], 1);
-  setText("fill_29_P.9", String(pageNo));
-  setText("fill_30_P.9", String(totalPages));
+  setText("fill_31_P.9", String(pageNo));
+  setText("fill_32_P.9", String(totalPages));
 }
 
 // ========== 附表 2 (P.10): 上市公司 ==========

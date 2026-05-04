@@ -182,6 +182,9 @@ export const mockForms: Form[] = [
   { id: 'nr1', name: 'NR1', description: '註冊辦事處地址更改通知書', year: 2025, version: 1, isHelper: true },
   { id: 'nd2a', name: 'ND2A', description: '出任/停任董事及公司秘書通知書', year: 2025, version: 1, isHelper: true },
   { id: 'nd2b', name: 'ND2B', description: '更改董事及公司秘書詳情通知書', year: 2025, version: 1, isHelper: true },
+  { id: 'nnc1', name: 'NNC1 / BVI', description: '新公司成立表格（香港 NNC1 / BVI 註冊）', year: 2025, version: 1, isHelper: true },
+  { id: 'resolution', name: '決議書', description: '通用範本或 AI 生成的董事/股東決議書', year: 2025, version: 1, isHelper: true },
+  { id: 'rename', name: 'NNC2 公司更名', description: '股東特別決議書 + NNC2 表格', year: 2025, version: 1, isHelper: true },
   { id: 'irc3111a', name: 'IRC 3111A', description: '通知更改業務地址（稅務局）', year: 2025, version: 1, isHelper: false },
 ];
 

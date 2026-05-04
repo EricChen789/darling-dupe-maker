@@ -258,6 +258,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
       date_appointed: newOfficerForm.dateAppointed || undefined,
       date_ceased: newOfficerForm.dateCeased || undefined,
       place_incorporated: newOfficerForm.placeIncorporated, company_number_ref: newOfficerForm.companyNumberRef,
+      date_of_birth: newOfficerForm.dateOfBirth || undefined,
     }, {
       onSuccess: () => {
         toast({ title: `${addingOfficer === 'director' ? '董事' : '秘書'}已新增` });

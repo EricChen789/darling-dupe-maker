@@ -693,15 +693,12 @@ function fillSchedule1(pdfDoc: PDFDocument, ctx: CommonCtx, members: Shareholder
     setText("fill_6_P.9", fmtInt(firstShareInfo.shares));
   }
 
-  // 依模板實際欄位（圖片驗證）：
-  // slot1: 中文名 fill_7, 姓 fill_8, 名 fill_9, 共同持有人 fill_10
-  //        flat=11, building=14, street=15, district=16, country=17
-  //        持有股份數目 = fill_10 (與「共同持有人姓名」同名共用 widget — 寫入即顯示在股數框)
-  //        實測：股數欄真實名稱為 fill_10（位於 No. of Shares Held 框）
-  // slot2: 對應第二位股東（待驗證；暫沿用偏移）
+  // 依診斷 PDF 確認的真實欄位映射 (NAR1_p9_v2.pdf)：
+  // Slot1: 中文 7, 姓 8, 名 9, 股數 10, 地址 13/14/15/16/17, 備註 18
+  // Slot2: 中文 19, 姓 20, 名 21, 股數 22, 地址 25/26/27/28/29, 備註 30
   const SLOT_FIELDS = [
-    { name: 7,  surname: 8,  other: 9,  shares: 10, flat: 11, building: 14, street: 15, district: 16, country: 17 },
-    { name: 18, surname: 19, other: 20, shares: 21, flat: 22, building: 25, street: 26, district: 27, country: 28 },
+    { name: 7,  surname: 8,  other: 9,  shares: 10, flat: 13, building: 14, street: 15, district: 16, country: 17 },
+    { name: 19, surname: 20, other: 21, shares: 22, flat: 25, building: 26, street: 27, district: 28, country: 29 },
   ];
 
   const fillMember = (sh: ShareholderData, slotIdx: 0 | 1) => {

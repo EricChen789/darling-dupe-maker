@@ -502,6 +502,90 @@ export type Database = {
         }
         Relationships: []
       }
+      reminders: {
+        Row: {
+          company_id: string
+          completed_at: string | null
+          created_at: string
+          due_date: string
+          id: string
+          notes: string
+          notified_at: string | null
+          reminder_type: string
+          status: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          completed_at?: string | null
+          created_at?: string
+          due_date?: string
+          id?: string
+          notes?: string
+          notified_at?: string | null
+          reminder_type?: string
+          status?: string
+          title?: string
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          completed_at?: string | null
+          created_at?: string
+          due_date?: string
+          id?: string
+          notes?: string
+          notified_at?: string | null
+          reminder_type?: string
+          status?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      resolutions: {
+        Row: {
+          company_id: string
+          content: string
+          created_at: string
+          id: string
+          is_ai_generated: boolean
+          notes: string
+          resolution_date: string
+          resolution_type: string
+          signers: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          content?: string
+          created_at?: string
+          id?: string
+          is_ai_generated?: boolean
+          notes?: string
+          resolution_date?: string
+          resolution_type?: string
+          signers?: string
+          title?: string
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          content?: string
+          created_at?: string
+          id?: string
+          is_ai_generated?: boolean
+          notes?: string
+          resolution_date?: string
+          resolution_type?: string
+          signers?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       secretary_templates: {
         Row: {
           address: string

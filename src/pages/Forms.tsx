@@ -7,6 +7,9 @@ import FormWizard from '@/components/forms/FormWizard';
 import NR1GeneratorForm from '@/components/forms/NR1GeneratorForm';
 import ND2AGeneratorForm from '@/components/forms/ND2AGeneratorForm';
 import ND2BGeneratorForm from '@/components/forms/ND2BGeneratorForm';
+import NewCompanyGeneratorForm from '@/components/forms/NewCompanyGeneratorForm';
+import ResolutionGeneratorForm from '@/components/forms/ResolutionGeneratorForm';
+import RenameCompanyForm from '@/components/forms/RenameCompanyForm';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { toast } from '@/hooks/use-toast';
 
@@ -26,12 +29,21 @@ const Forms = () => {
   if (selectedForm === 'nd2b') {
     return <ND2BGeneratorForm onBack={() => setSelectedForm(null)} />;
   }
+  if (selectedForm === 'nnc1') {
+    return <NewCompanyGeneratorForm onBack={() => setSelectedForm(null)} />;
+  }
+  if (selectedForm === 'resolution') {
+    return <ResolutionGeneratorForm onBack={() => setSelectedForm(null)} />;
+  }
+  if (selectedForm === 'rename') {
+    return <RenameCompanyForm onBack={() => setSelectedForm(null)} />;
+  }
 
   // Group forms by category
-  const crForms = mockForms.filter(f => ['nar1', 'nr1', 'nd2a', 'nd2b'].includes(f.id));
+  const crForms = mockForms.filter(f => ['nar1', 'nr1', 'nd2a', 'nd2b', 'nnc1', 'resolution', 'rename'].includes(f.id));
   const irdForms = mockForms.filter(f => ['irc3111a'].includes(f.id));
 
-  const isReady = (id: string) => ['nar1', 'nr1', 'nd2a', 'nd2b'].includes(id);
+  const isReady = (id: string) => ['nar1', 'nr1', 'nd2a', 'nd2b', 'nnc1', 'resolution', 'rename'].includes(id);
 
   return (
     <div>

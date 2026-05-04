@@ -16,6 +16,7 @@ import FieldMapping from "./pages/FieldMapping";
 import Repair from "./pages/Repair";
 import MissingOfficers from "./pages/MissingOfficers";
 import Presenters from "./pages/Presenters";
+import Reminders from "./pages/Reminders";
 import Auth from "./pages/Auth";
 import ResetPassword from "./pages/ResetPassword";
 import NotFound from "./pages/NotFound";
@@ -64,6 +65,7 @@ const App = () => (
               <Route path="people" element={<People />} />
               <Route path="presenters" element={<Presenters />} />
               <Route path="forms" element={<Forms />} />
+              <Route path="reminders" element={<Reminders />} />
               <Route path="invoices" element={<Invoices />} />
               <Route path="logs" element={<Logs />} />
               <Route path="field-mapping" element={<FieldMapping />} />

@@ -491,7 +491,7 @@ export function useAddOfficer() {
 export function useUpdateOfficer() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: { name_english?: string; name_chinese?: string; identity?: string; id_number?: string; address?: string; service_address?: string; date_appointed?: string; date_ceased?: string; place_incorporated?: string; company_number_ref?: string; is_reserve?: boolean } }) => {
+    mutationFn: async ({ id, data }: { id: string; data: { name_english?: string; name_chinese?: string; identity?: string; id_number?: string; address?: string; service_address?: string; date_appointed?: string; date_ceased?: string; place_incorporated?: string; company_number_ref?: string; is_reserve?: boolean; date_of_birth?: string } }) => {
       // id is person_company_roles.id — first lookup the person_id
       const { data: roleRow, error: e1 } = await supabase
         .from('person_company_roles').select('person_id').eq('id', id).single();
@@ -507,6 +507,7 @@ export function useUpdateOfficer() {
       if (data.address !== undefined) personUpdate.address = data.address;
       if (data.place_incorporated !== undefined) personUpdate.place_incorporated = data.place_incorporated;
       if (data.company_number_ref !== undefined) personUpdate.company_number_ref = data.company_number_ref;
+      if (data.date_of_birth !== undefined) personUpdate.date_of_birth = data.date_of_birth;
       if (Object.keys(personUpdate).length > 0) {
         const { error } = await supabase.from('persons').update(personUpdate).eq('id', personId);
         if (error) throw error;

@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { PDFDocument, PDFName, PDFHexString, PDFString, PDFBool, PDFNumber, PDFArray } from "https://esm.sh/pdf-lib@1.17.1";
+import { PDFDocument, PDFName, PDFHexString, PDFString, PDFBool, PDFNumber, PDFArray, StandardFonts, rgb } from "https://esm.sh/pdf-lib@1.17.1";
 
 // ============================================================================
 // NAR1 PDF Generator — 原生 AcroForm 模式
@@ -1034,8 +1034,9 @@ async function buildNAR1Pdf(data: CompanyData): Promise<Uint8Array> {
 }
 
 // === Debug 模式 ===
+// 為每個 widget 在其座標位置直接 drawText 寫上「真實欄位名 #序號」
+// 即使多個 widget 共用同一 PDF field，也能看清每個方框實際綁定哪個名稱
 async function buildDebugPdf(): Promise<Uint8Array> {
-  // 診斷模式：合併所有模板，每格寫入「欄位名@頁碼」
   const templateUrls = [
     TEMPLATES.main,
     TEMPLATES.schedule1,
@@ -1061,36 +1062,66 @@ async function buildDebugPdf(): Promise<Uint8Array> {
     }
   }
 
-  // 建立 widget → 頁碼 對照
-  const widgetPageMap = new Map<any, number>();
+  const helv = await mainDoc.embedFont(StandardFonts.Helvetica);
+  const nameCounter = new Map<string, number>();
+
   const allPages = mainDoc.getPages();
   for (let pageIdx = 0; pageIdx < allPages.length; pageIdx++) {
-    const annots = allPages[pageIdx].node.lookup(PDFName.of("Annots")) as any;
-    if (!annots || typeof annots.size !== "function") continue;
-    for (let i = 0; i < annots.size(); i++) {
+    const page = allPages[pageIdx];
+    const annotsArr = page.node.lookup(PDFName.of("Annots")) as any;
+    if (!annotsArr || typeof annotsArr.size !== "function") continue;
+
+    for (let i = 0; i < annotsArr.size(); i++) {
       try {
-        const widget = mainDoc.context.lookup(annots.get(i)) as any;
-        if (widget) widgetPageMap.set(widget, pageIdx + 1);
-      } catch (_) { /* skip */ }
+        const widget = mainDoc.context.lookup(annotsArr.get(i)) as any;
+        if (!widget) continue;
+        const subtype = widget.lookup(PDFName.of("Subtype"));
+        if (!subtype || subtype.toString() !== "/Widget") continue;
+
+        // 取真實欄位名（widget 自身或 Parent chain）
+        let fieldName: string | null = null;
+        let cur: any = widget;
+        while (cur && !fieldName) {
+          const t = cur.lookup?.(PDFName.of("T"));
+          if (t) {
+            try { fieldName = (t as any).decodeText(); }
+            catch { fieldName = t.toString().replace(/^\(|\)$/g, ""); }
+          }
+          cur = cur.lookup?.(PDFName.of("Parent"));
+        }
+        if (!fieldName) fieldName = "(unnamed)";
+
+        const rectObj = widget.lookup(PDFName.of("Rect")) as any;
+        if (!rectObj || typeof rectObj.size !== "function" || rectObj.size() < 4) continue;
+        const x1 = rectObj.get(0).asNumber();
+        const y1 = rectObj.get(1).asNumber();
+        const x2 = rectObj.get(2).asNumber();
+        const y2 = rectObj.get(3).asNumber();
+
+        const cnt = (nameCounter.get(fieldName) || 0) + 1;
+        nameCounter.set(fieldName, cnt);
+        const label = `${fieldName}#${cnt}`;
+
+        const fontSize = Math.max(5, Math.min(7, (y2 - y1) * 0.45));
+        page.drawText(label, {
+          x: x1 + 1,
+          y: y2 - fontSize - 0.5,
+          size: fontSize,
+          font: helv,
+          color: rgb(1, 0, 0),
+        });
+        page.drawRectangle({
+          x: x1, y: y1, width: x2 - x1, height: y2 - y1,
+          borderColor: rgb(0, 0.4, 1),
+          borderWidth: 0.3,
+        });
+      } catch (_) { /* skip widget */ }
     }
   }
 
-  const { setText, check } = createFormHelpers(mainDoc);
-  const fields = collectFormFields(mainDoc);
-  const written = new Set<string>();
-  for (const [name, target] of fields.entries()) {
-    if (written.has(name)) continue;
-    written.add(name);
-    const pageNum = widgetPageMap.get(target.widget) || 0;
-    if (name.startsWith("fill_")) {
-      // 移除已含的 _P.X 後綴避免重複
-      const clean = name.replace(/_P\.?\d+$/, "").replace(/_P$/, "");
-      const label = pageNum > 0 ? `${clean}@P${pageNum}` : name;
-      setText(name, label);
-    } else if (name.startsWith("cb_")) {
-      check(name, true);
-    }
-  }
+  // Flatten 表單以避免 widget appearance 蓋掉我們畫的標籤
+  try { mainDoc.getForm().flatten(); } catch (_) { /* ignore */ }
+
   return await mainDoc.save({ updateFieldAppearances: false });
 }
 

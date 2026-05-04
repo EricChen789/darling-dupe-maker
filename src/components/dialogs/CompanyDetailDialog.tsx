@@ -836,12 +836,44 @@ function PersonRow({ person, isSelected, isSigner, onClick, onDelete, onToggleRe
 
 type OfficerFormType = { nameEnglish: string; nameChinese: string; identity: string; idNumber: string; address: string; serviceAddress: string; dateAppointed: string; dateCeased: string; placeIncorporated: string; companyNumberRef: string };
 
-function NewOfficerForm({ form, setForm, onSave, onCancel }: {
+function NewOfficerForm({ form, setForm, onSave, onCancel, isSecretary, templates = [] }: {
   form: OfficerFormType;
   setForm: (f: OfficerFormType) => void; onSave: () => void; onCancel: () => void;
+  isSecretary?: boolean;
+  templates?: import('@/hooks/useSecretaryTemplates').SecretaryTemplate[];
 }) {
+  const applyTemplate = (id: string) => {
+    const t = templates.find(x => x.id === id);
+    if (!t) return;
+    setForm({
+      ...form,
+      nameEnglish: t.nameEnglish,
+      nameChinese: t.nameChinese,
+      identity: t.identity,
+      idNumber: t.idNumber,
+      address: t.address || form.address,
+      serviceAddress: t.serviceAddress || form.serviceAddress,
+      placeIncorporated: t.placeIncorporated,
+      companyNumberRef: t.brNumber,
+    });
+  };
   return (
     <div className="rounded-md border border-primary/50 bg-primary/5 p-3 mb-2 space-y-2">
+      {isSecretary && templates.length > 0 && (
+        <div className="space-y-1">
+          <Label className="text-xs">從範本帶入</Label>
+          <Select onValueChange={applyTemplate}>
+            <SelectTrigger><SelectValue placeholder="選擇秘書範本以自動填入..." /></SelectTrigger>
+            <SelectContent>
+              {templates.map(t => (
+                <SelectItem key={t.id} value={t.id}>
+                  {t.label}{t.isDefault ? ' (預設)' : ''}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
       <div className="grid grid-cols-2 gap-2">
         <div className="space-y-1"><Label className="text-xs">英文名稱 *</Label><Input value={form.nameEnglish} onChange={e => setForm({ ...form, nameEnglish: e.target.value })} placeholder="English name" /></div>
         <div className="space-y-1"><Label className="text-xs">中文名稱</Label><Input value={form.nameChinese} onChange={e => setForm({ ...form, nameChinese: e.target.value })} placeholder="中文名稱" /></div>

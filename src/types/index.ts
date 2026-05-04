@@ -60,6 +60,7 @@ export interface Person {
   aliasChinese?: string;
   aliasEnglish?: string;
   isReserve?: boolean;
+  dateOfBirth?: string;
   companies: { id: string; name: string; brNumber: string; incorporationDate?: string }[];
   createdAt: string;
   updatedAt: string;

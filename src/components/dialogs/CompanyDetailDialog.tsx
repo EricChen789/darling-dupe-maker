@@ -32,6 +32,7 @@ import {
   useAddShareholder, useUpdateShareholder, useDeleteShareholder,
 } from '@/hooks/useCompanies';
 import { SCRTab } from './SCRTab';
+import { RegistersTab } from './RegistersTab';
 import { CopyFromCompanyDialog } from './CopyFromCompanyDialog';
 import { useSecretaryTemplates } from '@/hooks/useSecretaryTemplates';
 
@@ -41,7 +42,7 @@ interface CompanyDetailDialogProps {
   company: Company | null;
 }
 
-const emptyOfficerForm = () => ({ nameEnglish: '', nameChinese: '', identity: 'natural', idNumber: '', address: '', serviceAddress: '', dateAppointed: '', dateCeased: '', placeIncorporated: '', companyNumberRef: '' });
+const emptyOfficerForm = () => ({ nameEnglish: '', nameChinese: '', identity: 'natural', idNumber: '', address: '', serviceAddress: '', dateAppointed: '', dateCeased: '', placeIncorporated: '', companyNumberRef: '', dateOfBirth: '' });
 const emptyShForm = () => ({ name: '', nameEnglish: '', nameChinese: '', shares: 0, identity: 'natural', idNumber: '', address: '', serviceAddress: '', email: '', shareType: '', issuePrice: '', currency: 'HKD', paidUp: '', unpaid: '' });
 
 export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDetailDialogProps) => {
@@ -106,6 +107,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
       dateAppointed: source.dateAppointed || '',
       dateCeased: source.dateCeased || '', placeIncorporated: source.placeIncorporated || '',
       companyNumberRef: source.companyNumberRef || '',
+      dateOfBirth: source.dateOfBirth || '',
     });
   }, [selectedPerson?.id, company]);
 
@@ -226,6 +228,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
       date_appointed: personForm.dateAppointed || undefined,
       date_ceased: personForm.dateCeased || undefined,
       place_incorporated: personForm.placeIncorporated, company_number_ref: personForm.companyNumberRef,
+      date_of_birth: personForm.dateOfBirth || undefined,
     }}, {
       onSuccess: () => { toast({ title: '人員資料已更新' }); setEditingPerson(false); },
       onError: () => toast({ title: '更新失敗', variant: 'destructive' }),
@@ -255,6 +258,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
       date_appointed: newOfficerForm.dateAppointed || undefined,
       date_ceased: newOfficerForm.dateCeased || undefined,
       place_incorporated: newOfficerForm.placeIncorporated, company_number_ref: newOfficerForm.companyNumberRef,
+      date_of_birth: newOfficerForm.dateOfBirth || undefined,
     }, {
       onSuccess: () => {
         toast({ title: `${addingOfficer === 'director' ? '董事' : '秘書'}已新增` });
@@ -357,6 +361,9 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                 </TabsTrigger>
                 <TabsTrigger value="scr" className="gap-1.5">
                   <ShieldCheck className="h-3.5 w-3.5" /> 重要控制人
+                </TabsTrigger>
+                <TabsTrigger value="registers" className="gap-1.5">
+                  <FileText className="h-3.5 w-3.5" /> 登記冊
                 </TabsTrigger>
               </TabsList>
 
@@ -597,6 +604,10 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
               <TabsContent value="scr">
                 <SCRTab company={company} />
               </TabsContent>
+
+              <TabsContent value="registers">
+                <RegistersTab company={company} />
+              </TabsContent>
             </Tabs>
           </div>
 
@@ -668,6 +679,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                   <div className="space-y-1"><Label className="text-xs">證件號碼</Label><Input value={personForm.idNumber} onChange={e => setPersonForm({ ...personForm, idNumber: e.target.value })} /></div>
                   <div className="space-y-1"><Label className="text-xs">委任日期</Label><Input value={personForm.dateAppointed} onChange={e => setPersonForm({ ...personForm, dateAppointed: e.target.value })} placeholder="DD/MM/YYYY" /></div>
                   <div className="space-y-1"><Label className="text-xs">辭任日期</Label><Input value={personForm.dateCeased} onChange={e => setPersonForm({ ...personForm, dateCeased: e.target.value })} placeholder="DD/MM/YYYY" /></div>
+                  <div className="space-y-1"><Label className="text-xs">出生日期 DOB</Label><Input value={personForm.dateOfBirth} onChange={e => setPersonForm({ ...personForm, dateOfBirth: e.target.value })} placeholder="DD/MM/YYYY" /></div>
                   <div className="col-span-2 space-y-1"><Label className="text-xs">居住地址 (Residential)</Label><Textarea value={personForm.address} onChange={e => setPersonForm({ ...personForm, address: e.target.value })} rows={2} /></div>
                   <div className="col-span-2 space-y-1">
                     <div className="flex items-center justify-between">
@@ -836,7 +848,7 @@ function PersonRow({ person, isSelected, isSigner, onClick, onDelete, onToggleRe
   );
 }
 
-type OfficerFormType = { nameEnglish: string; nameChinese: string; identity: string; idNumber: string; address: string; serviceAddress: string; dateAppointed: string; dateCeased: string; placeIncorporated: string; companyNumberRef: string };
+type OfficerFormType = { nameEnglish: string; nameChinese: string; identity: string; idNumber: string; address: string; serviceAddress: string; dateAppointed: string; dateCeased: string; placeIncorporated: string; companyNumberRef: string; dateOfBirth: string };
 
 function NewOfficerForm({ form, setForm, onSave, onCancel, isSecretary, templates = [] }: {
   form: OfficerFormType;
@@ -892,6 +904,7 @@ function NewOfficerForm({ form, setForm, onSave, onCancel, isSecretary, template
         <div className="space-y-1"><Label className="text-xs">證件號碼</Label><Input value={form.idNumber} onChange={e => setForm({ ...form, idNumber: e.target.value })} placeholder="ID / Passport No." /></div>
         <div className="space-y-1"><Label className="text-xs">委任日期</Label><Input value={form.dateAppointed} onChange={e => setForm({ ...form, dateAppointed: e.target.value })} placeholder="DD/MM/YYYY" /></div>
         <div className="space-y-1"><Label className="text-xs">辭任日期</Label><Input value={form.dateCeased} onChange={e => setForm({ ...form, dateCeased: e.target.value })} placeholder="DD/MM/YYYY" /></div>
+        <div className="space-y-1"><Label className="text-xs">出生日期 DOB</Label><Input value={form.dateOfBirth} onChange={e => setForm({ ...form, dateOfBirth: e.target.value })} placeholder="DD/MM/YYYY" /></div>
         <div className="col-span-2 space-y-1"><Label className="text-xs">居住地址</Label><Textarea value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} rows={2} placeholder="地址 Address" /></div>
         <div className="col-span-2 space-y-1"><Label className="text-xs">服務地址 (預設同註冊辦事處)</Label><Textarea value={form.serviceAddress} onChange={e => setForm({ ...form, serviceAddress: e.target.value })} rows={2} placeholder="留空則自動使用註冊辦事處地址" /></div>
         {form.identity === 'corporate' && (

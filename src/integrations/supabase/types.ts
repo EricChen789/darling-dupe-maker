@@ -185,6 +185,7 @@ export type Database = {
           created_at: string
           date_appointed: string | null
           date_ceased: string | null
+          date_of_birth: string
           email: string | null
           id: string
           id_card_file_path: string | null
@@ -213,6 +214,7 @@ export type Database = {
           created_at?: string
           date_appointed?: string | null
           date_ceased?: string | null
+          date_of_birth?: string
           email?: string | null
           id?: string
           id_card_file_path?: string | null
@@ -241,6 +243,7 @@ export type Database = {
           created_at?: string
           date_appointed?: string | null
           date_ceased?: string | null
+          date_of_birth?: string
           email?: string | null
           id?: string
           id_card_file_path?: string | null
@@ -345,6 +348,7 @@ export type Database = {
           alias_english: string
           company_number_ref: string
           created_at: string
+          date_of_birth: string
           email: string
           id: string
           id_card_file_path: string
@@ -375,6 +379,7 @@ export type Database = {
           alias_english?: string
           company_number_ref?: string
           created_at?: string
+          date_of_birth?: string
           email?: string
           id?: string
           id_card_file_path?: string
@@ -405,6 +410,7 @@ export type Database = {
           alias_english?: string
           company_number_ref?: string
           created_at?: string
+          date_of_birth?: string
           email?: string
           id?: string
           id_card_file_path?: string
@@ -549,6 +555,66 @@ export type Database = {
           place_incorporated?: string
           service_address?: string
           tcsp_number?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      share_transactions: {
+        Row: {
+          company_id: string
+          created_at: string
+          currency: string
+          from_name: string
+          from_person_id: string | null
+          id: string
+          instrument_number: string
+          notes: string
+          price_per_share: string
+          share_type: string
+          shares: number
+          to_name: string
+          to_person_id: string | null
+          total_consideration: string
+          transaction_date: string
+          transaction_type: string
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          currency?: string
+          from_name?: string
+          from_person_id?: string | null
+          id?: string
+          instrument_number?: string
+          notes?: string
+          price_per_share?: string
+          share_type?: string
+          shares?: number
+          to_name?: string
+          to_person_id?: string | null
+          total_consideration?: string
+          transaction_date?: string
+          transaction_type?: string
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          currency?: string
+          from_name?: string
+          from_person_id?: string | null
+          id?: string
+          instrument_number?: string
+          notes?: string
+          price_per_share?: string
+          share_type?: string
+          shares?: number
+          to_name?: string
+          to_person_id?: string | null
+          total_consideration?: string
+          transaction_date?: string
+          transaction_type?: string
           updated_at?: string
         }
         Relationships: []

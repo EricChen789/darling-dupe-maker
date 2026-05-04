@@ -139,9 +139,18 @@ async function listAllFormFields(): Promise<{ fields: Array<{name: string; type:
 }
 
 // === 共用工具 ===
+const CJK_RE = /[\u3400-\u9FFF\uF900-\uFAFF]/;
 const parseEnglishName = (fullName: string) => {
-  const cleaned = (fullName || "").replace(/\s+/g, " ").trim();
+  let cleaned = (fullName || "").replace(/\s+/g, " ").trim();
   if (!cleaned) return { surname: "", otherNames: "" };
+  // 若整個字串只有中文/標點（沒有任何 ASCII 字母），視為無英文名，回傳空
+  // 避免把「劉小星」之類的中文名誤塞進英文 surname/otherNames 欄
+  if (!/[A-Za-z]/.test(cleaned)) return { surname: "", otherNames: "" };
+  // 移除中文字元殘留（例如 "Liu Xiao Xing 劉小星" 這種混合）
+  if (CJK_RE.test(cleaned)) {
+    cleaned = cleaned.replace(/[\u3400-\u9FFF\uF900-\uFAFF]+/g, " ").replace(/\s+/g, " ").trim();
+    if (!cleaned) return { surname: "", otherNames: "" };
+  }
   if (cleaned.includes(",")) {
     const segs = cleaned.split(",").map(s => s.trim()).filter(Boolean);
     if (segs.length >= 2) return { surname: segs[0], otherNames: segs.slice(1).join(" ") };

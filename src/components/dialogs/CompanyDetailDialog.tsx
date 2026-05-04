@@ -362,6 +362,9 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                 <TabsTrigger value="scr" className="gap-1.5">
                   <ShieldCheck className="h-3.5 w-3.5" /> 重要控制人
                 </TabsTrigger>
+                <TabsTrigger value="registers" className="gap-1.5">
+                  <FileText className="h-3.5 w-3.5" /> 登記冊
+                </TabsTrigger>
               </TabsList>
 
               {/* Tab: 基本資料 */}

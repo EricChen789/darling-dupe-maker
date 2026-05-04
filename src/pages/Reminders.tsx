@@ -112,19 +112,44 @@ export default function Reminders() {
         }
       />
 
+      {!isLoading && enriched.length >= 0 && (
+        <div className="flex items-center gap-3 mb-3">
+          <Label className="text-xs text-muted-foreground">狀態：</Label>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="h-8 w-36"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全部</SelectItem>
+              <SelectItem value="pending">待辦</SelectItem>
+              <SelectItem value="overdue">逾期</SelectItem>
+              <SelectItem value="submitted">已提交</SelectItem>
+              <SelectItem value="completed">已完成</SelectItem>
+              <SelectItem value="ignored">已忽略</SelectItem>
+            </SelectContent>
+          </Select>
+          <span className="text-xs text-muted-foreground ml-2">共 {enriched.length} 筆</span>
+        </div>
+      )}
+
       {isLoading ? (
         <p className="text-muted-foreground text-sm">載入中...</p>
       ) : enriched.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground">
           <Bell className="h-10 w-10 mx-auto mb-3 opacity-30" />
-          尚無提醒記錄。點擊「自動生成 NAR1 提醒」依成立日期建立。
+          無符合條件的提醒。
         </div>
       ) : (
         <div className="bg-card border border-border rounded-lg overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-muted/50 text-xs">
               <tr>
-                <th className="text-left p-3">到期日</th>
+                <th className="text-left p-3">
+                  <button
+                    onClick={() => setSortDir(sortDir === 'asc' ? 'desc' : 'asc')}
+                    className="inline-flex items-center gap-1 hover:text-foreground"
+                  >
+                    到期日 {sortDir === 'asc' ? '↑' : '↓'}
+                  </button>
+                </th>
                 <th className="text-left p-3">類型</th>
                 <th className="text-left p-3">公司</th>
                 <th className="text-left p-3">標題</th>
@@ -141,9 +166,22 @@ export default function Reminders() {
                   <td className="p-3">{r._company?.name || <span className="text-muted-foreground">(已刪除)</span>}</td>
                   <td className="p-3">{r.title}</td>
                   <td className="p-3">
-                    <Badge variant={statusColor(r._isOverdue ? 'overdue' : r.status) as any} className="text-xs">
-                      {r._isOverdue ? '逾期' : r.status === 'pending' ? '待辦' : r.status === 'submitted' ? '已提交' : r.status === 'completed' ? '已完成' : r.status}
-                    </Badge>
+                    <Select
+                      value={r.status}
+                      onValueChange={(v) => updateStatus.mutate({ id: r.id, status: v })}
+                    >
+                      <SelectTrigger className="h-7 w-28 text-xs">
+                        <Badge variant={statusColor(r._isOverdue ? 'overdue' : r.status) as any} className="text-xs">
+                          {r._isOverdue ? '逾期' : r.status === 'pending' ? '待辦' : r.status === 'submitted' ? '已提交' : r.status === 'completed' ? '已完成' : r.status === 'ignored' ? '已忽略' : r.status}
+                        </Badge>
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="pending">待辦</SelectItem>
+                        <SelectItem value="submitted">已提交</SelectItem>
+                        <SelectItem value="completed">已完成</SelectItem>
+                        <SelectItem value="ignored">已忽略</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </td>
                   <td className="p-3 text-xs text-muted-foreground max-w-xs truncate">{r.notes}</td>
                   <td className="p-3 text-right">

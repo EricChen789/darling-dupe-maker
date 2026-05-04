@@ -59,6 +59,15 @@ export default function NewCompanyGeneratorForm({ onBack }: Props) {
   const [officers, setOfficers] = useState<OfficerEntry[]>([emptyOfficer('director'), emptyOfficer('secretary')]);
   const [shareholders, setShareholders] = useState<ShareEntry[]>([emptyShare()]);
 
+  // 簽署人選擇:選擇類型 + 具體人員索引
+  const [signerRole, setSignerRole] = useState<'director' | 'secretary'>('director');
+  const [signerIndex, setSignerIndex] = useState<number>(-1); // -1 = 未指定具體人
+
+  // 依當前 signerRole 篩選候選人
+  const signerCandidates = officers
+    .map((o, idx) => ({ o, idx }))
+    .filter(({ o }) => o.role === signerRole);
+
   const updateOfficer = (i: number, patch: Partial<OfficerEntry>) =>
     setOfficers(arr => arr.map((o, idx) => idx === i ? { ...o, ...patch } : o));
   const removeOfficer = (i: number) => setOfficers(arr => arr.filter((_, idx) => idx !== i));

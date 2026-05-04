@@ -32,6 +32,7 @@ import {
   useAddShareholder, useUpdateShareholder, useDeleteShareholder,
 } from '@/hooks/useCompanies';
 import { SCRTab } from './SCRTab';
+import { RegistersTab } from './RegistersTab';
 import { CopyFromCompanyDialog } from './CopyFromCompanyDialog';
 import { useSecretaryTemplates } from '@/hooks/useSecretaryTemplates';
 
@@ -41,7 +42,7 @@ interface CompanyDetailDialogProps {
   company: Company | null;
 }
 
-const emptyOfficerForm = () => ({ nameEnglish: '', nameChinese: '', identity: 'natural', idNumber: '', address: '', serviceAddress: '', dateAppointed: '', dateCeased: '', placeIncorporated: '', companyNumberRef: '' });
+const emptyOfficerForm = () => ({ nameEnglish: '', nameChinese: '', identity: 'natural', idNumber: '', address: '', serviceAddress: '', dateAppointed: '', dateCeased: '', placeIncorporated: '', companyNumberRef: '', dateOfBirth: '' });
 const emptyShForm = () => ({ name: '', nameEnglish: '', nameChinese: '', shares: 0, identity: 'natural', idNumber: '', address: '', serviceAddress: '', email: '', shareType: '', issuePrice: '', currency: 'HKD', paidUp: '', unpaid: '' });
 
 export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDetailDialogProps) => {
@@ -106,6 +107,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
       dateAppointed: source.dateAppointed || '',
       dateCeased: source.dateCeased || '', placeIncorporated: source.placeIncorporated || '',
       companyNumberRef: source.companyNumberRef || '',
+      dateOfBirth: source.dateOfBirth || '',
     });
   }, [selectedPerson?.id, company]);
 
@@ -226,6 +228,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
       date_appointed: personForm.dateAppointed || undefined,
       date_ceased: personForm.dateCeased || undefined,
       place_incorporated: personForm.placeIncorporated, company_number_ref: personForm.companyNumberRef,
+      date_of_birth: personForm.dateOfBirth || undefined,
     }}, {
       onSuccess: () => { toast({ title: '人員資料已更新' }); setEditingPerson(false); },
       onError: () => toast({ title: '更新失敗', variant: 'destructive' }),

@@ -291,6 +291,57 @@ export default function NewCompanyGeneratorForm({ onBack }: Props) {
 
       <Separator />
 
+      <div className="space-y-2 rounded-md border border-primary/30 bg-primary/5 p-3">
+        <h3 className="font-semibold text-sm">B-1. 簽署人選擇 Signer</h3>
+        <p className="text-xs text-muted-foreground">
+          選擇後,生成的 PDF 將只保留所選類型的人員,自動刪除另一類別。
+        </p>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <Label className="text-xs">簽署人類型 *</Label>
+            <Select
+              value={signerRole}
+              onValueChange={(v) => {
+                setSignerRole(v as 'director' | 'secretary');
+                setSignerIndex(-1);
+              }}
+            >
+              <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="director">董事 Director (將刪除秘書)</SelectItem>
+                <SelectItem value="secretary">公司秘書 Secretary (將刪除董事)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">指定簽署人員</Label>
+            <Select
+              value={String(signerIndex)}
+              onValueChange={(v) => setSignerIndex(Number(v))}
+            >
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue placeholder="自動使用第一位" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="-1">自動 (第一位{signerRole === 'director' ? '董事' : '秘書'})</SelectItem>
+                {signerCandidates.map(({ o, idx }) => (
+                  <SelectItem key={idx} value={String(idx)}>
+                    {o.nameEnglish || o.nameChinese || `(未命名 #${idx + 1})`}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        {signerCandidates.length === 0 && (
+          <p className="text-xs text-destructive">
+            ⚠ 上方未有任何「{signerRole === 'director' ? '董事' : '秘書'}」,請先加入。
+          </p>
+        )}
+      </div>
+
+      <Separator />
+
       <div className="flex items-center justify-between">
         <h3 className="font-semibold text-sm">C. 創辦股東</h3>
         <Button variant="outline" size="sm" onClick={() => setShareholders([...shareholders, emptyShare()])}>

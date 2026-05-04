@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { PDFDocument, PDFName, PDFHexString, PDFString, PDFBool, PDFNumber, PDFArray } from "https://esm.sh/pdf-lib@1.17.1";
+import { PDFDocument, PDFName, PDFHexString, PDFString, PDFBool, PDFNumber, PDFArray, StandardFonts, rgb } from "https://esm.sh/pdf-lib@1.17.1";
 
 // ============================================================================
 // NAR1 PDF Generator — 原生 AcroForm 模式

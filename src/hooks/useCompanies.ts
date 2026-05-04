@@ -457,7 +457,7 @@ export function useUpdateCompany() {
 export function useAddOfficer() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (data: { company_id: string; name_english: string; name_chinese?: string; role: string; identity?: string; id_number?: string; address?: string; service_address?: string; date_appointed?: string; date_ceased?: string; place_incorporated?: string; company_number_ref?: string }) => {
+    mutationFn: async (data: { company_id: string; name_english: string; name_chinese?: string; role: string; identity?: string; id_number?: string; address?: string; service_address?: string; date_appointed?: string; date_ceased?: string; place_incorporated?: string; company_number_ref?: string; is_reserve?: boolean }) => {
       const personId = await findOrCreatePerson({
         identity: data.identity,
         nameEnglish: data.name_english,
@@ -475,6 +475,7 @@ export function useAddOfficer() {
         date_appointed: data.date_appointed || '',
         date_ceased: data.date_ceased || '',
         service_address_override: '',
+        is_reserve: !!data.is_reserve,
       } as any);
       if (error) throw error;
     },
@@ -488,7 +489,7 @@ export function useAddOfficer() {
 export function useUpdateOfficer() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: { name_english?: string; name_chinese?: string; identity?: string; id_number?: string; address?: string; service_address?: string; date_appointed?: string; date_ceased?: string; place_incorporated?: string; company_number_ref?: string } }) => {
+    mutationFn: async ({ id, data }: { id: string; data: { name_english?: string; name_chinese?: string; identity?: string; id_number?: string; address?: string; service_address?: string; date_appointed?: string; date_ceased?: string; place_incorporated?: string; company_number_ref?: string; is_reserve?: boolean } }) => {
       // id is person_company_roles.id — first lookup the person_id
       const { data: roleRow, error: e1 } = await supabase
         .from('person_company_roles').select('person_id').eq('id', id).single();
@@ -514,6 +515,7 @@ export function useUpdateOfficer() {
       if (data.service_address !== undefined) roleUpdate.service_address_override = data.service_address;
       if (data.date_appointed !== undefined) roleUpdate.date_appointed = data.date_appointed;
       if (data.date_ceased !== undefined) roleUpdate.date_ceased = data.date_ceased;
+      if (data.is_reserve !== undefined) roleUpdate.is_reserve = data.is_reserve;
       if (Object.keys(roleUpdate).length > 0) {
         const { error } = await supabase.from('person_company_roles').update(roleUpdate).eq('id', id);
         if (error) throw error;

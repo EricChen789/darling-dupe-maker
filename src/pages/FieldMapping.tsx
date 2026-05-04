@@ -75,8 +75,8 @@ const FieldMapping = () => {
         URL.revokeObjectURL(url);
 
         toast({
-          title: '附表一診斷 PDF 已生成',
-          description: '所有欄位已填入欄位編號 (1–100)',
+          title: '診斷 PDF 已生成',
+          description: '所有頁面欄位已填入欄位編號 (含頁碼)，勾選框全部勾上',
         });
       }
     } catch (error) {
@@ -109,6 +109,16 @@ const FieldMapping = () => {
       <PageHeader
         title="NAR1 欄位對照表"
         description="顯示 NAR1 周年申報表 PDF 模板的欄位編號與資料映射關係 (共 15 頁)"
+        actions={
+          <Button onClick={generateDebugPdf} disabled={generatingDebug}>
+            {generatingDebug ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <Download className="h-4 w-4 mr-2" />
+            )}
+            {generatingDebug ? '生成中...' : '生成診斷 PDF'}
+          </Button>
+        }
       />
 
       <Tabs defaultValue="mapping" className="space-y-4">

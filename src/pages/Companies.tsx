@@ -18,6 +18,7 @@ import { NAR1Generator } from '@/components/nar1/NAR1Generator';
 import { toast } from '@/hooks/use-toast';
 import { useCompanies, useDeleteCompany, useAddCompany, useUpdateCompany } from '@/hooks/useCompanies';
 import { usePresenters } from '@/hooks/usePresenters';
+import { useUserRole } from '@/hooks/useUserRole';
 
 const Companies = () => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -257,7 +258,7 @@ const Companies = () => {
               <TableHead className="font-medium">董事</TableHead>
               <TableHead className="font-medium">秘書</TableHead>
               <TableHead className="font-medium">股東</TableHead>
-              <TableHead className="font-medium">提交人 Presenter</TableHead>
+              
               <TableHead className="font-medium">狀態</TableHead>
               <TableHead className="font-medium">操作</TableHead>
             </TableRow>
@@ -368,16 +369,6 @@ const Companies = () => {
                       </HoverCardContent>
                     </HoverCard>
                   ) : <span className="text-muted-foreground text-xs">-</span>}
-                </TableCell>
-                <TableCell className="min-w-[180px]">
-                  {(() => {
-                    const p = presenters.find(x => x.id === company.preferredPresenterId);
-                    return p ? (
-                      <span className="text-xs">{p.name}</span>
-                    ) : (
-                      <span className="text-xs text-destructive">未指定</span>
-                    );
-                  })()}
                 </TableCell>
                 <TableCell onClick={(e) => e.stopPropagation()} className="min-w-[110px]">
                   <Select

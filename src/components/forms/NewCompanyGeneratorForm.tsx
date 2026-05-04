@@ -110,9 +110,10 @@ export default function NewCompanyGeneratorForm({ onBack }: Props) {
           ],
       });
 
-      // Section C — Officers
+      // Section C — Officers (依簽署人選擇:刪除非選中角色)
+      const filteredOfficers = officers.filter(o => o.role === signerRole);
       const officerRows: [string, string][] = [];
-      officers.forEach((o, idx) => {
+      filteredOfficers.forEach((o, idx) => {
         officerRows.push([`#${idx + 1} 角色 Role`, `${o.role === 'director' ? '董事 Director' : '公司秘書 Secretary'} (${o.identity})`]);
         officerRows.push([`   英文姓名 Name (Eng)`, o.nameEnglish || '—']);
         officerRows.push([`   中文姓名 Name (中)`, o.nameChinese || '—']);
@@ -125,7 +126,11 @@ export default function NewCompanyGeneratorForm({ onBack }: Props) {
         }
         officerRows.push([`   地址 Address`, o.address || '—']);
       });
-      sections.push({ heading: 'C. 首任董事及秘書 First Directors & Secretary', rows: officerRows });
+      const skippedRole = signerRole === 'director' ? '公司秘書 Secretary' : '董事 Director';
+      sections.push({
+        heading: `C. 首任${signerRole === 'director' ? '董事' : '公司秘書'} (已刪除「${skippedRole}」)`,
+        rows: officerRows.length ? officerRows : [['(無)', `請於上方加入至少一位${signerRole === 'director' ? '董事' : '秘書'}`]],
+      });
 
       // Section D — Founder shareholders
       const shRows: [string, string][] = [];

@@ -59,6 +59,15 @@ export default function NewCompanyGeneratorForm({ onBack }: Props) {
   const [officers, setOfficers] = useState<OfficerEntry[]>([emptyOfficer('director'), emptyOfficer('secretary')]);
   const [shareholders, setShareholders] = useState<ShareEntry[]>([emptyShare()]);
 
+  // 簽署人選擇:選擇類型 + 具體人員索引
+  const [signerRole, setSignerRole] = useState<'director' | 'secretary'>('director');
+  const [signerIndex, setSignerIndex] = useState<number>(-1); // -1 = 未指定具體人
+
+  // 依當前 signerRole 篩選候選人
+  const signerCandidates = officers
+    .map((o, idx) => ({ o, idx }))
+    .filter(({ o }) => o.role === signerRole);
+
   const updateOfficer = (i: number, patch: Partial<OfficerEntry>) =>
     setOfficers(arr => arr.map((o, idx) => idx === i ? { ...o, ...patch } : o));
   const removeOfficer = (i: number) => setOfficers(arr => arr.filter((_, idx) => idx !== i));
@@ -101,9 +110,10 @@ export default function NewCompanyGeneratorForm({ onBack }: Props) {
           ],
       });
 
-      // Section C — Officers
+      // Section C — Officers (依簽署人選擇:刪除非選中角色)
+      const filteredOfficers = officers.filter(o => o.role === signerRole);
       const officerRows: [string, string][] = [];
-      officers.forEach((o, idx) => {
+      filteredOfficers.forEach((o, idx) => {
         officerRows.push([`#${idx + 1} 角色 Role`, `${o.role === 'director' ? '董事 Director' : '公司秘書 Secretary'} (${o.identity})`]);
         officerRows.push([`   英文姓名 Name (Eng)`, o.nameEnglish || '—']);
         officerRows.push([`   中文姓名 Name (中)`, o.nameChinese || '—']);
@@ -116,7 +126,11 @@ export default function NewCompanyGeneratorForm({ onBack }: Props) {
         }
         officerRows.push([`   地址 Address`, o.address || '—']);
       });
-      sections.push({ heading: 'C. 首任董事及秘書 First Directors & Secretary', rows: officerRows });
+      const skippedRole = signerRole === 'director' ? '公司秘書 Secretary' : '董事 Director';
+      sections.push({
+        heading: `C. 首任${signerRole === 'director' ? '董事' : '公司秘書'} (已刪除「${skippedRole}」)`,
+        rows: officerRows.length ? officerRows : [['(無)', `請於上方加入至少一位${signerRole === 'director' ? '董事' : '秘書'}`]],
+      });
 
       // Section D — Founder shareholders
       const shRows: [string, string][] = [];
@@ -141,6 +155,12 @@ export default function NewCompanyGeneratorForm({ onBack }: Props) {
         ? '法團成立表格 (公司股份有限公司) - NNC1'
         : 'BVI Incorporation Application — Memorandum & Articles Summary';
 
+      const chosenSigner = signerIndex >= 0 ? officers[signerIndex] : signerCandidates[0]?.o;
+      const signerLabel = signerRole === 'director' ? '董事 Director' : '公司秘書 Company Secretary';
+      const signerNameLine = chosenSigner
+        ? `${chosenSigner.nameEnglish || ''}${chosenSigner.nameChinese ? ` / ${chosenSigner.nameChinese}` : ''}`.trim() || '____________________'
+        : '____________________';
+
       const ok = await downloadGenericFormPdf({
         formCode,
         title,
@@ -151,8 +171,8 @@ export default function NewCompanyGeneratorForm({ onBack }: Props) {
         brNumber: '(待簽發 To be issued)',
         sections,
         signatureLines: [
-          'Founder member / 創辦人 (1): ____________________   Date: __________',
-          'Founder member / 創辦人 (2): ____________________   Date: __________',
+          `簽署人 Signed by (${signerLabel}): ${signerNameLine}`,
+          `日期 Date: __________`,
         ],
       }, formCode);
 
@@ -268,6 +288,57 @@ export default function NewCompanyGeneratorForm({ onBack }: Props) {
           </div>
         </div>
       ))}
+
+      <Separator />
+
+      <div className="space-y-2 rounded-md border border-primary/30 bg-primary/5 p-3">
+        <h3 className="font-semibold text-sm">B-1. 簽署人選擇 Signer</h3>
+        <p className="text-xs text-muted-foreground">
+          選擇後,生成的 PDF 將只保留所選類型的人員,自動刪除另一類別。
+        </p>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <Label className="text-xs">簽署人類型 *</Label>
+            <Select
+              value={signerRole}
+              onValueChange={(v) => {
+                setSignerRole(v as 'director' | 'secretary');
+                setSignerIndex(-1);
+              }}
+            >
+              <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="director">董事 Director (將刪除秘書)</SelectItem>
+                <SelectItem value="secretary">公司秘書 Secretary (將刪除董事)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">指定簽署人員</Label>
+            <Select
+              value={String(signerIndex)}
+              onValueChange={(v) => setSignerIndex(Number(v))}
+            >
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue placeholder="自動使用第一位" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="-1">自動 (第一位{signerRole === 'director' ? '董事' : '秘書'})</SelectItem>
+                {signerCandidates.map(({ o, idx }) => (
+                  <SelectItem key={idx} value={String(idx)}>
+                    {o.nameEnglish || o.nameChinese || `(未命名 #${idx + 1})`}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        {signerCandidates.length === 0 && (
+          <p className="text-xs text-destructive">
+            ⚠ 上方未有任何「{signerRole === 'director' ? '董事' : '秘書'}」,請先加入。
+          </p>
+        )}
+      </div>
 
       <Separator />
 

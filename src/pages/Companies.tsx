@@ -407,10 +407,12 @@ const Companies = () => {
                       onClick={() => { setSelectedCompany(company); setCompanyDialogOpen(true); }}>
                       <Edit className="h-4 w-4" /><span className="ml-1">編輯</span>
                     </Button>
-                    <Button variant="ghost" size="sm" className="h-8 px-2 text-destructive hover:text-destructive"
-                      onClick={() => { setCompanyToDelete(company); setDeleteDialogOpen(true); }}>
-                      <Trash2 className="h-4 w-4" /><span className="ml-1">刪除</span>
-                    </Button>
+                    {canDelete && (
+                      <Button variant="ghost" size="sm" className="h-8 px-2 text-destructive hover:text-destructive"
+                        onClick={() => { setCompanyToDelete(company); setDeleteDialogOpen(true); }}>
+                        <Trash2 className="h-4 w-4" /><span className="ml-1">刪除</span>
+                      </Button>
+                    )}
                   </div>
                 </TableCell>
               </TableRow>

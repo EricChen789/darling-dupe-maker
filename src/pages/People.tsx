@@ -31,9 +31,11 @@ import { DeleteConfirmDialog } from '@/components/dialogs/CompanyDialogs';
 import ND2BGeneratorForm from '@/components/forms/ND2BGeneratorForm';
 import { toast } from '@/hooks/use-toast';
 import { useOfficers } from '@/hooks/useOfficers';
+import { useUserRole } from '@/hooks/useUserRole';
 
 const People = () => {
   const { officers, isLoading, refetch, deleteOfficer, upsertOfficer } = useOfficers();
+  const { canDelete } = useUserRole();
   const [searchTerm, setSearchTerm] = useState('');
   
   // Dialog states
@@ -285,10 +287,12 @@ const People = () => {
                         <Edit className="h-4 w-4" />
                         <span className="ml-1">編輯</span>
                       </Button>
-                      <Button variant="ghost" size="sm" className="h-8 px-2 text-destructive hover:text-destructive" onClick={() => handleDeleteClick(person)}>
-                        <Trash2 className="h-4 w-4" />
-                        <span className="ml-1">刪除</span>
-                      </Button>
+                      {canDelete && (
+                        <Button variant="ghost" size="sm" className="h-8 px-2 text-destructive hover:text-destructive" onClick={() => handleDeleteClick(person)}>
+                          <Trash2 className="h-4 w-4" />
+                          <span className="ml-1">刪除</span>
+                        </Button>
+                      )}
                     </div>
                   </TableCell>
                 </TableRow>

@@ -18,6 +18,7 @@ import { NAR1Generator } from '@/components/nar1/NAR1Generator';
 import { toast } from '@/hooks/use-toast';
 import { useCompanies, useDeleteCompany, useAddCompany, useUpdateCompany } from '@/hooks/useCompanies';
 import { usePresenters } from '@/hooks/usePresenters';
+import { useUserRole } from '@/hooks/useUserRole';
 
 const Companies = () => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -45,6 +46,7 @@ const Companies = () => {
   const deleteCompany = useDeleteCompany();
   const addCompany = useAddCompany();
   const updateCompany = useUpdateCompany();
+  const { canDelete } = useUserRole();
 
   const handleQuickPresenterChange = (company: Company, presenterId: string) => {
     updateCompany.mutate(
@@ -257,7 +259,7 @@ const Companies = () => {
               <TableHead className="font-medium">董事</TableHead>
               <TableHead className="font-medium">秘書</TableHead>
               <TableHead className="font-medium">股東</TableHead>
-              <TableHead className="font-medium">提交人 Presenter</TableHead>
+              
               <TableHead className="font-medium">狀態</TableHead>
               <TableHead className="font-medium">操作</TableHead>
             </TableRow>
@@ -369,16 +371,6 @@ const Companies = () => {
                     </HoverCard>
                   ) : <span className="text-muted-foreground text-xs">-</span>}
                 </TableCell>
-                <TableCell className="min-w-[180px]">
-                  {(() => {
-                    const p = presenters.find(x => x.id === company.preferredPresenterId);
-                    return p ? (
-                      <span className="text-xs">{p.name}</span>
-                    ) : (
-                      <span className="text-xs text-destructive">未指定</span>
-                    );
-                  })()}
-                </TableCell>
                 <TableCell onClick={(e) => e.stopPropagation()} className="min-w-[110px]">
                   <Select
                     value={company.status || 'active'}
@@ -415,10 +407,12 @@ const Companies = () => {
                       onClick={() => { setSelectedCompany(company); setCompanyDialogOpen(true); }}>
                       <Edit className="h-4 w-4" /><span className="ml-1">編輯</span>
                     </Button>
-                    <Button variant="ghost" size="sm" className="h-8 px-2 text-destructive hover:text-destructive"
-                      onClick={() => { setCompanyToDelete(company); setDeleteDialogOpen(true); }}>
-                      <Trash2 className="h-4 w-4" /><span className="ml-1">刪除</span>
-                    </Button>
+                    {canDelete && (
+                      <Button variant="ghost" size="sm" className="h-8 px-2 text-destructive hover:text-destructive"
+                        onClick={() => { setCompanyToDelete(company); setDeleteDialogOpen(true); }}>
+                        <Trash2 className="h-4 w-4" /><span className="ml-1">刪除</span>
+                      </Button>
+                    )}
                   </div>
                 </TableCell>
               </TableRow>

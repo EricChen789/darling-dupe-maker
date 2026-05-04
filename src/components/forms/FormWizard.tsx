@@ -72,7 +72,7 @@ function companyToFormData(company: Company): NAR1FormData {
   }));
   if (base.secretaries.length === 0) base.secretaries = [createEmptyFormData().secretaries[0]];
 
-  base.directors = company.directors.map(d => ({
+  base.directors = company.directors.filter(d => !d.isReserve).map(d => ({
     identity: d.identity,
     nameChinese: d.nameChinese || '',
     nameEnglish: d.nameEnglish || '',

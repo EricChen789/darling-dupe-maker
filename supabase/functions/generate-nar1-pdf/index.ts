@@ -627,32 +627,22 @@ function fillMainDocument(pdfDoc: PDFDocument, ctx: CommonCtx) {
   if (signerName) setText("fill_11_P.8", signerName);
   if (day && month && year) setText("fill_12_P.8", `${day}/${month}/${year}`);
 
-  // 在「董事 Director／公司秘書 Company Secretary」上劃線刪除不適用者
-  // 文字位於 P.8 (page index 7)，y(top)≈745.8 (page height 841.68 → y_pdf ≈ 92)
-  //   「董事 Director」整段           x ≈ 144 – 252
-  //   「／公司秘書 Company Secretary」 x ≈ 252 – 339
+  // 用 P.8 的兩個獨立 dropdown 來「劃線刪除」不適用者
+  //   Dropdown_1_P.8 = 「董事 Director」     (選項: " " 保留 / "————" 劃線)
+  //   Dropdown_2_P.8 = 「公司秘書 Company Secretary」
+  // 簽署人是秘書 → 在董事 dropdown 選劃線
+  // 簽署人是董事 → 在秘書 dropdown 選劃線
   if (signerRole === 'secretary' || signerRole === 'director') {
+    const STRIKE = "—————————————————————————————————————————————————————————————————————————————————————————————";
+    const targetDropdown = signerRole === 'secretary' ? 'Dropdown_1_P.8' : 'Dropdown_2_P.8';
     try {
-      const page8 = pdfDoc.getPage(7);
-      const ph = page8.getHeight();
-      const yLine = ph - 749; // 蓋過文字中段
-      if (signerRole === 'secretary') {
-        // 簽署人是秘書 → 劃掉「董事 Director」（中英文同時）
-        page8.drawLine({
-          start: { x: 142, y: yLine },
-          end:   { x: 253, y: yLine },
-          thickness: 1.2,
-        });
-      } else {
-        // 簽署人是董事 → 劃掉「／公司秘書 Company Secretary」（中英文同時）
-        page8.drawLine({
-          start: { x: 256, y: yLine },
-          end:   { x: 322, y: yLine },
-          thickness: 1.2,
-        });
-      }
+      const dd = form.getDropdown(targetDropdown);
+      const opts = dd.getOptions();
+      const strikeOpt = opts.find(o => o.includes('—')) || STRIKE;
+      dd.select(strikeOpt);
+      console.log(`P.8 signer: role=${signerRole}, struck-out ${targetDropdown}`);
     } catch (e) {
-      console.warn('Failed to draw strikethrough on P.8:', e);
+      console.warn(`Failed to set ${targetDropdown}:`, e);
     }
   }
 }

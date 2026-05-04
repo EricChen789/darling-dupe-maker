@@ -75,8 +75,8 @@ const FieldMapping = () => {
         URL.revokeObjectURL(url);
 
         toast({
-          title: '附表一診斷 PDF 已生成',
-          description: '所有欄位已填入欄位編號 (1–100)',
+          title: '診斷 PDF 已生成',
+          description: '所有頁面欄位已填入欄位編號 (含頁碼)，勾選框全部勾上',
         });
       }
     } catch (error) {

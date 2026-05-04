@@ -262,6 +262,19 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
     });
   };
 
+  const handleToggleReserve = (officer: Person) => {
+    updateOfficer.mutate(
+      { id: officer.id, data: { is_reserve: !officer.isReserve } },
+      {
+        onSuccess: () => toast({
+          title: officer.isReserve ? '已取消預備董事' : '已設為預備董事',
+          description: officer.nameEnglish || officer.nameChinese,
+        }),
+        onError: (e: any) => toast({ title: '更新失敗', description: e.message, variant: 'destructive' }),
+      }
+    );
+  };
+
   const handleSaveShareholder = (id: string) => {
     const nextShareholder: Shareholder = {
       id,
@@ -495,6 +508,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                       <PersonRow key={i} person={d} isSelected={selectedPerson?.id === d.id}
                         isSigner={effectiveSignerId === d.id}
                         onClick={() => selectPerson(d, '董事')}
+                        onToggleReserve={() => handleToggleReserve(d)}
                         onDelete={() => handleDeleteOfficer(d, '董事')} />
                     ))}
                   </div>

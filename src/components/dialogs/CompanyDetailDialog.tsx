@@ -839,7 +839,7 @@ function PersonRow({ person, isSelected, isSigner, onClick, onDelete, onToggleRe
   );
 }
 
-type OfficerFormType = { nameEnglish: string; nameChinese: string; identity: string; idNumber: string; address: string; serviceAddress: string; dateAppointed: string; dateCeased: string; placeIncorporated: string; companyNumberRef: string };
+type OfficerFormType = { nameEnglish: string; nameChinese: string; identity: string; idNumber: string; address: string; serviceAddress: string; dateAppointed: string; dateCeased: string; placeIncorporated: string; companyNumberRef: string; dateOfBirth: string };
 
 function NewOfficerForm({ form, setForm, onSave, onCancel, isSecretary, templates = [] }: {
   form: OfficerFormType;

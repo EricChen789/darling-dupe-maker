@@ -109,7 +109,7 @@ const FieldMapping = () => {
       <PageHeader
         title="NAR1 欄位對照表"
         description="顯示 NAR1 周年申報表 PDF 模板的欄位編號與資料映射關係 (共 15 頁)"
-        action={
+        actions={
           <Button onClick={generateDebugPdf} disabled={generatingDebug}>
             {generatingDebug ? (
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />

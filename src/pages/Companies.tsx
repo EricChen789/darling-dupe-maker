@@ -46,6 +46,7 @@ const Companies = () => {
   const deleteCompany = useDeleteCompany();
   const addCompany = useAddCompany();
   const updateCompany = useUpdateCompany();
+  const { canDelete } = useUserRole();
 
   const handleQuickPresenterChange = (company: Company, presenterId: string) => {
     updateCompany.mutate(

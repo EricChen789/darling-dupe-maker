@@ -767,11 +767,11 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
   );
 };
 
-function PersonRow({ person, isSelected, isSigner, onClick, onDelete }: { person: Person; isSelected: boolean; isSigner?: boolean; onClick: () => void; onDelete: () => void }) {
+function PersonRow({ person, isSelected, isSigner, onClick, onDelete, onToggleReserve }: { person: Person; isSelected: boolean; isSigner?: boolean; onClick: () => void; onDelete: () => void; onToggleReserve?: () => void }) {
   return (
     <div
       className={`flex items-center justify-between rounded-md border px-3 py-2 text-sm cursor-pointer transition-colors group ${
-        isSelected ? 'border-primary bg-primary/10' : 'border-border bg-muted/30 hover:bg-muted/60'
+        isSelected ? 'border-primary bg-primary/10' : person.isReserve ? 'border-amber-300 bg-amber-50/40' : 'border-border bg-muted/30 hover:bg-muted/60'
       }`}
       onClick={onClick}
     >
@@ -791,6 +791,11 @@ function PersonRow({ person, isSelected, isSigner, onClick, onDelete }: { person
         </div>
       </div>
       <div className="flex items-center gap-2">
+        {person.isReserve && (
+          <Badge variant="outline" className="text-xs border-amber-500 text-amber-700">
+            預備董事
+          </Badge>
+        )}
         <Badge variant="outline" className="text-xs">
           {person.identity === 'natural' ? '自然人' : '法人'}
         </Badge>
@@ -798,6 +803,13 @@ function PersonRow({ person, isSelected, isSigner, onClick, onDelete }: { person
           <Badge variant="secondary" className="text-xs">
             TCSP: {person.tcspNumber}
           </Badge>
+        )}
+        {onToggleReserve && (
+          <Button variant="ghost" size="sm" className="h-6 px-1.5 hidden group-hover:flex text-amber-700"
+            title={person.isReserve ? '取消預備董事' : '設為預備董事'}
+            onClick={e => { e.stopPropagation(); onToggleReserve(); }}>
+            <ShieldCheck className="h-3 w-3" />
+          </Button>
         )}
         <Button variant="ghost" size="sm" className="h-6 px-1.5 hidden group-hover:flex text-destructive"
           onClick={e => { e.stopPropagation(); onDelete(); }}>

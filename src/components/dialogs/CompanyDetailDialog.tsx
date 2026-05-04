@@ -604,6 +604,10 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
               <TabsContent value="scr">
                 <SCRTab company={company} />
               </TabsContent>
+
+              <TabsContent value="registers">
+                <RegistersTab company={company} />
+              </TabsContent>
             </Tabs>
           </div>
 

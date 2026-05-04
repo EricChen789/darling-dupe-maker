@@ -33,6 +33,7 @@ import {
 } from '@/hooks/useCompanies';
 import { SCRTab } from './SCRTab';
 import { CopyFromCompanyDialog } from './CopyFromCompanyDialog';
+import { useSecretaryTemplates } from '@/hooks/useSecretaryTemplates';
 
 interface CompanyDetailDialogProps {
   open: boolean;
@@ -68,6 +69,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
   const addShareholder = useAddShareholder();
   const updateShareholder = useUpdateShareholder();
   const deleteShareholder = useDeleteShareholder();
+  const { data: secretaryTemplates = [] } = useSecretaryTemplates();
 
   useEffect(() => {
     // Only sync form from company when NOT in edit mode, to avoid wiping user input
@@ -260,6 +262,19 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
       },
       onError: () => toast({ title: '新增失敗', variant: 'destructive' }),
     });
+  };
+
+  const handleToggleReserve = (officer: Person) => {
+    updateOfficer.mutate(
+      { id: officer.id, data: { is_reserve: !officer.isReserve } },
+      {
+        onSuccess: () => toast({
+          title: officer.isReserve ? '已取消預備董事' : '已設為預備董事',
+          description: officer.nameEnglish || officer.nameChinese,
+        }),
+        onError: (e: any) => toast({ title: '更新失敗', description: e.message, variant: 'destructive' }),
+      }
+    );
   };
 
   const handleSaveShareholder = (id: string) => {
@@ -495,6 +510,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                       <PersonRow key={i} person={d} isSelected={selectedPerson?.id === d.id}
                         isSigner={effectiveSignerId === d.id}
                         onClick={() => selectPerson(d, '董事')}
+                        onToggleReserve={() => handleToggleReserve(d)}
                         onDelete={() => handleDeleteOfficer(d, '董事')} />
                     ))}
                   </div>
@@ -509,7 +525,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                     <Plus className="h-3.5 w-3.5 mr-1" /> 新增
                   </Button>
                 </div>
-                {addingOfficer === 'secretary' && <NewOfficerForm form={newOfficerForm} setForm={setNewOfficerForm} onSave={handleAddOfficer} onCancel={() => setAddingOfficer(null)} />}
+                {addingOfficer === 'secretary' && <NewOfficerForm form={newOfficerForm} setForm={setNewOfficerForm} onSave={handleAddOfficer} onCancel={() => setAddingOfficer(null)} isSecretary templates={secretaryTemplates} />}
                 {company.secretaries.length > 0 ? (
                   <div className="grid gap-2">
                     {company.secretaries.map((s, i) => (
@@ -767,11 +783,11 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
   );
 };
 
-function PersonRow({ person, isSelected, isSigner, onClick, onDelete }: { person: Person; isSelected: boolean; isSigner?: boolean; onClick: () => void; onDelete: () => void }) {
+function PersonRow({ person, isSelected, isSigner, onClick, onDelete, onToggleReserve }: { person: Person; isSelected: boolean; isSigner?: boolean; onClick: () => void; onDelete: () => void; onToggleReserve?: () => void }) {
   return (
     <div
       className={`flex items-center justify-between rounded-md border px-3 py-2 text-sm cursor-pointer transition-colors group ${
-        isSelected ? 'border-primary bg-primary/10' : 'border-border bg-muted/30 hover:bg-muted/60'
+        isSelected ? 'border-primary bg-primary/10' : person.isReserve ? 'border-amber-300 bg-amber-50/40' : 'border-border bg-muted/30 hover:bg-muted/60'
       }`}
       onClick={onClick}
     >
@@ -791,6 +807,11 @@ function PersonRow({ person, isSelected, isSigner, onClick, onDelete }: { person
         </div>
       </div>
       <div className="flex items-center gap-2">
+        {person.isReserve && (
+          <Badge variant="outline" className="text-xs border-amber-500 text-amber-700">
+            預備董事
+          </Badge>
+        )}
         <Badge variant="outline" className="text-xs">
           {person.identity === 'natural' ? '自然人' : '法人'}
         </Badge>
@@ -798,6 +819,13 @@ function PersonRow({ person, isSelected, isSigner, onClick, onDelete }: { person
           <Badge variant="secondary" className="text-xs">
             TCSP: {person.tcspNumber}
           </Badge>
+        )}
+        {onToggleReserve && (
+          <Button variant="ghost" size="sm" className="h-6 px-1.5 hidden group-hover:flex text-amber-700"
+            title={person.isReserve ? '取消預備董事' : '設為預備董事'}
+            onClick={e => { e.stopPropagation(); onToggleReserve(); }}>
+            <ShieldCheck className="h-3 w-3" />
+          </Button>
         )}
         <Button variant="ghost" size="sm" className="h-6 px-1.5 hidden group-hover:flex text-destructive"
           onClick={e => { e.stopPropagation(); onDelete(); }}>
@@ -810,12 +838,44 @@ function PersonRow({ person, isSelected, isSigner, onClick, onDelete }: { person
 
 type OfficerFormType = { nameEnglish: string; nameChinese: string; identity: string; idNumber: string; address: string; serviceAddress: string; dateAppointed: string; dateCeased: string; placeIncorporated: string; companyNumberRef: string };
 
-function NewOfficerForm({ form, setForm, onSave, onCancel }: {
+function NewOfficerForm({ form, setForm, onSave, onCancel, isSecretary, templates = [] }: {
   form: OfficerFormType;
   setForm: (f: OfficerFormType) => void; onSave: () => void; onCancel: () => void;
+  isSecretary?: boolean;
+  templates?: import('@/hooks/useSecretaryTemplates').SecretaryTemplate[];
 }) {
+  const applyTemplate = (id: string) => {
+    const t = templates.find(x => x.id === id);
+    if (!t) return;
+    setForm({
+      ...form,
+      nameEnglish: t.nameEnglish,
+      nameChinese: t.nameChinese,
+      identity: t.identity,
+      idNumber: t.idNumber,
+      address: t.address || form.address,
+      serviceAddress: t.serviceAddress || form.serviceAddress,
+      placeIncorporated: t.placeIncorporated,
+      companyNumberRef: t.brNumber,
+    });
+  };
   return (
     <div className="rounded-md border border-primary/50 bg-primary/5 p-3 mb-2 space-y-2">
+      {isSecretary && templates.length > 0 && (
+        <div className="space-y-1">
+          <Label className="text-xs">從範本帶入</Label>
+          <Select onValueChange={applyTemplate}>
+            <SelectTrigger><SelectValue placeholder="選擇秘書範本以自動填入..." /></SelectTrigger>
+            <SelectContent>
+              {templates.map(t => (
+                <SelectItem key={t.id} value={t.id}>
+                  {t.label}{t.isDefault ? ' (預設)' : ''}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
       <div className="grid grid-cols-2 gap-2">
         <div className="space-y-1"><Label className="text-xs">英文名稱 *</Label><Input value={form.nameEnglish} onChange={e => setForm({ ...form, nameEnglish: e.target.value })} placeholder="English name" /></div>
         <div className="space-y-1"><Label className="text-xs">中文名稱</Label><Input value={form.nameChinese} onChange={e => setForm({ ...form, nameChinese: e.target.value })} placeholder="中文名稱" /></div>

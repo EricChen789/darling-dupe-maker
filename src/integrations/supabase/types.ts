@@ -277,6 +277,7 @@ export type Database = {
           date_appointed: string
           date_ceased: string
           id: string
+          is_reserve: boolean
           issue_price: string
           notes: string
           paid_up: string
@@ -295,6 +296,7 @@ export type Database = {
           date_appointed?: string
           date_ceased?: string
           id?: string
+          is_reserve?: boolean
           issue_price?: string
           notes?: string
           paid_up?: string
@@ -313,6 +315,7 @@ export type Database = {
           date_appointed?: string
           date_ceased?: string
           id?: string
+          is_reserve?: boolean
           issue_price?: string
           notes?: string
           paid_up?: string
@@ -489,6 +492,63 @@ export type Database = {
           created_at?: string
           display_name?: string | null
           id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      secretary_templates: {
+        Row: {
+          address: string
+          br_number: string
+          created_at: string
+          email: string
+          id: string
+          id_number: string
+          identity: string
+          is_default: boolean
+          label: string
+          name_chinese: string
+          name_english: string
+          phone: string
+          place_incorporated: string
+          service_address: string
+          tcsp_number: string
+          updated_at: string
+        }
+        Insert: {
+          address?: string
+          br_number?: string
+          created_at?: string
+          email?: string
+          id?: string
+          id_number?: string
+          identity?: string
+          is_default?: boolean
+          label?: string
+          name_chinese?: string
+          name_english?: string
+          phone?: string
+          place_incorporated?: string
+          service_address?: string
+          tcsp_number?: string
+          updated_at?: string
+        }
+        Update: {
+          address?: string
+          br_number?: string
+          created_at?: string
+          email?: string
+          id?: string
+          id_number?: string
+          identity?: string
+          is_default?: boolean
+          label?: string
+          name_chinese?: string
+          name_english?: string
+          phone?: string
+          place_incorporated?: string
+          service_address?: string
+          tcsp_number?: string
           updated_at?: string
         }
         Relationships: []

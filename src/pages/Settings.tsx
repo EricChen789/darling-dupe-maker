@@ -6,6 +6,7 @@ import { toast } from '@/hooks/use-toast';
 import { useState } from 'react';
 import { UserManagement } from '@/components/settings/UserManagement';
 import { PresenterManagement } from '@/components/settings/PresenterManagement';
+import { SecretaryTemplateManagement } from '@/components/settings/SecretaryTemplateManagement';
 
 const Settings = () => {
   const [companyName, setCompanyName] = useState('Muselabs');
@@ -57,6 +58,10 @@ const Settings = () => {
       </div>
 
       <PresenterManagement />
+
+      <div className="bg-card border border-border rounded-lg p-6">
+        <SecretaryTemplateManagement />
+      </div>
 
       <UserManagement />
     </div>

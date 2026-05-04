@@ -627,22 +627,33 @@ function fillMainDocument(pdfDoc: PDFDocument, ctx: CommonCtx) {
   if (signerName) setText("fill_11_P.8", signerName);
   if (day && month && year) setText("fill_12_P.8", `${day}/${month}/${year}`);
 
-  // 用 P.8 的兩個獨立 dropdown 來「劃線刪除」不適用者
-  //   Dropdown_1_P.8 = 「董事 Director」     (選項: " " 保留 / "————" 劃線)
-  //   Dropdown_2_P.8 = 「公司秘書 Company Secretary」
-  // 簽署人是秘書 → 在董事 dropdown 選劃線
-  // 簽署人是董事 → 在秘書 dropdown 選劃線
+  // 在 P.8 簽署區「董事 Director / 公司秘書 Company Secretary」上劃線刪除不適用者
+  // 兩個 dropdown 座標 (PDF 底部為原點):
+  //   Dropdown_1_P.8 (董事 Director):           x=142.8, y=85.67, w=62.6, h=10.62
+  //   Dropdown_2_P.8 (公司秘書 Company Sec.):   x=208.9, y=85.66, w=133.7, h=10.63
+  // 用 drawLine 直接畫過,不依賴 dropdown 渲染外觀(避免 updateAppearances 問題)
   if (signerRole === 'secretary' || signerRole === 'director') {
-    const STRIKE = "—————————————————————————————————————————————————————————————————————————————————————————————";
-    const targetDropdown = signerRole === 'secretary' ? 'Dropdown_1_P.8' : 'Dropdown_2_P.8';
     try {
-      const dd = form.getDropdown(targetDropdown);
-      const opts = dd.getOptions();
-      const strikeOpt = opts.find(o => o.includes('—')) || STRIKE;
-      dd.select(strikeOpt);
-      console.log(`P.8 signer: role=${signerRole}, struck-out ${targetDropdown}`);
+      const page8 = pdfDoc.getPage(7);
+      const yLine = 85.67 + 10.62 / 2; // 中央約 y=91
+      if (signerRole === 'secretary') {
+        // 簽署人是秘書 → 劃掉「董事 Director」(Dropdown_1_P.8 範圍)
+        page8.drawLine({
+          start: { x: 142.8, y: yLine },
+          end:   { x: 142.8 + 62.6, y: yLine },
+          thickness: 1.2,
+        });
+      } else {
+        // 簽署人是董事 → 劃掉「公司秘書 Company Secretary」(Dropdown_2_P.8 範圍)
+        page8.drawLine({
+          start: { x: 208.9, y: yLine },
+          end:   { x: 208.9 + 133.7, y: yLine },
+          thickness: 1.2,
+        });
+      }
+      console.log(`P.8 strikethrough applied: signer=${signerRole}`);
     } catch (e) {
-      console.warn(`Failed to set ${targetDropdown}:`, e);
+      console.warn('Failed to draw strikethrough on P.8:', e);
     }
   }
 }

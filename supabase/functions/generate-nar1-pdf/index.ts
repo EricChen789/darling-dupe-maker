@@ -167,12 +167,16 @@ const fmtAmount = (n: number) => n.toLocaleString("en-US", { minimumFractionDigi
 const fmtInt = (n: number) => n.toLocaleString("en-US");
 
 const ADDR_FLAT_RE = /^(?:flat|room|rm|unit|shop|suite|ste|workshop|portion|floor|fl|\d+\/f|g\/f|gf|lg\/f|ug\/f|m\/f|b\d*\/f)\b/i;
-const ADDR_COUNTRY_RE = /^(hong\s*kong|hk|china|prc|macau|macao|singapore|taiwan|united\s+\w+|usa|uk|canada|australia|japan|korea|h\.?k\.?\s*sar)$/i;
-const ADDR_DISTRICT_HINTS = /(kowloon|hong\s*kong|new\s*territories|n\.t\.|island|wan\s*chai|central|tsim|mong\s*kok|sham\s*shui|kwun\s*tong|sha\s*tin|tai\s*po|tuen\s*mun|yuen\s*long|tsuen\s*wan|kwai\s*tsing|sai\s*kung|north\s*district|southern\s*district|eastern\s*district)/i;
+// 接受英文國名、中英混合（例如「香港 Hong Kong」）以及純中文國名
+const ADDR_COUNTRY_RE = /(hong\s*kong|hk\b|china|prc|macau|macao|singapore|taiwan|united\s+\w+|\busa\b|\buk\b|canada|australia|japan|korea|h\.?k\.?\s*sar|香港|中國|澳門|台灣|新加坡|日本|韓國|英國|美國|加拿大|澳洲)/i;
+const ADDR_DISTRICT_HINTS = /(kowloon|hong\s*kong|new\s*territories|n\.t\.|island|wan\s*chai|central|tsim|mong\s*kok|sham\s*shui|kwun\s*tong|sha\s*tin|tai\s*po|tuen\s*mun|yuen\s*long|tsuen\s*wan|kwai\s*tsing|sai\s*kung|north\s*district|southern\s*district|eastern\s*district|九龍|香港島|新界)/i;
+// 純數字（含千分位/小數）— 不應被視為地址段，避免股份/金額誤入
+const PURE_NUMBER_RE = /^[\d,.\s]+$/;
 
 const parseAddress = (addr: string) => {
   if (!addr) return { flat: '', building: '', street: '', district: '', country: '' };
-  let parts = addr.split(',').map(s => s.trim()).filter(Boolean);
+  // 移除任何純數字段（誤輸入的股份/金額），避免把它解析為 district/country
+  let parts = addr.split(',').map(s => s.trim()).filter(s => s && !PURE_NUMBER_RE.test(s));
   if (parts.length === 0) return { flat: '', building: '', street: '', district: '', country: '' };
   if (parts.length === 1) return { flat: '', building: '', street: parts[0], district: '', country: '' };
   let country = '';
@@ -701,7 +705,9 @@ function fillSchedule1(pdfDoc: PDFDocument, ctx: CommonCtx, members: Shareholder
     const fullName = sh.nameEnglish || sh.name || "";
     const { surname, otherNames } = parseEnglishName(fullName);
     const addr = parseAddress(sh.address || "");
-    const country = addr.country || "香港 Hong Kong";
+    // 防呆：若 district/country 看起來是純數字（誤入的股份/金額），清空避免寫到地址欄
+    const safeStr = (v: string) => (v && /^[\d,.\s]+$/.test(v) ? "" : v);
+    const country = safeStr(addr.country) || "香港 Hong Kong";
 
     setText(`fill_${F.name}_P.9`, sh.nameChinese || "");
     if (isCorp) {
@@ -710,11 +716,13 @@ function fillSchedule1(pdfDoc: PDFDocument, ctx: CommonCtx, members: Shareholder
       setText(`fill_${F.surname}_P.9`, surname);
       setText(`fill_${F.other}_P.9`, otherNames);
     }
-    setText(`fill_${F.shares}_P.9`, fmtInt(Number(sh.shares) || 0));
-    setText(`fill_${F.flat}_P.9`, addr.flat);
-    setText(`fill_${F.building}_P.9`, addr.building);
-    setText(`fill_${F.street}_P.9`, addr.street);
-    setText(`fill_${F.district}_P.9`, addr.district);
+    // 持有股份數目（永遠寫入正確欄位 — 即使 0 也明確寫 "0"）
+    const sharesNum = Number(sh.shares) || 0;
+    setText(`fill_${F.shares}_P.9`, sharesNum > 0 ? fmtInt(sharesNum) : "0");
+    setText(`fill_${F.flat}_P.9`, safeStr(addr.flat));
+    setText(`fill_${F.building}_P.9`, safeStr(addr.building));
+    setText(`fill_${F.street}_P.9`, safeStr(addr.street));
+    setText(`fill_${F.district}_P.9`, safeStr(addr.district));
     setText(`fill_${F.country}_P.9`, country);
   };
 

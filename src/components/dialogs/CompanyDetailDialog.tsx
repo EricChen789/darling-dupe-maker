@@ -69,6 +69,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
   const addShareholder = useAddShareholder();
   const updateShareholder = useUpdateShareholder();
   const deleteShareholder = useDeleteShareholder();
+  const { data: secretaryTemplates = [] } = useSecretaryTemplates();
 
   useEffect(() => {
     // Only sync form from company when NOT in edit mode, to avoid wiping user input
@@ -524,7 +525,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                     <Plus className="h-3.5 w-3.5 mr-1" /> 新增
                   </Button>
                 </div>
-                {addingOfficer === 'secretary' && <NewOfficerForm form={newOfficerForm} setForm={setNewOfficerForm} onSave={handleAddOfficer} onCancel={() => setAddingOfficer(null)} />}
+                {addingOfficer === 'secretary' && <NewOfficerForm form={newOfficerForm} setForm={setNewOfficerForm} onSave={handleAddOfficer} onCancel={() => setAddingOfficer(null)} isSecretary templates={secretaryTemplates} />}
                 {company.secretaries.length > 0 ? (
                   <div className="grid gap-2">
                     {company.secretaries.map((s, i) => (

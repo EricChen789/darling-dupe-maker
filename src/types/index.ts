@@ -59,6 +59,7 @@ export interface Person {
   previousNameEnglish?: string;
   aliasChinese?: string;
   aliasEnglish?: string;
+  isReserve?: boolean;
   companies: { id: string; name: string; brNumber: string; incorporationDate?: string }[];
   createdAt: string;
   updatedAt: string;

@@ -155,6 +155,12 @@ export default function NewCompanyGeneratorForm({ onBack }: Props) {
         ? '法團成立表格 (公司股份有限公司) - NNC1'
         : 'BVI Incorporation Application — Memorandum & Articles Summary';
 
+      const chosenSigner = signerIndex >= 0 ? officers[signerIndex] : signerCandidates[0]?.o;
+      const signerLabel = signerRole === 'director' ? '董事 Director' : '公司秘書 Company Secretary';
+      const signerNameLine = chosenSigner
+        ? `${chosenSigner.nameEnglish || ''}${chosenSigner.nameChinese ? ` / ${chosenSigner.nameChinese}` : ''}`.trim() || '____________________'
+        : '____________________';
+
       const ok = await downloadGenericFormPdf({
         formCode,
         title,
@@ -165,8 +171,8 @@ export default function NewCompanyGeneratorForm({ onBack }: Props) {
         brNumber: '(待簽發 To be issued)',
         sections,
         signatureLines: [
-          'Founder member / 創辦人 (1): ____________________   Date: __________',
-          'Founder member / 創辦人 (2): ____________________   Date: __________',
+          `簽署人 Signed by (${signerLabel}): ${signerNameLine}`,
+          `日期 Date: __________`,
         ],
       }, formCode);
 

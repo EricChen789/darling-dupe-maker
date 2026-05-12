@@ -98,6 +98,17 @@ const Settings = () => {
         <SecretaryTemplateManagement />
       </div>
 
+      <div className="bg-card border border-border rounded-lg p-6 max-w-2xl">
+        <h2 className="text-lg font-semibold mb-2">完整資料備份</h2>
+        <p className="text-sm text-muted-foreground mb-4">
+          匯出所有資料表（JSON + CSV）及 Storage 中的所有附件，打包成單一 ZIP 檔。僅限管理員。
+        </p>
+        <Button onClick={handleFullExport} disabled={exporting}>
+          {exporting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
+          {exporting ? '匯出中…可能需要數分鐘' : '匯出完整備份 (ZIP)'}
+        </Button>
+      </div>
+
       <UserManagement />
     </div>
   );

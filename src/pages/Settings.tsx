@@ -13,6 +13,7 @@ import { SecretaryTemplateManagement } from '@/components/settings/SecretaryTemp
 const Settings = () => {
   const [companyName, setCompanyName] = useState('Muselabs');
   const [email, setEmail] = useState('admin@muselabs.com');
+  const [exporting, setExporting] = useState(false);
 
   const handleSave = () => {
     toast({
@@ -20,6 +21,38 @@ const Settings = () => {
       description: '您的變更已成功儲存',
     });
   };
+
+  const handleFullExport = async () => {
+    setExporting(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('請先登入');
+      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/export-all`;
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      if (!resp.ok) {
+        const err = await resp.text();
+        throw new Error(err || `HTTP ${resp.status}`);
+      }
+      const blob = await resp.blob();
+      const a = document.createElement('a');
+      const dlUrl = URL.createObjectURL(blob);
+      a.href = dlUrl;
+      a.download = `backup_${new Date().toISOString().slice(0, 10)}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(dlUrl);
+      toast({ title: '匯出完成', description: 'ZIP 已下載' });
+    } catch (e: any) {
+      toast({ title: '匯出失敗', description: e.message, variant: 'destructive' });
+    } finally {
+      setExporting(false);
+    }
+  };
+
 
   return (
     <div className="space-y-6">

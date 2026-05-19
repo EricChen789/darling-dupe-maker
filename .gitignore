@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+backup_*.zip
+backup_extract/
+.wrangler/

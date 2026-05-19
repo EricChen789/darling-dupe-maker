@@ -188,16 +188,92 @@ export function createD1Client() {
   return new Proxy({}, handler);
 }
 
-// Hybrid client: uses Supabase for auth, D1 for data
+// R2 Storage client - mimics Supabase storage API
+function createR2Storage() {
+  const API = "/api/storage";
+
+  const bucketHandler: ProxyHandler<object> = {
+    get(_target, prop: string) {
+      if (prop === "then") return undefined;
+
+      return (bucket: string) => {
+        const getUrl = (path: string) => `${API}/${bucket}/${path}`;
+
+        return {
+          // Upload file
+          upload: async (path: string, file: File, options?: { upsert?: boolean }) => {
+            const resp = await fetch(getUrl(path), {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${getAccessToken()}`,
+                "Content-Type": file.type || "application/octet-stream",
+              },
+              body: file,
+            });
+            const data = await resp.json().catch(() => ({}));
+            return resp.ok ? { data, error: null } : { data: null, error: data };
+          },
+
+          // Download file
+          download: async (path: string) => {
+            const resp = await fetch(getUrl(path), {
+              headers: { Authorization: `Bearer ${getAccessToken()}` },
+            });
+            if (!resp.ok) return { data: null, error: { message: "Download failed" } };
+            const blob = await resp.blob();
+            return { data: blob, error: null };
+          },
+
+          // Create signed URL (just returns API URL with auth)
+          createSignedUrl: async (path: string, expiresIn: number, options?: { download?: string }) => {
+            const url = getUrl(path);
+            const params = new URLSearchParams();
+            if (options?.download) params.set("download", options.download);
+            const fullUrl = params.toString() ? `${url}?${params}` : url;
+            return { data: { signedUrl: fullUrl }, error: null };
+          },
+
+          // Get public URL
+          getPublicUrl: (path: string) => {
+            return { data: { publicUrl: getUrl(path) } };
+          },
+
+          // Remove file
+          remove: async (paths: string[]) => {
+            const results = [];
+            for (const path of paths) {
+              const resp = await fetch(getUrl(path), {
+                method: "DELETE",
+                headers: { Authorization: `Bearer ${getAccessToken()}` },
+              });
+              results.push(resp.ok);
+            }
+            return { data: results, error: null };
+          },
+
+          // List files
+          list: async (prefix?: string) => {
+            // List is not directly supported via simple API, return empty
+            return { data: [], error: null };
+          },
+        };
+      };
+    },
+  };
+
+  return new Proxy({}, bucketHandler);
+}
+
+// Hybrid client: uses Supabase for auth, D1 for data, R2 for storage
 export function createHybridClient(supabaseClient: any) {
-  const d1 = createD1Client();
+  const r2Storage = createR2Storage();
 
   const handler: ProxyHandler<object> = {
     get(_target, prop: string) {
       // Auth methods → Supabase
       if (prop === "auth") return supabaseClient.auth;
-      // Storage methods → Supabase (for now, migrate to R2 later)
-      if (prop === "storage") return supabaseClient.storage;
+      // Storage methods → R2
+      if (prop === "storage") return r2Storage;
       // RPC calls → Supabase
       if (prop === "rpc") return (...args: any[]) => supabaseClient.rpc(...args);
       // Channel/subscription → Supabase

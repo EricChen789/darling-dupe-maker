@@ -123,7 +123,54 @@ function buildUpdate(table: string, id: string, data: Record<string, unknown>): 
   };
 }
 
-// ─── Route definitions ───
+// ─── R2 Storage routes (must be before table routes to avoid /api/:table/:id conflict) ───
+
+function getBucket(name: string, env: Env): R2Bucket | null {
+  switch (name) {
+    case "pdf-templates": return env.PDF_TEMPLATES;
+    case "company-documents": return env.COMPANY_DOCUMENTS;
+    case "company-logs": return env.COMPANY_LOGS;
+    case "backups": return env.BACKUPS;
+    default: return null;
+  }
+}
+
+// GET /api/storage/:bucket/:file - download file
+addRoute("GET", "/api/storage/:bucket/:file", async (_req, env, _user, params) => {
+  const bucket = getBucket(params.bucket, env);
+  if (!bucket) return error("Bucket not found", 404);
+  const filePath = params.file || "";
+  const object = await bucket.get(filePath);
+  if (!object) return error("File not found", 404);
+  const headers = new Headers(corsHeaders);
+  headers.set("Content-Type", object.httpMetadata?.contentType || "application/octet-stream");
+  if (object.httpMetadata?.contentDisposition) headers.set("Content-Disposition", object.httpMetadata.contentDisposition);
+  headers.set("Cache-Control", "public, max-age=3600");
+  return new Response(object.body, { headers });
+});
+
+// POST /api/storage/:bucket/:file - upload file
+addRoute("POST", "/api/storage/:bucket/:file", async (req, env, user, params) => {
+  requireAdmin(user);
+  const bucket = getBucket(params.bucket, env);
+  if (!bucket) return error("Bucket not found", 404);
+  const filePath = params.file || "";
+  const contentType = req.headers.get("Content-Type") || "application/octet-stream";
+  await bucket.put(filePath, req.body, { httpMetadata: { contentType } });
+  return json({ success: true, path: filePath }, 201);
+});
+
+// DELETE /api/storage/:bucket/:file - delete file
+addRoute("DELETE", "/api/storage/:bucket/:file", async (_req, env, user, params) => {
+  requireAdmin(user);
+  const bucket = getBucket(params.bucket, env);
+  if (!bucket) return error("Bucket not found", 404);
+  const filePath = params.file || "";
+  await bucket.delete(filePath);
+  return json({ success: true });
+});
+
+// ─── Table CRUD routes ───
 const TABLES = ["companies", "officers", "shareholders", "persons", "person_company_roles", "presenters", "significant_controllers", "company_logs", "reminders", "resolutions", "secretary_templates", "share_transactions", "user_roles"];
 
 for (const table of TABLES) {

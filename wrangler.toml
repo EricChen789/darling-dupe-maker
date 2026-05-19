@@ -1,0 +1,35 @@
+# Cloudflare Pages + Functions configuration
+name = "secretary-system"
+compatibility_date = "2025-05-19"
+compatibility_flags = ["nodejs_compat"]
+
+# Pages project configuration
+pages_build_output_dir = "dist"
+
+# D1 Database binding
+[[d1_databases]]
+binding = "DB"
+database_name = "secretary-db"
+database_id = "60730e44-1fd3-4f4b-bc00-ead624595137"
+
+# R2 Bucket bindings
+[[r2_buckets]]
+binding = "PDF_TEMPLATES"
+bucket_name = "pdf-templates"
+
+[[r2_buckets]]
+binding = "COMPANY_DOCUMENTS"
+bucket_name = "company-documents"
+
+[[r2_buckets]]
+binding = "COMPANY_LOGS"
+bucket_name = "company-logs"
+
+[[r2_buckets]]
+binding = "BACKUPS"
+bucket_name = "backups"
+
+# Environment variables for Supabase JWT verification
+[vars]
+SUPABASE_URL = "https://uqcsgmmsrgtlcqutaomg.supabase.co"
+SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVxY3NnbW1zcmd0bGNxdXRhb21nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAwMTA2NzYsImV4cCI6MjA4NTU4NjY3Nn0.AWo97hF1eOJ43H4_deUplIS8Y7ckSIxWmw-7TlX9GY4"

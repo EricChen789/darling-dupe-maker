@@ -25,3 +25,5 @@ dist-ssr
 backup_*.zip
 backup_extract/
 .wrangler/
+migrations/data/
+migrations/import_batch_*.sql

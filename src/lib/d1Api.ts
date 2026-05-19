@@ -28,14 +28,7 @@ interface QueryBuilder {
 
 // Build fetch options
 function getAccessToken(): string {
-  const raw = localStorage.getItem("sb-uqcsgmmsrgtlcqutaomg-auth-token");
-  if (!raw) return "";
-  try {
-    const parsed = JSON.parse(raw);
-    return parsed?.access_token || "";
-  } catch {
-    return "";
-  }
+  return localStorage.getItem("secretary_jwt") || "";
 }
 
 function buildFetch(method: string, body?: any): RequestInit {

@@ -1,18 +1,30 @@
-// Hybrid client: Auth → Supabase, Data → D1 (via Pages Functions API)
-import { createClient } from '@supabase/supabase-js';
+// D1 + R2 API client (no Supabase dependency)
 import { createHybridClient } from '@/lib/d1Api';
-import type { Database } from './types';
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-
-const supabaseClient = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+// Standalone client - no Supabase needed
+const standaloneClient = {
   auth: {
-    storage: localStorage,
-    persistSession: true,
-    autoRefreshToken: true,
-  }
-});
+    getSession: async () => {
+      const token = localStorage.getItem("secretary_jwt");
+      const user = localStorage.getItem("secretary_user");
+      return {
+        data: {
+          session: token ? { access_token: token, user: user ? JSON.parse(user) : null } : null,
+        },
+      };
+    },
+    onAuthStateChange: (cb: any) => {
+      // Simplified: no real-time auth state changes
+      setTimeout(() => cb("SIGNED_IN", null), 0);
+      return { data: { subscription: { unsubscribe: () => {} } } };
+    },
+    signOut: async () => {
+      localStorage.removeItem("secretary_jwt");
+      localStorage.removeItem("secretary_user");
+    },
+    signInWithOtp: async () => ({ data: {}, error: null }),
+    verifyOtp: async () => ({ data: {}, error: null }),
+  },
+};
 
-// Export hybrid client: uses Supabase for auth/storage/rpc, D1 for all data queries
-export const supabase = createHybridClient(supabaseClient);
+export const supabase = createHybridClient(standaloneClient);

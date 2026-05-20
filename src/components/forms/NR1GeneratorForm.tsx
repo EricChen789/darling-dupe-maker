@@ -74,11 +74,10 @@ export default function NR1GeneratorForm({ onBack }: NR1GeneratorFormProps) {
     }
     setGenerating(true);
     try {
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-      const anonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-      const resp = await fetch(`${supabaseUrl}/functions/v1/generate-nr1-pdf`, {
+      const token = localStorage.getItem("secretary_jwt") || "";
+      const resp = await fetch(`/api/generate-nr1-pdf`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${anonKey}` },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ ...formData, debug }),
       });
       const result = await resp.json();

@@ -252,14 +252,20 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
         signer: signer ? { name: signerName, role: signerRole } : null,
       };
 
-      const { data, error } = await supabase.functions.invoke('generate-nar1-pdf', {
-        body: payload,
+      const token = localStorage.getItem("secretary_jwt") || "";
+      const resp = await fetch('/api/generate-nar1-pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(payload),
       });
 
-      if (error) throw error;
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(err.error || `HTTP ${resp.status}`);
+      }
 
       // Handle the PDF download
-      const blob = new Blob([data], { type: 'application/pdf' });
+      const blob = await resp.blob();
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;

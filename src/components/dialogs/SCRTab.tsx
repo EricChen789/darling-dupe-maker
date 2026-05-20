@@ -53,13 +53,13 @@ export function SCRTab({ company }: { company: Company }) {
       });
       if (error) throw error;
       // Edge function returns binary; supabase-js wraps it. We'll fetch via direct URL instead.
-      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-scr-pdf`;
+      const token = localStorage.getItem("secretary_jwt") || "";
+      const url = `/api/generate-scr-pdf`;
       const res = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({ companyId: company.id }),
       });

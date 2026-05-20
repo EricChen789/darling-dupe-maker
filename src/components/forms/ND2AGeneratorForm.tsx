@@ -83,11 +83,10 @@ export default function ND2AGeneratorForm({ onBack }: ND2AGeneratorFormProps) {
     }
     setGenerating(true);
     try {
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-      const anonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-      const resp = await fetch(`${supabaseUrl}/functions/v1/generate-nd2a-pdf`, {
+      const token = localStorage.getItem("secretary_jwt") || "";
+      const resp = await fetch(`/api/generate-nd2a-pdf`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${anonKey}` },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ brNumber, companyName, officers, signerName, signDate, presentorName, presentorAddress, presentorContact, debug }),
       });
       const result = await resp.json();

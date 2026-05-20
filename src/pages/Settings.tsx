@@ -25,12 +25,12 @@ const Settings = () => {
   const handleFullExport = async () => {
     setExporting(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error('請先登入');
-      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/export-all`;
+      const token = localStorage.getItem("secretary_jwt") || "";
+      if (!token) throw new Error('請先登入');
+      const url = `/api/export-all`;
       const resp = await fetch(url, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${session.access_token}` },
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (!resp.ok) {
         const err = await resp.text();

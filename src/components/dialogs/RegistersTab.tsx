@@ -33,13 +33,13 @@ const empty = (companyId: string): EditTx => ({
 
 async function downloadRegister(fnName: string, companyId: string, brNumber: string, companyName: string, label: string) {
   try {
-    const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/${fnName}`;
+    const token = localStorage.getItem("secretary_jwt") || "";
+    const url = `/api/${fnName}`;
     const res = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-        Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({ companyId }),
     });

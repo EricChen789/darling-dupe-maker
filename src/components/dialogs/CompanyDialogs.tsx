@@ -125,12 +125,11 @@ export const CompanyDialog = ({ open, onOpenChange, company, onSave }: CompanyDi
       const body = new FormData();
       body.append('file', file);
 
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-      const anonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+      const token = localStorage.getItem("secretary_jwt") || "";
 
-      const resp = await fetch(`${supabaseUrl}/functions/v1/${fnName}`, {
+      const resp = await fetch(`/api/${fnName}`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${anonKey}` },
+        headers: { Authorization: `Bearer ${token}` },
         body,
       });
 

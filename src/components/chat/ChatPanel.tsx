@@ -40,13 +40,16 @@ export const ChatPanel = ({ open, onClose }: ChatPanelProps) => {
     setIsLoading(true);
 
     try {
-      const { data, error } = await supabase.functions.invoke('chat-assistant', {
-        body: { messages: newMessages },
+      const token = localStorage.getItem("secretary_jwt") || "";
+      const resp = await fetch('/api/chat-assistant', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ messages: newMessages }),
       });
+      const result = await resp.json();
+      if (!resp.ok) throw new Error(result.error || 'Chat request failed');
 
-      if (error) throw error;
-
-      const content = data?.content || '抱歉，無法生成回覆。';
+      const content = result.content || '抱歉，無法生成回覆。';
       setMessages(prev => [...prev, { role: 'assistant', content }]);
     } catch (e) {
       console.error('Chat error:', e);

@@ -20,13 +20,13 @@ export interface GenericFormPayload {
 
 export async function downloadGenericFormPdf(payload: GenericFormPayload, fileLabel?: string) {
   try {
-    const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-generic-form-pdf`;
+    const token = localStorage.getItem("secretary_jwt") || "";
+    const url = `/api/generate-generic-form-pdf`;
     const res = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-        Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify(payload),
     });

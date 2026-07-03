@@ -17,6 +17,7 @@ import Repair from "./pages/Repair";
 import MissingOfficers from "./pages/MissingOfficers";
 import Presenters from "./pages/Presenters";
 import Reminders from "./pages/Reminders";
+import Documents from "./pages/Documents";
 import Auth from "./pages/Auth";
 import ResetPassword from "./pages/ResetPassword";
 import NotFound from "./pages/NotFound";
@@ -52,6 +53,7 @@ const App = () => (
           <Routes>
             <Route path="/auth" element={<Auth />} />
             <Route path="/reset-password" element={<ResetPassword />} />
+            <Route path="/documents" element={<Documents />} />
             <Route
               path="/"
               element={
@@ -71,6 +73,7 @@ const App = () => (
               <Route path="field-mapping" element={<FieldMapping />} />
               <Route path="repair" element={<Repair />} />
               <Route path="missing-officers" element={<MissingOfficers />} />
+              <Route path="documents" element={<Documents />} />
               <Route path="settings" element={<Settings />} />
             </Route>
             <Route path="*" element={<NotFound />} />

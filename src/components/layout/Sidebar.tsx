@@ -1,6 +1,6 @@
 import { Link, useLocation } from 'react-router-dom';
 import { cn } from '@/lib/utils';
-import { Download, Wrench, UserCheck, AlertTriangle, FileDown, Bell } from 'lucide-react';
+import { Download, Wrench, UserCheck, AlertTriangle, FileDown, Bell, FolderOpen } from 'lucide-react';
 import { Building2, Users, FileText, Receipt, ClipboardList, Settings, LogOut, Table, PanelLeftClose, PanelLeft } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAuth } from '@/hooks/useAuth';
@@ -21,6 +21,7 @@ const navItems: { path: string; label: string; icon: any; external?: boolean }[]
   { path: '/field-mapping', label: '欄位對照表', icon: Table },
   { path: '/repair', label: '數據修復', icon: Wrench },
   { path: '/missing-officers', label: '仍缺董事/秘書', icon: AlertTriangle },
+  { path: '/documents', label: '文件管理', icon: FolderOpen },
   { path: '/import-data-skill-guide.md', label: 'API 導入指南', icon: Download, external: true },
   { path: '/nar1_field_diagnostic.pdf', label: '診斷 PDF', icon: FileDown, external: true },
 ];

@@ -1,32 +1,47 @@
-import { useEffect, useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/hooks/useAuth';
+import { useEffect, useState, useCallback } from 'react';
+import { useAuth, getToken } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { StatusBadge } from '@/components/ui/status-badge';
 import { toast } from '@/hooks/use-toast';
-import { Shield, Trash2, UserPlus } from 'lucide-react';
+import { Shield, Trash2, UserPlus, Ban, CheckCircle2 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import type { Database } from '@/integrations/supabase/types';
 
-type AppRole = Database['public']['Enums']['app_role'];
+type AppRole = 'admin' | 'moderator' | 'user';
 
 interface UserWithRole {
   id: string;
   email: string;
   display_name: string | null;
   created_at: string;
+  is_active: number;
   roles: AppRole[];
+}
+
+const ROLE_LABEL: Record<AppRole, string> = { admin: '管理員', moderator: '主管', user: '員工' };
+
+// 統一的 admin API 呼叫（帶 JWT）
+async function adminFetch(path: string, init?: RequestInit) {
+  const resp = await fetch(path, {
+    ...init,
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${getToken()}`,
+      ...(init?.headers || {}),
+    },
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+  return data;
 }
 
 export const UserManagement = () => {
   const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
   const [users, setUsers] = useState<UserWithRole[]>([]);
   const [loading, setLoading] = useState(true);
-  const [isAdmin, setIsAdmin] = useState(false);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [newEmail, setNewEmail] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -34,81 +49,64 @@ export const UserManagement = () => {
   const [newRole, setNewRole] = useState<AppRole>('user');
   const [creating, setCreating] = useState(false);
 
-  useEffect(() => {
-    if (user) {
-      checkAdmin();
-    }
-  }, [user]);
-
-  useEffect(() => {
-    if (isAdmin) {
-      fetchUsers();
-    }
-  }, [isAdmin]);
-
-  const checkAdmin = async () => {
-    const { data } = await supabase.rpc('has_role', { _user_id: user!.id, _role: 'admin' });
-    setIsAdmin(!!data);
-    if (!data) setLoading(false);
-  };
-
-  const fetchUsers = async () => {
+  const fetchUsers = useCallback(async () => {
     setLoading(true);
     try {
-      // Fetch profiles and roles
-      const { data: profiles } = await supabase.from('profiles').select('*');
-      const { data: roles } = await supabase.from('user_roles').select('*');
-
-      if (profiles) {
-        const userList: UserWithRole[] = profiles.map(p => ({
-          id: p.id,
-          email: '',
-          display_name: p.display_name,
-          created_at: p.created_at,
-          roles: roles?.filter(r => r.user_id === p.id).map(r => r.role) || [],
-        }));
-        setUsers(userList);
-      }
+      const data = await adminFetch('/api/admin/users');
+      setUsers(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error('Error fetching users:', err);
+      toast({ title: '載入失敗', description: '無法取得用戶清單', variant: 'destructive' });
     }
     setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    if (isAdmin) fetchUsers();
+    else setLoading(false);
+  }, [isAdmin, fetchUsers]);
+
+  const handleRoleChange = async (userId: string, role: AppRole) => {
+    try {
+      await adminFetch(`/api/admin/users/${userId}`, { method: 'PUT', body: JSON.stringify({ role }) });
+      toast({ title: '角色已更新', description: `已更新為 ${ROLE_LABEL[role]}` });
+      fetchUsers();
+    } catch (err: any) {
+      toast({ title: '更新失敗', description: err.message, variant: 'destructive' });
+    }
   };
 
-  const handleRoleChange = async (userId: string, newRole: AppRole, currentRoles: AppRole[]) => {
+  const handleToggleActive = async (u: UserWithRole) => {
+    if (u.id === user?.id) {
+      toast({ title: '無法停用自己', variant: 'destructive' });
+      return;
+    }
+    const next = u.is_active ? 0 : 1;
     try {
-      // Remove existing roles
-      for (const role of currentRoles) {
-        await supabase.from('user_roles').delete().eq('user_id', userId).eq('role', role);
-      }
-      // Add new role
-      if (newRole) {
-        await supabase.from('user_roles').insert({ user_id: userId, role: newRole });
-      }
-      toast({ title: '角色已更新', description: `用戶角色已更新為 ${newRole}` });
+      await adminFetch(`/api/admin/users/${u.id}`, { method: 'PUT', body: JSON.stringify({ is_active: next }) });
+      toast({ title: next ? '用戶已啟用' : '用戶已停用' });
       fetchUsers();
-    } catch {
-      toast({ title: '更新失敗', description: '無法更新用戶角色', variant: 'destructive' });
+    } catch (err: any) {
+      toast({ title: '操作失敗', description: err.message, variant: 'destructive' });
     }
   };
 
   const handleCreateUser = async () => {
     if (!newEmail || !newPassword) {
-      toast({ title: '請填寫所有欄位', variant: 'destructive' });
+      toast({ title: '請填寫電郵與密碼', variant: 'destructive' });
       return;
     }
     setCreating(true);
     try {
-      const { data, error } = await supabase.functions.invoke('manage-users', {
-        body: {
-          action: 'create',
+      await adminFetch('/api/admin/users', {
+        method: 'POST',
+        body: JSON.stringify({
           email: newEmail,
           password: newPassword,
           display_name: newDisplayName || newEmail,
           role: newRole,
-        },
+        }),
       });
-      if (error) throw error;
       toast({ title: '用戶已建立', description: `${newEmail} 已成功建立` });
       setAddDialogOpen(false);
       setNewEmail('');
@@ -129,10 +127,7 @@ export const UserManagement = () => {
     }
     if (!confirm('確定要刪除此用戶嗎？此操作無法復原。')) return;
     try {
-      const { error } = await supabase.functions.invoke('manage-users', {
-        body: { action: 'delete', userId },
-      });
-      if (error) throw error;
+      await adminFetch(`/api/admin/users/${userId}`, { method: 'DELETE' });
       toast({ title: '用戶已刪除' });
       fetchUsers();
     } catch (err: any) {
@@ -183,9 +178,9 @@ export const UserManagement = () => {
                 <Select value={newRole} onValueChange={(v: AppRole) => setNewRole(v)}>
                   <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="admin">Admin</SelectItem>
-                    <SelectItem value="moderator">Moderator</SelectItem>
-                    <SelectItem value="user">User</SelectItem>
+                    <SelectItem value="admin">管理員 Admin</SelectItem>
+                    <SelectItem value="moderator">主管 Moderator</SelectItem>
+                    <SelectItem value="user">員工 User</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -204,8 +199,9 @@ export const UserManagement = () => {
           <TableHeader>
             <TableRow>
               <TableHead>名稱</TableHead>
+              <TableHead>電郵</TableHead>
               <TableHead>角色</TableHead>
-              <TableHead>建立日期</TableHead>
+              <TableHead>狀態</TableHead>
               <TableHead className="text-right">操作</TableHead>
             </TableRow>
           </TableHeader>
@@ -213,33 +209,51 @@ export const UserManagement = () => {
             {users.map(u => (
               <TableRow key={u.id}>
                 <TableCell>
-                  <div>
-                    <div className="font-medium">{u.display_name || '未設定'}</div>
-                    <div className="text-xs text-muted-foreground">{u.id.slice(0, 8)}...</div>
-                  </div>
+                  <div className="font-medium">{u.display_name || '未設定'}</div>
+                  <div className="text-xs text-muted-foreground">{u.id.slice(0, 8)}...</div>
                 </TableCell>
+                <TableCell className="text-sm">{u.email}</TableCell>
                 <TableCell>
                   <Select
-                    value={u.roles[0] || 'user'}
-                    onValueChange={(v: AppRole) => handleRoleChange(u.id, v, u.roles)}
+                    value={(u.roles[0] as AppRole) || 'user'}
+                    onValueChange={(v: AppRole) => handleRoleChange(u.id, v)}
+                    disabled={u.id === user?.id}
                   >
-                    <SelectTrigger className="w-32">
+                    <SelectTrigger className="w-28">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="admin">Admin</SelectItem>
-                      <SelectItem value="moderator">Moderator</SelectItem>
-                      <SelectItem value="user">User</SelectItem>
+                      <SelectItem value="admin">管理員</SelectItem>
+                      <SelectItem value="moderator">主管</SelectItem>
+                      <SelectItem value="user">員工</SelectItem>
                     </SelectContent>
                   </Select>
                 </TableCell>
-                <TableCell className="text-sm text-muted-foreground">
-                  {new Date(u.created_at).toLocaleDateString('zh-HK')}
+                <TableCell>
+                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+                    u.is_active
+                      ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
+                      : 'bg-muted text-muted-foreground'
+                  }`}>
+                    {u.is_active ? '啟用中' : '已停用'}
+                  </span>
                 </TableCell>
                 <TableCell className="text-right">
                   <Button
                     variant="ghost"
                     size="icon"
+                    title={u.is_active ? '停用' : '啟用'}
+                    onClick={() => handleToggleActive(u)}
+                    disabled={u.id === user?.id}
+                  >
+                    {u.is_active
+                      ? <Ban className="h-4 w-4 text-amber-600" />
+                      : <CheckCircle2 className="h-4 w-4 text-green-600" />}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    title="刪除"
                     onClick={() => handleDeleteUser(u.id)}
                     disabled={u.id === user?.id}
                   >

@@ -42,11 +42,14 @@ async function base64url(buf: ArrayBuffer): Promise<string> {
   return btoa(str).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
+const JWT_TTL_SECONDS = 7 * 24 * 60 * 60; // token 有效期 7 天（配合 verifyJWT 的 exp 檢查，實現過期自動登出）
+
 async function signJWT(payload: Record<string, unknown>, secret: string): Promise<string> {
   const enc = new TextEncoder();
   const header = { alg: "HS256", typ: "JWT" };
+  const now = Math.floor(Date.now() / 1000);
   const headerB64 = await base64url(enc.encode(JSON.stringify(header)));
-  const payloadB64 = await base64url(enc.encode(JSON.stringify({ ...payload, iat: Math.floor(Date.now() / 1000) })));
+  const payloadB64 = await base64url(enc.encode(JSON.stringify({ exp: now + JWT_TTL_SECONDS, ...payload, iat: now })));
   const key = await crypto.subtle.importKey("raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   const sig = await crypto.subtle.sign("HMAC", key, enc.encode(`${headerB64}.${payloadB64}`));
   return `${headerB64}.${payloadB64}.${await base64url(sig)}`;
@@ -128,7 +131,10 @@ function addRoute(method: string, path: string, handler: Handler) {
 function matchRoute(method: string, path: string): { handler: Handler; params: Record<string, string> } | null {
   const methodRoutes = routes[method] || {};
   for (const [pattern, handler] of Object.entries(methodRoutes)) {
-    const regex = new RegExp("^" + pattern.replace(/:(\w+)/g, "(?<$1>[^/]+)") + "$");
+    // :name -> 單段 [^/]+；:name* -> catch-all .+（可含 /，用於嵌套的 R2 key 如 <companyId>/ci_x.pdf）
+    const regex = new RegExp("^" + pattern
+      .replace(/:(\w+)\*/g, "(?<$1>.+)")
+      .replace(/:(\w+)/g, "(?<$1>[^/]+)") + "$");
     const match = path.match(regex);
     if (match) return { handler, params: match.groups || {} };
   }
@@ -162,23 +168,26 @@ addRoute("POST", "/api/auth/login", async (req, env, _user) => {
   const { email, password } = await req.json() as { email: string; password: string };
   if (!email || !password) return error("Email and password required");
   const user = await env.DB.prepare(
-    "SELECT id, email, password_hash, display_name FROM auth_users WHERE email = ?"
+    "SELECT id, email, password_hash, display_name, is_active FROM auth_users WHERE email = ?"
   ).bind(email.toLowerCase().trim()).first() as any;
   if (!user || !(await verifyPassword(password, user.password_hash))) {
     return error("Invalid email or password", 401);
   }
-  const roleResult = await env.DB.prepare(
-    "SELECT role FROM user_roles WHERE user_id = ? AND role = 'admin'"
-  ).bind(user.id).first();
+  if (user.is_active === 0) return error("Account is deactivated", 403);
+  const roleRows = await env.DB.prepare(
+    "SELECT role FROM user_roles WHERE user_id = ?"
+  ).bind(user.id).all();
+  const roleSet = new Set((roleRows.results || []).map((r: any) => r.role));
+  const role = roleSet.has("admin") ? "admin" : roleSet.has("moderator") ? "moderator" : "user";
   const token = await signJWT({
     sub: user.id,
     email: user.email,
     display_name: user.display_name,
-    role: roleResult ? "admin" : "user",
+    role,
   }, env.JWT_SECRET);
   return json({
     token,
-    user: { id: user.id, email: user.email, display_name: user.display_name, role: roleResult ? "admin" : "user" },
+    user: { id: user.id, email: user.email, display_name: user.display_name, role },
   });
 });
 
@@ -218,6 +227,81 @@ addRoute("GET", "/api/auth/me", async (_req, _env, user) => {
   return json(user);
 });
 
+// ─── 用戶管理（admin，10.1–10.3）───
+const VALID_ROLES = ["admin", "moderator", "user"];
+
+// GET /api/admin/users — 列出所有用戶 + 角色 + 啟用狀態
+addRoute("GET", "/api/admin/users", async (_req, env, user) => {
+  requireAdmin(user);
+  const users = await env.DB.prepare(
+    "SELECT id, email, display_name, is_active, created_at FROM auth_users ORDER BY created_at"
+  ).all();
+  const roleRows = await env.DB.prepare("SELECT user_id, role FROM user_roles").all();
+  const roleMap: Record<string, string[]> = {};
+  for (const r of (roleRows.results || []) as any[]) {
+    (roleMap[r.user_id] ||= []).push(r.role);
+  }
+  const out = ((users.results || []) as any[]).map((u) => ({ ...u, roles: roleMap[u.id] || [] }));
+  return json(out);
+});
+
+// POST /api/admin/users — 建立用戶
+addRoute("POST", "/api/admin/users", async (req, env, user) => {
+  requireAdmin(user);
+  const { email, password, display_name, role } = await req.json() as
+    { email: string; password: string; display_name?: string; role?: string };
+  if (!email || !password) return error("Email and password required");
+  const emailLower = email.toLowerCase().trim();
+  const existing = await env.DB.prepare("SELECT id FROM auth_users WHERE email = ?").bind(emailLower).first();
+  if (existing) return error("Email already exists", 409);
+  const id = generateUUID();
+  const password_hash = await hashPassword(password);
+  await env.DB.prepare(
+    "INSERT INTO auth_users (id, email, password_hash, display_name, is_active) VALUES (?, ?, ?, ?, 1)"
+  ).bind(id, emailLower, password_hash, display_name || emailLower).run();
+  const r = role && VALID_ROLES.includes(role) ? role : "user";
+  await env.DB.prepare("INSERT INTO user_roles (id, user_id, role) VALUES (?, ?, ?)")
+    .bind(generateUUID(), id, r).run();
+  return json({ id, email: emailLower, display_name: display_name || emailLower, roles: [r], is_active: 1 }, 201);
+});
+
+// PUT /api/admin/users/:id — 更新角色 / 啟用狀態 / 顯示名 / 密碼
+addRoute("PUT", "/api/admin/users/:id", async (req, env, user, params) => {
+  requireAdmin(user);
+  const id = params.id;
+  const body = await req.json() as
+    { role?: string; is_active?: boolean | number; display_name?: string; password?: string };
+  const target = await env.DB.prepare("SELECT id FROM auth_users WHERE id = ?").bind(id).first();
+  if (!target) return error("User not found", 404);
+  if (body.is_active !== undefined) {
+    await env.DB.prepare("UPDATE auth_users SET is_active = ? WHERE id = ?")
+      .bind(body.is_active ? 1 : 0, id).run();
+  }
+  if (body.display_name !== undefined) {
+    await env.DB.prepare("UPDATE auth_users SET display_name = ? WHERE id = ?").bind(body.display_name, id).run();
+  }
+  if (body.password) {
+    await env.DB.prepare("UPDATE auth_users SET password_hash = ? WHERE id = ?")
+      .bind(await hashPassword(body.password), id).run();
+  }
+  if (body.role !== undefined) {
+    await env.DB.prepare("DELETE FROM user_roles WHERE user_id = ?").bind(id).run();
+    if (VALID_ROLES.includes(body.role)) {
+      await env.DB.prepare("INSERT INTO user_roles (id, user_id, role) VALUES (?, ?, ?)")
+        .bind(generateUUID(), id, body.role).run();
+    }
+  }
+  return json({ success: true });
+});
+
+// DELETE /api/admin/users/:id — 刪除用戶
+addRoute("DELETE", "/api/admin/users/:id", async (_req, env, user, params) => {
+  requireAdmin(user);
+  await env.DB.prepare("DELETE FROM user_roles WHERE user_id = ?").bind(params.id).run();
+  await env.DB.prepare("DELETE FROM auth_users WHERE id = ?").bind(params.id).run();
+  return json({ success: true });
+});
+
 // ─── R2 Storage routes ───
 
 function getBucket(name: string, env: Env): R2Bucket | null {
@@ -230,7 +314,7 @@ function getBucket(name: string, env: Env): R2Bucket | null {
   }
 }
 
-addRoute("GET", "/api/storage/:bucket/:file", async (_req, env, _user, params) => {
+addRoute("GET", "/api/storage/:bucket/:file*", async (_req, env, _user, params) => {
   const bucket = getBucket(params.bucket, env);
   if (!bucket) return error("Bucket not found", 404);
   const object = await bucket.get(params.file || "");
@@ -241,7 +325,7 @@ addRoute("GET", "/api/storage/:bucket/:file", async (_req, env, _user, params) =
   return new Response(object.body, { headers });
 });
 
-addRoute("POST", "/api/storage/:bucket/:file", async (req, env, user, params) => {
+addRoute("POST", "/api/storage/:bucket/:file*", async (req, env, user, params) => {
   requireAdmin(user);
   const bucket = getBucket(params.bucket, env);
   if (!bucket) return error("Bucket not found", 404);
@@ -250,7 +334,7 @@ addRoute("POST", "/api/storage/:bucket/:file", async (req, env, user, params) =>
   return json({ success: true, path: params.file }, 201);
 });
 
-addRoute("DELETE", "/api/storage/:bucket/:file", async (_req, env, user, params) => {
+addRoute("DELETE", "/api/storage/:bucket/:file*", async (_req, env, user, params) => {
   requireAdmin(user);
   const bucket = getBucket(params.bucket, env);
   if (!bucket) return error("Bucket not found", 404);
@@ -260,7 +344,7 @@ addRoute("DELETE", "/api/storage/:bucket/:file", async (_req, env, user, params)
 
 // ─── Table CRUD routes ───
 
-const TABLES = ["companies", "officers", "shareholders", "persons", "person_company_roles", "presenters", "significant_controllers", "company_logs", "reminders", "resolutions", "secretary_templates", "share_transactions", "user_roles"];
+const TABLES = ["companies", "officers", "shareholders", "persons", "person_company_roles", "presenters", "significant_controllers", "company_logs", "reminders", "resolutions", "secretary_templates", "share_transactions", "user_roles", "email_templates", "email_logs", "invoices"];
 
 for (const table of TABLES) {
   addRoute("GET", `/api/${table}`, async (req, env, _user) => {
@@ -320,11 +404,30 @@ addRoute("GET", "/api/companies/:id/full", async (_req, env, _user, params) => {
 });
 
 addRoute("GET", "/api/search", async (req, env, _user) => {
-  const q = `%${new URL(req.url).searchParams.get("q") || ""}%`;
-  if (!q || q === "%%") return json([]);
-  const companies = await env.DB.prepare("SELECT id, name, chinese_name, company_number, 'company' as type FROM companies WHERE name LIKE ? OR chinese_name LIKE ? OR company_number LIKE ? LIMIT 20").bind(q, q, q).all();
-  const persons = await env.DB.prepare("SELECT id, name_english, name_chinese, 'person' as type FROM persons WHERE name_english LIKE ? OR name_chinese LIKE ? LIMIT 20").bind(q, q).all();
-  return json([...companies.results, ...persons.results]);
+  const raw = new URL(req.url).searchParams.get("q") || "";
+  if (!raw) return json([]);
+  const q = `%${raw}%`;
+  const companies = await env.DB.prepare(
+    "SELECT id, name, chinese_name, company_number, ci_number, company_type, status, 'company' as type " +
+    "FROM companies WHERE name LIKE ? OR chinese_name LIKE ? OR company_number LIKE ? OR ci_number LIKE ? " +
+    "ORDER BY name LIMIT 30"
+  ).bind(q, q, q, q).all();
+  const persons = await env.DB.prepare(
+    "SELECT id, name_english, name_chinese, identity, id_number, passport_number, 'person' as type " +
+    "FROM persons WHERE name_english LIKE ? OR name_chinese LIKE ? OR id_number LIKE ? OR passport_number LIKE ? " +
+    "ORDER BY name_english LIMIT 30"
+  ).bind(q, q, q, q).all();
+  const out: any[] = [...companies.results];
+  // 每位自然人附上關聯公司+角色，讓前端點擊可定位公司登記冊
+  for (const p of persons.results as any[]) {
+    const roles = await env.DB.prepare(
+      "SELECT pcr.role, pcr.date_ceased, c.id AS company_id, c.name AS company_name " +
+      "FROM person_company_roles pcr JOIN companies c ON c.id = pcr.company_id " +
+      "WHERE pcr.person_id = ?"
+    ).bind(p.id).all();
+    out.push({ ...p, roles: roles.results });
+  }
+  return json(out);
 });
 
 addRoute("POST", "/api/backup", async (_req, env, user) => {

@@ -192,7 +192,7 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave, onGenerateND2
     nameEnglish: '',
     email: '',
     identity: 'natural' as 'natural' | 'corporate',
-    role: 'director' as 'director' | 'secretary' | 'shareholder',
+    role: 'director' as 'director' | 'secretary' | 'shareholder' | 'authorized_representative',
     brNumber: '',
     address: '',
     serviceAddress: '',
@@ -263,7 +263,7 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave, onGenerateND2
   }, [person, open]);
 
   const addressChanged = person && formData.address !== originalAddress && formData.address.trim() !== '';
-  const isOfficer = formData.role === 'director' || formData.role === 'secretary';
+  const isOfficer = formData.role === 'director' || formData.role === 'secretary' || formData.role === 'authorized_representative';
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -379,7 +379,7 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave, onGenerateND2
               <Label htmlFor="role">角色類型</Label>
               <Select
                 value={formData.role}
-                onValueChange={(value: 'director' | 'secretary' | 'shareholder') =>
+                onValueChange={(value: 'director' | 'secretary' | 'shareholder' | 'authorized_representative') =>
                   setFormData({ ...formData, role: value })
                 }
               >
@@ -390,6 +390,7 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave, onGenerateND2
                   <SelectItem value="director">董事</SelectItem>
                   <SelectItem value="secretary">秘書</SelectItem>
                   <SelectItem value="shareholder">股東</SelectItem>
+                  <SelectItem value="authorized_representative">授權代表</SelectItem>
                 </SelectContent>
               </Select>
             </div>

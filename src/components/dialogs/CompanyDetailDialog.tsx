@@ -54,7 +54,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
   const [editingPerson, setEditingPerson] = useState(false);
   const [editingShareholder, setEditingShareholder] = useState<string | null>(null);
   const [editingShDetail, setEditingShDetail] = useState(false);
-  const [addingOfficer, setAddingOfficer] = useState<'director' | 'secretary' | null>(null);
+  const [addingOfficer, setAddingOfficer] = useState<'director' | 'secretary' | 'authorized_representative' | null>(null);
   const [addingShareholder, setAddingShareholder] = useState(false);
   const [copyDialogOpen, setCopyDialogOpen] = useState(false);
 
@@ -263,7 +263,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
       date_of_birth: newOfficerForm.dateOfBirth || undefined,
     }, {
       onSuccess: () => {
-        toast({ title: `${addingOfficer === 'director' ? '董事' : '秘書'}已新增` });
+        toast({ title: `${addingOfficer === 'director' ? '董事' : addingOfficer === 'authorized_representative' ? '授權代表' : '秘書'}已新增` });
         setAddingOfficer(null); setNewOfficerForm(emptyOfficerForm());
       },
       onError: () => toast({ title: '新增失敗', variant: 'destructive' }),
@@ -551,6 +551,26 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                     ))}
                   </div>
                 ) : !addingOfficer && <p className="text-muted-foreground text-sm">無秘書記錄</p>}
+
+                <Separator className="my-4" />
+
+                {/* Authorized Representatives (授權代表, 4.7) */}
+                <div className="flex items-center justify-between mb-2">
+                  <SectionHeader icon={<UserCheck className="h-4 w-4 text-primary" />} title="授權代表" count={(company.authorizedReps || []).length} />
+                  <Button variant="ghost" size="sm" onClick={() => { setAddingOfficer('authorized_representative'); setNewOfficerForm({ ...emptyOfficerForm(), serviceAddress: regAddrFull }); }}>
+                    <Plus className="h-3.5 w-3.5 mr-1" /> 新增
+                  </Button>
+                </div>
+                {addingOfficer === 'authorized_representative' && <NewOfficerForm form={newOfficerForm} setForm={setNewOfficerForm} onSave={handleAddOfficer} onCancel={() => setAddingOfficer(null)} />}
+                {(company.authorizedReps || []).length > 0 ? (
+                  <div className="grid gap-2">
+                    {(company.authorizedReps || []).map((a, i) => (
+                      <PersonRow key={i} person={a} isSelected={selectedPerson?.id === a.id}
+                        onClick={() => selectPerson(a, '授權代表')}
+                        onDelete={() => handleDeleteOfficer(a, '授權代表')} />
+                    ))}
+                  </div>
+                ) : !addingOfficer && <p className="text-muted-foreground text-sm">無授權代表記錄</p>}
               </TabsContent>
 
               {/* Tab: 股東 */}

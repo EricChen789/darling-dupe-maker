@@ -55,9 +55,12 @@ def cors(resp):
 def base64url(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).rstrip(b'=').decode()
 
+JWT_TTL_SECONDS = 7 * 24 * 60 * 60  # token 有效期 7 天（配合 verify_jwt 的 exp 檢查）
+
 def sign_jwt(payload: dict) -> str:
     header = base64url(json.dumps({"alg": "HS256", "typ": "JWT"}).encode())
-    p = {**payload, "iat": int(time.time())}
+    now = int(time.time())
+    p = {"exp": now + JWT_TTL_SECONDS, **payload, "iat": now}
     payload_b64 = base64url(json.dumps(p).encode())
     sig = hmac.new(JWT_SECRET.encode(), f"{header}.{payload_b64}".encode(), hashlib.sha256).digest()
     return f"{header}.{payload_b64}.{base64url(sig)}"
@@ -119,6 +122,7 @@ def init_db():
             email TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL,
             display_name TEXT DEFAULT '',
+            is_active INTEGER NOT NULL DEFAULT 1,
             created_at TEXT NOT NULL DEFAULT ''
         );
 
@@ -611,6 +615,11 @@ def auto_migrate():
         'updated_at': "TEXT DEFAULT ''",
     })
 
+    # auth_users: add is_active (P1 — 停用/啟用用戶，10.3)
+    ensure_columns('auth_users', {
+        'is_active': "INTEGER NOT NULL DEFAULT 1",
+    })
+
     # resolutions: add 4 missing columns (P0-2)
     ensure_columns('resolutions', {
         'resolution_date': "TEXT DEFAULT ''",
@@ -885,9 +894,12 @@ def auth_login():
     if not user or not verify_password(password, user['password_hash']):
         return jsonify({'error': 'Invalid email or password'}), 401
 
-    role_row = db.execute("SELECT role FROM user_roles WHERE user_id = ? AND role = 'admin'",
-                          (user['id'],)).fetchone()
-    role = 'admin' if role_row else 'user'
+    if 'is_active' in user.keys() and user['is_active'] == 0:
+        return jsonify({'error': 'Account is deactivated'}), 403
+
+    roles = [r['role'] for r in db.execute(
+        "SELECT role FROM user_roles WHERE user_id = ?", (user['id'],)).fetchall()]
+    role = 'admin' if 'admin' in roles else ('moderator' if 'moderator' in roles else 'user')
 
     token = sign_jwt({'sub': user['id'], 'email': user['email'],
                       'display_name': user['display_name'], 'role': role})
@@ -903,6 +915,85 @@ def auth_me():
     if not u:
         return jsonify({'error': 'Not authenticated'}), 401
     return jsonify(u)
+
+# ─── 用戶管理（admin，10.1–10.3；本地 dev 模式不強制鑑權）───
+VALID_ROLES = ('admin', 'moderator', 'user')
+
+
+@app.route('/api/admin/users', methods=['GET', 'OPTIONS'])
+def admin_users_list():
+    if request.method == 'OPTIONS':
+        return ('', 204)
+    db = get_db()
+    users = db.execute(
+        "SELECT id, email, display_name, is_active, created_at FROM auth_users ORDER BY created_at"
+    ).fetchall()
+    roles = db.execute("SELECT user_id, role FROM user_roles").fetchall()
+    role_map = {}
+    for r in roles:
+        role_map.setdefault(r['user_id'], []).append(r['role'])
+    out = []
+    for u in users:
+        d = dict(u)
+        d['roles'] = role_map.get(u['id'], [])
+        out.append(d)
+    return jsonify(out)
+
+
+@app.route('/api/admin/users', methods=['POST'])
+def admin_users_create():
+    data = request.json or {}
+    email = (data.get('email', '')).lower().strip()
+    password = data.get('password', '')
+    display_name = data.get('display_name') or email
+    role = data.get('role', 'user')
+    if not email or not password:
+        return jsonify({'error': 'Email and password required'}), 400
+    db = get_db()
+    if db.execute("SELECT id FROM auth_users WHERE email = ?", (email,)).fetchone():
+        return jsonify({'error': 'Email already exists'}), 409
+    uid = str(uuid.uuid4())
+    db.execute(
+        "INSERT INTO auth_users (id, email, password_hash, display_name, is_active, created_at) VALUES (?, ?, ?, ?, 1, ?)",
+        (uid, email, hash_password(password), display_name, datetime.now().isoformat()))
+    if role in VALID_ROLES:
+        db.execute("INSERT INTO user_roles (id, user_id, role) VALUES (?, ?, ?)",
+                   (str(uuid.uuid4()), uid, role))
+    db.commit()
+    return jsonify({'id': uid, 'email': email, 'display_name': display_name,
+                    'roles': [role] if role in VALID_ROLES else [], 'is_active': 1}), 201
+
+
+@app.route('/api/admin/users/<uid>', methods=['PUT'])
+def admin_users_update(uid):
+    data = request.json or {}
+    db = get_db()
+    if not db.execute("SELECT id FROM auth_users WHERE id = ?", (uid,)).fetchone():
+        return jsonify({'error': 'User not found'}), 404
+    if 'is_active' in data:
+        db.execute("UPDATE auth_users SET is_active = ? WHERE id = ?",
+                   (1 if data['is_active'] else 0, uid))
+    if 'display_name' in data:
+        db.execute("UPDATE auth_users SET display_name = ? WHERE id = ?", (data['display_name'], uid))
+    if 'password' in data and data['password']:
+        db.execute("UPDATE auth_users SET password_hash = ? WHERE id = ?",
+                   (hash_password(data['password']), uid))
+    if 'role' in data:
+        db.execute("DELETE FROM user_roles WHERE user_id = ?", (uid,))
+        if data['role'] in VALID_ROLES:
+            db.execute("INSERT INTO user_roles (id, user_id, role) VALUES (?, ?, ?)",
+                       (str(uuid.uuid4()), uid, data['role']))
+    db.commit()
+    return jsonify({'success': True})
+
+
+@app.route('/api/admin/users/<uid>', methods=['DELETE'])
+def admin_users_delete(uid):
+    db = get_db()
+    db.execute("DELETE FROM user_roles WHERE user_id = ?", (uid,))
+    db.execute("DELETE FROM auth_users WHERE id = ?", (uid,))
+    db.commit()
+    return jsonify({'success': True})
 
 # ─── PDF Generation ───
 @app.route('/api/generate-shareholders-register-pdf', methods=['POST'])
@@ -1274,6 +1365,65 @@ def generate_scr_pdf():
     pdf_bytes = bytes(pdf.output())
     import base64 as b64
     return jsonify({'pdf': b64.b64encode(pdf_bytes).decode('ascii')})
+
+# ─── R2 存儲本地替身（文件系統，鏡像生產 /api/storage/<bucket>/<file...>）───
+STORAGE_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'storage')
+STORAGE_BUCKETS = {'pdf-templates', 'company-documents', 'company-logs', 'backups'}
+
+
+def _storage_resolve(bucket, filepath):
+    """把 <bucket>/<filepath> 解析成安全的本地絕對路徑，阻止路徑穿越。非法返回 None。"""
+    if bucket not in STORAGE_BUCKETS:
+        return None
+    bucket_dir = os.path.abspath(os.path.join(STORAGE_ROOT, bucket))
+    target = os.path.abspath(os.path.join(bucket_dir, filepath))
+    # 確保 target 仍在 bucket_dir 之內（防 ../ 穿越）
+    if target != bucket_dir and not target.startswith(bucket_dir + os.sep):
+        return None
+    return target
+
+
+@app.route('/api/storage/<bucket>/<path:filepath>', methods=['GET', 'OPTIONS'])
+def storage_get(bucket, filepath):
+    if request.method == 'OPTIONS':
+        return ('', 204)
+    target = _storage_resolve(bucket, filepath)
+    if not target:
+        return jsonify({'error': 'Invalid bucket or path'}), 400
+    if not os.path.isfile(target):
+        return jsonify({'error': 'File not found'}), 404
+    import mimetypes
+    ctype = mimetypes.guess_type(target)[0] or 'application/octet-stream'
+    with open(target, 'rb') as f:
+        data = f.read()
+    resp = Response(data, mimetype=ctype)
+    dl = request.args.get('download')
+    if dl:
+        resp.headers['Content-Disposition'] = f'attachment; filename="{dl}"'
+    resp.headers['Cache-Control'] = 'public, max-age=3600'
+    return resp
+
+
+@app.route('/api/storage/<bucket>/<path:filepath>', methods=['POST'])
+def storage_put(bucket, filepath):
+    target = _storage_resolve(bucket, filepath)
+    if not target:
+        return jsonify({'error': 'Invalid bucket or path'}), 400
+    os.makedirs(os.path.dirname(target), exist_ok=True)
+    with open(target, 'wb') as f:
+        f.write(request.get_data())
+    return jsonify({'success': True, 'path': filepath}), 201
+
+
+@app.route('/api/storage/<bucket>/<path:filepath>', methods=['DELETE'])
+def storage_delete(bucket, filepath):
+    target = _storage_resolve(bucket, filepath)
+    if not target:
+        return jsonify({'error': 'Invalid bucket or path'}), 400
+    if os.path.isfile(target):
+        os.remove(target)
+    return jsonify({'success': True})
+
 
 # ─── Generic CRUD ───
 @app.route('/api/<table_name>', methods=['GET'])

@@ -93,7 +93,7 @@ async function fetchAllRows<T>(
   return all;
 }
 
-function buildPersonForRole(p: DbPerson, r: DbRole, role: 'director' | 'secretary' | 'shareholder'): Person {
+function buildPersonForRole(p: DbPerson, r: DbRole, role: 'director' | 'secretary' | 'shareholder' | 'authorized_representative'): Person {
   return {
     // Use the role-relationship id so dialogs / mutations can target per-company assignment
     id: r.id,
@@ -160,6 +160,7 @@ function mapToCompany(
   const directors: Person[] = [];
   const secretaries: Person[] = [];
   const shareholders: Shareholder[] = [];
+  const authorizedReps: Person[] = [];
 
   for (const r of rolesForCompany) {
     const p = personMap.get(r.person_id);
@@ -170,6 +171,8 @@ function mapToCompany(
       secretaries.push(buildPersonForRole(p, r, 'secretary'));
     } else if (r.role === 'shareholder') {
       shareholders.push(buildShareholderForRole(p, r));
+    } else if (r.role === 'authorized_representative') {
+      authorizedReps.push(buildPersonForRole(p, r, 'authorized_representative'));
     }
   }
 
@@ -184,6 +187,7 @@ function mapToCompany(
     directors,
     secretaries,
     shareholders,
+    authorizedReps,
     companyType: c.company_type || '',
     businessCode: c.business_code || '',
     updatedAt: new Date(c.updated_at).toLocaleDateString('zh-TW'),

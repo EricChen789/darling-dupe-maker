@@ -9,6 +9,7 @@ export interface Company {
   directors: Person[];
   secretaries: Person[];
   shareholders: Shareholder[];
+  authorizedReps?: Person[];
   companyType: string;
   businessCode: string;
   updatedAt: string;
@@ -39,7 +40,7 @@ export interface Person {
   nameEnglish: string;
   email: string;
   identity: 'natural' | 'corporate';
-  role: 'director' | 'secretary' | 'shareholder';
+  role: 'director' | 'secretary' | 'shareholder' | 'authorized_representative';
   brNumber?: string;
   address?: string;
   serviceAddress?: string;

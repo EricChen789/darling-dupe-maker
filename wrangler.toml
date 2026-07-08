@@ -10,7 +10,7 @@ pages_build_output_dir = "dist"
 [[d1_databases]]
 binding = "DB"
 database_name = "secretary-db"
-database_id = "60730e44-1fd3-4f4b-bc00-ead624595137"
+database_id = "d623d895-04fb-497f-8a68-df2f148dc412"
 
 # R2 Bucket bindings
 [[r2_buckets]]

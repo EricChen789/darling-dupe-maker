@@ -14,7 +14,12 @@ import os
 import re
 import time
 import base64
+import smtplib
+import threading
 import urllib.request
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from email.utils import formataddr
 from datetime import datetime
 from flask import Flask, request, jsonify, g, Response
 from fpdf import FPDF
@@ -395,6 +400,33 @@ def init_db():
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             updated_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
+
+        CREATE TABLE IF NOT EXISTS email_templates (
+            id TEXT PRIMARY KEY,
+            name TEXT DEFAULT '',
+            template_type TEXT DEFAULT 'general',
+            subject TEXT DEFAULT '',
+            body TEXT DEFAULT '',
+            is_default INTEGER DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS email_logs (
+            id TEXT PRIMARY KEY,
+            company_id TEXT,
+            template_id TEXT,
+            to_email TEXT DEFAULT '',
+            cc_email TEXT DEFAULT '',
+            subject TEXT DEFAULT '',
+            body TEXT DEFAULT '',
+            status TEXT DEFAULT 'sent',
+            scheduled_at TEXT DEFAULT NULL,
+            sent_at TEXT DEFAULT NULL,
+            error TEXT DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
     """)
     db.commit()
 
@@ -642,12 +674,176 @@ def auto_migrate():
     ensure_columns('share_transactions', tx_columns)
 
     db.commit()
+
+    # Seed default email templates if none exist (Email Module 8.1)
+    try:
+        cnt = db.execute("SELECT COUNT(*) FROM email_templates").fetchone()[0]
+    except sqlite3.OperationalError:
+        cnt = None
+    if cnt == 0:
+        seeds = [
+            ('invoice', '發票通知', '【{company_name}】服務發票 {invoice_number}',
+             '致 {client_name}：\n\n茲附上貴公司 {company_name}（商業登記號碼：{br_number}）的服務發票。\n\n發票編號：{invoice_number}\n金額：{currency} {amount}\n到期日：{due_date}\n\n請於到期日前安排付款，如有查詢歡迎與我們聯絡。\n\n此致\n{sender_name}\n{today}'),
+            ('collection', '客戶資料收集', '【{company_name}】周年申報所需資料',
+             '致 {client_name}：\n\n為辦理貴公司 {company_name} 的周年申報（NAR1），現需向  閣下收集以下資料：\n\n1. 各董事及股東之身份證明文件副本\n2. 最新之註冊辦事處地址證明\n3. 股本結構如有變動之詳情\n\n煩請於 {due_date} 前回覆，以便我們準時辦理。\n\n此致\n{sender_name}\n{today}'),
+            ('reminder', '周年申報到期提醒', '【提醒】{company_name} 周年申報將於 {due_date} 到期',
+             '致 {client_name}：\n\n謹此提醒，貴公司 {company_name}（商業登記號碼：{br_number}）的周年申報表（NAR1）將於 {due_date} 到期。\n\n請盡快與我們聯絡以安排辦理，避免逾期罰款。\n\n此致\n{sender_name}\n{today}'),
+        ]
+        for ttype, name, subject, body in seeds:
+            db.execute(
+                "INSERT INTO email_templates (id, name, template_type, subject, body, is_default) VALUES (?, ?, ?, ?, ?, 1)",
+                (str(uuid.uuid4()), name, ttype, subject, body))
+        db.commit()
+        print(f"[MIGRATE] Seeded {len(seeds)} default email templates")
+
     db.close()
+
+# ─── Email module ───
+# SMTP config via environment (optional). When unset, sending is SIMULATED:
+# the email is recorded in email_logs with status='sent' but nothing leaves
+# the machine — perfect for local dev / UAT demos without a real mail server.
+SMTP_HOST = os.environ.get('SMTP_HOST', '')
+SMTP_PORT = int(os.environ.get('SMTP_PORT', '587'))
+SMTP_USER = os.environ.get('SMTP_USER', '')
+SMTP_PASS = os.environ.get('SMTP_PASS', '')
+SMTP_FROM = os.environ.get('SMTP_FROM', SMTP_USER or 'no-reply@muselabs.local')
+SMTP_FROM_NAME = os.environ.get('SMTP_FROM_NAME', 'Muse Labs 公司秘書')
+
+
+def substitute_vars(text, variables):
+    """Replace {key} placeholders with values (unknown placeholders left intact)."""
+    if not text:
+        return ''
+    def repl(m):
+        key = m.group(1)
+        return str(variables.get(key, m.group(0)))
+    return re.sub(r'\{([a-zA-Z_][a-zA-Z0-9_]*)\}', repl, text)
+
+
+def deliver_email(to_email, subject, body, cc_email=''):
+    """Send an email via SMTP if configured, else simulate.
+    Returns (ok: bool, error: str, simulated: bool)."""
+    if not to_email:
+        return False, 'Missing recipient', False
+    if not SMTP_HOST:
+        # Simulated send — log to console so it's visible during dev.
+        print(f"[EMAIL:SIMULATED] to={to_email} cc={cc_email} subject={subject!r}")
+        return True, '', True
+    try:
+        msg = MIMEMultipart()
+        msg['From'] = formataddr((SMTP_FROM_NAME, SMTP_FROM))
+        msg['To'] = to_email
+        if cc_email:
+            msg['Cc'] = cc_email
+        msg['Subject'] = subject
+        msg.attach(MIMEText(body, 'plain', 'utf-8'))
+        recipients = [e.strip() for e in (to_email + ',' + cc_email).split(',') if e.strip()]
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=20) as s:
+            s.starttls()
+            if SMTP_USER:
+                s.login(SMTP_USER, SMTP_PASS)
+            s.sendmail(SMTP_FROM, recipients, msg.as_string())
+        print(f"[EMAIL:SENT] to={to_email} subject={subject!r}")
+        return True, '', False
+    except Exception as e:
+        print(f"[EMAIL:FAILED] to={to_email}: {e}")
+        return False, str(e), False
+
+
+def process_scheduled_emails():
+    """Send any scheduled emails whose scheduled_at has passed. Called by the
+    background scheduler thread. Uses its own connection (runs off-request)."""
+    db = sqlite3.connect(DB_PATH)
+    db.row_factory = sqlite3.Row
+    try:
+        now = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S')
+        due = db.execute(
+            "SELECT * FROM email_logs WHERE status = 'scheduled' AND scheduled_at IS NOT NULL "
+            "AND scheduled_at <= ? ORDER BY scheduled_at ASC LIMIT 50",
+            (now,)
+        ).fetchall()
+        for row in due:
+            ok, err, _sim = deliver_email(row['to_email'], row['subject'], row['body'], row['cc_email'] or '')
+            db.execute(
+                "UPDATE email_logs SET status = ?, sent_at = ?, error = ?, updated_at = datetime('now') WHERE id = ?",
+                ('sent' if ok else 'failed', datetime.utcnow().isoformat() if ok else None, err, row['id'])
+            )
+            db.commit()
+            print(f"[SCHEDULER] Processed scheduled email {row['id']} -> {'sent' if ok else 'failed'}")
+    except sqlite3.OperationalError as e:
+        print(f"[SCHEDULER] skip: {e}")
+    finally:
+        db.close()
+
+
+def scheduler_loop():
+    while True:
+        try:
+            process_scheduled_emails()
+        except Exception as e:
+            print(f"[SCHEDULER] error: {e}")
+        time.sleep(60)
+
 
 # ─── Routes ───
 TABLES = ['companies', 'officers', 'shareholders', 'persons', 'person_company_roles',
           'presenters', 'significant_controllers', 'company_logs', 'reminders', 'invoices',
-          'resolutions', 'secretary_templates', 'share_transactions', 'user_roles']
+          'resolutions', 'secretary_templates', 'share_transactions', 'user_roles',
+          'email_templates', 'email_logs']
+
+@app.route('/api/send-email', methods=['POST', 'OPTIONS'])
+def send_email():
+    """Send (or schedule) an email. Body: {to, cc, subject, body, company_id,
+    template_id, scheduled_at, variables}. If `variables` is provided, {key}
+    placeholders in subject/body are substituted server-side. If `scheduled_at`
+    is a future ISO timestamp, the email is queued (status='scheduled') and sent
+    by the background scheduler; otherwise it is delivered immediately."""
+    if request.method == 'OPTIONS':
+        return ('', 204)
+    data = request.json or {}
+    to_email = (data.get('to') or '').strip()
+    cc_email = (data.get('cc') or '').strip()
+    subject = data.get('subject') or ''
+    body = data.get('body') or ''
+    variables = data.get('variables') or {}
+    if variables:
+        subject = substitute_vars(subject, variables)
+        body = substitute_vars(body, variables)
+    if not to_email:
+        return jsonify({'error': '缺少收件人 (to)'}), 400
+
+    scheduled_at = (data.get('scheduled_at') or '').strip()
+    log_id = str(uuid.uuid4())
+    db = get_db()
+
+    # Determine if this is a future-dated (scheduled) send.
+    is_scheduled = False
+    if scheduled_at:
+        try:
+            when = datetime.fromisoformat(scheduled_at.replace('Z', ''))
+            is_scheduled = when > datetime.utcnow()
+        except ValueError:
+            is_scheduled = False
+
+    if is_scheduled:
+        db.execute(
+            "INSERT INTO email_logs (id, company_id, template_id, to_email, cc_email, subject, body, status, scheduled_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, 'scheduled', ?)",
+            (log_id, data.get('company_id'), data.get('template_id'), to_email, cc_email, subject, body, scheduled_at)
+        )
+        db.commit()
+        return jsonify({'success': True, 'id': log_id, 'status': 'scheduled', 'scheduled_at': scheduled_at})
+
+    ok, err, simulated = deliver_email(to_email, subject, body, cc_email)
+    status = 'sent' if ok else 'failed'
+    db.execute(
+        "INSERT INTO email_logs (id, company_id, template_id, to_email, cc_email, subject, body, status, sent_at, error) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (log_id, data.get('company_id'), data.get('template_id'), to_email, cc_email, subject, body,
+         status, datetime.utcnow().isoformat() if ok else None, err)
+    )
+    db.commit()
+    return jsonify({'success': ok, 'id': log_id, 'status': status, 'simulated': simulated, 'error': err}), (200 if ok else 502)
 
 @app.route('/api/auth/register', methods=['POST'])
 def auth_register():
@@ -2624,7 +2820,13 @@ def handle_options(path=''):
 if __name__ == '__main__':
     init_db()
     auto_migrate()
+    # Start the scheduled-email background thread once (avoid the Flask reloader
+    # child spawning a second copy).
+    if os.environ.get('WERKZEUG_RUN_MAIN') == 'true' or not app.debug:
+        threading.Thread(target=scheduler_loop, daemon=True).start()
+        print("[SERVER] Scheduled-email worker started (checks every 60s)")
     print("[SERVER] Local API running at http://localhost:5000")
     print("[SERVER] Admin account: admin@localhost / admin123")
     print("[SERVER] Register new accounts at /api/auth/register (no admin required)")
+    print(f"[SERVER] SMTP: {'configured (' + SMTP_HOST + ')' if SMTP_HOST else 'NOT configured — emails are SIMULATED & logged'}")
     app.run(host='0.0.0.0', port=5000, debug=True)

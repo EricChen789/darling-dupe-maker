@@ -12,6 +12,7 @@ import People from "./pages/People";
 import Forms from "./pages/Forms";
 import Invoices from "./pages/Invoices";
 import Email from "./pages/Email";
+import WordDocs from "./pages/WordDocs";
 import Logs from "./pages/Logs";
 import Settings from "./pages/Settings";
 import FieldMapping from "./pages/FieldMapping";
@@ -70,6 +71,7 @@ const App = () => (
                 <Route path="people" element={<People />} />
                 <Route path="presenters" element={<Presenters />} />
                 <Route path="forms" element={<Forms />} />
+                <Route path="word-docs" element={<WordDocs />} />
                 <Route path="reminders" element={<Reminders />} />
                 <Route path="invoices" element={<Invoices />} />
                 <Route path="email" element={<Email />} />

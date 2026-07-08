@@ -2723,6 +2723,307 @@ Context / Specific details from user:
         return jsonify({'error': str(e)}), 500
 
 
+# ─── DOCX Document Generation (功能說明書 7.1) ───
+# Generate Microsoft Word (.docx) company secretarial documents from system data.
+
+DOCX_TYPES = {
+    'company_profile':   '公司資料摘要',
+    'directors_register': '董事名冊',
+    'members_register':  '成員（股東）名冊',
+    'board_resolution':  '董事會書面決議',
+    'meeting_minutes':   '董事會會議記錄',
+}
+
+
+def _docx_fmt_date(s):
+    """Normalise stored dates. DDMMYYYY -> DD/MM/YYYY; pass through otherwise."""
+    if not s:
+        return ''
+    s = str(s).strip()
+    if len(s) == 8 and s.isdigit():
+        return f"{s[0:2]}/{s[2:4]}/{s[4:8]}"
+    return s
+
+
+def _docx_company_bundle(db, company_id):
+    """Assemble a company + its members (directors / secretaries / shareholders)."""
+    row = db.execute("SELECT * FROM companies WHERE id=?", (company_id,)).fetchone()
+    if not row:
+        return None
+    c = dict(row)
+    members = [dict(r) for r in db.execute(
+        """SELECT pcr.role, pcr.shares, pcr.share_type, pcr.currency, pcr.paid_up,
+                  pcr.date_appointed, pcr.date_ceased, pcr.is_reserve,
+                  p.name_english, p.name_chinese, p.id_number, p.passport_number,
+                  p.address, p.service_address, p.email, p.phone, p.identity, p.tcsp_number
+           FROM person_company_roles pcr JOIN persons p ON p.id = pcr.person_id
+           WHERE pcr.company_id=? AND (pcr.date_ceased IS NULL OR pcr.date_ceased='')
+           ORDER BY pcr.role, p.name_english""", (company_id,)).fetchall()]
+    directors = [m for m in members if m['role'] == 'director']
+    secretaries = [m for m in members if m['role'] == 'secretary']
+    shareholders = [m for m in members if m['role'] == 'shareholder']
+    total_shares = sum(int(m['shares'] or 0) for m in shareholders)
+    addr = ', '.join(filter(None, [
+        c.get('reg_flat'), c.get('reg_building'), c.get('reg_street'),
+        c.get('reg_district'), c.get('reg_region')]))
+    return {
+        'c': c, 'address': addr,
+        'directors': directors, 'secretaries': secretaries,
+        'shareholders': shareholders, 'total_shares': total_shares,
+    }
+
+
+def _docx_set_cjk_font(doc, font='Microsoft JhengHei'):
+    """Ensure East-Asian glyphs render (Traditional Chinese) in the Normal style."""
+    from docx.oxml.ns import qn
+    style = doc.styles['Normal']
+    style.font.name = font
+    rpr = style.element.get_or_add_rPr()
+    rfonts = rpr.get_or_add_rFonts()
+    rfonts.set(qn('w:ascii'), font)
+    rfonts.set(qn('w:hAnsi'), font)
+    rfonts.set(qn('w:eastAsia'), font)
+
+
+def _docx_person_label(m):
+    en = (m.get('name_english') or '').strip()
+    cn = (m.get('name_chinese') or '').strip()
+    if en and cn:
+        return f"{en}（{cn}）"
+    return en or cn or '—'
+
+
+def _build_docx(db, company_id, doc_type, extra=None):
+    """Return (docx_bytes, filename) for the requested document type."""
+    from docx import Document
+    from docx.shared import Pt, Cm, RGBColor
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+    extra = extra or {}
+    bundle = _docx_company_bundle(db, company_id)
+    if not bundle:
+        return None, None
+    c = bundle['c']
+    name_en = c.get('name') or ''
+    name_cn = c.get('chinese_name') or ''
+    br = c.get('company_number') or ''
+    cr = c.get('ci_number') or ''
+
+    doc = Document()
+    _docx_set_cjk_font(doc)
+
+    def h(text, size=16, bold=True, center=True, space_after=6):
+        p = doc.add_paragraph()
+        if center:
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        r = p.add_run(text)
+        r.bold = bold
+        r.font.size = Pt(size)
+        p.paragraph_format.space_after = Pt(space_after)
+        return p
+
+    def para(text, size=11, bold=False, center=False):
+        p = doc.add_paragraph()
+        if center:
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        r = p.add_run(text)
+        r.bold = bold
+        r.font.size = Pt(size)
+        return p
+
+    def kv_table(rows):
+        t = doc.add_table(rows=0, cols=2)
+        t.style = 'Light Grid Accent 1'
+        for k, v in rows:
+            cells = t.add_row().cells
+            cells[0].text = k
+            cells[1].text = v or '—'
+            cells[0].paragraphs[0].runs[0].bold = True
+        return t
+
+    def members_table(headers, data_rows):
+        t = doc.add_table(rows=1, cols=len(headers))
+        t.style = 'Light Grid Accent 1'
+        for i, hd in enumerate(headers):
+            cell = t.rows[0].cells[i]
+            cell.text = hd
+            cell.paragraphs[0].runs[0].bold = True
+        for dr in data_rows:
+            cells = t.add_row().cells
+            for i, val in enumerate(dr):
+                cells[i].text = str(val) if val not in (None, '') else '—'
+        return t
+
+    # Company header block (shared)
+    def company_header():
+        h(name_en or name_cn or '公司', size=18)
+        if name_cn and name_en:
+            h(name_cn, size=14, bold=False)
+        sub = []
+        if br:
+            sub.append(f"商業登記號碼 (BR)：{br}")
+        if cr:
+            sub.append(f"公司註冊編號 (CR)：{cr}")
+        if sub:
+            para('　｜　'.join(sub), size=10, center=True)
+        doc.add_paragraph()
+
+    label = DOCX_TYPES.get(doc_type, '公司文件')
+
+    if doc_type == 'company_profile':
+        company_header()
+        h('公司資料摘要', size=15)
+        kv_table([
+            ('英文名稱', name_en),
+            ('中文名稱', name_cn),
+            ('商業登記號碼 (BR)', br),
+            ('公司註冊編號 (CR)', cr),
+            ('公司類型', c.get('company_type')),
+            ('成立日期', _docx_fmt_date(c.get('incorporation_date'))),
+            ('狀態', c.get('status')),
+            ('註冊辦事處地址', bundle['address']),
+            ('電郵', c.get('email')),
+            ('電話', c.get('phone')),
+        ])
+        doc.add_paragraph()
+        h(f"董事（{len(bundle['directors'])}）", size=13, center=False)
+        members_table(['姓名', '身份證／護照', '委任日期', '地址'],
+                      [[_docx_person_label(m), m.get('id_number') or m.get('passport_number'),
+                        _docx_fmt_date(m.get('date_appointed')), m.get('address')]
+                       for m in bundle['directors']] or [['（無）', '', '', '']])
+        doc.add_paragraph()
+        h(f"公司秘書（{len(bundle['secretaries'])}）", size=13, center=False)
+        members_table(['姓名', 'TCSP 號碼', '委任日期', '地址'],
+                      [[_docx_person_label(m), m.get('tcsp_number'),
+                        _docx_fmt_date(m.get('date_appointed')), m.get('address')]
+                       for m in bundle['secretaries']] or [['（無）', '', '', '']])
+        doc.add_paragraph()
+        ts = bundle['total_shares']
+        h(f"股東 / 股本結構（總發行股數：{ts}）", size=13, center=False)
+        members_table(['股東', '持股', '股份類別', '佔比'],
+                      [[_docx_person_label(m), m.get('shares'), m.get('share_type') or '普通股',
+                        (f"{round(int(m.get('shares') or 0) * 100 / ts, 2)}%" if ts else '—')]
+                       for m in bundle['shareholders']] or [['（無）', '', '', '']])
+
+    elif doc_type == 'directors_register':
+        company_header()
+        h('董事名冊 / Register of Directors', size=15)
+        para('依據《公司條例》(第622章) 第 641 條備存。', size=10)
+        doc.add_paragraph()
+        members_table(['姓名', '身份證／護照', '委任日期', '住址', '電郵'],
+                      [[_docx_person_label(m), m.get('id_number') or m.get('passport_number'),
+                        _docx_fmt_date(m.get('date_appointed')), m.get('address'), m.get('email')]
+                       for m in bundle['directors']] or [['（無董事記錄）', '', '', '', '']])
+
+    elif doc_type == 'members_register':
+        company_header()
+        h('成員（股東）名冊 / Register of Members', size=15)
+        para('依據《公司條例》(第622章) 第 627 條備存。', size=10)
+        doc.add_paragraph()
+        ts = bundle['total_shares']
+        members_table(['股東', '持股數', '股份類別', '已繳股款', '佔比'],
+                      [[_docx_person_label(m), m.get('shares'), m.get('share_type') or '普通股',
+                        m.get('paid_up'),
+                        (f"{round(int(m.get('shares') or 0) * 100 / ts, 2)}%" if ts else '—')]
+                       for m in bundle['shareholders']] or [['（無股東記錄）', '', '', '', '']])
+        doc.add_paragraph()
+        para(f"總發行股數：{ts}", bold=True)
+
+    elif doc_type in ('board_resolution', 'meeting_minutes'):
+        is_min = doc_type == 'meeting_minutes'
+        company_header()
+        m_date = extra.get('meeting_date') or ''
+        location = extra.get('location') or '公司註冊辦事處'
+        if is_min:
+            h('董事會會議記錄', size=15)
+            h('MINUTES OF MEETING OF THE BOARD OF DIRECTORS', size=11, bold=False)
+            doc.add_paragraph()
+            kv_table([
+                ('會議日期 Date', m_date),
+                ('會議地點 Venue', location),
+                ('出席董事 Present', '；'.join(_docx_person_label(m) for m in bundle['directors']) or '—'),
+                ('主席 Chairman', _docx_person_label(bundle['directors'][0]) if bundle['directors'] else '—'),
+            ])
+        else:
+            h('董事會書面決議', size=15)
+            h('WRITTEN RESOLUTION OF THE DIRECTORS', size=11, bold=False)
+            doc.add_paragraph()
+            kv_table([
+                ('決議日期 Date', m_date),
+                ('簽署董事 Directors', '；'.join(_docx_person_label(m) for m in bundle['directors']) or '—'),
+            ])
+        doc.add_paragraph()
+        para('議決事項 / RESOLVED THAT:', bold=True, size=12)
+        content = (extra.get('content') or '').strip()
+        if content:
+            for line in content.split('\n'):
+                para(line, size=11)
+        else:
+            para('1. ＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿', size=11)
+            para('2. ＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿', size=11)
+        doc.add_paragraph()
+        doc.add_paragraph()
+        para('簽署 / SIGNED:', bold=True)
+        for m in (bundle['directors'] or [{'name_english': '＿＿＿＿＿＿'}]):
+            doc.add_paragraph()
+            para('_______________________________', size=11)
+            para(f"{_docx_person_label(m)}　董事 / Director", size=10)
+    else:
+        return None, None
+
+    # Footer note
+    doc.add_paragraph()
+    footer = para(f"本文件由公司秘書管理系統自動生成 · {datetime.now().strftime('%Y-%m-%d %H:%M')}", size=8)
+    footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    import io as _io
+    buf = _io.BytesIO()
+    doc.save(buf)
+    safe_name = re.sub(r'[^\w一-鿿-]', '_', (name_en or name_cn or 'company'))[:40]
+    filename = f"{safe_name}_{label}.docx"
+    return buf.getvalue(), filename
+
+
+@app.route('/api/generate-docx', methods=['POST', 'OPTIONS'])
+def generate_docx():
+    if request.method == 'OPTIONS':
+        return ('', 204)
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        company_id = data.get('company_id')
+        doc_type = data.get('doc_type')
+        if not company_id:
+            return jsonify({'error': '缺少 company_id'}), 400
+        if doc_type not in DOCX_TYPES:
+            return jsonify({'error': f'不支援的文件類型：{doc_type}',
+                            'supported': list(DOCX_TYPES.keys())}), 400
+        db = get_db()
+        docx_bytes, filename = _build_docx(
+            db, company_id, doc_type,
+            extra={
+                'content': data.get('content'),
+                'meeting_date': data.get('meeting_date'),
+                'location': data.get('location'),
+            })
+        if docx_bytes is None:
+            return jsonify({'error': '找不到該公司'}), 404
+        return jsonify({
+            'success': True,
+            'docx': base64.b64encode(docx_bytes).decode('ascii'),
+            'filename': filename,
+            'doc_type': doc_type,
+        })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/docx-types', methods=['GET'])
+def docx_types():
+    return jsonify([{'key': k, 'label': v} for k, v in DOCX_TYPES.items()])
+
+
 # ─── NAR1 Field Listing & Debug PDF ───
 
 @app.route('/api/nar1-fields', methods=['GET'])

@@ -22,7 +22,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Company, Person, Shareholder } from '@/types';
 import {
   Building2, Users, UserCheck, Briefcase, ArrowLeft, User, ShieldCheck, Copy,
-  Edit, Save, X, Plus, Trash2, Upload, FileText, Download, Loader2, History,
+  Edit, Save, X, Plus, Trash2, Upload, FileText, Download, Loader2, History, ArrowUpDown,
 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
@@ -34,6 +34,7 @@ import {
 import { SCRTab } from './SCRTab';
 import { RegistersTab } from './RegistersTab';
 import { VersionHistoryTab } from './VersionHistoryTab';
+import { PersonnelChangeTab } from './PersonnelChangeTab';
 import { CopyFromCompanyDialog } from './CopyFromCompanyDialog';
 import { useSecretaryTemplates } from '@/hooks/useSecretaryTemplates';
 
@@ -369,6 +370,9 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                 <TabsTrigger value="history" className="gap-1.5">
                   <History className="h-3.5 w-3.5" /> 版本歷史
                 </TabsTrigger>
+                <TabsTrigger value="personnel" className="gap-1.5">
+                  <ArrowUpDown className="h-3.5 w-3.5" /> 人事變更
+                </TabsTrigger>
               </TabsList>
 
               {/* Tab: 基本資料 */}
@@ -615,6 +619,10 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
 
               <TabsContent value="history">
                 <VersionHistoryTab company={company} />
+              </TabsContent>
+
+              <TabsContent value="personnel">
+                <PersonnelChangeTab company={company} />
               </TabsContent>
             </Tabs>
           </div>

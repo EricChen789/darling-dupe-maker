@@ -158,9 +158,24 @@ export function useOfficers() {
 
   const deleteMutation = useMutation({
     mutationFn: async (personId: string) => {
-      // Cascade will remove person_company_roles
+      // Cascade: Flask table_delete for persons also cleans person_company_roles
       const { error } = await supabase.from('persons').delete().eq('id', personId);
       if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['persons-list'] });
+      queryClient.invalidateQueries({ queryKey: ['companies'] });
+    },
+  });
+
+  const cleanupOrphansMutation = useMutation({
+    mutationFn: async () => {
+      const resp = await fetch('/api/persons/cleanup-orphans', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('secretary_jwt') || ''}` },
+      });
+      if (!resp.ok) throw new Error('Cleanup failed');
+      return resp.json() as Promise<{ success: boolean; deleted: number }>;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['persons-list'] });
@@ -214,5 +229,7 @@ export function useOfficers() {
     refetch,
     deleteOfficer: deleteMutation.mutateAsync,
     upsertOfficer: upsertMutation.mutateAsync,
+    cleanupOrphans: cleanupOrphansMutation.mutateAsync,
+    isCleaningUp: cleanupOrphansMutation.isPending,
   };
 }

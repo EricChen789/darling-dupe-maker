@@ -23,6 +23,7 @@ import { Company } from '@/types';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 import { usePresenters } from '@/hooks/usePresenters';
+import { downloadBase64Pdf } from '@/lib/downloadPdf';
 
 interface NAR1GeneratorProps {
   open: boolean;
@@ -264,16 +265,8 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
         throw new Error(err.error || `HTTP ${resp.status}`);
       }
 
-      // Handle the PDF download
-      const blob = await resp.blob();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `NAR1_${company.brNumber}_${Date.now()}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      const result = await resp.json();
+      downloadBase64Pdf(result.pdf, `NAR1_${company.brNumber}_${Date.now()}.pdf`);
 
       toast({
         title: 'PDF 已生成',

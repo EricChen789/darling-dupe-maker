@@ -9,8 +9,9 @@ import { ArrowLeft, ArrowRight, Sparkles, Download, Loader2, Search, Bug } from 
 import { cn } from '@/lib/utils';
 import { useCompanies } from '@/hooks/useCompanies';
 import { usePresenters } from '@/hooks/usePresenters';
-import { supabase } from '@/integrations/supabase/client';
+
 import { toast } from '@/hooks/use-toast';
+import { downloadBase64Pdf } from '@/lib/downloadPdf';
 import { Company } from '@/types';
 import { NAR1FormData, createEmptyFormData } from './nar1/types';
 import { Page1Company } from './nar1/Page1Company';
@@ -35,12 +36,12 @@ const steps = [
 
 function companyToFormData(company: Company): NAR1FormData {
   const base = createEmptyFormData(company.incorporationDate);
-  base.companyName = company.name;
+  base.companyName = company.name || '';
   base.chineseName = company.chineseName || '';
-  base.brNumber = company.brNumber;
-  base.tradingName = company.tradingName;
-  base.businessCode = company.businessCode;
-  base.businessNature = company.businessNature;
+  base.brNumber = company.brNumber || '';
+  base.tradingName = company.tradingName || '';
+  base.businessCode = company.businessCode || '';
+  base.businessNature = company.businessNature || '';
   base.regFlat = company.regFlat || '';
   base.regBuilding = company.regBuilding || '';
   base.regStreet = company.regStreet || '';
@@ -57,7 +58,7 @@ function companyToFormData(company: Company): NAR1FormData {
 
   const regAddress = [company.regFlat, company.regBuilding, company.regStreet, company.regDistrict, company.regRegion].filter(Boolean).join(', ');
 
-  base.secretaries = company.secretaries.map(s => ({
+  base.secretaries = (company.secretaries || []).map(s => ({
     identity: s.identity,
     nameChinese: s.nameChinese || '',
     nameEnglish: s.nameEnglish || '',
@@ -72,7 +73,7 @@ function companyToFormData(company: Company): NAR1FormData {
   }));
   if (base.secretaries.length === 0) base.secretaries = [createEmptyFormData().secretaries[0]];
 
-  base.directors = company.directors.filter(d => !d.isReserve).map(d => ({
+  base.directors = (company.directors || []).filter(d => !d.isReserve).map(d => ({
     identity: d.identity,
     nameChinese: d.nameChinese || '',
     nameEnglish: d.nameEnglish || '',
@@ -87,7 +88,7 @@ function companyToFormData(company: Company): NAR1FormData {
   }));
   if (base.directors.length === 0) base.directors = [createEmptyFormData().directors[0]];
 
-  base.shareholders = company.shareholders.map(sh => ({
+  base.shareholders = (company.shareholders || []).map(sh => ({
     identity: sh.identity,
     nameChinese: sh.nameChinese || '',
     nameEnglish: sh.nameEnglish || '',
@@ -102,7 +103,7 @@ function companyToFormData(company: Company): NAR1FormData {
 
   // Aggregate share capital from shareholders
   const shareMap = new Map<string, number>();
-  company.shareholders.forEach(sh => {
+  (company.shareholders || []).forEach(sh => {
     const cls = sh.shareType || 'Ordinary 普通股';
     shareMap.set(cls, (shareMap.get(cls) || 0) + sh.shares);
   });
@@ -190,8 +191,7 @@ const FormWizard = ({ formId, onBack }: FormWizardProps) => {
     });
   };
 
-  const buildPayload = (debugMode = false) => ({
-    debugMode,
+  const buildPayload = () => ({
     name: formData.companyName,
     chineseName: formData.chineseName,
     brNumber: formData.brNumber,
@@ -257,36 +257,27 @@ const FormWizard = ({ formId, onBack }: FormWizardProps) => {
     })(),
   });
 
-  const downloadPdfFromInvoke = async (data: any, filename: string) => {
-    let blob: Blob;
-    if (data instanceof Blob) {
-      blob = data;
-    } else if (data instanceof ArrayBuffer) {
-      blob = new Blob([data], { type: 'application/pdf' });
-    } else if (data && typeof data === 'object' && data.pdf) {
-      const bin = atob(data.pdf);
-      const bytes = new Uint8Array(bin.length);
-      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-      blob = new Blob([bytes], { type: 'application/pdf' });
-    } else {
-      blob = new Blob([data], { type: 'application/pdf' });
-    }
-    const url = URL.createObjectURL(blob);
-    window.open(url, '_blank');
-    setTimeout(() => URL.revokeObjectURL(url), 60000);
-  };
-
   const handleGenerate = async (debugMode = false) => {
     const setLoading = debugMode ? setIsDebugging : setIsGenerating;
     setLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke('generate-nar1-pdf', { body: buildPayload(debugMode) });
-      if (error) throw error;
+      const payload = buildPayload();
+      const token = localStorage.getItem("secretary_jwt") || "";
+      const resp = await fetch('/api/generate-nar1-pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(payload),
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(err.error || `HTTP ${resp.status}`);
+      }
       const filename = debugMode
         ? `NAR1_DEBUG_${formData.brNumber || 'preview'}.pdf`
         : `NAR1_${formData.brNumber}_${formData.companyName}.pdf`;
-      await downloadPdfFromInvoke(data, filename);
-      toast({ title: debugMode ? 'Debug PDF 已生成' : 'PDF 已生成', description: debugMode ? '請查看每個欄位的編號並回報需修正的位置' : 'NAR1 表格已成功生成' });
+      const result = await resp.json();
+      downloadBase64Pdf(result.pdf, filename);
+      toast({ title: debugMode ? 'Debug PDF 已生成' : 'PDF 已生成', description: 'NAR1 表格已成功生成' });
     } catch (error) {
       console.error('Error generating PDF:', error);
       toast({ title: '生成失敗', description: error instanceof Error ? error.message : '無法生成 PDF', variant: 'destructive' });

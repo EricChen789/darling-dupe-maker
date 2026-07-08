@@ -1,5 +1,6 @@
 // Shared helper: call generate-generic-form-pdf and trigger download + open in new tab.
 import { toast } from '@/hooks/use-toast';
+import { downloadAndOpenBase64Pdf } from '@/lib/downloadPdf';
 
 export interface GenericFormSection {
   heading?: string;
@@ -30,17 +31,11 @@ export async function downloadGenericFormPdf(payload: GenericFormPayload, fileLa
       },
       body: JSON.stringify(payload),
     });
-    if (!res.ok) throw new Error(await res.text());
-    const blob = await res.blob();
-    const blobUrl = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = blobUrl;
-    a.download = `${fileLabel || payload.formCode}_${payload.brNumber || ''}_${payload.companyName || ''}.pdf`.replace(/__+/g, '_');
-    a.target = '_blank';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    window.open(blobUrl, '_blank');
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error || 'Unknown error');
+
+    const filename = `${fileLabel || payload.formCode}_${payload.brNumber || ''}_${payload.companyName || ''}.pdf`.replace(/__+/g, '_');
+    downloadAndOpenBase64Pdf(result.pdf, filename);
     return true;
   } catch (e: any) {
     toast({ title: 'PDF 生成失敗', description: e.message, variant: 'destructive' });

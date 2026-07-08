@@ -5,7 +5,6 @@ import { Label } from '@/components/ui/label';
 import { toast } from '@/hooks/use-toast';
 import { useState } from 'react';
 import { Download, Loader2 } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
 import { UserManagement } from '@/components/settings/UserManagement';
 import { PresenterManagement } from '@/components/settings/PresenterManagement';
 import { SecretaryTemplateManagement } from '@/components/settings/SecretaryTemplateManagement';
@@ -36,16 +35,24 @@ const Settings = () => {
         const err = await resp.text();
         throw new Error(err || `HTTP ${resp.status}`);
       }
-      const blob = await resp.blob();
+      const json = await resp.json();
+      // Build a UTF-8 JSON blob directly — btoa() cannot encode Chinese characters.
+      const blob = new Blob([JSON.stringify(json, null, 2)], {
+        type: 'application/json;charset=utf-8',
+      });
+      const objUrl = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      const dlUrl = URL.createObjectURL(blob);
-      a.href = dlUrl;
-      a.download = `backup_${new Date().toISOString().slice(0, 10)}.zip`;
+      a.href = objUrl;
+      a.download = `backup_${new Date().toISOString().slice(0, 10)}.json`;
       document.body.appendChild(a);
       a.click();
-      a.remove();
-      URL.revokeObjectURL(dlUrl);
-      toast({ title: '匯出完成', description: 'ZIP 已下載' });
+      setTimeout(() => {
+        try {
+          if (a.parentNode) a.parentNode.removeChild(a);
+        } catch (_) { /* already removed */ }
+        URL.revokeObjectURL(objUrl);
+      }, 100);
+      toast({ title: '匯出完成', description: 'JSON 備份已下載' });
     } catch (e: any) {
       toast({ title: '匯出失敗', description: e.message, variant: 'destructive' });
     } finally {
@@ -101,11 +108,11 @@ const Settings = () => {
       <div className="bg-card border border-border rounded-lg p-6 max-w-2xl">
         <h2 className="text-lg font-semibold mb-2">完整資料備份</h2>
         <p className="text-sm text-muted-foreground mb-4">
-          匯出所有資料表（JSON + CSV）及 Storage 中的所有附件，打包成單一 ZIP 檔。僅限管理員。
+          匯出所有資料表為單一 JSON 檔。僅限管理員。
         </p>
         <Button onClick={handleFullExport} disabled={exporting}>
           {exporting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
-          {exporting ? '匯出中…可能需要數分鐘' : '匯出完整備份 (ZIP)'}
+          {exporting ? '匯出中…' : '匯出完整備份 (JSON)'}
         </Button>
       </div>
 

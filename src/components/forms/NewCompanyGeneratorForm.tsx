@@ -9,6 +9,7 @@ import { Separator } from '@/components/ui/separator';
 import { ArrowLeft, Download, Loader2, Plus, Trash2 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { downloadGenericFormPdf, type GenericFormSection } from '@/lib/genericFormPdf';
+import { downloadBase64Pdf } from '@/lib/downloadPdf';
 
 interface Props { onBack: () => void; }
 
@@ -81,102 +82,69 @@ export default function NewCompanyGeneratorForm({ onBack }: Props) {
     }
     setGenerating(true);
     try {
-      const sections: GenericFormSection[] = [];
-
-      // Section A — Company info
-      const aRows: [string, string][] = [
-        ['Proposed company name (English)', companyName],
-        ['Proposed Chinese name 公司中文名稱', companyChinese || '—'],
-        ['Company type 公司類型', companyType],
-        ['Nature of business 業務性質', businessNature || '—'],
-        ['Registered office address 註冊辦事處地址', regAddress || '—'],
-      ];
-      if (jurisdiction === 'BVI') {
-        aRows.push(['Registered agent 註冊代理', registeredAgent || '—']);
-      }
-      sections.push({ heading: jurisdiction === 'HK' ? 'A. 公司資料 Company Particulars' : 'A. Company Particulars (BVI)', rows: aRows });
-
-      // Section B — Capital
-      sections.push({
-        heading: 'B. 股本 Share Capital',
-        rows: jurisdiction === 'HK'
-          ? [
-            ['Issued share capital 已發行股本', shareCapital],
-            ['Total number of shares 股份總數', totalShares],
-          ]
-          : [
+      if (jurisdiction === 'HK') {
+        // Use official NNC1 template for HK incorporation
+        const token = localStorage.getItem("secretary_jwt") || "";
+        const fields: Record<string, string> = {
+          'fill_1_P.1': companyName,
+          'fill_2_P.1': companyChinese || '',
+          'fill_3_P.1': companyType || '',
+          'fill_4_P.1': businessNature || '',
+          'fill_5_P.1': regAddress || '',
+          'fill_10_P.1': shareCapital || '',
+          'fill_11_P.1': totalShares || '',
+        };
+        const resp = await fetch(`/api/generate-template-pdf`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ template: 'NNC1-template.pdf', fields }),
+        });
+        const result = await resp.json();
+        if (!resp.ok) throw new Error(result.error || 'Unknown error');
+        downloadBase64Pdf(result.pdf, 'NNC1-form.pdf');
+        toast({ title: 'PDF 已生成', description: 'NNC1 已使用官方模板下載' });
+      } else {
+        // BVI — keep generic generator
+        const sections: GenericFormSection[] = [];
+        sections.push({
+          heading: 'A. Company Particulars (BVI)',
+          rows: [
+            ['Proposed company name (English)', companyName],
+            ['Proposed Chinese name 公司中文名稱', companyChinese || '—'],
+            ['Company type 公司類型', companyType],
+            ['Nature of business 業務性質', businessNature || '—'],
+            ['Registered office address 註冊辦事處地址', regAddress || '—'],
+            ['Registered agent 註冊代理', registeredAgent || '—'],
+          ],
+        });
+        sections.push({
+          heading: 'B. 股本 Share Capital',
+          rows: [
             ['Maximum number of shares authorised', authorisedShares],
             ['Class of shares', 'Ordinary'],
           ],
-      });
+        });
 
-      // Section C — Officers (依簽署人選擇:刪除非選中角色)
-      const filteredOfficers = officers.filter(o => o.role === signerRole);
-      const officerRows: [string, string][] = [];
-      filteredOfficers.forEach((o, idx) => {
-        officerRows.push([`#${idx + 1} 角色 Role`, `${o.role === 'director' ? '董事 Director' : '公司秘書 Secretary'} (${o.identity})`]);
-        officerRows.push([`   英文姓名 Name (Eng)`, o.nameEnglish || '—']);
-        officerRows.push([`   中文姓名 Name (中)`, o.nameChinese || '—']);
-        officerRows.push([`   身份證/護照/編號`, o.idNumber || '—']);
-        if (o.identity === 'natural') {
-          officerRows.push([`   出生日期 DOB`, o.dateOfBirth || '—']);
-        } else {
-          officerRows.push([`   成立地點 Place Incorporated`, o.placeIncorporated || '—']);
-          officerRows.push([`   公司編號 Company No.`, o.companyNumberRef || '—']);
-        }
-        officerRows.push([`   地址 Address`, o.address || '—']);
-      });
-      const skippedRole = signerRole === 'director' ? '公司秘書 Secretary' : '董事 Director';
-      sections.push({
-        heading: `C. 首任${signerRole === 'director' ? '董事' : '公司秘書'} (已刪除「${skippedRole}」)`,
-        rows: officerRows.length ? officerRows : [['(無)', `請於上方加入至少一位${signerRole === 'director' ? '董事' : '秘書'}`]],
-      });
+        const chosenSigner = signerIndex >= 0 ? officers[signerIndex] : signerCandidates[0]?.o;
+        const signerLabel = signerRole === 'director' ? '董事 Director' : '公司秘書 Company Secretary';
+        const signerNameLine = chosenSigner
+          ? `${chosenSigner.nameEnglish || ''}${chosenSigner.nameChinese ? ` / ${chosenSigner.nameChinese}` : ''}`.trim() || '____________________'
+          : '____________________';
 
-      // Section D — Founder shareholders
-      const shRows: [string, string][] = [];
-      shareholders.forEach((s, idx) => {
-        shRows.push([`#${idx + 1} 股東 Member`, s.name || '—']);
-        shRows.push([`   股數 Shares`, String(s.shares)]);
-        shRows.push([`   類別 Class`, s.shareType]);
-        shRows.push([`   實繳 Amount Paid`, s.amountPaid || '—']);
-      });
-      sections.push({ heading: 'D. 創辦股東 Founder Members', rows: shRows });
-
-      // Declaration
-      sections.push({
-        heading: jurisdiction === 'HK' ? 'E. 法定聲明 Declaration (s.67 CO)' : 'E. Declaration of Incorporator (BVI BC Act)',
-        paragraph: jurisdiction === 'HK'
-          ? '本人聲明上述為新公司成立的真實情況，並符合《公司條例》（第 622 章）下的所有適用要求。'
-          : 'I declare that the requirements of the BVI Business Companies Act 2004 in respect of the matters precedent to the registration of the Company have been complied with.',
-      });
-
-      const formCode = jurisdiction === 'HK' ? 'NNC1' : 'NNC1-BVI';
-      const title = jurisdiction === 'HK'
-        ? '法團成立表格 (公司股份有限公司) - NNC1'
-        : 'BVI Incorporation Application — Memorandum & Articles Summary';
-
-      const chosenSigner = signerIndex >= 0 ? officers[signerIndex] : signerCandidates[0]?.o;
-      const signerLabel = signerRole === 'director' ? '董事 Director' : '公司秘書 Company Secretary';
-      const signerNameLine = chosenSigner
-        ? `${chosenSigner.nameEnglish || ''}${chosenSigner.nameChinese ? ` / ${chosenSigner.nameChinese}` : ''}`.trim() || '____________________'
-        : '____________________';
-
-      const ok = await downloadGenericFormPdf({
-        formCode,
-        title,
-        subtitle: jurisdiction === 'HK'
-          ? '香港公司註冊處 — 第 622 章 公司條例'
-          : 'British Virgin Islands — BC Act 2004',
-        companyName,
-        brNumber: '(待簽發 To be issued)',
-        sections,
-        signatureLines: [
-          `簽署人 Signed by (${signerLabel}): ${signerNameLine}`,
-          `日期 Date: __________`,
-        ],
-      }, formCode);
-
-      if (ok) toast({ title: 'PDF 已生成', description: `${formCode} 已下載` });
+        const ok = await downloadGenericFormPdf({
+          formCode: 'NNC1-BVI',
+          title: 'BVI Incorporation Application — Memorandum & Articles Summary',
+          subtitle: 'British Virgin Islands — BC Act 2004',
+          companyName,
+          brNumber: '(待簽發 To be issued)',
+          sections,
+          signatureLines: [
+            `簽署人 Signed by (${signerLabel}): ${signerNameLine}`,
+            `日期 Date: __________`,
+          ],
+        }, 'NNC1-BVI');
+        if (ok) toast({ title: 'PDF 已生成', description: 'BVI 表格已下載' });
+      }
     } finally {
       setGenerating(false);
     }
@@ -196,7 +164,7 @@ export default function NewCompanyGeneratorForm({ onBack }: Props) {
 
       <Tabs value={jurisdiction} onValueChange={(v) => setJurisdiction(v as 'HK' | 'BVI')}>
         <TabsList>
-          <TabsTrigger value="HK">香港 NNC1</TabsTrigger>
+          <TabsTrigger value="HK">NNC1 法團成立表格(非股份有限公司)</TabsTrigger>
           <TabsTrigger value="BVI">BVI 新公司</TabsTrigger>
         </TabsList>
 

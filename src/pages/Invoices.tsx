@@ -19,25 +19,27 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Search, RefreshCw, Plus, Eye, Edit, Trash2 } from 'lucide-react';
-import { mockInvoices as initialInvoices } from '@/data/mockData';
+import { Search, RefreshCw, Plus, Eye, Edit, Trash2, Loader2 } from 'lucide-react';
+import { useInvoices, useSaveInvoice, useDeleteInvoice } from '@/hooks/useInvoices';
 import { Invoice } from '@/types';
 import { InvoiceDialog, InvoiceViewDialog } from '@/components/dialogs/InvoiceDialogs';
 import { DeleteConfirmDialog } from '@/components/dialogs/CompanyDialogs';
 import { toast } from '@/hooks/use-toast';
 
 const Invoices = () => {
-  const [invoices, setInvoices] = useState<Invoice[]>(initialInvoices);
+  const { data: invoices = [], isLoading, refetch } = useInvoices();
+  const saveInvoice = useSaveInvoice();
+  const deleteInvoice = useDeleteInvoice();
   const [searchTerm, setSearchTerm] = useState('');
   const [showSearch, setShowSearch] = useState(false);
-  
+
   // Dialog states
   const [invoiceDialogOpen, setInvoiceDialogOpen] = useState(false);
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
   const [invoiceToDelete, setInvoiceToDelete] = useState<Invoice | null>(null);
-  
+
   const filteredInvoices = invoices.filter(invoice =>
     invoice.invoiceNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
     invoice.companyName.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -66,8 +68,7 @@ const Invoices = () => {
   };
 
   const handleRefresh = () => {
-    setInvoices([...initialInvoices]);
-    setSearchTerm('');
+    refetch();
     toast({
       title: '已重新整理',
       description: '發票列表已更新',
@@ -95,43 +96,62 @@ const Invoices = () => {
   };
 
   const handleSaveInvoice = (invoiceData: Partial<Invoice>) => {
-    if (selectedInvoice) {
-      // Edit existing
-      setInvoices(invoices.map(inv =>
-        inv.id === selectedInvoice.id
-          ? { ...inv, ...invoiceData }
-          : inv
-      ));
-    } else {
-      // Add new
-      const newInvoice: Invoice = {
-        id: `inv${Date.now()}`,
-        invoiceNumber: invoiceData.invoiceNumber || '',
-        description: invoiceData.description || '',
-        companyId: invoiceData.companyId || '',
-        companyName: invoiceData.companyName || '',
-        companyBrNumber: invoiceData.companyBrNumber || '',
-        amount: invoiceData.amount || 0,
-        currency: invoiceData.currency || 'HKD',
-        status: invoiceData.status || 'pending',
-        issueDate: invoiceData.issueDate || '',
-        dueDate: invoiceData.dueDate || '',
-      };
-      setInvoices([...invoices, newInvoice]);
-    }
+    saveInvoice.mutate(
+      { ...invoiceData, id: selectedInvoice?.id },
+      {
+        onSuccess: () => {
+          toast({
+            title: selectedInvoice ? '發票已更新' : '發票已新增',
+            description: `${invoiceData.invoiceNumber} 已成功${selectedInvoice ? '更新' : '新增'}`,
+          });
+          setInvoiceDialogOpen(false);
+        },
+        onError: (e: any) => {
+          toast({
+            title: '儲存失敗',
+            description: e.message,
+            variant: 'destructive',
+          });
+        },
+      }
+    );
   };
 
   const handleConfirmDelete = () => {
     if (invoiceToDelete) {
-      setInvoices(invoices.filter(inv => inv.id !== invoiceToDelete.id));
-      toast({
-        title: '發票已刪除',
-        description: `${invoiceToDelete.invoiceNumber} 已成功刪除`,
+      deleteInvoice.mutate(invoiceToDelete.id, {
+        onSuccess: () => {
+          toast({
+            title: '發票已刪除',
+            description: `${invoiceToDelete.invoiceNumber} 已成功刪除`,
+          });
+          setDeleteDialogOpen(false);
+          setInvoiceToDelete(null);
+        },
+        onError: (e: any) => {
+          toast({
+            title: '刪除失敗',
+            description: e.message,
+            variant: 'destructive',
+          });
+        },
       });
-      setDeleteDialogOpen(false);
-      setInvoiceToDelete(null);
     }
   };
+
+  if (isLoading) {
+    return (
+      <div>
+        <PageHeader
+          title="發票管理"
+          description="管理您的發票並追蹤付款狀態"
+        />
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -140,8 +160,8 @@ const Invoices = () => {
         description="管理您的發票並追蹤付款狀態"
         actions={
           <div className="flex items-center gap-2">
-            <Button 
-              variant={showSearch ? "default" : "outline"} 
+            <Button
+              variant={showSearch ? "default" : "outline"}
               size="sm"
               onClick={() => setShowSearch(!showSearch)}
               className={showSearch ? "bg-primary text-primary-foreground" : ""}
@@ -153,8 +173,8 @@ const Invoices = () => {
               <RefreshCw className="h-4 w-4 mr-2" />
               重新整理
             </Button>
-            <Button 
-              size="sm" 
+            <Button
+              size="sm"
               className="bg-primary text-primary-foreground hover:bg-primary/90"
               onClick={handleAddInvoice}
             >
@@ -207,64 +227,72 @@ const Invoices = () => {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filteredInvoices.map((invoice) => (
-              <TableRow key={invoice.id} className="hover:bg-muted/30">
-                <TableCell>
-                  <div>
-                    <div className="font-medium">{invoice.invoiceNumber}</div>
-                    <div className="text-xs text-muted-foreground truncate max-w-[200px]">
-                      {invoice.description}
-                    </div>
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <div>
-                    <div className="font-medium">{invoice.companyName}</div>
-                    <div className="text-xs text-muted-foreground">
-                      商業登記號碼：{invoice.companyBrNumber}
-                    </div>
-                  </div>
-                </TableCell>
-                <TableCell className="font-medium">
-                  {formatCurrency(invoice.amount, invoice.currency)}
-                </TableCell>
-                <TableCell>
-                  <StatusBadge variant={invoice.status}>
-                    {getStatusLabel(invoice.status)}
-                  </StatusBadge>
-                </TableCell>
-                <TableCell className="text-sm">{invoice.issueDate}</TableCell>
-                <TableCell className="text-sm">{invoice.dueDate}</TableCell>
-                <TableCell>
-                  <div className="flex items-center gap-1">
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
-                      className="h-8 w-8 p-0"
-                      onClick={() => handleViewInvoice(invoice)}
-                    >
-                      <Eye className="h-4 w-4" />
-                    </Button>
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
-                      className="h-8 w-8 p-0"
-                      onClick={() => handleEditInvoice(invoice)}
-                    >
-                      <Edit className="h-4 w-4" />
-                    </Button>
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
-                      className="h-8 w-8 p-0 text-destructive hover:text-destructive"
-                      onClick={() => handleDeleteClick(invoice)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
+            {filteredInvoices.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                  尚無發票記錄
                 </TableCell>
               </TableRow>
-            ))}
+            ) : (
+              filteredInvoices.map((invoice) => (
+                <TableRow key={invoice.id} className="hover:bg-muted/30">
+                  <TableCell>
+                    <div>
+                      <div className="font-medium">{invoice.invoiceNumber}</div>
+                      <div className="text-xs text-muted-foreground truncate max-w-[200px]">
+                        {invoice.description}
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div>
+                      <div className="font-medium">{invoice.companyName}</div>
+                      <div className="text-xs text-muted-foreground">
+                        商業登記號碼：{invoice.companyBrNumber}
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell className="font-medium">
+                    {formatCurrency(invoice.amount, invoice.currency)}
+                  </TableCell>
+                  <TableCell>
+                    <StatusBadge variant={invoice.status}>
+                      {getStatusLabel(invoice.status)}
+                    </StatusBadge>
+                  </TableCell>
+                  <TableCell className="text-sm">{invoice.issueDate}</TableCell>
+                  <TableCell className="text-sm">{invoice.dueDate}</TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0"
+                        onClick={() => handleViewInvoice(invoice)}
+                      >
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0"
+                        onClick={() => handleEditInvoice(invoice)}
+                      >
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                        onClick={() => handleDeleteClick(invoice)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
           </TableBody>
         </Table>
 

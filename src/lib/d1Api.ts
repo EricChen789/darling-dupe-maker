@@ -61,6 +61,7 @@ class D1QueryBuilder implements QueryBuilder {
   private _limit: number = 100;
   private _offset: number = 0;
   private _single: boolean = false;
+  private _returnRow: boolean = false;
   private tableId: string | null = null;
 
   constructor(table: string) {
@@ -68,7 +69,12 @@ class D1QueryBuilder implements QueryBuilder {
   }
 
   select(columns?: string): QueryBuilder {
-    this.operation = "select";
+    if (this.operation === "insert" || this.operation === "update" || this.operation === "delete") {
+      // .select() after mutate means "return the affected row(s)" — don't change operation
+      this._returnRow = true;
+    } else {
+      this.operation = "select";
+    }
     return this;
   }
 
@@ -144,14 +150,33 @@ class D1QueryBuilder implements QueryBuilder {
       } else if (this.operation === "insert") {
         result = await apiFetch(`/${this.table}`, buildFetch("POST", this.data));
         result.data = result.data ? (Array.isArray(this.data) ? result.data : result.data) : null;
+        // If .select().single() was called, fetch back the created row
+        if (this._returnRow && result.data?.id) {
+          const fetchResult = await apiFetch(`/${this.table}/${result.data.id}`);
+          if (fetchResult.data) result.data = fetchResult.data;
+        }
       } else if (this.operation === "update") {
         const id = this.tableId;
         if (!id) { resolve({ data: null, error: { message: "Missing id for update" } }); return; }
         result = await apiFetch(`/${this.table}/${id}`, buildFetch("PUT", this.data));
+        // If .select().single() was called, fetch back the updated row
+        if (this._returnRow) {
+          const fetchResult = await apiFetch(`/${this.table}/${id}`);
+          if (fetchResult.data) result.data = fetchResult.data;
+        }
       } else if (this.operation === "delete") {
         const id = this.tableId;
-        if (!id) { resolve({ data: null, error: { message: "Missing id for delete" } }); return; }
-        result = await apiFetch(`/${this.table}/${id}`, buildFetch("DELETE"));
+        if (id) {
+          result = await apiFetch(`/${this.table}/${id}`, buildFetch("DELETE"));
+        } else if (Object.keys(this.filters).length > 0) {
+          const params = new URLSearchParams();
+          for (const [k, v] of Object.entries(this.filters)) {
+            params.set(k, String(v));
+          }
+          result = await apiFetch(`/${this.table}?${params.toString()}`, buildFetch("DELETE"));
+        } else {
+          resolve({ data: null, error: { message: "Missing id for delete" } }); return;
+        }
       } else {
         resolve({ data: null, error: { message: "No operation specified" } });
         return;

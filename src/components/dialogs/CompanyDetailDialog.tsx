@@ -213,7 +213,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
     a.download = filename;
     document.body.appendChild(a);
     a.click();
-    a.remove();
+    setTimeout(() => { try { a.remove(); } catch (_) { /* already removed */ } }, 100);
   };
 
   const regAddrFull = [company.regFlat, company.regBuilding, company.regStreet, company.regDistrict, company.regRegion].filter(Boolean).join(', ');

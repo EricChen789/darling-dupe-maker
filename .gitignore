@@ -27,3 +27,8 @@ backup_extract/
 .wrangler/
 migrations/data/
 migrations/import_batch_*.sql
+
+# Python
+__pycache__/
+*.pyc
+.dev.vars

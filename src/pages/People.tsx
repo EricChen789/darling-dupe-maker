@@ -24,7 +24,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Search, RefreshCw, Plus, Edit, Trash2, X, Loader2 } from 'lucide-react';
+import { Search, RefreshCw, Plus, Edit, Trash2, X, Loader2, UserX } from 'lucide-react';
 import { Person } from '@/types';
 import { PersonDialog } from '@/components/dialogs/PersonDialogs';
 import { DeleteConfirmDialog } from '@/components/dialogs/CompanyDialogs';
@@ -34,8 +34,9 @@ import { useOfficers } from '@/hooks/useOfficers';
 import { useUserRole } from '@/hooks/useUserRole';
 
 const People = () => {
-  const { officers, isLoading, refetch, deleteOfficer, upsertOfficer } = useOfficers();
+  const { officers, isLoading, refetch, deleteOfficer, upsertOfficer, cleanupOrphans, isCleaningUp } = useOfficers();
   const { canDelete } = useUserRole();
+  const orphanCount = officers.filter(p => p.companies.length === 0).length;
   const [searchTerm, setSearchTerm] = useState('');
   
   // Dialog states
@@ -141,6 +142,19 @@ const People = () => {
     toast({ title: '搜尋完成', description: `找到 ${filteredPeople.length} 筆結果` });
   };
 
+  const handleCleanupOrphans = async () => {
+    if (orphanCount === 0) {
+      toast({ title: '沒有孤兒人員', description: '所有人員都有關聯公司' });
+      return;
+    }
+    try {
+      const result = await cleanupOrphans();
+      toast({ title: '清理完成', description: `已刪除 ${result.deleted} 位無公司綁定的人員` });
+    } catch (e: any) {
+      toast({ title: '清理失敗', description: e.message, variant: 'destructive' });
+    }
+  };
+
   // Show ND2B form if triggered
   if (nd2bPerson) {
     return (
@@ -165,6 +179,13 @@ const People = () => {
             <Button variant="outline" size="sm" onClick={handleRefresh}>
               <RefreshCw className="h-4 w-4 mr-2" />重新整理
             </Button>
+            {orphanCount > 0 && (
+              <Button variant="outline" size="sm" onClick={handleCleanupOrphans} disabled={isCleaningUp}
+                className="text-amber-600 border-amber-500 hover:bg-amber-50">
+                {isCleaningUp ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <UserX className="h-4 w-4 mr-1" />}
+                清理無公司人員 ({orphanCount})
+              </Button>
+            )}
             <Button size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90" onClick={handleAddPerson}>
               <Plus className="h-4 w-4 mr-2" />新增人員
             </Button>

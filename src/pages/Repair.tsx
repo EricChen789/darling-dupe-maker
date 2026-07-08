@@ -16,8 +16,28 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Search, AlertTriangle, Loader2, Trash2, Edit, Save, X } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
+
+const getToken = () => localStorage.getItem('secretary_jwt') || '';
+
+async function fetchAll<T>(table: string): Promise<T[]> {
+  const all: T[] = [];
+  let offset = 0;
+  const limit = 1000;
+  while (true) {
+    const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+    const resp = await fetch(`/api/${table}?${params}`, {
+      headers: { Authorization: `Bearer ${getToken()}` },
+    });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data: T[] = await resp.json();
+    if (!data || data.length === 0) break;
+    all.push(...data);
+    if (data.length < limit) break;
+    offset += limit;
+  }
+  return all;
+}
 
 // ---- Bad name detection (ported from Python script) ----
 
@@ -87,25 +107,10 @@ const Repair = () => {
   const { data: officers = [], isLoading } = useQuery({
     queryKey: ['repair-persons'],
     queryFn: async () => {
-      const fetchAll = async <T,>(table: 'persons' | 'person_company_roles' | 'companies', columns = '*'): Promise<T[]> => {
-        const all: T[] = [];
-        let from = 0;
-        const pageSize = 1000;
-        while (true) {
-          const { data, error } = await supabase.from(table).select(columns).range(from, from + pageSize - 1);
-          if (error) throw error;
-          if (!data || data.length === 0) break;
-          all.push(...(data as unknown as T[]));
-          if (data.length < pageSize) break;
-          from += pageSize;
-        }
-        return all;
-      };
-
       const [persons, roles, companies] = await Promise.all([
         fetchAll<any>('persons'),
         fetchAll<any>('person_company_roles'),
-        fetchAll<any>('companies', 'id, name, company_number'),
+        fetchAll<any>('companies'),
       ]);
 
       const companyMap = new Map(
@@ -171,12 +176,18 @@ const Repair = () => {
   // Update mutation — updates the underlying person (shared across companies)
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Record<string, string | null> }) => {
-      // id here is role id; lookup person_id then update the person
       const rec = officers.find(o => o.id === id) as (OfficerRecord & { person_id?: string }) | undefined;
       const personId = rec?.person_id;
       if (!personId) throw new Error('找不到對應人員');
-      const { error } = await supabase.from('persons').update(data).eq('id', personId);
-      if (error) throw error;
+      const resp = await fetch(`/api/persons/${personId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
+        body: JSON.stringify(data),
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(err.error || `HTTP ${resp.status}`);
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['repair-persons'] });
@@ -193,8 +204,14 @@ const Repair = () => {
   // Delete mutation — only removes this company's role, keeps the person
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase.from('person_company_roles').delete().eq('id', id);
-      if (error) throw error;
+      const resp = await fetch(`/api/person_company_roles/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${getToken()}` },
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(err.error || `HTTP ${resp.status}`);
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['repair-persons'] });

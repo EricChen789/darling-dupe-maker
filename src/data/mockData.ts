@@ -178,29 +178,27 @@ export const mockPeople: Person[] = [
 ];
 
 export const mockForms: Form[] = [
-  { id: 'nar1', name: 'NAR1', description: '周年申報表', year: 2025, version: 2, isHelper: true },
-  { id: 'nr1', name: 'NR1', description: '註冊辦事處地址更改通知書', year: 2025, version: 1, isHelper: true },
-  { id: 'nd2a', name: 'ND2A', description: '出任/停任董事及公司秘書通知書', year: 2025, version: 1, isHelper: true },
-  { id: 'nd2b', name: 'ND2B', description: '更改董事及公司秘書詳情通知書', year: 2025, version: 1, isHelper: true },
-  { id: 'nnc1', name: 'NNC1 / BVI', description: '新公司成立表格（香港 NNC1 / BVI 註冊）', year: 2025, version: 1, isHelper: true },
+  // === 公司註冊處表格（14 種） ===
+  { id: 'nar1',  name: 'NAR1',  description: '周年申報表 — Annual Return',                                    year: 2025, version: 2, isHelper: true },
+  { id: 'nd2a',  name: 'ND2A',  description: '更改公司秘書及董事通知書 (委任╱停任) — Appointment/Cessation',  year: 2025, version: 1, isHelper: true },
+  { id: 'nd2b',  name: 'ND2B',  description: '更改公司秘書及董事詳情通知書 — Change of Particulars',           year: 2025, version: 1, isHelper: true },
+  { id: 'nd4',   name: 'ND4',   description: '公司秘書及董事辭任通知書 — Resignation',                          year: 2025, version: 1, isHelper: true },
+  { id: 'ndr1',  name: 'NDR1',  description: '私人公司或擔保有限公司撤銷註冊申請書 — Application for Deregistration',          year: 2025, version: 1, isHelper: true },
+  { id: 'nr1',   name: 'NR1',   description: '註冊辦事處地址變更通知書 — Change of Address of Registered Office', year: 2025, version: 1, isHelper: true },
+  { id: 'nsc1',  name: 'NSC1',  description: '股份配發申報書 — Return of Allotment of Shares',                  year: 2025, version: 1, isHelper: true },
+  { id: 'nn1',   name: 'NN1',   description: '註冊非香港公司的註冊申請書 — Registration of a Non-Hong Kong Company',          year: 2025, version: 1, isHelper: true },
+  { id: 'nn3',   name: 'NN3',   description: '註冊非香港公司周年申報表 — Annual Return of a Registered Non-HK Company',                       year: 2025, version: 1, isHelper: true },
+  { id: 'nn6',   name: 'NN6',   description: '註冊非香港公司更改公司秘書及董事申報表 (委任╱停任) — Change of Co. Sec. & Director (Appt/Cessation) of a Registered Non-HK Co.',                     year: 2025, version: 1, isHelper: true },
+  { id: 'nn7',   name: 'NN7',   description: '註冊非香港公司更改公司秘書及董事詳情申報表 — Change of Particulars of Co. Sec. & Director of a Registered Non-HK Co.',                   year: 2025, version: 1, isHelper: true },
+  { id: 'nn9',   name: 'NN9',   description: '註冊非香港公司更改地址申報表 — Change of Address of a Registered Non-HK Company', year: 2025, version: 1, isHelper: true },
+  { id: 'nnc1',  name: 'NNC1', description: '法團成立表格(股份有限公司以外的公司) — Incorporation Form (Co. other than Ltd by Shares)',               year: 2025, version: 1, isHelper: true },
+  { id: 'nnc2',  name: 'NNC2',  description: '更改公司名稱通知書 — Notice of Change of Company Name',                 year: 2025, version: 1, isHelper: true },
+
+  // === 其他常用文件 ===
   { id: 'resolution', name: '決議書', description: '通用範本或 AI 生成的董事/股東決議書', year: 2025, version: 1, isHelper: true },
-  { id: 'rename', name: 'NNC2 公司更名', description: '股東特別決議書 + NNC2 表格', year: 2025, version: 1, isHelper: true },
+
+  // === 稅務局表格 ===
   { id: 'irc3111a', name: 'IRC 3111A', description: '通知更改業務地址（稅務局）', year: 2025, version: 1, isHelper: false },
 ];
 
-export const mockInvoices: Invoice[] = [
-  { id: 'inv1', invoiceNumber: 'INV-710585', description: '培訓費發票 – 一次性服務費', companyId: '1', companyName: 'TEST COMPANY – OBVIOUS TEST NAME', companyBrNumber: '51241231', amount: 94596.11, currency: 'HKD', status: 'paid', issueDate: '2025/10/16', dueDate: '2026/1/4' },
-  { id: 'inv2', invoiceNumber: 'INV-901638', description: '諮詢費發票 – 一次性服務費', companyId: '1', companyName: 'TEST COMPANY – OBVIOUS TEST NAME', companyBrNumber: '51241231', amount: 57958.92, currency: 'HKD', status: 'overdue', issueDate: '2025/6/27', dueDate: '2025/9/16' },
-  { id: 'inv3', invoiceNumber: 'INV-604211', description: '管理費發票 – 月費', companyId: '1', companyName: 'TEST COMPANY – OBVIOUS TEST NAME', companyBrNumber: '51241231', amount: 61733.68, currency: 'HKD', status: 'overdue', issueDate: '2024/12/16', dueDate: '2025/3/6' },
-  { id: 'inv4', invoiceNumber: 'INV-172087', description: '租賃費發票 – 季費', companyId: '1', companyName: 'TEST COMPANY – OBVIOUS TEST NAME', companyBrNumber: '51241231', amount: 80521.75, currency: 'HKD', status: 'overdue', issueDate: '2025/7/24', dueDate: '2025/10/14' },
-  { id: 'inv5', invoiceNumber: 'INV-938032', description: '培訓費發票 – 季費', companyId: '1', companyName: 'TEST COMPANY – OBVIOUS TEST NAME', companyBrNumber: '51241231', amount: 12557.23, currency: 'HKD', status: 'paid', issueDate: '2025/5/1', dueDate: '2025/6/1' },
-  { id: 'inv6', invoiceNumber: 'INV-357920', description: '項目費發票 – 年費 備註: 包含稅項', companyId: '1', companyName: 'TEST COMPANY – OBVIOUS TEST NAME', companyBrNumber: '51241231', amount: 95564.84, currency: 'HKD', status: 'overdue', issueDate: '2025/1/10', dueDate: '2025/4/4' },
-  { id: 'inv7', invoiceNumber: 'INV-106986', description: '諮詢費發票 – 季費', companyId: '1', companyName: 'TEST COMPANY – OBVIOUS TEST NAME', companyBrNumber: '51241231', amount: 30499.28, currency: 'HKD', status: 'paid', issueDate: '2024/12/7', dueDate: '2025/2/23' },
-  { id: 'inv8', invoiceNumber: 'INV-249775', description: '技術支援費發票 – 專案費用 備註: 需要收據', companyId: '1', companyName: 'TEST COMPANY – OBVIOUS TEST NAME', companyBrNumber: '51241231', amount: 95296.98, currency: 'HKD', status: 'pending', issueDate: '2025/10/27', dueDate: '2025/12/2' },
-  { id: 'inv9', invoiceNumber: 'INV-635629', description: '管理費發票 – 月費', companyId: '1', companyName: 'TEST COMPANY – OBVIOUS TEST NAME', companyBrNumber: '51241231', amount: 22914.41, currency: 'HKD', status: 'paid', issueDate: '2025/3/7', dueDate: '2025/4/14' },
-  { id: 'inv10', invoiceNumber: 'INV-963206', description: '技術支援費發票 – 年費', companyId: '1', companyName: 'TEST COMPANY – OBVIOUS TEST NAME', companyBrNumber: '51241231', amount: 27751.57, currency: 'HKD', status: 'paid', issueDate: '2025/4/15', dueDate: '2025/6/30' },
-  { id: 'inv11', invoiceNumber: 'INV-892322', description: '租賃費發票 – 月費', companyId: '1', companyName: 'TEST COMPANY – OBVIOUS TEST NAME', companyBrNumber: '51241231', amount: 2336.30, currency: 'HKD', status: 'paid', issueDate: '2025/6/18', dueDate: '2025/7/19' },
-  { id: 'inv12', invoiceNumber: 'INV-918162', description: '服務費發票 – 季費 備註: 需要收據', companyId: '1', companyName: 'TEST COMPANY – OBVIOUS TEST NAME', companyBrNumber: '51241231', amount: 99181.59, currency: 'HKD', status: 'paid', issueDate: '2024/12/5', dueDate: '2025/2/27' },
-  { id: 'inv13', invoiceNumber: 'INV-472698', description: '稅金發票 – 月費', companyId: '1', companyName: 'TEST COMPANY – OBVIOUS TEST NAME', companyBrNumber: '51241231', amount: 5987.43, currency: 'HKD', status: 'paid', issueDate: '2025/2/12', dueDate: '2025/4/1' },
-  { id: 'inv14', invoiceNumber: 'INV-740315', description: '管理費發票 – 季費', companyId: '1', companyName: 'TEST COMPANY – OBVIOUS TEST NAME', companyBrNumber: '51241231', amount: 72532.78, currency: 'HKD', status: 'overdue', issueDate: '2025/5/15', dueDate: '2025/7/7' },
-];
+export const mockInvoices: Invoice[] = [];

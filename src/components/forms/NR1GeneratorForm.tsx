@@ -7,6 +7,7 @@ import { ArrowLeft, Download, Loader2, Building2 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { useCompanies } from '@/hooks/useCompanies';
 import { Company } from '@/types';
+import { downloadBase64Pdf } from '@/lib/downloadPdf';
 
 interface NR1GeneratorFormProps {
   onBack: () => void;
@@ -83,18 +84,7 @@ export default function NR1GeneratorForm({ onBack }: NR1GeneratorFormProps) {
       const result = await resp.json();
       if (!resp.ok) throw new Error(result.error);
 
-      const byteChars = atob(result.pdf);
-      const byteArray = new Uint8Array(byteChars.length);
-      for (let i = 0; i < byteChars.length; i++) byteArray[i] = byteChars.charCodeAt(i);
-      const blob = new Blob([byteArray], { type: 'application/pdf' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `NR1-form.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      setTimeout(() => URL.revokeObjectURL(url), 10000);
+      downloadBase64Pdf(result.pdf, 'NR1-form.pdf');
       toast({ title: '生成成功', description: 'NR1 表格已下載' });
     } catch (err: any) {
       toast({ title: '生成失敗', description: err.message, variant: 'destructive' });

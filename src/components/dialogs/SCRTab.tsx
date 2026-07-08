@@ -9,7 +9,7 @@ import { Separator } from '@/components/ui/separator';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Plus, Edit, Trash2, Save, X, Download, Loader2, ShieldCheck } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
-import { supabase } from '@/integrations/supabase/client';
+
 import { Company, SignificantController } from '@/types';
 import { useSCRByCompany, useUpsertSCR, useDeleteSCR } from '@/hooks/useSCR';
 
@@ -48,11 +48,6 @@ export function SCRTab({ company }: { company: Company }) {
   const handleDownload = async () => {
     setDownloading(true);
     try {
-      const { data, error } = await supabase.functions.invoke('generate-scr-pdf', {
-        body: { companyId: company.id },
-      });
-      if (error) throw error;
-      // Edge function returns binary; supabase-js wraps it. We'll fetch via direct URL instead.
       const token = localStorage.getItem("secretary_jwt") || "";
       const url = `/api/generate-scr-pdf`;
       const res = await fetch(url, {
@@ -64,7 +59,11 @@ export function SCRTab({ company }: { company: Company }) {
         body: JSON.stringify({ companyId: company.id }),
       });
       if (!res.ok) throw new Error(await res.text());
-      const blob = await res.blob();
+      const result = await res.json();
+      const byteChars = atob(result.pdf);
+      const byteArray = new Uint8Array(byteChars.length);
+      for (let i = 0; i < byteChars.length; i++) byteArray[i] = byteChars.charCodeAt(i);
+      const blob = new Blob([byteArray], { type: 'application/pdf' });
       const blobUrl = URL.createObjectURL(blob);
       window.open(blobUrl, '_blank');
     } catch (e: any) {

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { toast } from 'sonner';
+import { toast } from '@/hooks/use-toast';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -51,21 +51,29 @@ const MissingOfficers = () => {
   const handleUpdateStatus = async (id: string, name: string, status: string) => {
     const { error } = await supabase.from('companies').update({ status }).eq('id', id);
     if (error) {
-      toast.error(`更新失敗: ${error.message}`);
+      toast({
+        title: '更新失敗',
+        description: error.message,
+        variant: 'destructive',
+      });
       return;
     }
     const label = status === 'inactive' ? '失效' : status === 'cancelled' ? '註銷' : '有效';
-    toast.success(`已將「${name}」狀態改為 ${label}`);
+    toast({ title: `已將「${name}」狀態改為 ${label}` });
     queryClient.invalidateQueries({ queryKey: ['missing-officers-companies-v2'] });
   };
 
   const handleUpdateJurisdiction = async (id: string, name: string, jurisdiction: string) => {
     const { error } = await supabase.from('companies').update({ jurisdiction }).eq('id', id);
     if (error) {
-      toast.error(`更新失敗: ${error.message}`);
+      toast({
+        title: '更新失敗',
+        description: error.message,
+        variant: 'destructive',
+      });
       return;
     }
-    toast.success(`已將「${name}」司法管轄區改為 ${jurisdiction}`);
+    toast({ title: `已將「${name}」司法管轄區改為 ${jurisdiction}` });
     queryClient.invalidateQueries({ queryKey: ['missing-officers-companies-v2'] });
   };
 

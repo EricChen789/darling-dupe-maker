@@ -4,11 +4,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { RefreshCw, FileText, CheckSquare, Loader2, Download } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { allPageFields, FieldMapping as FieldMappingType } from '@/data/nar1FieldData';
+import { downloadBase64Pdf } from '@/lib/downloadPdf';
 
 interface FieldInfo {
   name: string;
@@ -23,11 +23,12 @@ const FieldMapping = () => {
   const fetchAllFields = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke('generate-nar1-pdf', {
-        body: { listFields: true },
+      const token = localStorage.getItem("secretary_jwt") || "";
+      const resp = await fetch('/api/nar1-fields', {
+        headers: { Authorization: `Bearer ${token}` },
       });
-
-      if (error) throw error;
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
 
       setAllFields(data.fields || []);
       toast({
@@ -49,30 +50,19 @@ const FieldMapping = () => {
   const generateDebugPdf = async () => {
     setGeneratingDebug(true);
     try {
-      const { data, error } = await supabase.functions.invoke('generate-nar1-pdf', {
-        body: { debugMode: true },
+      const token = localStorage.getItem("secretary_jwt") || "";
+      const resp = await fetch('/api/nar1-debug-pdf', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
       });
-
-      if (error) throw error;
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
 
       if (data?.pdf) {
-        // Convert base64 to blob and download
-        const byteCharacters = atob(data.pdf);
-        const byteNumbers = new Array(byteCharacters.length);
-        for (let i = 0; i < byteCharacters.length; i++) {
-          byteNumbers[i] = byteCharacters.charCodeAt(i);
-        }
-        const byteArray = new Uint8Array(byteNumbers);
-        const blob = new Blob([byteArray], { type: 'application/pdf' });
-        
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = 'NAR1-Schedule1-debug.pdf';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
+        downloadBase64Pdf(data.pdf, 'NAR1-Schedule1-debug.pdf');
 
         toast({
           title: '診斷 PDF 已生成',

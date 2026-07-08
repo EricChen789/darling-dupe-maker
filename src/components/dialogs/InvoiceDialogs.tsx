@@ -20,7 +20,8 @@ import {
 } from '@/components/ui/select';
 import { Invoice } from '@/types';
 import { toast } from '@/hooks/use-toast';
-import { mockCompanies } from '@/data/mockData';
+import { useCompanies } from '@/hooks/useCompanies';
+import { Loader2 } from 'lucide-react';
 
 interface InvoiceDialogProps {
   open: boolean;
@@ -30,6 +31,7 @@ interface InvoiceDialogProps {
 }
 
 export const InvoiceDialog = ({ open, onOpenChange, invoice, onSave }: InvoiceDialogProps) => {
+  const { data: companies = [], isLoading: loadingCompanies } = useCompanies();
   const [formData, setFormData] = useState({
     invoiceNumber: '',
     description: '',
@@ -80,10 +82,11 @@ export const InvoiceDialog = ({ open, onOpenChange, invoice, onSave }: InvoiceDi
       });
       return;
     }
-    const selectedCompany = mockCompanies.find(c => c.id === formData.companyId);
+    const selectedCompany = companies.find(c => c.id === formData.companyId);
     onSave({
       ...formData,
       amount: parseFloat(formData.amount),
+      companyId: formData.companyId,
       companyName: selectedCompany?.name || '',
       companyBrNumber: selectedCompany?.brNumber || '',
       issueDate: formData.issueDate.replace(/-/g, '/'),
@@ -129,11 +132,17 @@ export const InvoiceDialog = ({ open, onOpenChange, invoice, onSave }: InvoiceDi
                   <SelectValue placeholder="選擇公司" />
                 </SelectTrigger>
                 <SelectContent>
-                  {mockCompanies.map((company) => (
-                    <SelectItem key={company.id} value={company.id}>
-                      {company.name}
-                    </SelectItem>
-                  ))}
+                  {loadingCompanies ? (
+                    <div className="flex items-center justify-center py-2">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    </div>
+                  ) : (
+                    companies.map((company) => (
+                      <SelectItem key={company.id} value={company.id}>
+                        {company.name}
+                      </SelectItem>
+                    ))
+                  )}
                 </SelectContent>
               </Select>
             </div>

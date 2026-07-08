@@ -7,6 +7,7 @@ import { ArrowLeft, Download, Loader2, Building2 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { useCompanies } from '@/hooks/useCompanies';
 import { Person } from '@/types';
+import { downloadBase64Pdf } from '@/lib/downloadPdf';
 
 interface ND2BGeneratorFormProps {
   onBack: () => void;
@@ -84,18 +85,7 @@ export default function ND2BGeneratorForm({ onBack, prefillPerson, prefillNewAdd
       const result = await resp.json();
       if (!resp.ok) throw new Error(result.error);
 
-      const byteChars = atob(result.pdf);
-      const byteArray = new Uint8Array(byteChars.length);
-      for (let i = 0; i < byteChars.length; i++) byteArray[i] = byteChars.charCodeAt(i);
-      const blob = new Blob([byteArray], { type: 'application/pdf' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `ND2B-${formData.companyName || 'form'}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      setTimeout(() => URL.revokeObjectURL(url), 10000);
+      downloadBase64Pdf(result.pdf, `ND2B-${formData.companyName || 'form'}.pdf`);
       toast({ title: '生成成功', description: 'ND2B 表格已開啟' });
     } catch (err: any) {
       toast({ title: '生成失敗', description: err.message, variant: 'destructive' });

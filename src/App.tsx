@@ -4,6 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
+import ErrorBoundary from "@/components/ErrorBoundary";
 import AppLayout from "./components/layout/AppLayout";
 import Index from "./pages/Index";
 import Companies from "./pages/Companies";
@@ -50,34 +51,36 @@ const App = () => (
         <Toaster />
         <Sonner />
         <BrowserRouter>
-          <Routes>
-            <Route path="/auth" element={<Auth />} />
-            <Route path="/reset-password" element={<ResetPassword />} />
-            <Route path="/documents" element={<Documents />} />
-            <Route
-              path="/"
-              element={
-                <ProtectedRoute>
-                  <AppLayout />
-                </ProtectedRoute>
-              }
-            >
-              <Route index element={<Index />} />
-              <Route path="companies" element={<Companies />} />
-              <Route path="people" element={<People />} />
-              <Route path="presenters" element={<Presenters />} />
-              <Route path="forms" element={<Forms />} />
-              <Route path="reminders" element={<Reminders />} />
-              <Route path="invoices" element={<Invoices />} />
-              <Route path="logs" element={<Logs />} />
-              <Route path="field-mapping" element={<FieldMapping />} />
-              <Route path="repair" element={<Repair />} />
-              <Route path="missing-officers" element={<MissingOfficers />} />
-              <Route path="documents" element={<Documents />} />
-              <Route path="settings" element={<Settings />} />
-            </Route>
-            <Route path="*" element={<NotFound />} />
-          </Routes>
+          <ErrorBoundary>
+            <Routes>
+              <Route path="/auth" element={<Auth />} />
+              <Route path="/reset-password" element={<ResetPassword />} />
+              <Route path="/documents" element={<Documents />} />
+              <Route
+                path="/"
+                element={
+                  <ProtectedRoute>
+                    <AppLayout />
+                  </ProtectedRoute>
+                }
+              >
+                <Route index element={<Index />} />
+                <Route path="companies" element={<Companies />} />
+                <Route path="people" element={<People />} />
+                <Route path="presenters" element={<Presenters />} />
+                <Route path="forms" element={<Forms />} />
+                <Route path="reminders" element={<Reminders />} />
+                <Route path="invoices" element={<Invoices />} />
+                <Route path="logs" element={<Logs />} />
+                <Route path="field-mapping" element={<FieldMapping />} />
+                <Route path="repair" element={<Repair />} />
+                <Route path="missing-officers" element={<MissingOfficers />} />
+                <Route path="documents" element={<Documents />} />
+                <Route path="settings" element={<Settings />} />
+              </Route>
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </ErrorBoundary>
         </BrowserRouter>
       </TooltipProvider>
     </AuthProvider>

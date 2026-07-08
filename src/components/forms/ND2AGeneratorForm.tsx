@@ -7,6 +7,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { ArrowLeft, Download, Loader2, Building2, Plus, Trash2 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { useCompanies } from '@/hooks/useCompanies';
+import { downloadBase64Pdf } from '@/lib/downloadPdf';
 
 interface OfficerEntry {
   type: 'appointment' | 'cessation';
@@ -92,16 +93,7 @@ export default function ND2AGeneratorForm({ onBack }: ND2AGeneratorFormProps) {
       const result = await resp.json();
       if (!resp.ok) throw new Error(result.error);
 
-      const byteChars = atob(result.pdf);
-      const byteArray = new Uint8Array(byteChars.length);
-      for (let i = 0; i < byteChars.length; i++) byteArray[i] = byteChars.charCodeAt(i);
-      const blob = new Blob([byteArray], { type: 'application/pdf' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `ND2A_${brNumber}_${companyName.replace(/\s+/g, '_')}.pdf`;
-      a.click();
-      URL.revokeObjectURL(url);
+      downloadBase64Pdf(result.pdf, `ND2A_${brNumber}_${companyName.replace(/\s+/g, '_')}.pdf`);
       toast({ title: '生成成功', description: 'ND2A 表格已下載' });
     } catch (err: any) {
       toast({ title: '生成失敗', description: err.message, variant: 'destructive' });
@@ -115,8 +107,8 @@ export default function ND2AGeneratorForm({ onBack }: ND2AGeneratorFormProps) {
       <div className="flex items-center gap-3 mb-6">
         <Button variant="ghost" size="sm" onClick={onBack}><ArrowLeft className="h-4 w-4 mr-1" />返回</Button>
         <div>
-          <h1 className="text-2xl font-bold">ND2A — 出任/停任董事及公司秘書通知書</h1>
-          <p className="text-sm text-muted-foreground">Notice of Change of Company Secretary and Director (Appointment/Cessation)</p>
+          <h1 className="text-2xl font-bold">ND2A — 更改公司秘書及董事通知書 (委任╱停任)</h1>
+          <p className="text-sm text-muted-foreground">Notice of Change of Company Secretary and Director (Appointment / Cessation)</p>
         </div>
       </div>
 

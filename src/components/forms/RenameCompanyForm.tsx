@@ -10,6 +10,7 @@ import { toast } from '@/hooks/use-toast';
 import { useCompanies } from '@/hooks/useCompanies';
 import { useSaveResolution } from '@/hooks/useResolutions';
 import { downloadGenericFormPdf } from '@/lib/genericFormPdf';
+import { downloadBase64Pdf } from '@/lib/downloadPdf';
 
 interface Props { onBack: () => void; }
 
@@ -106,46 +107,38 @@ with effect from the date of issue of the Certificate of Change of Name by the R
     }
     setGenerating(true);
     try {
-      const ok = await downloadGenericFormPdf({
-        formCode: 'NNC2',
-        title: '更改公司名稱通知書 (NNC2) Notice of Change of Company Name',
-        subtitle: '香港公司註冊處 — 第 622 章 公司條例 第 108 條',
-        companyName: oldName,
-        brNumber: company.brNumber,
-        sections: [
-          {
-            heading: '1. 公司資料 Company Particulars',
-            rows: [
-              ['Company Number / 公司編號', company.brNumber || '—'],
-              ['Existing Name (English)', oldName || '—'],
-              ['Existing Name (中文)', oldChineseName || '—'],
-            ],
-          },
-          {
-            heading: '2. 新公司名稱 New Company Name',
-            rows: [
-              ['New Name (English)', newName || '—'],
-              ['New Name (中文)', newChineseName || '—'],
-            ],
-          },
-          {
-            heading: '3. 特別決議資料 Special Resolution',
-            rows: [
-              ['Date of Resolution 決議日期', resolutionDate],
-              ['Effective Date 預期生效日期', effectiveDate],
-            ],
-          },
-          {
-            heading: '4. 法定聲明 Declaration',
-            paragraph: '本人聲明，本公司已根據《公司條例》（第622章）第88條規定，藉特別決議通過更改公司名稱。隨附經簽署的特別決議書副本。',
-          },
-        ],
-        signatureLines: [
-          'Director / 董事: ____________________   Date: __________',
-          'Company Secretary / 公司秘書: ____________________   Date: __________',
-        ],
-      }, 'NNC2');
-      if (ok) toast({ title: 'NNC2 PDF 已生成' });
+      const token = localStorage.getItem("secretary_jwt") || "";
+      const rd = resolutionDate.split('-');  // YYYY-MM-DD
+      const ed = effectiveDate.split('-');
+      const fields: Record<string, string> = {
+        'fill_1_P.1': company.brNumber || '',
+        'fill_2_P.1': oldName || company.name || '',
+        'fill_3_P.1': newName || '',
+        'fill_4_P.1': newChineseName || '',
+        'fill_5_P.1': ed.length >= 3 ? ed[2] : '',
+        'fill_6_P.1': ed.length >= 2 ? ed[1] : '',
+        'fill_7_P.1': ed.length >= 1 ? ed[0] : '',
+        'fill_8_P.1': rd.length >= 3 ? rd[2] : '',
+        'fill_9_P.1': rd.length >= 2 ? rd[1] : '',
+        'fill_10_P.1': rd.length >= 1 ? rd[0] : '',
+        'fill_16_P.1': company.name || '',
+      };
+      if (signers) {
+        const firstSigner = signers.split(',')[0].trim();
+        fields['fill_11_P.1'] = firstSigner;
+        fields['fill_12_P.1'] = 'Director';
+      }
+      const resp = await fetch(`/api/generate-template-pdf`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ template: 'NNC2-template.pdf', fields }),
+      });
+      const result = await resp.json();
+      if (!resp.ok) throw new Error(result.error || 'Unknown error');
+      downloadBase64Pdf(result.pdf, 'NNC2-form.pdf');
+      toast({ title: 'NNC2 表格已生成', description: '使用官方模板填寫' });
+    } catch (err: any) {
+      toast({ title: '生成失敗', description: err.message, variant: 'destructive' });
     } finally {
       setGenerating(false);
     }

@@ -236,11 +236,10 @@ export function useDeleteCompany() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
-      // Remove company-scoped roles, then the company itself.
-      // Persons remain in the central master.
-      const { error: rolesErr } = await supabase
-        .from('person_company_roles').delete().eq('company_id', id);
-      if (rolesErr) throw rolesErr;
+      // Flask cascade endpoint handles cleanup of: person_company_roles, reminders,
+      // company_logs, resolutions, significant_controllers, share_transactions,
+      // orphaned persons (those with no remaining roles), officers, shareholders.
+      // See server.py table_delete() for full cascade logic.
       const { error } = await supabase.from('companies').delete().eq('id', id);
       if (error) throw error;
     },

@@ -9,11 +9,14 @@ export default defineConfig(({ mode }) => ({
     host: "::",
     port: 8080,
     hmr: {
-      overlay: false,
+      overlay: true,  // Show runtime errors in browser during development
     },
     proxy: {
       "/api": {
-        target: "https://cs.techforliving.net",
+        // Use 127.0.0.1, not "localhost": on Windows "localhost" resolves to
+        // IPv6 ::1 first, but Flask only listens on IPv4, so every request
+        // wastes ~200ms on the connection-refused fallback. 127.0.0.1 = ~3ms.
+        target: "http://127.0.0.1:5000",
         changeOrigin: true,
       },
     },

@@ -11,7 +11,7 @@ import { toast } from '@/hooks/use-toast';
 import { useCompanies } from '@/hooks/useCompanies';
 import { useSaveResolution } from '@/hooks/useResolutions';
 import { downloadGenericFormPdf } from '@/lib/genericFormPdf';
-import { supabase } from '@/integrations/supabase/client';
+
 
 interface Props { onBack: () => void; }
 
@@ -95,8 +95,11 @@ export default function ResolutionGeneratorForm({ onBack }: Props) {
     }
     setAiLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke('generate-resolution', {
-        body: {
+      const token = localStorage.getItem("secretary_jwt") || "";
+      const resp = await fetch('/api/generate-resolution', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
           resolutionType,
           companyName: company.name,
           companyChineseName: company.chineseName,
@@ -104,10 +107,10 @@ export default function ResolutionGeneratorForm({ onBack }: Props) {
           resolutionDate,
           context: aiContext,
           language: aiLanguage,
-        },
+        }),
       });
-      if (error) throw error;
-      if ((data as any)?.error) throw new Error((data as any).error);
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
       setContent((data as any).content || '');
       toast({ title: 'AI 已生成決議書' });
     } catch (e: any) {

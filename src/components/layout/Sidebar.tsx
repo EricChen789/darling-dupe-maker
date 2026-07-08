@@ -1,6 +1,6 @@
 import { Link, useLocation } from 'react-router-dom';
 import { cn } from '@/lib/utils';
-import { Download, Wrench, UserCheck, AlertTriangle, FileDown, Bell, FolderOpen, Mail, FileType } from 'lucide-react';
+import { Download, Wrench, UserCheck, AlertTriangle, FileDown, Bell, FolderOpen, Mail, FileType, Search } from 'lucide-react';
 import { Building2, Users, FileText, Receipt, ClipboardList, Settings, LogOut, Table, PanelLeftClose, PanelLeft } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAuth } from '@/hooks/useAuth';
@@ -20,6 +20,7 @@ const navItems: { path: string; label: string; icon: any; external?: boolean }[]
   { path: '/invoices', label: '發票管理', icon: Receipt },
   { path: '/email', label: '郵件模塊', icon: Mail },
   { path: '/logs', label: '公司日誌', icon: ClipboardList },
+  { path: '/search', label: '歷史檢索', icon: Search },
   { path: '/field-mapping', label: '欄位對照表', icon: Table },
   { path: '/repair', label: '數據修復', icon: Wrench },
   { path: '/missing-officers', label: '仍缺董事/秘書', icon: AlertTriangle },

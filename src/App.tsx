@@ -13,6 +13,7 @@ import Forms from "./pages/Forms";
 import Invoices from "./pages/Invoices";
 import Email from "./pages/Email";
 import WordDocs from "./pages/WordDocs";
+import Search from "./pages/Search";
 import Logs from "./pages/Logs";
 import Settings from "./pages/Settings";
 import FieldMapping from "./pages/FieldMapping";
@@ -76,6 +77,7 @@ const App = () => (
                 <Route path="invoices" element={<Invoices />} />
                 <Route path="email" element={<Email />} />
                 <Route path="logs" element={<Logs />} />
+                <Route path="search" element={<Search />} />
                 <Route path="field-mapping" element={<FieldMapping />} />
                 <Route path="repair" element={<Repair />} />
                 <Route path="missing-officers" element={<MissingOfficers />} />

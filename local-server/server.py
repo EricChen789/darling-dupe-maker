@@ -1424,12 +1424,25 @@ def search():
     s = f"%{q}%"
     db = get_db()
     companies = db.execute(
-        "SELECT id, name, chinese_name, company_number, 'company' as type FROM companies WHERE name LIKE ? OR chinese_name LIKE ? OR company_number LIKE ? LIMIT 20",
-        (s, s, s)).fetchall()
+        "SELECT id, name, chinese_name, company_number, ci_number, company_type, status, 'company' as type "
+        "FROM companies WHERE name LIKE ? OR chinese_name LIKE ? OR company_number LIKE ? OR ci_number LIKE ? "
+        "ORDER BY name LIMIT 30",
+        (s, s, s, s)).fetchall()
     persons = db.execute(
-        "SELECT id, name_english, name_chinese, 'person' as type FROM persons WHERE name_english LIKE ? OR name_chinese LIKE ? LIMIT 20",
-        (s, s)).fetchall()
-    return jsonify([dict(r) for r in companies] + [dict(r) for r in persons])
+        "SELECT id, name_english, name_chinese, identity, id_number, passport_number, 'person' as type "
+        "FROM persons WHERE name_english LIKE ? OR name_chinese LIKE ? OR id_number LIKE ? OR passport_number LIKE ? "
+        "ORDER BY name_english LIMIT 30",
+        (s, s, s, s)).fetchall()
+    out = [dict(r) for r in companies]
+    for r in persons:
+        p = dict(r)
+        # 附上關聯公司+角色，讓前端點擊可定位公司登記冊
+        p['roles'] = [dict(x) for x in db.execute(
+            "SELECT pcr.role, pcr.date_ceased, c.id AS company_id, c.name AS company_name "
+            "FROM person_company_roles pcr JOIN companies c ON c.id = pcr.company_id "
+            "WHERE pcr.person_id = ?", (p['id'],)).fetchall()]
+        out.append(p)
+    return jsonify(out)
 
 @app.route('/api/companies/<item_id>/full', methods=['GET'])
 def company_full(item_id):
@@ -3022,6 +3035,51 @@ def generate_docx():
 @app.route('/api/docx-types', methods=['GET'])
 def docx_types():
     return jsonify([{'key': k, 'label': v} for k, v in DOCX_TYPES.items()])
+
+
+# ─── 檢索服務 (功能說明書 6.1–6.6) ───
+
+@app.route('/api/company-registers', methods=['GET'])
+def company_registers():
+    """6.2–6.6 公司登記冊明細：當前/歷史董事、股東、股份轉讓、SCR。"""
+    company_id = request.args.get('company_id')
+    if not company_id:
+        return jsonify({'error': '缺少 company_id'}), 400
+    db = get_db()
+    company = db.execute("SELECT id, name, chinese_name, company_number FROM companies WHERE id=?",
+                         (company_id,)).fetchone()
+    if not company:
+        return jsonify({'error': '找不到該公司'}), 404
+
+    def roles(role, historical):
+        cond = ("(pcr.date_ceased IS NOT NULL AND pcr.date_ceased != '')" if historical
+                else "(pcr.date_ceased IS NULL OR pcr.date_ceased = '')")
+        return [dict(r) for r in db.execute(
+            f"""SELECT pcr.role, pcr.shares, pcr.share_type, pcr.currency, pcr.paid_up, pcr.unpaid,
+                       pcr.date_appointed, pcr.date_ceased, pcr.is_reserve,
+                       p.id AS person_id, p.identity, p.name_english, p.name_chinese,
+                       p.id_number, p.passport_number, p.address, p.email, p.phone
+                FROM person_company_roles pcr JOIN persons p ON p.id = pcr.person_id
+                WHERE pcr.company_id = ? AND pcr.role = ? AND {cond}
+                ORDER BY p.name_english""", (company_id, role)).fetchall()]
+
+    share_tx = [dict(r) for r in db.execute(
+        """SELECT * FROM share_transactions WHERE company_id = ?
+           ORDER BY transaction_date DESC, created_at DESC""", (company_id,)).fetchall()]
+    scr = [dict(r) for r in db.execute(
+        "SELECT * FROM significant_controllers WHERE company_id = ? ORDER BY name_english",
+        (company_id,)).fetchall()]
+
+    return jsonify({
+        'company': dict(company),
+        'current_directors': roles('director', False),
+        'historical_directors': roles('director', True),
+        'current_shareholders': roles('shareholder', False),
+        'historical_shareholders': roles('shareholder', True),
+        'secretaries': roles('secretary', False),
+        'share_transactions': share_tx,
+        'scr': scr,
+    })
 
 
 # ─── NAR1 Field Listing & Debug PDF ───

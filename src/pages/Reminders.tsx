@@ -6,11 +6,12 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Plus, Trash2, CheckCircle2, Bell, Loader2, Wand2 } from 'lucide-react';
+import { Plus, Trash2, CheckCircle2, Bell, Loader2, Wand2, List, CalendarDays, AlertTriangle } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { useReminders, useUpsertReminder, useDeleteReminder, useUpdateReminderStatus, type Reminder } from '@/hooks/useReminders';
 import { useCompanies } from '@/hooks/useCompanies';
 import { useUserRole } from '@/hooks/useUserRole';
+import { ReminderCalendar } from '@/components/reminders/ReminderCalendar';
 
 function addDays(d: Date, days: number) { const c = new Date(d); c.setDate(c.getDate() + days); return c; }
 function fmtISO(d: Date) { return d.toISOString().slice(0, 10); }
@@ -33,14 +34,24 @@ export default function Reminders() {
   const [generating, setGenerating] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const [view, setView] = useState<'list' | 'calendar'>('list');
 
   const today = new Date(); today.setHours(0, 0, 0, 0);
-  const enriched = useMemo(() => {
-    let list = reminders.map(r => {
+
+  // 全部提醒（附逾期標記 + 公司），供列表與日曆共用
+  const enrichedAll = useMemo(() =>
+    reminders.map(r => {
       const due = r.due_date ? new Date(r.due_date) : null;
       const isOverdue = !!due && r.status === 'pending' && due < today;
       return { ...r, _isOverdue: isOverdue, _company: companies.find(c => c.id === r.company_id) };
-    });
+    }),
+    [reminders, companies, today]);
+
+  const overdueCount = useMemo(() => enrichedAll.filter(r => r._isOverdue).length, [enrichedAll]);
+
+  // 列表視圖：套用狀態篩選 + 排序
+  const enriched = useMemo(() => {
+    let list = [...enrichedAll];
     if (statusFilter !== 'all') {
       list = list.filter(r => statusFilter === 'overdue' ? r._isOverdue : r.status === statusFilter);
     }
@@ -49,7 +60,7 @@ export default function Reminders() {
       return sortDir === 'asc' ? da.localeCompare(db) : db.localeCompare(da);
     });
     return list;
-  }, [reminders, companies, today, statusFilter, sortDir]);
+  }, [enrichedAll, statusFilter, sortDir]);
 
 
   const handleAutoGenerate = async () => {
@@ -112,25 +123,63 @@ export default function Reminders() {
         }
       />
 
-      {!isLoading && enriched.length >= 0 && (
-        <div className="flex items-center gap-3 mb-3">
-          <Label className="text-xs text-muted-foreground">狀態：</Label>
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="h-8 w-36"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">全部</SelectItem>
-              <SelectItem value="pending">待辦</SelectItem>
-              <SelectItem value="overdue">逾期</SelectItem>
-              <SelectItem value="submitted">已提交</SelectItem>
-              <SelectItem value="completed">已完成</SelectItem>
-              <SelectItem value="ignored">已忽略</SelectItem>
-            </SelectContent>
-          </Select>
-          <span className="text-xs text-muted-foreground ml-2">共 {enriched.length} 筆</span>
+      {/* 逾期警告橫幅 (9.3) */}
+      {!isLoading && overdueCount > 0 && (
+        <div className="flex items-center gap-2 mb-4 px-4 py-2.5 rounded-lg border border-destructive/40 bg-destructive/10 text-destructive text-sm">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          <span>目前有 <b>{overdueCount}</b> 筆逾期未完成的申報任務，請及時跟進。</span>
+          {view === 'list' && statusFilter !== 'overdue' && (
+            <Button variant="ghost" size="sm" className="h-6 px-2 ml-auto text-destructive hover:text-destructive"
+              onClick={() => setStatusFilter('overdue')}>
+              只看逾期
+            </Button>
+          )}
         </div>
       )}
 
-      {isLoading ? (
+      {/* 視圖切換 + 篩選 */}
+      <div className="flex items-center gap-3 mb-3 flex-wrap">
+        <div className="inline-flex rounded-md border border-border overflow-hidden">
+          <button
+            onClick={() => setView('list')}
+            className={`flex items-center gap-1 px-3 py-1.5 text-xs transition-colors ${view === 'list' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}
+          >
+            <List className="h-3.5 w-3.5" /> 列表
+          </button>
+          <button
+            onClick={() => setView('calendar')}
+            className={`flex items-center gap-1 px-3 py-1.5 text-xs transition-colors ${view === 'calendar' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}
+          >
+            <CalendarDays className="h-3.5 w-3.5" /> 日曆
+          </button>
+        </div>
+
+        {view === 'list' && !isLoading && (
+          <>
+            <Label className="text-xs text-muted-foreground ml-1">狀態：</Label>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="h-8 w-36"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部</SelectItem>
+                <SelectItem value="pending">待辦</SelectItem>
+                <SelectItem value="overdue">逾期</SelectItem>
+                <SelectItem value="submitted">已提交</SelectItem>
+                <SelectItem value="completed">已完成</SelectItem>
+                <SelectItem value="ignored">已忽略</SelectItem>
+              </SelectContent>
+            </Select>
+            <span className="text-xs text-muted-foreground ml-2">共 {enriched.length} 筆</span>
+          </>
+        )}
+      </div>
+
+      {view === 'calendar' ? (
+        isLoading ? (
+          <p className="text-muted-foreground text-sm">載入中...</p>
+        ) : (
+          <ReminderCalendar reminders={enrichedAll} onSelect={setEditing} />
+        )
+      ) : isLoading ? (
         <p className="text-muted-foreground text-sm">載入中...</p>
       ) : enriched.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground">

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -45,9 +45,10 @@ const emptyOfficer = (): OfficerEntry => ({
 
 interface ND2AGeneratorFormProps {
   onBack: () => void;
+  initialCompanyId?: string;
 }
 
-export default function ND2AGeneratorForm({ onBack }: ND2AGeneratorFormProps) {
+export default function ND2AGeneratorForm({ onBack, initialCompanyId }: ND2AGeneratorFormProps) {
   const { data: companies = [] } = useCompanies();
   const [selectedCompanyId, setSelectedCompanyId] = useState('');
   const [generating, setGenerating] = useState(false);
@@ -69,6 +70,14 @@ export default function ND2AGeneratorForm({ onBack }: ND2AGeneratorFormProps) {
       setPresentorName(company.name);
     }
   };
+
+  // 從「公司詳情 → 文件生成」進入時，自動預選當前公司
+  useEffect(() => {
+    if (initialCompanyId && companies.length && !selectedCompanyId) {
+      handleCompanySelect(initialCompanyId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialCompanyId, companies.length]);
 
   const updateOfficer = (idx: number, field: string, value: string) => {
     setOfficers(prev => prev.map((o, i) => i === idx ? { ...o, [field]: value } : o));
@@ -108,7 +117,7 @@ export default function ND2AGeneratorForm({ onBack }: ND2AGeneratorFormProps) {
         <Button variant="ghost" size="sm" onClick={onBack}><ArrowLeft className="h-4 w-4 mr-1" />返回</Button>
         <div>
           <h1 className="text-2xl font-bold">ND2A — 更改公司秘書及董事通知書 (委任╱停任)</h1>
-          <p className="text-sm text-muted-foreground">Notice of Change of Company Secretary and Director (Appointment / Cessation)</p>
+          <p className="text-sm text-muted-foreground">Notice of Change of Company Secretary and Director (Appointment／Cessation)</p>
         </div>
       </div>
 

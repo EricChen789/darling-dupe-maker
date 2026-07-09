@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { PageHeader } from '@/components/ui/page-header';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -111,10 +112,22 @@ function ShareholdersTable({ rows, historical }: { rows: RegisterMember[]; histo
 
 const Search = () => {
   const { data: companies = [] } = useCompanies();
+  const [searchParams] = useSearchParams();
   const [query, setQuery] = useState('');
   const { data: results = [], isFetching } = useGlobalSearch(query);
   const [companyId, setCompanyId] = useState('');
   const { data: reg, isLoading: regLoading } = useCompanyRegisters(companyId || undefined);
+
+  // 從頂欄全域搜尋跳轉：?q= 預填搜尋框、?company= 直接載入該公司登記冊
+  useEffect(() => {
+    const q = searchParams.get('q');
+    const cid = searchParams.get('company');
+    if (q) setQuery(q);
+    if (cid) {
+      setCompanyId(cid);
+      setTimeout(() => document.getElementById('registers-section')?.scrollIntoView({ behavior: 'smooth' }), 100);
+    }
+  }, [searchParams]);
 
   const selectCompany = (id: string) => {
     setCompanyId(id);

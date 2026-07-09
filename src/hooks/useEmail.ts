@@ -25,6 +25,7 @@ export interface EmailLog {
   scheduled_at: string | null;
   sent_at: string | null;
   error: string;
+  email_type: string; // invoice | collection | reminder | general
   created_at: string;
   updated_at: string;
 }

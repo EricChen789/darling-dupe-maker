@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -9,9 +9,9 @@ import { toast } from '@/hooks/use-toast';
 import { useCompanies } from '@/hooks/useCompanies';
 import { downloadBase64Pdf } from '@/lib/downloadPdf';
 
-interface NDR1GeneratorFormProps { onBack: () => void; }
+interface NDR1GeneratorFormProps { onBack: () => void; initialCompanyId?: string; }
 
-export default function NDR1GeneratorForm({ onBack }: NDR1GeneratorFormProps) {
+export default function NDR1GeneratorForm({ onBack, initialCompanyId }: NDR1GeneratorFormProps) {
   const { data: companies = [] } = useCompanies();
   const [selectedCompanyId, setSelectedCompanyId] = useState('');
   const [generating, setGenerating] = useState(false);
@@ -46,6 +46,11 @@ export default function NDR1GeneratorForm({ onBack }: NDR1GeneratorFormProps) {
       }));
     }
   };
+
+  useEffect(() => {
+    if (initialCompanyId && companies.length && !selectedCompanyId) handleCompanySelect(initialCompanyId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialCompanyId, companies.length]);
 
   const update = (field: string, value: string | boolean) => setFormData(prev => ({ ...prev, [field]: value }));
 
@@ -93,7 +98,7 @@ export default function NDR1GeneratorForm({ onBack }: NDR1GeneratorFormProps) {
     <div>
       <div className="flex items-center gap-3 mb-6">
         <Button variant="ghost" size="sm" onClick={onBack}><ArrowLeft className="h-4 w-4 mr-1" />返回</Button>
-        <div><h1 className="text-2xl font-bold">NDR1 — 私人公司或擔保有限公司撤銷註冊申請書</h1><p className="text-sm text-muted-foreground">Application for Deregistration of a Private Company or Company Limited by Guarantee</p></div>
+        <div><h1 className="text-2xl font-bold">NDR1 — 私人公司或擔保有限公司撤銷註冊申請書</h1><p className="text-sm text-muted-foreground">Application for Deregistration of Private Company or Company Limited by Guarantee</p></div>
       </div>
 
       <div className="bg-card border border-border rounded-lg p-4 mb-4">

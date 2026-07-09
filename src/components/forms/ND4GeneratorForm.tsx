@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -8,9 +8,9 @@ import { toast } from '@/hooks/use-toast';
 import { useCompanies } from '@/hooks/useCompanies';
 import { downloadBase64Pdf } from '@/lib/downloadPdf';
 
-interface ND4GeneratorFormProps { onBack: () => void; }
+interface ND4GeneratorFormProps { onBack: () => void; initialCompanyId?: string; }
 
-export default function ND4GeneratorForm({ onBack }: ND4GeneratorFormProps) {
+export default function ND4GeneratorForm({ onBack, initialCompanyId }: ND4GeneratorFormProps) {
   const { data: companies = [] } = useCompanies();
   const [selectedCompanyId, setSelectedCompanyId] = useState('');
   const [generating, setGenerating] = useState(false);
@@ -42,6 +42,11 @@ export default function ND4GeneratorForm({ onBack }: ND4GeneratorFormProps) {
       }));
     }
   };
+
+  useEffect(() => {
+    if (initialCompanyId && companies.length && !selectedCompanyId) handleCompanySelect(initialCompanyId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialCompanyId, companies.length]);
 
   const handleOfficerSelect = (type: 'director' | 'secretary', index: number) => {
     const officers = type === 'director' ? selectedCompany?.directors : selectedCompany?.secretaries;
@@ -111,7 +116,7 @@ export default function ND4GeneratorForm({ onBack }: ND4GeneratorFormProps) {
     <div>
       <div className="flex items-center gap-3 mb-6">
         <Button variant="ghost" size="sm" onClick={onBack}><ArrowLeft className="h-4 w-4 mr-1" />返回</Button>
-        <div><h1 className="text-2xl font-bold">ND4 — 公司秘書及董事辭任通知書</h1><p className="text-sm text-muted-foreground">Notice of Resignation of Company Secretary and Director</p></div>
+        <div><h1 className="text-2xl font-bold">ND4 — 公司秘書及董事辭任通知書</h1><p className="text-sm text-muted-foreground">Notice of Change in Particulars of Company Secretary and Director</p></div>
       </div>
 
       <div className="bg-card border border-border rounded-lg p-4 mb-4">

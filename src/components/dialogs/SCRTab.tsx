@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Separator } from '@/components/ui/separator';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, Edit, Trash2, Save, X, Download, Loader2, ShieldCheck } from 'lucide-react';
+import { Plus, Edit, Trash2, Save, X, Download, Loader2, ShieldCheck, UserCheck } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 
 import { Company, SignificantController } from '@/types';
@@ -30,6 +30,10 @@ export function SCRTab({ company }: { company: Company }) {
   const del = useDeleteSCR();
   const [editing, setEditing] = useState<Partial<SignificantController> | null>(null);
   const [downloading, setDownloading] = useState(false);
+  // ME-14/15/20 指定代表：SCR tab 內的「重要控制人 / 指定代表」子視圖
+  const [view, setView] = useState<'scr' | 'reps'>('scr');
+
+  const designatedReps = scrs.filter(s => s.isDesignatedRep);
 
   const regAddr = [company.regFlat, company.regBuilding, company.regStreet, company.regDistrict, company.regRegion]
     .filter(Boolean).join(', ');
@@ -76,16 +80,27 @@ export function SCRTab({ company }: { company: Company }) {
   return (
     <div>
       <div className="flex items-center justify-between mb-3">
-        <h3 className="flex items-center gap-2 font-semibold text-sm">
-          <ShieldCheck className="h-4 w-4 text-primary" />
-          重要控制人登記冊 (SCR)
-          <Badge variant="secondary" className="text-xs">{scrs.length}</Badge>
-        </h3>
+        <div className="inline-flex rounded-md border border-border overflow-hidden">
+          <button type="button" onClick={() => setView('scr')}
+            className={`px-3 py-1.5 text-xs font-medium transition-colors inline-flex items-center gap-1 ${
+              view === 'scr' ? 'bg-primary text-primary-foreground' : 'bg-background hover:bg-muted text-muted-foreground'
+            }`}>
+            <ShieldCheck className="h-3 w-3" /> 重要控制人 ({scrs.length})
+          </button>
+          <button type="button" onClick={() => setView('reps')}
+            className={`px-3 py-1.5 text-xs font-medium transition-colors border-l border-border inline-flex items-center gap-1 ${
+              view === 'reps' ? 'bg-primary text-primary-foreground' : 'bg-background hover:bg-muted text-muted-foreground'
+            }`}>
+            <UserCheck className="h-3 w-3" /> 指定代表 ({designatedReps.length})
+          </button>
+        </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={handleDownload} disabled={downloading || scrs.length === 0}>
-            {downloading ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Download className="h-3.5 w-3.5 mr-1" />}
-            下載登記冊 PDF
-          </Button>
+          {view === 'scr' && (
+            <Button variant="outline" size="sm" onClick={handleDownload} disabled={downloading || scrs.length === 0}>
+              {downloading ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Download className="h-3.5 w-3.5 mr-1" />}
+              下載登記冊 PDF
+            </Button>
+          )}
           <Button variant="ghost" size="sm" onClick={() => setEditing(empty(company.id, regAddr))}>
             <Plus className="h-3.5 w-3.5 mr-1" /> 新增
           </Button>
@@ -97,7 +112,37 @@ export function SCRTab({ company }: { company: Company }) {
           onSave={handleSave} onCancel={() => setEditing(null)} saving={upsert.isPending} />
       )}
 
-      {isLoading ? (
+      {view === 'reps' ? (
+        /* ME-14 指定代表列表 / ME-15 編輯 / ME-20 關聯重要控制人 */
+        isLoading ? (
+          <p className="text-muted-foreground text-sm">載入中...</p>
+        ) : designatedReps.length === 0 ? (
+          <p className="text-muted-foreground text-sm">
+            尚未指定代表。請在「重要控制人」記錄中勾選「此人為公司的指定代表」並填寫聯絡方式。
+          </p>
+        ) : (
+          <div className="grid gap-2">
+            {designatedReps.map((s) => (
+              <div key={s.id} className="rounded-md border border-border bg-muted/30 p-3 text-sm group">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <UserCheck className="h-4 w-4 text-primary shrink-0" />
+                    <span className="font-medium">{s.designatedRepName || s.nameEnglish || s.nameChinese}</span>
+                    <Badge variant="default" className="text-xs">指定代表</Badge>
+                  </div>
+                  <Button variant="ghost" size="sm" className="h-6 px-1.5 hidden group-hover:flex" onClick={() => setEditing(s)}>
+                    <Edit className="h-3 w-3" />
+                  </Button>
+                </div>
+                <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                  <div className="col-span-2">聯絡方式: {s.designatedRepContact || '-'}</div>
+                  <div className="col-span-2">關聯重要控制人: {s.nameEnglish || s.nameChinese || '-'}{s.idNumber ? `（${s.idNumber}）` : ''}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )
+      ) : isLoading ? (
         <p className="text-muted-foreground text-sm">載入中...</p>
       ) : scrs.length === 0 && !editing ? (
         <p className="text-muted-foreground text-sm">尚無重要控制人記錄</p>

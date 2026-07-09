@@ -1,7 +1,7 @@
 import { Link, useLocation } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { Download, Wrench, UserCheck, AlertTriangle, FileDown, Bell, FolderOpen, Mail, FileType, Search } from 'lucide-react';
-import { Building2, Users, FileText, Receipt, ClipboardList, Settings, LogOut, Table, PanelLeftClose, PanelLeft } from 'lucide-react';
+import { Building2, Users, FileText, Receipt, ClipboardList, Settings, LogOut, Table, PanelLeftClose, PanelLeft, LayoutDashboard, UserCog } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAuth } from '@/hooks/useAuth';
 
@@ -11,12 +11,13 @@ interface SidebarProps {
 }
 
 const navItems: { path: string; label: string; icon: any; external?: boolean }[] = [
+  { path: '/dashboard', label: '儀表板', icon: LayoutDashboard },
   { path: '/companies', label: '公司管理', icon: Building2 },
-  { path: '/people', label: '人員管理', icon: Users },
+  { path: '/people', label: '自然人管理', icon: Users },
   { path: '/presenters', label: '提交人資料', icon: UserCheck },
   { path: '/forms', label: '表單管理', icon: FileText },
   { path: '/word-docs', label: 'Word 文件', icon: FileType },
-  { path: '/reminders', label: '申報提醒', icon: Bell },
+  { path: '/reminders', label: '任務管理', icon: Bell },
   { path: '/invoices', label: '發票管理', icon: Receipt },
   { path: '/email', label: '郵件模塊', icon: Mail },
   { path: '/logs', label: '公司日誌', icon: ClipboardList },
@@ -30,12 +31,23 @@ const navItems: { path: string; label: string; icon: any; external?: boolean }[]
 ];
 
 const bottomNavItems = [
+  { path: '/users', label: '使用者管理', icon: UserCog },
   { path: '/settings', label: '設定', icon: Settings },
 ];
 
+// Items only visible to admin (US-05/06)
+const ADMIN_ONLY_PATHS = new Set([
+  '/users', '/settings', '/repair', '/field-mapping',
+  '/nar1_field_diagnostic.pdf', '/import-data-skill-guide.md',
+]);
+
 const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {
   const location = useLocation();
-  const { signOut } = useAuth();
+  const { user, signOut } = useAuth();
+  const isAdmin = user?.role === 'admin';
+
+  const visibleNavItems = navItems.filter(item => !ADMIN_ONLY_PATHS.has(item.path) || isAdmin);
+  const visibleBottomItems = bottomNavItems.filter(item => !ADMIN_ONLY_PATHS.has(item.path) || isAdmin);
 
   return (
     <TooltipProvider delayDuration={0}>
@@ -77,7 +89,7 @@ const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {
         {/* Navigation */}
         <nav className="flex-1 py-4">
           <ul className="space-y-1 px-2">
-            {navItems.map((item) => {
+            {visibleNavItems.map((item) => {
               const isActive = !item.external && (location.pathname === item.path || location.pathname.startsWith(item.path + '/'));
               const linkContent = item.external ? (
                 <a
@@ -124,7 +136,7 @@ const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {
         {/* Bottom Navigation */}
         <div className="border-t border-sidebar-border py-4">
           <ul className="space-y-1 px-2">
-            {bottomNavItems.map((item) => {
+            {visibleBottomItems.map((item) => {
               const isActive = location.pathname === item.path;
               const linkContent = (
                 <Link

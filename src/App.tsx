@@ -7,6 +7,7 @@ import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import AppLayout from "./components/layout/AppLayout";
 import Index from "./pages/Index";
+import Dashboard from "./pages/Dashboard";
 import Companies from "./pages/Companies";
 import People from "./pages/People";
 import Forms from "./pages/Forms";
@@ -16,6 +17,7 @@ import WordDocs from "./pages/WordDocs";
 import Search from "./pages/Search";
 import Logs from "./pages/Logs";
 import Settings from "./pages/Settings";
+import Users from "./pages/Users";
 import FieldMapping from "./pages/FieldMapping";
 import Repair from "./pages/Repair";
 import MissingOfficers from "./pages/MissingOfficers";
@@ -68,6 +70,7 @@ const App = () => (
                 }
               >
                 <Route index element={<Index />} />
+                <Route path="dashboard" element={<Dashboard />} />
                 <Route path="companies" element={<Companies />} />
                 <Route path="people" element={<People />} />
                 <Route path="presenters" element={<Presenters />} />
@@ -83,6 +86,7 @@ const App = () => (
                 <Route path="missing-officers" element={<MissingOfficers />} />
                 <Route path="documents" element={<Documents />} />
                 <Route path="settings" element={<Settings />} />
+                <Route path="users" element={<Users />} />
               </Route>
               <Route path="*" element={<NotFound />} />
             </Routes>

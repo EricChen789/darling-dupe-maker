@@ -5,7 +5,6 @@ import { Label } from '@/components/ui/label';
 import { toast } from '@/hooks/use-toast';
 import { useState } from 'react';
 import { Download, Loader2 } from 'lucide-react';
-import { UserManagement } from '@/components/settings/UserManagement';
 import { PresenterManagement } from '@/components/settings/PresenterManagement';
 import { SecretaryTemplateManagement } from '@/components/settings/SecretaryTemplateManagement';
 
@@ -115,8 +114,6 @@ const Settings = () => {
           {exporting ? '匯出中…' : '匯出完整備份 (JSON)'}
         </Button>
       </div>
-
-      <UserManagement />
     </div>
   );
 };

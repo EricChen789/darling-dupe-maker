@@ -24,9 +24,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Search, RefreshCw, Plus, Edit, Trash2, X, Loader2, UserX } from 'lucide-react';
+import { Search, RefreshCw, Plus, Edit, Trash2, X, Loader2, UserX, Eye } from 'lucide-react';
 import { Person } from '@/types';
 import { PersonDialog } from '@/components/dialogs/PersonDialogs';
+import { PersonDetailDialog } from '@/components/dialogs/PersonDetailDialog';
 import { DeleteConfirmDialog } from '@/components/dialogs/CompanyDialogs';
 import ND2BGeneratorForm from '@/components/forms/ND2BGeneratorForm';
 import { toast } from '@/hooks/use-toast';
@@ -41,6 +42,7 @@ const People = () => {
   
   // Dialog states
   const [personDialogOpen, setPersonDialogOpen] = useState(false);
+  const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedPerson, setSelectedPerson] = useState<Person | null>(null);
   const [personToDelete, setPersonToDelete] = useState<Person | null>(null);
@@ -94,6 +96,11 @@ const People = () => {
   const handleEditPerson = (person: Person) => {
     setSelectedPerson(person);
     setPersonDialogOpen(true);
+  };
+
+  const handleViewDetail = (person: Person) => {
+    setSelectedPerson(person);
+    setDetailDialogOpen(true);
   };
 
   const handleDeleteClick = (person: Person) => {
@@ -169,8 +176,8 @@ const People = () => {
   return (
     <div>
       <PageHeader
-        title="人員管理"
-        description="管理公司人員資料"
+        title="自然人管理"
+        description="管理自然人及法人資料"
         actions={
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={handleSearch}>
@@ -246,10 +253,14 @@ const People = () => {
               {pagePeople.map((person) => (
                 <TableRow key={person.id} className="hover:bg-muted/30">
                   <TableCell className="font-medium">
-                    <div>
-                      <div>{person.nameChinese}</div>
+                    <button
+                      onClick={() => handleViewDetail(person)}
+                      className="text-left hover:text-primary transition-colors"
+                      title="點擊查看詳情"
+                    >
+                      <div className="hover:underline">{person.nameChinese}</div>
                       <div className="text-xs text-muted-foreground">({person.nameEnglish})</div>
-                    </div>
+                    </button>
                   </TableCell>
                   <TableCell>
                     <StatusBadge variant={person.identity}>
@@ -304,6 +315,10 @@ const People = () => {
                   <TableCell className="text-sm">{person.createdAt}</TableCell>
                   <TableCell>
                     <div className="flex items-center gap-1">
+                      <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => handleViewDetail(person)}>
+                        <Eye className="h-4 w-4" />
+                        <span className="ml-1">查看</span>
+                      </Button>
                       <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => handleEditPerson(person)}>
                         <Edit className="h-4 w-4" />
                         <span className="ml-1">編輯</span>
@@ -351,6 +366,13 @@ const People = () => {
       </div>
 
       {/* Dialogs */}
+      <PersonDetailDialog
+        open={detailDialogOpen}
+        onOpenChange={setDetailDialogOpen}
+        person={selectedPerson}
+        onEdit={handleEditPerson}
+      />
+
       <PersonDialog
         open={personDialogOpen}
         onOpenChange={setPersonDialogOpen}

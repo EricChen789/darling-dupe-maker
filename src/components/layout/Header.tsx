@@ -2,15 +2,19 @@ import { format } from 'date-fns';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { LogOut, FileDown } from 'lucide-react';
+import GlobalSearch from './GlobalSearch';
 
 const Header = () => {
   const now = new Date();
   const { user, signOut } = useAuth();
-  
+
   return (
     <header className="h-12 border-b border-border flex items-center justify-between px-6 bg-card">
-      <div className="text-sm text-muted-foreground">
-        {user?.email}
+      <div className="flex items-center gap-4 min-w-0">
+        <GlobalSearch />
+        <div className="text-sm text-muted-foreground truncate hidden md:block">
+          {user?.email}
+        </div>
       </div>
       <div className="flex items-center gap-4">
         <Button variant="outline" size="sm" asChild title="下載 NAR1 欄位診斷 PDF">

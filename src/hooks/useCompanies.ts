@@ -70,6 +70,7 @@ interface DbRole {
   paid_up: string;
   unpaid: string;
   is_reserve?: boolean;
+  notes?: string;
 }
 
 async function fetchAllRows<T>(
@@ -116,6 +117,7 @@ function buildPersonForRole(p: DbPerson, r: DbRole, role: 'director' | 'secretar
     placeIncorporated: p.place_incorporated || '',
     companyNumberRef: p.company_number_ref || '',
     tcspNumber: p.tcsp_number || '',
+    authScope: r.notes || '',
     previousNameChinese: p.previous_name_chinese || '',
     previousNameEnglish: p.previous_name_english || '',
     aliasChinese: p.alias_chinese || '',
@@ -148,6 +150,11 @@ function buildShareholderForRole(p: DbPerson, r: DbRole): Shareholder {
     currency: r.currency || 'HKD',
     paidUp: r.paid_up || '',
     unpaid: r.unpaid || '',
+    placeIncorporated: p.place_incorporated || '',
+    companyNumberRef: p.company_number_ref || '',
+    tcspNumber: p.tcsp_number || '',
+    dateAppointed: r.date_appointed || '',
+    dateCeased: r.date_ceased || '',
     ...({ _personId: p.id } as any),
   } as any;
 }
@@ -462,7 +469,7 @@ export function useUpdateCompany() {
 export function useAddOfficer() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (data: { company_id: string; name_english: string; name_chinese?: string; role: string; identity?: string; id_number?: string; address?: string; service_address?: string; date_appointed?: string; date_ceased?: string; place_incorporated?: string; company_number_ref?: string; is_reserve?: boolean; date_of_birth?: string }) => {
+    mutationFn: async (data: { company_id: string; name_english: string; name_chinese?: string; role: string; identity?: string; id_number?: string; email?: string; tcsp_number?: string; address?: string; service_address?: string; date_appointed?: string; date_ceased?: string; place_incorporated?: string; company_number_ref?: string; is_reserve?: boolean; date_of_birth?: string; auth_scope?: string }) => {
       const personId = await findOrCreatePerson({
         identity: data.identity,
         nameEnglish: data.name_english,
@@ -473,8 +480,12 @@ export function useAddOfficer() {
         placeIncorporated: data.place_incorporated,
         companyNumberRef: data.company_number_ref,
       });
-      if (data.date_of_birth) {
-        await supabase.from('persons').update({ date_of_birth: data.date_of_birth } as any).eq('id', personId);
+      const personPatch: Record<string, any> = {};
+      if (data.date_of_birth) personPatch.date_of_birth = data.date_of_birth;
+      if (data.email) personPatch.email = data.email;
+      if (data.tcsp_number) personPatch.tcsp_number = data.tcsp_number;
+      if (Object.keys(personPatch).length > 0) {
+        await supabase.from('persons').update(personPatch as any).eq('id', personId);
       }
       const { error } = await supabase.from('person_company_roles').insert({
         person_id: personId,
@@ -484,6 +495,7 @@ export function useAddOfficer() {
         date_ceased: data.date_ceased || '',
         service_address_override: '',
         is_reserve: !!data.is_reserve,
+        notes: data.auth_scope || '',
       } as any);
       if (error) throw error;
     },
@@ -497,7 +509,7 @@ export function useAddOfficer() {
 export function useUpdateOfficer() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: { name_english?: string; name_chinese?: string; identity?: string; id_number?: string; address?: string; service_address?: string; date_appointed?: string; date_ceased?: string; place_incorporated?: string; company_number_ref?: string; is_reserve?: boolean; date_of_birth?: string } }) => {
+    mutationFn: async ({ id, data }: { id: string; data: { name_english?: string; name_chinese?: string; identity?: string; id_number?: string; email?: string; tcsp_number?: string; address?: string; service_address?: string; date_appointed?: string; date_ceased?: string; place_incorporated?: string; company_number_ref?: string; is_reserve?: boolean; date_of_birth?: string; auth_scope?: string } }) => {
       // id is person_company_roles.id — first lookup the person_id
       const { data: roleRow, error: e1 } = await supabase
         .from('person_company_roles').select('person_id').eq('id', id).single();
@@ -510,6 +522,8 @@ export function useUpdateOfficer() {
       if (data.name_chinese !== undefined) personUpdate.name_chinese = data.name_chinese;
       if (data.identity !== undefined) personUpdate.identity = data.identity;
       if (data.id_number !== undefined) personUpdate.id_number = data.id_number;
+      if (data.email !== undefined) personUpdate.email = data.email;
+      if (data.tcsp_number !== undefined) personUpdate.tcsp_number = data.tcsp_number;
       if (data.address !== undefined) personUpdate.address = data.address;
       if (data.place_incorporated !== undefined) personUpdate.place_incorporated = data.place_incorporated;
       if (data.company_number_ref !== undefined) personUpdate.company_number_ref = data.company_number_ref;
@@ -525,6 +539,7 @@ export function useUpdateOfficer() {
       if (data.date_appointed !== undefined) roleUpdate.date_appointed = data.date_appointed;
       if (data.date_ceased !== undefined) roleUpdate.date_ceased = data.date_ceased;
       if (data.is_reserve !== undefined) roleUpdate.is_reserve = data.is_reserve;
+      if (data.auth_scope !== undefined) roleUpdate.notes = data.auth_scope;
       if (Object.keys(roleUpdate).length > 0) {
         const { error } = await supabase.from('person_company_roles').update(roleUpdate).eq('id', id);
         if (error) throw error;
@@ -555,7 +570,7 @@ export function useDeleteOfficer() {
 export function useAddShareholder() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (data: { company_id: string; name: string; name_english?: string; name_chinese?: string; shares: number; identity?: string; id_number?: string; address?: string; service_address?: string; email?: string; share_type?: string; issue_price?: string; currency?: string; paid_up?: string; unpaid?: string }) => {
+    mutationFn: async (data: { company_id: string; name: string; name_english?: string; name_chinese?: string; shares: number; identity?: string; id_number?: string; address?: string; service_address?: string; email?: string; share_type?: string; issue_price?: string; currency?: string; paid_up?: string; unpaid?: string; place_incorporated?: string; company_number_ref?: string; tcsp_number?: string }) => {
       const personId = await findOrCreatePerson({
         identity: data.identity,
         nameEnglish: data.name_english || data.name,
@@ -564,7 +579,18 @@ export function useAddShareholder() {
         address: data.address,
         email: data.email,
         serviceAddress: data.service_address,
+        placeIncorporated: data.place_incorporated,
+        companyNumberRef: data.company_number_ref,
       });
+      // 法人股東專屬欄位（ME-08）：findOrCreatePerson 只在新建時寫入，這裡補一次
+      // patch 以覆蓋既有 person，並處理 findOrCreatePerson 不含的 tcsp_number。
+      const personPatch: Record<string, any> = {};
+      if (data.place_incorporated) personPatch.place_incorporated = data.place_incorporated;
+      if (data.company_number_ref) personPatch.company_number_ref = data.company_number_ref;
+      if (data.tcsp_number) personPatch.tcsp_number = data.tcsp_number;
+      if (Object.keys(personPatch).length > 0) {
+        await supabase.from('persons').update(personPatch as any).eq('id', personId);
+      }
       const { error } = await supabase.from('person_company_roles').insert({
         person_id: personId,
         company_id: data.company_id,
@@ -588,7 +614,7 @@ export function useAddShareholder() {
 export function useUpdateShareholder() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: { name?: string; name_english?: string; name_chinese?: string; shares?: number; identity?: string; id_number?: string; address?: string; service_address?: string; email?: string; share_type?: string; issue_price?: string; currency?: string; paid_up?: string; unpaid?: string } }) => {
+    mutationFn: async ({ id, data }: { id: string; data: { name?: string; name_english?: string; name_chinese?: string; shares?: number; identity?: string; id_number?: string; address?: string; service_address?: string; email?: string; share_type?: string; issue_price?: string; currency?: string; paid_up?: string; unpaid?: string; place_incorporated?: string; company_number_ref?: string; tcsp_number?: string } }) => {
       const { data: roleRow, error: e1 } = await supabase
         .from('person_company_roles').select('person_id').eq('id', id).single();
       if (e1) throw e1;
@@ -601,6 +627,9 @@ export function useUpdateShareholder() {
       if (data.id_number !== undefined) personUpdate.id_number = data.id_number;
       if (data.address !== undefined) personUpdate.address = data.address;
       if (data.email !== undefined) personUpdate.email = data.email;
+      if (data.place_incorporated !== undefined) personUpdate.place_incorporated = data.place_incorporated;
+      if (data.company_number_ref !== undefined) personUpdate.company_number_ref = data.company_number_ref;
+      if (data.tcsp_number !== undefined) personUpdate.tcsp_number = data.tcsp_number;
       if (Object.keys(personUpdate).length > 0) {
         const { error } = await supabase.from('persons').update(personUpdate).eq('id', personId);
         if (error) throw error;

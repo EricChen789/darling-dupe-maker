@@ -106,7 +106,7 @@ export default function NN7GeneratorForm({ onBack, prefillPerson }: NN7Generator
         <Button variant="ghost" size="sm" onClick={onBack}><ArrowLeft className="h-4 w-4 mr-1" />返回</Button>
         <div>
           <h1 className="text-2xl font-bold">NN7 — 註冊非香港公司更改公司秘書及董事詳情申報表</h1>
-          <p className="text-sm text-muted-foreground">Return of Change of Particulars of Company Secretary and Director of a Registered Non-Hong Kong Company</p>
+          <p className="text-sm text-muted-foreground">Return of Change in Particulars of Company Secretary and Director of Registered Non-Hong Kong Company</p>
         </div>
       </div>
 

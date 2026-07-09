@@ -1,7 +1,8 @@
 import { useMemo } from 'react';
 import { Badge } from '@/components/ui/badge';
-import { ArrowUpDown, ArrowUp, ArrowDown, User } from 'lucide-react';
+import { ArrowUpDown, ArrowUp, ArrowDown, User, FileClock } from 'lucide-react';
 import { Company, Person } from '@/types';
+import { VersionHistoryTab } from './VersionHistoryTab';
 
 // 日期正規化：DDMMYYYY→DD/MM/YYYY；其餘原樣回傳
 function fmtDate(s?: string): string {
@@ -39,7 +40,18 @@ function personName(p: Person): string {
   return en && cn ? `${en}（${cn}）` : en || cn || '（無名稱）';
 }
 
-export function PersonnelChangeTab({ company }: { company: Company }) {
+export function ChangeRecordsTab({ company }: { company: Company }) {
+  return (
+    <div className="space-y-6">
+      <PersonnelSection company={company} />
+      <div className="border-t border-border pt-4">
+        <VersionHistoryTab company={company} title="其他變更" icon={<FileClock className="h-4 w-4 text-primary" />} />
+      </div>
+    </div>
+  );
+}
+
+export function PersonnelSection({ company }: { company: Company }) {
   const events = useMemo(() => {
     const list: ChangeEvent[] = [];
     const push = (people: Person[], role: string) => {
@@ -60,11 +72,13 @@ export function PersonnelChangeTab({ company }: { company: Company }) {
 
   if (events.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-12 text-center">
-        <ArrowUpDown className="h-8 w-8 text-muted-foreground/50 mb-3" />
-        <p className="text-sm text-muted-foreground">尚無人事變更記錄</p>
-        <p className="text-xs text-muted-foreground/70 mt-1">
-          董事及秘書的委任與辭任記錄將顯示於此
+      <div>
+        <h3 className="font-semibold text-sm flex items-center gap-2 mb-2">
+          <ArrowUpDown className="h-4 w-4 text-primary" /> 人事變更
+          <Badge variant="secondary" className="text-xs">0</Badge>
+        </h3>
+        <p className="text-sm text-muted-foreground py-6 text-center">
+          尚無人事變更記錄（董事及秘書的委任與辭任記錄將顯示於此）
         </p>
       </div>
     );

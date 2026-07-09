@@ -87,7 +87,7 @@ export default function NN9GeneratorForm({ onBack }: NN9GeneratorFormProps) {
     <div>
       <div className="flex items-center gap-3 mb-6">
         <Button variant="ghost" size="sm" onClick={onBack}><ArrowLeft className="h-4 w-4 mr-1" />返回</Button>
-        <div><h1 className="text-2xl font-bold">NN9 — 註冊非香港公司更改地址申報表</h1><p className="text-sm text-muted-foreground">Return of Change of Address of a Registered Non-Hong Kong Company</p></div>
+        <div><h1 className="text-2xl font-bold">NN9 — 註冊非香港公司更改地址申報表</h1><p className="text-sm text-muted-foreground">Return of Change of Address of Registered Non-Hong Kong Company</p></div>
       </div>
 
       <div className="bg-card border border-border rounded-lg p-4 mb-4">

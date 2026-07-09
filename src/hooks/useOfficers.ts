@@ -1,7 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Person } from '@/types';
-import { toast } from '@/hooks/use-toast';
 
 // New schema: persons (central master) + person_company_roles (per-company assignments)
 interface PersonRow {
@@ -18,6 +17,16 @@ interface PersonRow {
   passport_expiry: string;
   address: string;
   service_address: string;
+  addr_flat: string;
+  addr_building: string;
+  addr_street: string;
+  addr_district: string;
+  addr_region: string;
+  svc_addr_flat: string;
+  svc_addr_building: string;
+  svc_addr_street: string;
+  svc_addr_district: string;
+  svc_addr_region: string;
   email: string;
   whatsapp: string;
   phone: string;
@@ -84,6 +93,16 @@ function mapPersonRowToPerson(
     brNumber: p.company_number_ref || undefined,
     address: p.address || undefined,
     serviceAddress: p.service_address || undefined,
+    addrFlat: p.addr_flat || undefined,
+    addrBuilding: p.addr_building || undefined,
+    addrStreet: p.addr_street || undefined,
+    addrDistrict: p.addr_district || undefined,
+    addrRegion: p.addr_region || undefined,
+    svcAddrFlat: p.svc_addr_flat || undefined,
+    svcAddrBuilding: p.svc_addr_building || undefined,
+    svcAddrStreet: p.svc_addr_street || undefined,
+    svcAddrDistrict: p.svc_addr_district || undefined,
+    svcAddrRegion: p.svc_addr_region || undefined,
     idNumber: p.id_number || undefined,
     passportNumber: p.passport_number || undefined,
     passportExpiry: p.passport_expiry || undefined,
@@ -185,36 +204,45 @@ export function useOfficers() {
 
   const upsertMutation = useMutation({
     mutationFn: async ({ personData, existingPerson }: { personData: Partial<Person>; existingPerson?: Person | null }) => {
+      const payload = {
+        name_chinese: personData.nameChinese || '',
+        name_english: personData.nameEnglish || '',
+        identity: personData.identity || 'natural',
+        address: personData.address || '',
+        service_address: personData.serviceAddress || '',
+        addr_flat: personData.addrFlat || '',
+        addr_building: personData.addrBuilding || '',
+        addr_street: personData.addrStreet || '',
+        addr_district: personData.addrDistrict || '',
+        addr_region: personData.addrRegion || '',
+        svc_addr_flat: personData.svcAddrFlat || '',
+        svc_addr_building: personData.svcAddrBuilding || '',
+        svc_addr_street: personData.svcAddrStreet || '',
+        svc_addr_district: personData.svcAddrDistrict || '',
+        svc_addr_region: personData.svcAddrRegion || '',
+        id_number: personData.idNumber || '',
+        passport_number: personData.passportNumber || '',
+        passport_expiry: personData.passportExpiry || '',
+        whatsapp: personData.whatsapp || '',
+        email: personData.email || '',
+        company_number_ref: personData.brNumber || '',
+        passport_file_path: personData.passportFilePath || '',
+        id_card_file_path: personData.idCardFilePath || '',
+        address_proof_file_path: personData.addressProofFilePath || '',
+        tcsp_number: personData.tcspNumber || '',
+        previous_name_chinese: personData.previousNameChinese || '',
+        previous_name_english: personData.previousNameEnglish || '',
+        alias_chinese: personData.aliasChinese || '',
+        alias_english: personData.aliasEnglish || '',
+        place_incorporated: personData.placeIncorporated || '',
+      };
       if (existingPerson) {
-        const { error } = await supabase
-          .from('persons')
-          .update({
-            name_chinese: personData.nameChinese || '',
-            name_english: personData.nameEnglish || '',
-            identity: personData.identity || 'natural',
-            address: personData.address || '',
-            service_address: personData.serviceAddress || '',
-            id_number: personData.idNumber || '',
-            passport_number: personData.passportNumber || '',
-            passport_expiry: personData.passportExpiry || '',
-            whatsapp: personData.whatsapp || '',
-            email: personData.email || '',
-            company_number_ref: personData.brNumber || '',
-            passport_file_path: personData.passportFilePath || '',
-            id_card_file_path: personData.idCardFilePath || '',
-            address_proof_file_path: personData.addressProofFilePath || '',
-            tcsp_number: personData.tcspNumber || '',
-            previous_name_chinese: personData.previousNameChinese || '',
-            previous_name_english: personData.previousNameEnglish || '',
-            alias_chinese: personData.aliasChinese || '',
-            alias_english: personData.aliasEnglish || '',
-            place_incorporated: personData.placeIncorporated || '',
-          } as any)
-          .eq('id', existingPerson.id);
+        const { error } = await supabase.from('persons').update(payload as any).eq('id', existingPerson.id);
         if (error) throw error;
       } else {
-        toast({ title: '提示', description: '新增人員請在公司詳情頁面中添加', variant: 'destructive' });
-        throw new Error('需要關聯公司才能新增人員');
+        // NP-03：獨立新增自然人（不需先關聯公司；角色在公司詳情頁分配）
+        const { error } = await supabase.from('persons').insert(payload as any);
+        if (error) throw error;
       }
     },
     onSuccess: () => {

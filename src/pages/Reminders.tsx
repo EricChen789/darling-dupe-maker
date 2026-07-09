@@ -107,8 +107,8 @@ export default function Reminders() {
   return (
     <div>
       <PageHeader
-        title="周年申報提醒"
-        description="管理 NAR1、IRD、SCR 及其他申報提醒，自動依公司成立日期生成 NAR1 提醒。"
+        title="任務管理"
+        description="管理 NAR1、IRD、SCR 及其他申報任務，支援列表／日曆檢視、自動生成 NAR1 提醒、逾期警告。"
         actions={
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={handleAutoGenerate} disabled={generating}>
@@ -117,7 +117,7 @@ export default function Reminders() {
             </Button>
             <Button size="sm" className="bg-primary text-primary-foreground"
               onClick={() => setEditing({ reminder_type: 'NAR1', status: 'pending', due_date: fmtISO(new Date()) })}>
-              <Plus className="h-4 w-4 mr-1" /> 新增提醒
+              <Plus className="h-4 w-4 mr-1" /> 新增任務
             </Button>
           </div>
         }
@@ -203,7 +203,7 @@ export default function Reminders() {
                 <th className="text-left p-3">公司</th>
                 <th className="text-left p-3">標題</th>
                 <th className="text-left p-3">狀態</th>
-                <th className="text-left p-3">備註</th>
+                <th className="text-left p-3">描述</th>
                 <th className="text-right p-3">操作</th>
               </tr>
             </thead>
@@ -259,7 +259,7 @@ export default function Reminders() {
 
       <Dialog open={!!editing} onOpenChange={(open) => { if (!open) setEditing(null); }}>
         <DialogContent>
-          <DialogHeader><DialogTitle>{editing?.id ? '編輯提醒' : '新增提醒'}</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{editing?.id ? '編輯任務' : '新增任務'}</DialogTitle></DialogHeader>
           {editing && (
             <div className="space-y-3">
               <div className="space-y-1">
@@ -300,7 +300,7 @@ export default function Reminders() {
               </div>
               <div className="space-y-1"><Label className="text-xs">標題</Label><Input value={editing.title || ''} onChange={e => setEditing({ ...editing, title: e.target.value })} /></div>
               <div className="space-y-1"><Label className="text-xs">到期日</Label><Input type="date" value={editing.due_date || ''} onChange={e => setEditing({ ...editing, due_date: e.target.value })} /></div>
-              <div className="space-y-1"><Label className="text-xs">備註</Label><Input value={editing.notes || ''} onChange={e => setEditing({ ...editing, notes: e.target.value })} /></div>
+              <div className="space-y-1"><Label className="text-xs">描述</Label><Input value={editing.notes || ''} onChange={e => setEditing({ ...editing, notes: e.target.value })} placeholder="任務詳細描述" /></div>
               <div className="flex justify-end gap-2">
                 <Button variant="ghost" size="sm" onClick={() => setEditing(null)}>取消</Button>
                 <Button size="sm" onClick={handleSave} disabled={upsert.isPending} className="bg-primary text-primary-foreground">

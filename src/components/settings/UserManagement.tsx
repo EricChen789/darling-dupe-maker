@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from '@/hooks/use-toast';
-import { Shield, Trash2, UserPlus, Ban, CheckCircle2 } from 'lucide-react';
+import { Shield, Trash2, UserPlus, Ban, CheckCircle2, Edit, Save, X, Loader2 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
@@ -48,6 +48,42 @@ export const UserManagement = () => {
   const [newDisplayName, setNewDisplayName] = useState('');
   const [newRole, setNewRole] = useState<AppRole>('user');
   const [creating, setCreating] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState<UserWithRole | null>(null);
+  const [editDisplayName, setEditDisplayName] = useState('');
+  const [editRole, setEditRole] = useState<AppRole>('user');
+  const [editIsActive, setEditIsActive] = useState(1);
+  const [saving, setSaving] = useState(false);
+
+  const openEditDialog = (u: UserWithRole) => {
+    setEditingUser(u);
+    setEditDisplayName(u.display_name || '');
+    setEditRole((u.roles[0] as AppRole) || 'user');
+    setEditIsActive(u.is_active);
+    setEditDialogOpen(true);
+  };
+
+  const handleEditSave = async () => {
+    if (!editingUser) return;
+    setSaving(true);
+    try {
+      await adminFetch(`/api/admin/users/${editingUser.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          display_name: editDisplayName,
+          role: editRole,
+          is_active: editIsActive,
+        }),
+      });
+      toast({ title: '使用者已更新' });
+      setEditDialogOpen(false);
+      setEditingUser(null);
+      fetchUsers();
+    } catch (err: any) {
+      toast({ title: '更新失敗', description: err.message, variant: 'destructive' });
+    }
+    setSaving(false);
+  };
 
   const fetchUsers = useCallback(async () => {
     setLoading(true);
@@ -154,11 +190,11 @@ export const UserManagement = () => {
         </h2>
         <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
           <DialogTrigger asChild>
-            <Button size="sm"><UserPlus className="h-4 w-4 mr-1" /> 新增用戶</Button>
+            <Button size="sm"><UserPlus className="h-4 w-4 mr-1" /> 新增使用者</Button>
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>新增用戶</DialogTitle>
+              <DialogTitle>新增使用者</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
               <div>
@@ -242,6 +278,14 @@ export const UserManagement = () => {
                   <Button
                     variant="ghost"
                     size="icon"
+                    title="編輯"
+                    onClick={() => openEditDialog(u)}
+                  >
+                    <Edit className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
                     title={u.is_active ? '停用' : '啟用'}
                     onClick={() => handleToggleActive(u)}
                     disabled={u.id === user?.id}
@@ -265,6 +309,63 @@ export const UserManagement = () => {
           </TableBody>
         </Table>
       )}
+
+      {/* ── 編輯使用者 dialog (US-03) ── */}
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Edit className="h-5 w-5" />編輯使用者</DialogTitle>
+          </DialogHeader>
+          {editingUser && (
+            <div className="space-y-4">
+              <div>
+                <Label>電郵地址</Label>
+                <Input value={editingUser.email} disabled className="mt-1 bg-muted/50" />
+                <p className="text-[11px] text-muted-foreground mt-0.5">電郵地址不可更改</p>
+              </div>
+              <div>
+                <Label>顯示名稱</Label>
+                <Input value={editDisplayName} onChange={e => setEditDisplayName(e.target.value)} className="mt-1" />
+              </div>
+              <div>
+                <Label>角色權限</Label>
+                <Select value={editRole} onValueChange={(v: AppRole) => setEditRole(v)}>
+                  <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="admin">管理員 Admin — 完整系統權限</SelectItem>
+                    <SelectItem value="moderator">主管 Moderator — 可編輯與刪除</SelectItem>
+                    <SelectItem value="user">員工 User — 基本操作權限</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label>帳號狀態</Label>
+                  <p className="text-xs text-muted-foreground">
+                    {editIsActive ? '啟用中 — 用戶可正常登入' : '已停用 — 用戶無法登入'}
+                  </p>
+                </div>
+                <Button
+                  variant={editIsActive ? 'destructive' : 'default'}
+                  size="sm"
+                  onClick={() => setEditIsActive(editIsActive ? 0 : 1)}
+                  disabled={editingUser.id === user?.id}
+                >
+                  {editIsActive ? <><Ban className="h-3.5 w-3.5 mr-1" />停用</> : <><CheckCircle2 className="h-3.5 w-3.5 mr-1" />啟用</>}
+                </Button>
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <Button variant="outline" size="sm" onClick={() => setEditDialogOpen(false)}>
+                  <X className="h-4 w-4 mr-1" />取消
+                </Button>
+                <Button size="sm" onClick={handleEditSave} disabled={saving}>
+                  {saving ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Save className="h-4 w-4 mr-1" />}儲存
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { PageHeader } from '@/components/ui/page-header';
 import { StatCard } from '@/components/ui/stat-card';
 import { Button } from '@/components/ui/button';
@@ -17,7 +17,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
 import {
-  Send, Clock, FileText, Plus, Edit, Trash2, Save, X, Loader2, RefreshCw, Eye,
+  Send, Clock, FileText, Plus, Edit, Trash2, Save, X, Loader2, RefreshCw, Eye, Calendar,
 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { useCompanies } from '@/hooks/useCompanies';
@@ -131,6 +131,22 @@ const Email = () => {
   // ── Template dialog ──
   const [editing, setEditing] = useState<Partial<EmailTemplate> | null>(null);
 
+  // ── Scheduled-task dialog (EM-07) ──
+  const [schedOpen, setSchedOpen] = useState(false);
+
+  // ── Log type filter (EM-04/05) ──
+  const [logTypeFilter, setLogTypeFilter] = useState<string>('all');
+
+  const filteredLogs = useMemo(() => {
+    if (logTypeFilter === 'all') return logs;
+    return logs.filter(l => l.email_type === logTypeFilter);
+  }, [logs, logTypeFilter]);
+
+  // Close scheduled-task dialog on successful send
+  useEffect(() => {
+    if (sendEmail.isSuccess && schedOpen) setSchedOpen(false);
+  }, [sendEmail.isSuccess, schedOpen]);
+
   const handleSaveTemplate = async () => {
     if (!editing) return;
     if (!editing.name?.trim()) { toast({ title: '請填寫模板名稱', variant: 'destructive' }); return; }
@@ -169,6 +185,7 @@ const Email = () => {
           <TabsTrigger value="compose" className="gap-1.5"><Send className="h-3.5 w-3.5" /> 撰寫發送</TabsTrigger>
           <TabsTrigger value="templates" className="gap-1.5"><FileText className="h-3.5 w-3.5" /> 郵件模板<Badge variant="secondary" className="text-xs ml-1">{templates.length}</Badge></TabsTrigger>
           <TabsTrigger value="logs" className="gap-1.5"><Clock className="h-3.5 w-3.5" /> 發送記錄<Badge variant="secondary" className="text-xs ml-1">{logs.length}</Badge></TabsTrigger>
+          <TabsTrigger value="scheduled" className="gap-1.5"><Calendar className="h-3.5 w-3.5" /> 定時任務<Badge variant="secondary" className="text-xs ml-1">{logs.filter(l => l.status === 'scheduled').length}</Badge></TabsTrigger>
         </TabsList>
 
         {/* ── 撰寫發送 ── */}
@@ -315,9 +332,25 @@ const Email = () => {
           )}
         </TabsContent>
 
-        {/* ── 發送記錄 ── */}
+        {/* ── 發送記錄 (EM-04/05) ── */}
         <TabsContent value="logs">
-          <div className="flex justify-end mb-3">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <Label className="text-xs text-muted-foreground">類型：</Label>
+              <Select value={logTypeFilter} onValueChange={setLogTypeFilter}>
+                <SelectTrigger className="w-32 h-7 text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部</SelectItem>
+                  <SelectItem value="invoice">發票郵件</SelectItem>
+                  <SelectItem value="collection">客戶資料收集</SelectItem>
+                  <SelectItem value="reminder">申報提醒</SelectItem>
+                  <SelectItem value="general">一般</SelectItem>
+                </SelectContent>
+              </Select>
+              {logTypeFilter !== 'all' && (
+                <Badge variant="secondary" className="text-xs">{filteredLogs.length} 筆</Badge>
+              )}
+            </div>
             <Button variant="outline" size="sm" onClick={() => refetchLogs()}>
               <RefreshCw className="h-4 w-4 mr-1" /> 重新整理
             </Button>
@@ -326,28 +359,75 @@ const Email = () => {
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/50">
-                  <TableHead className="w-[110px]">狀態</TableHead>
-                  <TableHead className="w-[200px]">收件人</TableHead>
+                  <TableHead className="w-[90px]">狀態</TableHead>
+                  <TableHead className="w-[100px]">類型</TableHead>
+                  <TableHead className="w-[190px]">收件人</TableHead>
                   <TableHead>主旨</TableHead>
-                  <TableHead className="w-[170px]">時間 / 排程</TableHead>
+                  <TableHead className="w-[170px]">時間</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {logsLoading ? (
-                  <TableRow><TableCell colSpan={4} className="text-center py-10"><Loader2 className="h-5 w-5 animate-spin inline mr-2" />載入中...</TableCell></TableRow>
-                ) : logs.length === 0 ? (
-                  <TableRow><TableCell colSpan={4} className="text-center py-10 text-muted-foreground">尚無發送記錄</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={5} className="text-center py-10"><Loader2 className="h-5 w-5 animate-spin inline mr-2" />載入中...</TableCell></TableRow>
+                ) : filteredLogs.length === 0 ? (
+                  <TableRow><TableCell colSpan={5} className="text-center py-10 text-muted-foreground">尚無發送記錄</TableCell></TableRow>
                 ) : (
-                  logs.map(l => (
+                  filteredLogs.map(l => (
                     <TableRow key={l.id}>
-                      <TableCell>{statusBadge(l.status)}{l.status === 'failed' && l.error && <div className="text-[11px] text-destructive mt-1 truncate max-w-[100px]" title={l.error}>{l.error}</div>}</TableCell>
+                      <TableCell>{statusBadge(l.status)}{l.status === 'failed' && l.error && <div className="text-[11px] text-destructive mt-1 truncate max-w-[80px]" title={l.error}>{l.error}</div>}</TableCell>
+                      <TableCell>{typeBadge(l.email_type || 'general')}</TableCell>
                       <TableCell className="text-sm">{l.to_email}{l.cc_email && <span className="text-xs text-muted-foreground"> +CC</span>}</TableCell>
-                      <TableCell className="text-sm truncate max-w-[360px]">{l.subject}</TableCell>
+                      <TableCell className="text-sm truncate max-w-[340px]">{l.subject}</TableCell>
                       <TableCell className="text-xs text-muted-foreground">
-                        {l.status === 'scheduled'
-                          ? <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{new Date(l.scheduled_at || '').toLocaleString('zh-HK')}</span>
-                          : (l.sent_at ? new Date(l.sent_at).toLocaleString('zh-HK') : new Date(l.created_at).toLocaleString('zh-HK'))}
+                        {l.sent_at ? new Date(l.sent_at).toLocaleString('zh-HK') : new Date(l.created_at).toLocaleString('zh-HK')}
                       </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </TabsContent>
+
+        {/* ── 定時任務 (EM-06/07) ── */}
+        <TabsContent value="scheduled">
+          <div className="flex justify-end mb-3">
+            <Button size="sm" onClick={() => {
+              setSchedOpen(true);
+              setSendMode('scheduled');
+            }}>
+              <Plus className="h-4 w-4 mr-1" /> 新增定時任務
+            </Button>
+          </div>
+          <div className="bg-card border border-border rounded-lg overflow-hidden">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/50">
+                  <TableHead className="w-[180px]">排程時間</TableHead>
+                  <TableHead className="w-[100px]">類型</TableHead>
+                  <TableHead className="w-[190px]">收件人</TableHead>
+                  <TableHead>主旨</TableHead>
+                  <TableHead className="w-[90px]">狀態</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {logsLoading ? (
+                  <TableRow><TableCell colSpan={5} className="text-center py-10"><Loader2 className="h-5 w-5 animate-spin inline mr-2" />載入中...</TableCell></TableRow>
+                ) : logs.filter(l => l.status === 'scheduled').length === 0 ? (
+                  <TableRow><TableCell colSpan={5} className="text-center py-10 text-muted-foreground">尚無定時任務</TableCell></TableRow>
+                ) : (
+                  logs.filter(l => l.status === 'scheduled').map(l => (
+                    <TableRow key={l.id}>
+                      <TableCell className="text-sm">
+                        <span className="flex items-center gap-1.5">
+                          <Calendar className="h-3.5 w-3.5 text-primary" />
+                          {new Date(l.scheduled_at || '').toLocaleString('zh-HK')}
+                        </span>
+                      </TableCell>
+                      <TableCell>{typeBadge(l.email_type || 'general')}</TableCell>
+                      <TableCell className="text-sm">{l.to_email}</TableCell>
+                      <TableCell className="text-sm truncate max-w-[340px]">{l.subject}</TableCell>
+                      <TableCell><Badge variant="secondary" className="text-xs"><Clock className="h-3 w-3 mr-1" />等待中</Badge></TableCell>
                     </TableRow>
                   ))
                 )}
@@ -399,6 +479,84 @@ const Email = () => {
             <Button variant="outline" onClick={() => setEditing(null)}><X className="h-4 w-4 mr-1" />取消</Button>
             <Button onClick={handleSaveTemplate} disabled={saveTemplate.isPending}>
               {saveTemplate.isPending ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Save className="h-4 w-4 mr-1" />}儲存
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── 新增定時任務 dialog (EM-07) ── */}
+      <Dialog open={schedOpen} onOpenChange={o => { if (!o) setSchedOpen(false); }}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Calendar className="h-5 w-5" />新增定時任務</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">套用模板</Label>
+                <Select value={templateId} onValueChange={applyTemplate}>
+                  <SelectTrigger><SelectValue placeholder="選擇模板..." /></SelectTrigger>
+                  <SelectContent>
+                    {templates.map(t => (
+                      <SelectItem key={t.id} value={t.id}>{TYPE_LABEL[t.template_type] || ''}｜{t.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">關聯公司</Label>
+                <Select value={companyId} onValueChange={applyCompany}>
+                  <SelectTrigger><SelectValue placeholder="選擇公司..." /></SelectTrigger>
+                  <SelectContent>
+                    {companies.map(c => (
+                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1"><Label className="text-xs">收件人 *</Label><Input value={to} onChange={e => setTo(e.target.value)} placeholder="client@example.com" /></div>
+              <div className="space-y-1"><Label className="text-xs">副本 CC</Label><Input value={cc} onChange={e => setCc(e.target.value)} placeholder="可留空" /></div>
+            </div>
+            <div className="space-y-1"><Label className="text-xs">主旨 *</Label><Input value={subject} onChange={e => setSubject(e.target.value)} placeholder="可使用 {company_name} 等變數" /></div>
+            <div className="space-y-1">
+              <Label className="text-xs">內文</Label>
+              <Textarea value={body} onChange={e => setBody(e.target.value)} rows={6} placeholder="郵件內容，支援 {variable} 變數替換" />
+              <div className="flex flex-wrap gap-1 pt-1">
+                {EMAIL_VARIABLES.map(v => (
+                  <button key={v.key} type="button" onClick={() => insertVar(v.key)}
+                    className="text-[11px] px-1.5 py-0.5 rounded border border-border bg-muted/40 hover:bg-muted transition-colors"
+                    title={v.label}>{`{${v.key}}`}</button>
+                ))}
+              </div>
+            </div>
+            {/* 變數值 */}
+            <div className="rounded-md border border-border p-3 space-y-2">
+              <Label className="text-xs font-medium">變數值（可手動調整）</Label>
+              <div className="grid grid-cols-2 gap-2">
+                {EMAIL_VARIABLES.map(v => (
+                  <div key={v.key} className="space-y-0.5">
+                    <Label className="text-[11px] text-muted-foreground">{v.label} {`{${v.key}}`}</Label>
+                    <Input className="h-7 text-xs" value={vars[v.key] || ''}
+                      onChange={e => setVars({ ...vars, [v.key]: e.target.value })} />
+                  </div>
+                ))}
+              </div>
+            </div>
+            {/* 排程時間選擇器 (EM-07 核心) */}
+            <div className="space-y-1">
+              <Label className="text-xs flex items-center gap-1"><Calendar className="h-3.5 w-3.5" />排程發送時間 *</Label>
+              <Input type="datetime-local" className="w-64" value={scheduledAt}
+                onChange={e => setScheduledAt(e.target.value)}
+                min={new Date().toISOString().slice(0, 16)} />
+              <p className="text-[11px] text-muted-foreground">郵件將於指定時間自動發送（需保持系統運行）</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setSchedOpen(false); }}><X className="h-4 w-4 mr-1" />取消</Button>
+            <Button onClick={handleSend} disabled={sendEmail.isPending}>
+              {sendEmail.isPending ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Calendar className="h-4 w-4 mr-1" />}排程發送
             </Button>
           </DialogFooter>
         </DialogContent>

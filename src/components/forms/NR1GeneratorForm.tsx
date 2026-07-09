@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -11,9 +11,10 @@ import { downloadBase64Pdf } from '@/lib/downloadPdf';
 
 interface NR1GeneratorFormProps {
   onBack: () => void;
+  initialCompanyId?: string;
 }
 
-export default function NR1GeneratorForm({ onBack }: NR1GeneratorFormProps) {
+export default function NR1GeneratorForm({ onBack, initialCompanyId }: NR1GeneratorFormProps) {
   const { data: companies = [] } = useCompanies();
   const [selectedCompanyId, setSelectedCompanyId] = useState('');
   const [generating, setGenerating] = useState(false);
@@ -64,6 +65,11 @@ export default function NR1GeneratorForm({ onBack }: NR1GeneratorFormProps) {
     }
   };
 
+  useEffect(() => {
+    if (initialCompanyId && companies.length && !selectedCompanyId) handleCompanySelect(initialCompanyId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialCompanyId, companies.length]);
+
   const update = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
@@ -98,7 +104,7 @@ export default function NR1GeneratorForm({ onBack }: NR1GeneratorFormProps) {
       <div className="flex items-center gap-3 mb-6">
         <Button variant="ghost" size="sm" onClick={onBack}><ArrowLeft className="h-4 w-4 mr-1" />返回</Button>
         <div>
-          <h1 className="text-2xl font-bold">NR1 — 註冊辦事處地址更改通知書</h1>
+          <h1 className="text-2xl font-bold">NR1 — 註冊辦事處地址變更通知書</h1>
           <p className="text-sm text-muted-foreground">Notice of Change of Address of Registered Office</p>
         </div>
       </div>

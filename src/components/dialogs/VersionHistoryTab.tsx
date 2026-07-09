@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { FileText, History, Loader2, StickyNote } from 'lucide-react';
 import { Company } from '@/types';
@@ -60,7 +60,7 @@ const sortKey = (log: CompanyLog): number => {
   return isNaN(t) ? 0 : t;
 };
 
-export function VersionHistoryTab({ company }: { company: Company }) {
+export function VersionHistoryTab({ company, title = '版本歷史', icon }: { company: Company; title?: string; icon?: ReactNode }) {
   const { data: logs = [], isLoading } = useCompanyLogs({ companyId: company.id });
 
   const sorted = useMemo(
@@ -71,7 +71,7 @@ export function VersionHistoryTab({ company }: { company: Company }) {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12 text-muted-foreground text-sm">
-        <Loader2 className="h-4 w-4 mr-2 animate-spin" /> 載入版本歷史中...
+        <Loader2 className="h-4 w-4 mr-2 animate-spin" /> 載入{title}中...
       </div>
     );
   }
@@ -80,7 +80,7 @@ export function VersionHistoryTab({ company }: { company: Company }) {
     return (
       <div className="flex flex-col items-center justify-center py-12 text-center">
         <History className="h-8 w-8 text-muted-foreground/50 mb-3" />
-        <p className="text-sm text-muted-foreground">尚無版本歷史記錄</p>
+        <p className="text-sm text-muted-foreground">尚無{title}記錄</p>
         <p className="text-xs text-muted-foreground/70 mt-1">
           公司的文件變更與提交記錄將顯示於此
         </p>
@@ -91,7 +91,7 @@ export function VersionHistoryTab({ company }: { company: Company }) {
   return (
     <div className="space-y-3">
       <h3 className="font-semibold text-sm flex items-center gap-2">
-        <History className="h-4 w-4 text-primary" /> 版本歷史
+        {icon || <History className="h-4 w-4 text-primary" />} {title}
         <Badge variant="secondary" className="text-xs">{sorted.length}</Badge>
       </h3>
 

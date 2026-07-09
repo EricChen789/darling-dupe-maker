@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -8,11 +8,11 @@ import { toast } from '@/hooks/use-toast';
 import { useCompanies } from '@/hooks/useCompanies';
 import { downloadBase64Pdf } from '@/lib/downloadPdf';
 
-interface NSC1GeneratorFormProps { onBack: () => void; }
+interface NSC1GeneratorFormProps { onBack: () => void; initialCompanyId?: string; }
 
 interface ShareAllotment { class: string; currency: string; numberOfShares: string; amountPaid: string; allotteeName: string; }
 
-export default function NSC1GeneratorForm({ onBack }: NSC1GeneratorFormProps) {
+export default function NSC1GeneratorForm({ onBack, initialCompanyId }: NSC1GeneratorFormProps) {
   const { data: companies = [] } = useCompanies();
   const [selectedCompanyId, setSelectedCompanyId] = useState('');
   const [generating, setGenerating] = useState(false);
@@ -39,6 +39,11 @@ export default function NSC1GeneratorForm({ onBack }: NSC1GeneratorFormProps) {
       setFormData(prev => ({ ...prev, brNumber: company.brNumber, companyName: company.name, presentorName: company.name }));
     }
   };
+
+  useEffect(() => {
+    if (initialCompanyId && companies.length && !selectedCompanyId) handleCompanySelect(initialCompanyId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialCompanyId, companies.length]);
 
   const update = (field: string, value: string) => setFormData(prev => ({ ...prev, [field]: value }));
   const updateAllotment = (i: number, f: keyof ShareAllotment, v: string) => setAllotments(prev => prev.map((a, idx) => idx === i ? { ...a, [f]: v } : a));
@@ -94,7 +99,7 @@ export default function NSC1GeneratorForm({ onBack }: NSC1GeneratorFormProps) {
     <div>
       <div className="flex items-center gap-3 mb-6">
         <Button variant="ghost" size="sm" onClick={onBack}><ArrowLeft className="h-4 w-4 mr-1" />返回</Button>
-        <div><h1 className="text-2xl font-bold">NSC1 — 股份配發申報書</h1><p className="text-sm text-muted-foreground">Return of Allotment of Shares</p></div>
+        <div><h1 className="text-2xl font-bold">NSC1 — 股份配發申報書</h1><p className="text-sm text-muted-foreground">Return of Allotment</p></div>
       </div>
 
       <div className="bg-card border border-border rounded-lg p-4 mb-4">

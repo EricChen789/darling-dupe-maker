@@ -107,7 +107,7 @@ export default function NN6GeneratorForm({ onBack }: NN6GeneratorFormProps) {
         <Button variant="ghost" size="sm" onClick={onBack}><ArrowLeft className="h-4 w-4 mr-1" />返回</Button>
         <div>
           <h1 className="text-2xl font-bold">NN6 — 註冊非香港公司更改公司秘書及董事申報表 (委任╱停任)</h1>
-          <p className="text-sm text-muted-foreground">Return of Change of Company Secretary and Director of a Registered Non-Hong Kong Company (Appointment / Cessation)</p>
+          <p className="text-sm text-muted-foreground">Return of Change of Company Secretary and Director of Registered Non-Hong Kong Company (Appointment╱Cessation)</p>
         </div>
       </div>
 

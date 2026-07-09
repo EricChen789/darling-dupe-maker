@@ -70,7 +70,7 @@ export default function NN1GeneratorForm({ onBack }: NN1GeneratorFormProps) {
     <div>
       <div className="flex items-center gap-3 mb-6">
         <Button variant="ghost" size="sm" onClick={onBack}><ArrowLeft className="h-4 w-4 mr-1" />返回</Button>
-        <div><h1 className="text-2xl font-bold">NN1 — 註冊非香港公司的註冊申請書</h1><p className="text-sm text-muted-foreground">Application for Registration of a Non-Hong Kong Company</p></div>
+        <div><h1 className="text-2xl font-bold">NN1 — 註冊非香港公司的註冊申請書</h1><p className="text-sm text-muted-foreground">Application for Registration as Registered Non-Hong Kong Company</p></div>
       </div>
 
       <div className="bg-card border border-border rounded-lg p-6 space-y-6">

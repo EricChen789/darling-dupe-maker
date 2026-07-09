@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -13,9 +13,10 @@ interface ND2BGeneratorFormProps {
   onBack: () => void;
   prefillPerson?: Person | null;
   prefillNewAddress?: string;
+  initialCompanyId?: string;
 }
 
-export default function ND2BGeneratorForm({ onBack, prefillPerson, prefillNewAddress }: ND2BGeneratorFormProps) {
+export default function ND2BGeneratorForm({ onBack, prefillPerson, prefillNewAddress, initialCompanyId }: ND2BGeneratorFormProps) {
   const { data: allCompanies = [] } = useCompanies();
   
   // If prefillPerson has associated companies, only show those
@@ -61,6 +62,11 @@ export default function ND2BGeneratorForm({ onBack, prefillPerson, prefillNewAdd
     }
   };
 
+  useEffect(() => {
+    if (initialCompanyId && companies.length && !selectedCompanyId) handleCompanySelect(initialCompanyId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialCompanyId, companies.length]);
+
   const update = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
@@ -99,7 +105,7 @@ export default function ND2BGeneratorForm({ onBack, prefillPerson, prefillNewAdd
       <div className="flex items-center gap-3 mb-6">
         <Button variant="ghost" size="sm" onClick={onBack}><ArrowLeft className="h-4 w-4 mr-1" />返回</Button>
         <div>
-          <h1 className="text-2xl font-bold">ND2B — 更改董事及公司秘書詳情通知書</h1>
+          <h1 className="text-2xl font-bold">ND2B — 更改公司秘書及董事詳情通知書</h1>
           <p className="text-sm text-muted-foreground">Notice of Change in Particulars of Company Secretary and Director</p>
         </div>
       </div>

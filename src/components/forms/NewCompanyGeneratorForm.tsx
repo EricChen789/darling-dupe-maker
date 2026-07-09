@@ -164,7 +164,7 @@ export default function NewCompanyGeneratorForm({ onBack }: Props) {
 
       <Tabs value={jurisdiction} onValueChange={(v) => setJurisdiction(v as 'HK' | 'BVI')}>
         <TabsList>
-          <TabsTrigger value="HK">NNC1 法團成立表格(非股份有限公司)</TabsTrigger>
+          <TabsTrigger value="HK">NNC1 法團成立表格(股份有限公司)</TabsTrigger>
           <TabsTrigger value="BVI">BVI 新公司</TabsTrigger>
         </TabsList>
 

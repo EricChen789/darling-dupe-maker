@@ -10,6 +10,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Select,
   SelectContent,
@@ -17,7 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { FileText, AlertTriangle, CheckCircle2, XCircle, Upload, X, Image as ImageIcon } from 'lucide-react';
+import { FileText, AlertTriangle, CheckCircle2, XCircle, Upload, X, Image as ImageIcon, User, MapPin, Paperclip } from 'lucide-react';
 import { Person } from '@/types';
 import { toast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
@@ -196,6 +198,16 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave, onGenerateND2
     brNumber: '',
     address: '',
     serviceAddress: '',
+    addrFlat: '',
+    addrBuilding: '',
+    addrStreet: '',
+    addrDistrict: '',
+    addrRegion: '',
+    svcAddrFlat: '',
+    svcAddrBuilding: '',
+    svcAddrStreet: '',
+    svcAddrDistrict: '',
+    svcAddrRegion: '',
     idNumber: '',
     passportNumber: '',
     passportExpiry: '',
@@ -223,6 +235,16 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave, onGenerateND2
         brNumber: person.brNumber || '',
         address: person.address || '',
         serviceAddress: person.serviceAddress || '',
+        addrFlat: person.addrFlat || '',
+        addrBuilding: person.addrBuilding || '',
+        addrStreet: person.addrStreet || '',
+        addrDistrict: person.addrDistrict || '',
+        addrRegion: person.addrRegion || '',
+        svcAddrFlat: person.svcAddrFlat || '',
+        svcAddrBuilding: person.svcAddrBuilding || '',
+        svcAddrStreet: person.svcAddrStreet || '',
+        svcAddrDistrict: person.svcAddrDistrict || '',
+        svcAddrRegion: person.svcAddrRegion || '',
         idNumber: person.idNumber || '',
         passportNumber: person.passportNumber || '',
         passportExpiry: person.passportExpiry || '',
@@ -246,6 +268,16 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave, onGenerateND2
         brNumber: '',
         address: '',
         serviceAddress: '',
+        addrFlat: '',
+        addrBuilding: '',
+        addrStreet: '',
+        addrDistrict: '',
+        addrRegion: '',
+        svcAddrFlat: '',
+        svcAddrBuilding: '',
+        svcAddrStreet: '',
+        svcAddrDistrict: '',
+        svcAddrRegion: '',
         idNumber: '',
         passportNumber: '',
         passportExpiry: '',
@@ -264,6 +296,28 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave, onGenerateND2
 
   const addressChanged = person && formData.address !== originalAddress && formData.address.trim() !== '';
   const isOfficer = formData.role === 'director' || formData.role === 'secretary' || formData.role === 'authorized_representative';
+
+  // 由分拆欄位組成完整地址（NP-05）
+  const composeAddr = (flat: string, building: string, street: string, district: string, region: string) =>
+    [flat, building, street, district, region].map((s) => (s || '').trim()).filter(Boolean).join(', ');
+
+  // 更新通訊地址分拆欄位並自動重組完整住址
+  const setAddrPart = (field: 'addrFlat' | 'addrBuilding' | 'addrStreet' | 'addrDistrict' | 'addrRegion', value: string) => {
+    setFormData((prev) => {
+      const next = { ...prev, [field]: value };
+      next.address = composeAddr(next.addrFlat, next.addrBuilding, next.addrStreet, next.addrDistrict, next.addrRegion);
+      return next;
+    });
+  };
+
+  // 更新送達地址分拆欄位並自動重組完整送達地址
+  const setSvcAddrPart = (field: 'svcAddrFlat' | 'svcAddrBuilding' | 'svcAddrStreet' | 'svcAddrDistrict' | 'svcAddrRegion', value: string) => {
+    setFormData((prev) => {
+      const next = { ...prev, [field]: value };
+      next.serviceAddress = composeAddr(next.svcAddrFlat, next.svcAddrBuilding, next.svcAddrStreet, next.svcAddrDistrict, next.svcAddrRegion);
+      return next;
+    });
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -302,225 +356,305 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave, onGenerateND2
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit}>
-          <div className="grid grid-cols-2 gap-4 py-4">
-            {/* === 姓名 === */}
-            <div className="space-y-2">
-              <Label htmlFor="nameChinese">中文姓名</Label>
-              <Input
-                id="nameChinese"
-                value={formData.nameChinese}
-                onChange={(e) => setFormData({ ...formData, nameChinese: e.target.value })}
-                placeholder="輸入中文姓名"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="nameEnglish">英文姓名</Label>
-              <Input
-                id="nameEnglish"
-                value={formData.nameEnglish}
-                onChange={(e) => setFormData({ ...formData, nameEnglish: e.target.value })}
-                placeholder="輸入英文姓名"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="previousNameChinese">前用中文姓名</Label>
-              <Input
-                id="previousNameChinese"
-                value={formData.previousNameChinese}
-                onChange={(e) => setFormData({ ...formData, previousNameChinese: e.target.value })}
-                placeholder="輸入前用中文姓名（如有）"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="previousNameEnglish">前用英文姓名</Label>
-              <Input
-                id="previousNameEnglish"
-                value={formData.previousNameEnglish}
-                onChange={(e) => setFormData({ ...formData, previousNameEnglish: e.target.value })}
-                placeholder="輸入前用英文姓名（如有）"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="aliasChinese">別名（中文）</Label>
-              <Input
-                id="aliasChinese"
-                value={formData.aliasChinese}
-                onChange={(e) => setFormData({ ...formData, aliasChinese: e.target.value })}
-                placeholder="輸入中文別名（如有）"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="aliasEnglish">別名（英文）</Label>
-              <Input
-                id="aliasEnglish"
-                value={formData.aliasEnglish}
-                onChange={(e) => setFormData({ ...formData, aliasEnglish: e.target.value })}
-                placeholder="輸入英文別名（如有）"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="identity">身份類型</Label>
-              <Select
-                value={formData.identity}
-                onValueChange={(value: 'natural' | 'corporate') =>
-                  setFormData({ ...formData, identity: value })
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="選擇身份類型" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="natural">自然人</SelectItem>
-                  <SelectItem value="corporate">法人</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="role">角色類型</Label>
-              <Select
-                value={formData.role}
-                onValueChange={(value: 'director' | 'secretary' | 'shareholder' | 'authorized_representative') =>
-                  setFormData({ ...formData, role: value })
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="選擇角色類型" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="director">董事</SelectItem>
-                  <SelectItem value="secretary">秘書</SelectItem>
-                  <SelectItem value="shareholder">股東</SelectItem>
-                  <SelectItem value="authorized_representative">授權代表</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+          <Tabs defaultValue="basic" className="py-4">
+            <TabsList className="mb-4">
+              <TabsTrigger value="basic" className="gap-1.5">
+                <User className="h-3.5 w-3.5" /> 基本資料
+              </TabsTrigger>
+              <TabsTrigger value="address" className="gap-1.5">
+                <MapPin className="h-3.5 w-3.5" /> 地址
+              </TabsTrigger>
+              <TabsTrigger value="attachments" className="gap-1.5">
+                <Paperclip className="h-3.5 w-3.5" /> 附件
+                <span className="ml-1 text-xs rounded bg-secondary px-1.5 py-0.5">
+                  {[formData.passportFilePath, formData.idCardFilePath, formData.addressProofFilePath].filter(Boolean).length}
+                </span>
+              </TabsTrigger>
+            </TabsList>
 
-            {/* === 身份證件 === */}
-            <div className="space-y-2">
-              <Label htmlFor="idNumber">香港身份證號碼</Label>
-              <Input
-                id="idNumber"
-                value={formData.idNumber}
-                onChange={(e) => setFormData({ ...formData, idNumber: e.target.value })}
-                placeholder="例如 A123456(7)"
-              />
-            </div>
-            {formData.identity === 'corporate' && (
-              <>
+            {/* === Tab 1: 基本資料 (NP-02 / NP-03) === */}
+            <TabsContent value="basic">
+              <div className="grid grid-cols-2 gap-4">
+                {/* === 姓名 === */}
                 <div className="space-y-2">
-                  <Label htmlFor="brNumber">商業登記號碼</Label>
+                  <Label htmlFor="nameChinese">中文姓名</Label>
                   <Input
-                    id="brNumber"
-                    value={formData.brNumber}
-                    onChange={(e) => setFormData({ ...formData, brNumber: e.target.value })}
-                    placeholder="輸入商業登記號碼"
+                    id="nameChinese"
+                    value={formData.nameChinese}
+                    onChange={(e) => setFormData({ ...formData, nameChinese: e.target.value })}
+                    placeholder="輸入中文姓名"
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="tcspNumber">TCSP 號碼（信託或公司服務提供者牌照）</Label>
+                  <Label htmlFor="nameEnglish">英文姓名</Label>
                   <Input
-                    id="tcspNumber"
-                    value={formData.tcspNumber}
-                    onChange={(e) => setFormData({ ...formData, tcspNumber: e.target.value })}
-                    placeholder="例如 TC003576"
+                    id="nameEnglish"
+                    value={formData.nameEnglish}
+                    onChange={(e) => setFormData({ ...formData, nameEnglish: e.target.value })}
+                    placeholder="輸入英文姓名"
                   />
                 </div>
-              </>
-            )}
-            <div className="space-y-2">
-              <Label htmlFor="passportNumber">護照號碼</Label>
-              <Input
-                id="passportNumber"
-                value={formData.passportNumber}
-                onChange={(e) => setFormData({ ...formData, passportNumber: e.target.value })}
-                placeholder="輸入護照號碼"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="passportExpiry">護照失效日期</Label>
-              <Input
-                id="passportExpiry"
-                type="date"
-                value={formData.passportExpiry}
-                onChange={(e) => setFormData({ ...formData, passportExpiry: e.target.value })}
-              />
-            </div>
-            <FileUploadSlot
-              label="護照圖片"
-              filePath={formData.passportFilePath}
-              onChange={(p) => setFormData({ ...formData, passportFilePath: p })}
-              folder="officers/passport"
-            />
-            <FileUploadSlot
-              label="身份證圖片"
-              filePath={formData.idCardFilePath}
-              onChange={(p) => setFormData({ ...formData, idCardFilePath: p })}
-              folder="officers/id-card"
-            />
+                <div className="space-y-2">
+                  <Label htmlFor="previousNameChinese">前用中文姓名</Label>
+                  <Input
+                    id="previousNameChinese"
+                    value={formData.previousNameChinese}
+                    onChange={(e) => setFormData({ ...formData, previousNameChinese: e.target.value })}
+                    placeholder="輸入前用中文姓名（如有）"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="previousNameEnglish">前用英文姓名</Label>
+                  <Input
+                    id="previousNameEnglish"
+                    value={formData.previousNameEnglish}
+                    onChange={(e) => setFormData({ ...formData, previousNameEnglish: e.target.value })}
+                    placeholder="輸入前用英文姓名（如有）"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="aliasChinese">別名（中文）</Label>
+                  <Input
+                    id="aliasChinese"
+                    value={formData.aliasChinese}
+                    onChange={(e) => setFormData({ ...formData, aliasChinese: e.target.value })}
+                    placeholder="輸入中文別名（如有）"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="aliasEnglish">別名（英文）</Label>
+                  <Input
+                    id="aliasEnglish"
+                    value={formData.aliasEnglish}
+                    onChange={(e) => setFormData({ ...formData, aliasEnglish: e.target.value })}
+                    placeholder="輸入英文別名（如有）"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="identity">身份類型</Label>
+                  <Select
+                    value={formData.identity}
+                    onValueChange={(value: 'natural' | 'corporate') =>
+                      setFormData({ ...formData, identity: value })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="選擇身份類型" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="natural">自然人</SelectItem>
+                      <SelectItem value="corporate">法人</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="role">角色類型</Label>
+                  <Select
+                    value={formData.role}
+                    onValueChange={(value: 'director' | 'secretary' | 'shareholder' | 'authorized_representative') =>
+                      setFormData({ ...formData, role: value })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="選擇角色類型" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="director">董事</SelectItem>
+                      <SelectItem value="secretary">秘書</SelectItem>
+                      <SelectItem value="shareholder">股東</SelectItem>
+                      <SelectItem value="authorized_representative">授權代表</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
 
-            {/* === 聯絡 === */}
-            <div className="space-y-2">
-              <Label htmlFor="whatsapp">WhatsApp 電話號碼</Label>
-              <div className="flex items-center gap-2">
-                <Input
-                  id="whatsapp"
-                  value={formData.whatsapp}
-                  onChange={(e) => setFormData({ ...formData, whatsapp: e.target.value })}
-                  placeholder="例如 +852 9123 4567"
-                  className="flex-1"
-                />
-                <PassportExpiryBadge expiry={formData.passportExpiry} />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="email">電郵地址</Label>
-              <div className="flex items-center gap-2">
-                <Input
-                  id="email"
-                  type="email"
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  placeholder="輸入電郵地址"
-                  className="flex-1"
-                />
-                <PassportExpiryBadge expiry={formData.passportExpiry} />
-              </div>
-            </div>
+                {/* === 身份證件 === */}
+                <div className="space-y-2">
+                  <Label htmlFor="idNumber">香港身份證號碼</Label>
+                  <Input
+                    id="idNumber"
+                    value={formData.idNumber}
+                    onChange={(e) => setFormData({ ...formData, idNumber: e.target.value })}
+                    placeholder="例如 A123456(7)"
+                  />
+                </div>
+                {formData.identity === 'corporate' && (
+                  <>
+                    <div className="space-y-2">
+                      <Label htmlFor="brNumber">商業登記號碼</Label>
+                      <Input
+                        id="brNumber"
+                        value={formData.brNumber}
+                        onChange={(e) => setFormData({ ...formData, brNumber: e.target.value })}
+                        placeholder="輸入商業登記號碼"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="tcspNumber">TCSP 號碼（信託或公司服務提供者牌照）</Label>
+                      <Input
+                        id="tcspNumber"
+                        value={formData.tcspNumber}
+                        onChange={(e) => setFormData({ ...formData, tcspNumber: e.target.value })}
+                        placeholder="例如 TC003576"
+                      />
+                    </div>
+                  </>
+                )}
+                <div className="space-y-2">
+                  <Label htmlFor="passportNumber">護照號碼</Label>
+                  <Input
+                    id="passportNumber"
+                    value={formData.passportNumber}
+                    onChange={(e) => setFormData({ ...formData, passportNumber: e.target.value })}
+                    placeholder="輸入護照號碼"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="passportExpiry">護照失效日期</Label>
+                  <Input
+                    id="passportExpiry"
+                    type="date"
+                    value={formData.passportExpiry}
+                    onChange={(e) => setFormData({ ...formData, passportExpiry: e.target.value })}
+                  />
+                </div>
 
-            {/* === 地址 === */}
-            <div className="space-y-2 col-span-2">
-              <Label htmlFor="address">住址</Label>
-              <Input
-                id="address"
-                value={formData.address}
-                onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                placeholder="輸入住址"
-              />
-              {addressChanged && isOfficer && (
-                <p className="text-xs text-primary flex items-center gap-1 mt-1">
-                  <FileText className="h-3 w-3" />
-                  住址已變更，儲存後可自動生成 ND2B 表格
+                {/* === 聯絡 === */}
+                <div className="space-y-2">
+                  <Label htmlFor="whatsapp">WhatsApp 電話號碼</Label>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      id="whatsapp"
+                      value={formData.whatsapp}
+                      onChange={(e) => setFormData({ ...formData, whatsapp: e.target.value })}
+                      placeholder="例如 +852 9123 4567"
+                      className="flex-1"
+                    />
+                    <PassportExpiryBadge expiry={formData.passportExpiry} />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="email">電郵地址</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    value={formData.email}
+                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                    placeholder="輸入電郵地址"
+                  />
+                </div>
+              </div>
+            </TabsContent>
+
+            {/* === Tab 2: 地址 (NP-04 多地址 / NP-05 分拆欄位) === */}
+            <TabsContent value="address">
+              <div className="space-y-6">
+                {/* 通訊地址（住址） */}
+                <div className="rounded-lg border border-border p-4 space-y-3">
+                  <h4 className="font-semibold text-sm flex items-center gap-2">
+                    <MapPin className="h-4 w-4 text-primary" /> 通訊地址（住址）
+                  </h4>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1"><Label className="text-xs">室／樓／座</Label><Input value={formData.addrFlat} onChange={(e) => setAddrPart('addrFlat', e.target.value)} placeholder="例如 3樓A室" /></div>
+                    <div className="space-y-1"><Label className="text-xs">大廈</Label><Input value={formData.addrBuilding} onChange={(e) => setAddrPart('addrBuilding', e.target.value)} placeholder="大廈名稱" /></div>
+                    <div className="col-span-2 space-y-1"><Label className="text-xs">街道</Label><Input value={formData.addrStreet} onChange={(e) => setAddrPart('addrStreet', e.target.value)} placeholder="街道及門牌號" /></div>
+                    <div className="space-y-1"><Label className="text-xs">區</Label><Input value={formData.addrDistrict} onChange={(e) => setAddrPart('addrDistrict', e.target.value)} placeholder="例如 中環" /></div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">地區</Label>
+                      <Select value={formData.addrRegion} onValueChange={(v) => setAddrPart('addrRegion', v)}>
+                        <SelectTrigger><SelectValue placeholder="選擇地區" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="香港 Hong Kong">香港 Hong Kong</SelectItem>
+                          <SelectItem value="九龍 Kowloon">九龍 Kowloon</SelectItem>
+                          <SelectItem value="新界 New Territories">新界 New Territories</SelectItem>
+                          <SelectItem value="中國內地 Mainland China">中國內地 Mainland China</SelectItem>
+                          <SelectItem value="海外 Overseas">海外 Overseas</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="col-span-2 space-y-1">
+                      <Label className="text-xs">完整住址（可直接編輯）</Label>
+                      <Textarea value={formData.address} onChange={(e) => setFormData({ ...formData, address: e.target.value })} rows={2} placeholder="填寫上方分拆欄位會自動組合，亦可直接編輯此處" />
+                    </div>
+                  </div>
+                  {addressChanged && isOfficer && (
+                    <p className="text-xs text-primary flex items-center gap-1">
+                      <FileText className="h-3 w-3" />
+                      住址已變更，儲存後可自動生成 ND2B 表格
+                    </p>
+                  )}
+                </div>
+
+                {/* 送達地址（服務地址） */}
+                <div className="rounded-lg border border-border p-4 space-y-3">
+                  <h4 className="font-semibold text-sm flex items-center gap-2">
+                    <MapPin className="h-4 w-4 text-primary" /> 送達地址（服務地址）
+                  </h4>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1"><Label className="text-xs">室／樓／座</Label><Input value={formData.svcAddrFlat} onChange={(e) => setSvcAddrPart('svcAddrFlat', e.target.value)} placeholder="例如 3樓A室" /></div>
+                    <div className="space-y-1"><Label className="text-xs">大廈</Label><Input value={formData.svcAddrBuilding} onChange={(e) => setSvcAddrPart('svcAddrBuilding', e.target.value)} placeholder="大廈名稱" /></div>
+                    <div className="col-span-2 space-y-1"><Label className="text-xs">街道</Label><Input value={formData.svcAddrStreet} onChange={(e) => setSvcAddrPart('svcAddrStreet', e.target.value)} placeholder="街道及門牌號" /></div>
+                    <div className="space-y-1"><Label className="text-xs">區</Label><Input value={formData.svcAddrDistrict} onChange={(e) => setSvcAddrPart('svcAddrDistrict', e.target.value)} placeholder="例如 中環" /></div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">地區</Label>
+                      <Select value={formData.svcAddrRegion} onValueChange={(v) => setSvcAddrPart('svcAddrRegion', v)}>
+                        <SelectTrigger><SelectValue placeholder="選擇地區" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="香港 Hong Kong">香港 Hong Kong</SelectItem>
+                          <SelectItem value="九龍 Kowloon">九龍 Kowloon</SelectItem>
+                          <SelectItem value="新界 New Territories">新界 New Territories</SelectItem>
+                          <SelectItem value="中國內地 Mainland China">中國內地 Mainland China</SelectItem>
+                          <SelectItem value="海外 Overseas">海外 Overseas</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="col-span-2 space-y-1">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs">完整送達地址（可直接編輯）</Label>
+                        <Button type="button" variant="link" size="sm" className="h-auto p-0 text-xs"
+                          onClick={() => setFormData((prev) => ({
+                            ...prev,
+                            svcAddrFlat: prev.addrFlat, svcAddrBuilding: prev.addrBuilding, svcAddrStreet: prev.addrStreet,
+                            svcAddrDistrict: prev.addrDistrict, svcAddrRegion: prev.addrRegion, serviceAddress: prev.address,
+                          }))}>
+                          同通訊地址
+                        </Button>
+                      </div>
+                      <Textarea value={formData.serviceAddress} onChange={(e) => setFormData({ ...formData, serviceAddress: e.target.value })} rows={2} placeholder="填寫上方分拆欄位會自動組合，亦可直接編輯此處" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </TabsContent>
+
+            {/* === Tab 3: 附件 (NP-06 身份證明 / NP-07 上載) === */}
+            <TabsContent value="attachments">
+              <div className="grid grid-cols-2 gap-4">
+                <FileUploadSlot
+                  label="護照副本"
+                  filePath={formData.passportFilePath}
+                  onChange={(p) => setFormData({ ...formData, passportFilePath: p })}
+                  folder="officers/passport"
+                />
+                <FileUploadSlot
+                  label="身份證副本"
+                  filePath={formData.idCardFilePath}
+                  onChange={(p) => setFormData({ ...formData, idCardFilePath: p })}
+                  folder="officers/id-card"
+                />
+                <div className="col-span-2">
+                  <FileUploadSlot
+                    label="住址證明"
+                    filePath={formData.addressProofFilePath}
+                    onChange={(p) => setFormData({ ...formData, addressProofFilePath: p })}
+                    folder="officers/address-proof"
+                  />
+                </div>
+                <p className="col-span-2 text-xs text-muted-foreground">
+                  支援拖放或點擊上載圖片（身份證／護照／住址證明副本）。上載後可即時預覽，並可更換或刪除。
                 </p>
-              )}
-            </div>
-            <div className="space-y-2 col-span-2">
-              <Label htmlFor="serviceAddress">服務地址</Label>
-              <Input
-                id="serviceAddress"
-                value={formData.serviceAddress}
-                onChange={(e) => setFormData({ ...formData, serviceAddress: e.target.value })}
-                placeholder="輸入服務地址"
-              />
-            </div>
-            <div className="col-span-2">
-              <FileUploadSlot
-                label="住址證明圖片"
-                filePath={formData.addressProofFilePath}
-                onChange={(p) => setFormData({ ...formData, addressProofFilePath: p })}
-                folder="officers/address-proof"
-              />
-            </div>
-          </div>
+              </div>
+            </TabsContent>
+          </Tabs>
           <DialogFooter className="gap-2">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               取消

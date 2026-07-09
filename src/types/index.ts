@@ -44,6 +44,17 @@ export interface Person {
   brNumber?: string;
   address?: string;
   serviceAddress?: string;
+  // 分拆地址欄位 (NP-05)：通訊地址 addr* + 送達地址 svcAddr*
+  addrFlat?: string;
+  addrBuilding?: string;
+  addrStreet?: string;
+  addrDistrict?: string;
+  addrRegion?: string;
+  svcAddrFlat?: string;
+  svcAddrBuilding?: string;
+  svcAddrStreet?: string;
+  svcAddrDistrict?: string;
+  svcAddrRegion?: string;
   idNumber?: string;
   passportNumber?: string;
   passportExpiry?: string;
@@ -56,6 +67,7 @@ export interface Person {
   placeIncorporated?: string;
   companyNumberRef?: string;
   tcspNumber?: string;
+  authScope?: string; // 授權代表的授權範圍 (ME-13)，存於 person_company_roles.notes
   previousNameChinese?: string;
   previousNameEnglish?: string;
   aliasChinese?: string;
@@ -83,6 +95,13 @@ export interface Shareholder {
   currency?: string;
   paidUp?: string;
   unpaid?: string;
+  // 法人股東專屬 (ME-08)：成立地點 / 公司編號 / TCSP 牌照號碼。存於 persons。
+  placeIncorporated?: string;
+  companyNumberRef?: string;
+  tcspNumber?: string;
+  // 持股期間（用於區分當前／歷史股東，SE-04/SE-05）。存於 person_company_roles。
+  dateAppointed?: string;
+  dateCeased?: string;
 }
 
 export interface SignificantController {

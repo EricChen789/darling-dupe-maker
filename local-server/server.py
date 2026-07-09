@@ -20,7 +20,7 @@ import urllib.request
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.utils import formataddr
-from datetime import datetime
+from datetime import datetime, timedelta
 from flask import Flask, request, jsonify, g, Response
 from fpdf import FPDF
 
@@ -135,6 +135,17 @@ def init_db():
             UNIQUE (user_id, role)
         );
 
+        CREATE TABLE IF NOT EXISTS company_versions (
+            id TEXT PRIMARY KEY,
+            company_id TEXT NOT NULL,
+            version_no INTEGER NOT NULL DEFAULT 1,
+            snapshot TEXT NOT NULL DEFAULT '{}',
+            changed_fields TEXT NOT NULL DEFAULT '[]',
+            change_summary TEXT DEFAULT '',
+            changed_by TEXT DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
         CREATE TABLE IF NOT EXISTS companies (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
@@ -234,6 +245,16 @@ def init_db():
             passport_country TEXT DEFAULT '',
             address TEXT DEFAULT '',
             service_address TEXT DEFAULT '',
+            addr_flat TEXT DEFAULT '',
+            addr_building TEXT DEFAULT '',
+            addr_street TEXT DEFAULT '',
+            addr_district TEXT DEFAULT '',
+            addr_region TEXT DEFAULT '',
+            svc_addr_flat TEXT DEFAULT '',
+            svc_addr_building TEXT DEFAULT '',
+            svc_addr_street TEXT DEFAULT '',
+            svc_addr_district TEXT DEFAULT '',
+            svc_addr_region TEXT DEFAULT '',
             email TEXT DEFAULT '',
             whatsapp TEXT DEFAULT '',
             phone TEXT DEFAULT '',
@@ -605,6 +626,20 @@ def auto_migrate():
         'updated_at': "TEXT NOT NULL DEFAULT (datetime('now'))",
     })
 
+    # persons: split address fields (NP-05 地址分拆欄位) — 通訊 addr_* + 送達 svc_addr_*
+    ensure_columns('persons', {
+        'addr_flat': "TEXT DEFAULT ''",
+        'addr_building': "TEXT DEFAULT ''",
+        'addr_street': "TEXT DEFAULT ''",
+        'addr_district': "TEXT DEFAULT ''",
+        'addr_region': "TEXT DEFAULT ''",
+        'svc_addr_flat': "TEXT DEFAULT ''",
+        'svc_addr_building': "TEXT DEFAULT ''",
+        'svc_addr_street': "TEXT DEFAULT ''",
+        'svc_addr_district': "TEXT DEFAULT ''",
+        'svc_addr_region': "TEXT DEFAULT ''",
+    })
+
     # shareholders: add updated_at (P3-1)
     ensure_columns('shareholders', {
         'updated_at': "TEXT NOT NULL DEFAULT (datetime('now'))",
@@ -682,6 +717,9 @@ def auto_migrate():
     }
     ensure_columns('share_transactions', tx_columns)
 
+    # email_logs: add email_type column (EM-04/05)
+    ensure_columns('email_logs', {'email_type': "TEXT DEFAULT 'general'"})
+
     db.commit()
 
     # Seed default email templates if none exist (Email Module 8.1)
@@ -704,6 +742,73 @@ def auto_migrate():
                 (str(uuid.uuid4()), name, ttype, subject, body))
         db.commit()
         print(f"[MIGRATE] Seeded {len(seeds)} default email templates")
+
+    # Seed sample email logs for EM-04/05/06 screenshots (if none exist)
+    try:
+        log_cnt = db.execute("SELECT COUNT(*) FROM email_logs").fetchone()[0]
+    except sqlite3.OperationalError:
+        log_cnt = None
+    if log_cnt == 0:
+        # Get first company & template ids
+        company = db.execute("SELECT id, name, email FROM companies LIMIT 1").fetchone()
+        cid = company[0] if company else None
+        templates = {r[0]: r[1] for r in db.execute("SELECT template_type, id FROM email_templates").fetchall()}
+        now = datetime.utcnow().isoformat()
+        # EM-04: sent invoice email
+        if cid and 'invoice' in templates:
+            db.execute(
+                "INSERT INTO email_logs (id, company_id, template_id, to_email, subject, body, status, sent_at, email_type) "
+                "VALUES (?, ?, ?, ?, ?, ?, 'sent', ?, 'invoice')",
+                (str(uuid.uuid4()), cid, templates['invoice'], 'client@example.com',
+                 '【PAUL TANG AND COMPANY LIMITED】服務發票 INV-2026-0042',
+                 '致 Tang Siu Fan：\n\n茲附上貴公司 PAUL TANG AND COMPANY LIMITED（商業登記號碼：07281051）的服務發票。\n\n發票編號：INV-2026-0042\n金額：HKD 8,500.00\n到期日：2026/07/15\n\n請於到期日前安排付款，如有查詢歡迎與我們聯絡。\n\n此致\nMuse Labs 公司秘書\n2026/07/05',
+                 now))
+        # EM-05: sent collection email
+        if cid and 'collection' in templates:
+            db.execute(
+                "INSERT INTO email_logs (id, company_id, template_id, to_email, subject, body, status, sent_at, email_type) "
+                "VALUES (?, ?, ?, ?, ?, ?, 'sent', ?, 'collection')",
+                (str(uuid.uuid4()), cid, templates['collection'], 'client@example.com',
+                 '【PAUL TANG AND COMPANY LIMITED】周年申報所需資料',
+                 '致 Tang Siu Fan：\n\n為辦理貴公司 PAUL TANG AND COMPANY LIMITED 的周年申報（NAR1），現需向 閣下收集以下資料：\n\n1. 各董事及股東之身份證明文件副本\n2. 最新之註冊辦事處地址證明\n3. 股本結構如有變動之詳情\n\n煩請於 2026/07/20 前回覆，以便我們準時辦理。\n\n此致\nMuse Labs 公司秘書\n2026/07/03',
+                 now))
+        # EM-06: scheduled reminder (future)
+        if cid and 'reminder' in templates:
+            future = (datetime.utcnow() + timedelta(days=5)).isoformat()
+            db.execute(
+                "INSERT INTO email_logs (id, company_id, template_id, to_email, subject, body, status, scheduled_at, email_type) "
+                "VALUES (?, ?, ?, ?, ?, ?, 'scheduled', ?, 'reminder')",
+                (str(uuid.uuid4()), cid, templates['reminder'], 'client@example.com',
+                 '【提醒】PAUL TANG AND COMPANY LIMITED 周年申報將於 2026/07/31 到期',
+                 '致 Tang Siu Fan：\n\n謹此提醒，貴公司 PAUL TANG AND COMPANY LIMITED（商業登記號碼：07281051）的周年申報表（NAR1）將於 2026/07/31 到期。\n\n請盡快與我們聯絡以安排辦理，避免逾期罰款。\n\n此致\nMuse Labs 公司秘書\n2026/07/09',
+                 future))
+        db.commit()
+        after_cnt = db.execute("SELECT COUNT(*) FROM email_logs").fetchone()[0]
+        print(f"[MIGRATE] Seeded {after_cnt} sample email logs (invoice/collection/reminder)")
+
+    # Seed baseline (v1) version snapshot for any company that has none (VE-01)
+    try:
+        company_ids = [r[0] for r in db.execute("SELECT id FROM companies").fetchall()]
+        seeded = 0
+        for cid in company_ids:
+            has = db.execute(
+                "SELECT COUNT(*) FROM company_versions WHERE company_id = ?", (cid,)
+            ).fetchone()[0]
+            if has == 0:
+                cols = [c[1] for c in db.execute("PRAGMA table_info(companies)").fetchall()]
+                row = db.execute("SELECT * FROM companies WHERE id = ?", (cid,)).fetchone()
+                d = dict(zip(cols, row))
+                snap = {k: (d.get(k) if d.get(k) is not None else '') for k in VERSION_FIELDS}
+                db.execute(
+                    "INSERT INTO company_versions (id, company_id, version_no, snapshot, changed_fields, change_summary) "
+                    "VALUES (?, ?, 1, ?, '[]', '建立初始版本')",
+                    (str(uuid.uuid4()), cid, json.dumps(snap, ensure_ascii=False)))
+                seeded += 1
+        if seeded:
+            db.commit()
+            print(f"[MIGRATE] Seeded baseline versions for {seeded} companies")
+    except sqlite3.OperationalError as e:
+        print(f"[MIGRATE] Baseline version seed skip: {e}")
 
     db.close()
 
@@ -798,7 +903,7 @@ def scheduler_loop():
 TABLES = ['companies', 'officers', 'shareholders', 'persons', 'person_company_roles',
           'presenters', 'significant_controllers', 'company_logs', 'reminders', 'invoices',
           'resolutions', 'secretary_templates', 'share_transactions', 'user_roles',
-          'email_templates', 'email_logs']
+          'email_templates', 'email_logs', 'company_versions']
 
 @app.route('/api/send-email', methods=['POST', 'OPTIONS'])
 def send_email():
@@ -825,6 +930,14 @@ def send_email():
     log_id = str(uuid.uuid4())
     db = get_db()
 
+    # Lookup template_type for the log record (EM-04/05)
+    email_type = 'general'
+    template_id = data.get('template_id')
+    if template_id:
+        trow = db.execute("SELECT template_type FROM email_templates WHERE id = ?", (template_id,)).fetchone()
+        if trow:
+            email_type = trow[0]
+
     # Determine if this is a future-dated (scheduled) send.
     is_scheduled = False
     if scheduled_at:
@@ -836,9 +949,9 @@ def send_email():
 
     if is_scheduled:
         db.execute(
-            "INSERT INTO email_logs (id, company_id, template_id, to_email, cc_email, subject, body, status, scheduled_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, 'scheduled', ?)",
-            (log_id, data.get('company_id'), data.get('template_id'), to_email, cc_email, subject, body, scheduled_at)
+            "INSERT INTO email_logs (id, company_id, template_id, to_email, cc_email, subject, body, status, scheduled_at, email_type) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, 'scheduled', ?, ?)",
+            (log_id, data.get('company_id'), data.get('template_id'), to_email, cc_email, subject, body, scheduled_at, email_type)
         )
         db.commit()
         return jsonify({'success': True, 'id': log_id, 'status': 'scheduled', 'scheduled_at': scheduled_at})
@@ -846,10 +959,10 @@ def send_email():
     ok, err, simulated = deliver_email(to_email, subject, body, cc_email)
     status = 'sent' if ok else 'failed'
     db.execute(
-        "INSERT INTO email_logs (id, company_id, template_id, to_email, cc_email, subject, body, status, sent_at, error) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO email_logs (id, company_id, template_id, to_email, cc_email, subject, body, status, sent_at, error, email_type) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (log_id, data.get('company_id'), data.get('template_id'), to_email, cc_email, subject, body,
-         status, datetime.utcnow().isoformat() if ok else None, err)
+         status, datetime.utcnow().isoformat() if ok else None, err, email_type)
     )
     db.commit()
     return jsonify({'success': ok, 'id': log_id, 'status': status, 'simulated': simulated, 'error': err}), (200 if ok else 502)
@@ -1471,6 +1584,103 @@ def table_get(table_name, item_id):
         return jsonify({'error': 'Not found'}), 404
     return jsonify(dict(row))
 
+# ─── Company version snapshots (VE-01/02/03/08) ───
+# 需納入版本快照 / 差異比對的公司欄位 → 繁體標籤
+VERSION_FIELDS = {
+    'name': '英文名稱', 'chinese_name': '中文名稱', 'company_number': '商業登記號碼',
+    'ci_number': '公司註冊編號', 'trading_name': '商業名稱', 'business_nature': '業務性質',
+    'company_type': '公司類型', 'business_code': '業務代碼', 'status': '狀態',
+    'incorporation_date': '成立日期', 'jurisdiction': '司法管轄區',
+    'reg_flat': '註冊地址-室/樓/座', 'reg_building': '註冊地址-大廈',
+    'reg_street': '註冊地址-街道', 'reg_district': '註冊地址-區', 'reg_region': '註冊地址-地區',
+    'email': '電郵地址', 'phone': '電話', 'signer_role_id': '簽署人',
+}
+
+
+def _company_snapshot(db, company_id):
+    """回傳公司當前資料的 dict 快照（僅 VERSION_FIELDS 欄位）。"""
+    row = db.execute("SELECT * FROM companies WHERE id = ?", (company_id,)).fetchone()
+    if not row:
+        return None
+    d = dict(row)
+    return {k: (d.get(k) if d.get(k) is not None else '') for k in VERSION_FIELDS}
+
+
+def _latest_version(db, company_id):
+    """回傳該公司最新版本 row(dict)，無則 None。"""
+    r = db.execute(
+        "SELECT * FROM company_versions WHERE company_id = ? ORDER BY version_no DESC LIMIT 1",
+        (company_id,)
+    ).fetchone()
+    return dict(r) if r else None
+
+
+def record_company_version(db, company_id, changed_by=''):
+    """在公司資料變更後寫入一筆版本快照。僅當相對上一版有差異（或首版）時寫入。
+    回傳新版本號，或 None（無變化未寫入）。"""
+    snap = _company_snapshot(db, company_id)
+    if snap is None:
+        return None
+    prev = _latest_version(db, company_id)
+    changed = []
+    if prev:
+        try:
+            prev_snap = json.loads(prev.get('snapshot') or '{}')
+        except (ValueError, TypeError):
+            prev_snap = {}
+        for k in VERSION_FIELDS:
+            if str(prev_snap.get(k, '')) != str(snap.get(k, '')):
+                changed.append(k)
+        if not changed:
+            return None  # 無實質變化，不製造重複版本
+        version_no = int(prev.get('version_no') or 0) + 1
+    else:
+        version_no = 1  # 首版（基線），changed 留空
+    labels = [VERSION_FIELDS[k] for k in changed]
+    summary = ('建立初始版本' if version_no == 1
+               else '更新：' + '、'.join(labels) if labels else '更新')
+    db.execute(
+        "INSERT INTO company_versions (id, company_id, version_no, snapshot, changed_fields, change_summary, changed_by) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (str(uuid.uuid4()), company_id, version_no, json.dumps(snap, ensure_ascii=False),
+         json.dumps(changed, ensure_ascii=False), summary, changed_by)
+    )
+    return version_no
+
+
+@app.route('/api/companies/<company_id>/versions', methods=['GET'])
+def company_versions_list(company_id):
+    """列出公司所有版本（新→舊），含解析後的 snapshot / changed_fields。"""
+    db = get_db()
+    rows = db.execute(
+        "SELECT * FROM company_versions WHERE company_id = ? ORDER BY version_no DESC",
+        (company_id,)
+    ).fetchall()
+    out = []
+    for r in rows:
+        d = dict(r)
+        try:
+            d['snapshot'] = json.loads(d.get('snapshot') or '{}')
+        except (ValueError, TypeError):
+            d['snapshot'] = {}
+        try:
+            d['changed_fields'] = json.loads(d.get('changed_fields') or '[]')
+        except (ValueError, TypeError):
+            d['changed_fields'] = []
+        out.append(d)
+    return jsonify(out)
+
+
+@app.route('/api/companies/<company_id>/versions/snapshot', methods=['POST'])
+def company_version_snapshot(company_id):
+    """手動建立一個當前資料的版本快照（VE 手動存檔）。"""
+    db = get_db()
+    changed_by = (request.json or {}).get('changed_by', '') if request.is_json else ''
+    v = record_company_version(db, company_id, changed_by)
+    db.commit()
+    return jsonify({'success': True, 'version_no': v, 'created': v is not None})
+
+
 @app.route('/api/<table_name>', methods=['POST'])
 def table_create(table_name):
     if table_name not in TABLES:
@@ -1495,6 +1705,12 @@ def table_update(table_name, item_id):
     sets = [f"{k} = ?" for k in data.keys()]
     vals = list(data.values()) + [item_id]
     db.execute(f"UPDATE {table_name} SET {', '.join(sets)}, updated_at = datetime('now') WHERE id = ?", vals)
+    # 公司資料變更後，自動記錄版本快照（VE-01/02/03）
+    if table_name == 'companies':
+        try:
+            record_company_version(db, item_id)
+        except Exception as e:
+            print(f"[VERSION] snapshot failed: {e}")
     db.commit()
     return jsonify({'success': True})
 

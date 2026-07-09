@@ -57,33 +57,41 @@ const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {
       )}>
         {/* Logo */}
         <div className={cn(
-          "flex items-center p-4 border-b border-sidebar-border",
-          collapsed ? "justify-center" : "gap-3"
+          "relative border-b border-sidebar-border p-3",
+          collapsed ? "flex items-center justify-center" : "flex flex-col gap-1"
         )}>
-          {!collapsed && (
-            <div className="flex flex-col flex-1 min-w-0">
-              <span className="font-semibold text-sm">Muselabs</span>
-              <span className="text-xs text-muted-foreground truncate">秘書公司管理系統</span>
-            </div>
-          )}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button 
-                onClick={onToggle} 
-                className="p-1.5 hover:bg-muted rounded-md transition-colors shrink-0"
-                aria-label={collapsed ? "展開側邊欄" : "收起側邊欄"}
-              >
-                {collapsed ? (
+          {!collapsed ? (
+            <>
+              <div className="flex justify-end">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      onClick={onToggle}
+                      className="p-1.5 hover:bg-muted rounded-md transition-colors"
+                      aria-label="收起側邊欄"
+                    >
+                      <PanelLeftClose className="h-5 w-5 text-muted-foreground" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="right">收起側邊欄</TooltipContent>
+                </Tooltip>
+              </div>
+              <img src="/logo.png" alt="Logo" className="w-full max-w-[96px] h-auto object-contain mx-auto" />
+            </>
+          ) : (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={onToggle}
+                  className="p-1.5 hover:bg-muted rounded-md transition-colors shrink-0"
+                  aria-label="展開側邊欄"
+                >
                   <PanelLeft className="h-5 w-5 text-muted-foreground" />
-                ) : (
-                  <PanelLeftClose className="h-5 w-5 text-muted-foreground" />
-                )}
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="right">
-              {collapsed ? "展開側邊欄" : "收起側邊欄"}
-            </TooltipContent>
-          </Tooltip>
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right">展開側邊欄</TooltipContent>
+            </Tooltip>
+          )}
         </div>
 
         {/* Navigation */}

@@ -5,7 +5,7 @@
 此 API 用於批量導入公司及其關聯人員（董事、秘書、股東）資料到系統資料庫。
 
 - **端點**: `POST https://uqcsgmmsrgtlcqutaomg.supabase.co/functions/v1/import-data`
-- **認證**: 使用 anon key，無需用戶登入
+- **認證**: 使用 anon key，無需用户登入
 - **重複處理**: 以 `company_number`（BR 號碼）判斷，已存在則跳過整間公司
 
 ---
@@ -315,7 +315,7 @@ for i in range(0, len(companies), BATCH_SIZE):
 
 ### 公司 (Company)
 
-| 欄位 | 類型 | 必填 | 預設值 | 說明 |
+| 欄位 | 類型 | 必填 | 預設值 | 説明 |
 |------|------|------|--------|------|
 | `name` | string | ✅ | — | 英文公司名稱 |
 | `company_number` | string | ✅ | — | BR 號碼（重複判斷依據） |
@@ -335,7 +335,7 @@ for i in range(0, len(companies), BATCH_SIZE):
 
 ### 董事/秘書 (Officers)
 
-| 欄位 | 類型 | 必填 | 預設值 | 說明 |
+| 欄位 | 類型 | 必填 | 預設值 | 説明 |
 |------|------|------|--------|------|
 | `role` | string | ✅ | — | `"director"` 或 `"secretary"` |
 | `name_english` | string | ✅ | `""` | 英文姓名 |
@@ -350,7 +350,7 @@ for i in range(0, len(companies), BATCH_SIZE):
 
 ### 股東 (Shareholders)
 
-| 欄位 | 類型 | 必填 | 預設值 | 說明 |
+| 欄位 | 類型 | 必填 | 預設值 | 説明 |
 |------|------|------|--------|------|
 | `name` | string | ✅ | — | 姓名（可用 name_english 替代） |
 | `name_english` | string | | `""` | 英文姓名 |
@@ -409,7 +409,7 @@ API 接受以下三種 JSON 格式：
 }
 ```
 
-| 欄位 | 說明 |
+| 欄位 | 説明 |
 |------|------|
 | `imported` | 成功導入的公司數量 |
 | `skipped` | 因重複而跳過的公司數量 |

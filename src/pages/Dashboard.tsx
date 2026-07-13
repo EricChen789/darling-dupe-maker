@@ -14,7 +14,7 @@ import { useOfficers } from '@/hooks/useOfficers';
 
 const DOC_TYPE_LABEL: Record<string, string> = {
   NAR1: '周年申報表 NAR1', ND2A: '董事/秘書變更 ND2A', ND2B: '董事/秘書詳情 ND2B',
-  ND4: '辭任通知 ND4', BIR51: '利得稅報稅表', AUDIT_REPORT: '審計報告',
+  ND4: '辭任通知 ND4', BIR51: '利得税報税表', AUDIT_REPORT: '審計報告',
   BR_RENEWAL: '商業登記續期', BOARD_MINUTES: '董事會會議記錄',
   SHAREHOLDER_RESOLUTION: '股東決議', SHARE_TRANSFER: '股份轉讓',
   WINDING_UP_ORDER: '清盤令', STATEMENT_OF_AFFAIRS: '公司狀況說明書',
@@ -84,7 +84,7 @@ const Dashboard = () => {
   return (
     <div>
       <PageHeader
-        title="儀表板"
+        title="儀錶板"
         description={`系統概覽 · 截至 ${today} · 公司秘書管理系統（PAUL TANG & CO LTD）`}
       />
 

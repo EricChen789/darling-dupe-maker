@@ -17,6 +17,7 @@ import base64
 import smtplib
 import threading
 import urllib.request
+import requests
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.utils import formataddr
@@ -652,7 +653,7 @@ def auto_migrate():
         'updated_at': "TEXT DEFAULT ''",
     })
 
-    # auth_users: add is_active (P1 — 停用/啟用用戶，10.3)
+    # auth_users: add is_active (P1 — 停用/啟用用户，10.3)
     ensure_columns('auth_users', {
         'is_active': "INTEGER NOT NULL DEFAULT 1",
     })
@@ -733,7 +734,7 @@ def auto_migrate():
         seeds = [
             ('invoice', '發票通知', '【{company_name}】服務發票 {invoice_number}',
              '致 {client_name}：\n\n茲附上貴公司 {company_name}（商業登記號碼：{br_number}）的服務發票。\n\n發票編號：{invoice_number}\n金額：{currency} {amount}\n到期日：{due_date}\n\n請於到期日前安排付款，如有查詢歡迎與我們聯絡。\n\n此致\n{sender_name}\n{today}'),
-            ('collection', '客戶資料收集', '【{company_name}】周年申報所需資料',
+            ('collection', '客户資料收集', '【{company_name}】周年申報所需資料',
              '致 {client_name}：\n\n為辦理貴公司 {company_name} 的周年申報（NAR1），現需向  閣下收集以下資料：\n\n1. 各董事及股東之身份證明文件副本\n2. 最新之註冊辦事處地址證明\n3. 股本結構如有變動之詳情\n\n煩請於 {due_date} 前回覆，以便我們準時辦理。\n\n此致\n{sender_name}\n{today}'),
             ('reminder', '周年申報到期提醒', '【提醒】{company_name} 周年申報將於 {due_date} 到期',
              '致 {client_name}：\n\n謹此提醒，貴公司 {company_name}（商業登記號碼：{br_number}）的周年申報表（NAR1）將於 {due_date} 到期。\n\n請盡快與我們聯絡以安排辦理，避免逾期罰款。\n\n此致\n{sender_name}\n{today}'),
@@ -815,9 +816,17 @@ def auto_migrate():
     db.close()
 
 # ─── Email module ───
-# SMTP config via environment (optional). When unset, sending is SIMULATED:
-# the email is recorded in email_logs with status='sent' but nothing leaves
-# the machine — perfect for local dev / UAT demos without a real mail server.
+# Priority: Resend API > SMTP > simulated
+# - RESEND_API_KEY: use Resend API (free 100/day, onboarding@resend.dev)
+# - SMTP_HOST: use SMTP (legacy)
+# - neither: simulated (log only, no real send)
+RESEND_API_KEY = os.environ.get('RESEND_API_KEY', '')
+# Fallback: read from local file (Windows env var propagation can be flaky with Flask reloader)
+if not RESEND_API_KEY:
+    _key_file = os.path.join(os.path.dirname(__file__), '.resend_key')
+    if os.path.exists(_key_file):
+        with open(_key_file, 'r') as f:
+            RESEND_API_KEY = f.read().strip()
 SMTP_HOST = os.environ.get('SMTP_HOST', '')
 SMTP_PORT = int(os.environ.get('SMTP_PORT', '587'))
 SMTP_USER = os.environ.get('SMTP_USER', '')
@@ -837,33 +846,67 @@ def substitute_vars(text, variables):
 
 
 def deliver_email(to_email, subject, body, cc_email=''):
-    """Send an email via SMTP if configured, else simulate.
+    """Send an email via Resend API > SMTP > simulated.
     Returns (ok: bool, error: str, simulated: bool)."""
     if not to_email:
         return False, 'Missing recipient', False
-    if not SMTP_HOST:
-        # Simulated send — log to console so it's visible during dev.
-        print(f"[EMAIL:SIMULATED] to={to_email} cc={cc_email} subject={subject!r}")
-        return True, '', True
-    try:
-        msg = MIMEMultipart()
-        msg['From'] = formataddr((SMTP_FROM_NAME, SMTP_FROM))
-        msg['To'] = to_email
-        if cc_email:
-            msg['Cc'] = cc_email
-        msg['Subject'] = subject
-        msg.attach(MIMEText(body, 'plain', 'utf-8'))
-        recipients = [e.strip() for e in (to_email + ',' + cc_email).split(',') if e.strip()]
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=20) as s:
-            s.starttls()
-            if SMTP_USER:
-                s.login(SMTP_USER, SMTP_PASS)
-            s.sendmail(SMTP_FROM, recipients, msg.as_string())
-        print(f"[EMAIL:SENT] to={to_email} subject={subject!r}")
-        return True, '', False
-    except Exception as e:
-        print(f"[EMAIL:FAILED] to={to_email}: {e}")
-        return False, str(e), False
+
+    # ── Resend API (preferred) ──
+    if RESEND_API_KEY:
+        try:
+            payload = {
+                'from': f'{SMTP_FROM_NAME} <onboarding@resend.dev>',
+                'to': [to_email],
+                'subject': subject,
+                'html': body.replace('\n', '<br>'),
+            }
+            if cc_email:
+                payload['cc'] = [cc_email]
+            resp = requests.post(
+                'https://api.resend.com/emails',
+                json=payload,
+                headers={
+                    'Authorization': f'Bearer {RESEND_API_KEY}',
+                    'Content-Type': 'application/json',
+                },
+                timeout=15,
+            )
+            if resp.ok:
+                print(f"[EMAIL:RESEND] to={to_email} subject={subject!r} id={resp.json().get('id','?')}")
+                return True, '', False
+            else:
+                err = f'Resend HTTP {resp.status_code}: {resp.text[:300]}'
+                print(f"[EMAIL:FAILED] to={to_email}: {err}")
+                return False, err, False
+        except Exception as e:
+            print(f"[EMAIL:FAILED] to={to_email}: {e}")
+            return False, str(e), False
+
+    # ── SMTP (legacy) ──
+    if SMTP_HOST:
+        try:
+            msg = MIMEMultipart()
+            msg['From'] = formataddr((SMTP_FROM_NAME, SMTP_FROM))
+            msg['To'] = to_email
+            if cc_email:
+                msg['Cc'] = cc_email
+            msg['Subject'] = subject
+            msg.attach(MIMEText(body, 'plain', 'utf-8'))
+            recipients = [e.strip() for e in (to_email + ',' + cc_email).split(',') if e.strip()]
+            with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=20) as s:
+                s.starttls()
+                if SMTP_USER:
+                    s.login(SMTP_USER, SMTP_PASS)
+                s.sendmail(SMTP_FROM, recipients, msg.as_string())
+            print(f"[EMAIL:SMTP] to={to_email} subject={subject!r}")
+            return True, '', False
+        except Exception as e:
+            print(f"[EMAIL:FAILED] to={to_email}: {e}")
+            return False, str(e), False
+
+    # ── Simulated (no backend configured) ──
+    print(f"[EMAIL:SIMULATED] to={to_email} cc={cc_email} subject={subject!r}")
+    return True, '', True
 
 
 def process_scheduled_emails():
@@ -1033,7 +1076,7 @@ def auth_me():
         return jsonify({'error': 'Not authenticated'}), 401
     return jsonify(u)
 
-# ─── 用戶管理（admin，10.1–10.3；本地 dev 模式不強制鑑權）───
+# ─── 用户管理（admin，10.1–10.3；本地 dev 模式不強制鑑權）───
 VALID_ROLES = ('admin', 'moderator', 'user')
 
 
@@ -1975,7 +2018,7 @@ def _fmt_int(n):
     return f'{n:,}'
 
 def _build_field_page_map(doc):
-    """遍历所有页面，建立 field_name → page_index 映射（不存储 widget 引用，避免 Annot not bound to page）"""
+    """遍歷所有頁面，建立 field_name → page_index 映射（不存儲 widget 引用，避免 Annot not bound to page）"""
     fmap = {}
     for pi in range(doc.page_count):
         for w in doc[pi].widgets():
@@ -1985,7 +2028,7 @@ def _build_field_page_map(doc):
     return fmap
 
 def _set_text(doc, fmap, name, value):
-    """在指定页面上查找 widget 并设置值（必须在迭代内完成 update，widget 引用不能外传）"""
+    """在指定頁面上查找 widget 並設置值（必須在迭代內完成 update，widget 引用不能外傳）"""
     if name not in fmap:
         return False
     pi = fmap[name]
@@ -2001,7 +2044,7 @@ def _set_text(doc, fmap, name, value):
     return False
 
 def _check(doc, fmap, name, should_check):
-    """在指定页面上查找 checkbox 并勾选"""
+    """在指定頁面上查找 checkbox 並勾選"""
     if not should_check or name not in fmap:
         return False
     pi = fmap[name]
@@ -2051,7 +2094,7 @@ def _fill_nar1_pdf(data):
     company_type = data.get('companyType') or ''
     ct_lower = company_type.lower()
 
-    # ── P.1 公司资料 ──
+    # ── P.1 公司資料 ──
     _set_text(doc, fmap, 'fill_1_P.1', br8)
     full_name = '\n'.join(filter(None, [data.get('name', ''), data.get('chineseName', '')]))
     _set_text(doc, fmap, 'fill_2_P.1', full_name)
@@ -2068,7 +2111,7 @@ def _fill_nar1_pdf(data):
     _set_text(doc, fmap, 'fill_16_P.1', office.get('building', ''))
     _set_text(doc, fmap, 'fill_17_P.1', office.get('street', ''))
     _set_text(doc, fmap, 'fill_18_P.1', office.get('district', ''))
-    # 区域下拉
+    # 區域下拉
     if office.get('region'):
         for name in ['Dropdown1_P.1', 'Dropdown_1_P.1']:
             if name in fmap:
@@ -2158,7 +2201,7 @@ def _fill_nar1_pdf(data):
     nat_dirs = [d for d in directors if d.get('identity') == 'natural']
     corp_dirs = [d for d in directors if d.get('identity') == 'corporate']
 
-    # ── P.3 自然人秘书 ──
+    # ── P.3 自然人秘書 ──
     _set_text(doc, fmap, 'fill_1_P.3', br8)
     if nat_secs:
         s = nat_secs[0]
@@ -2176,7 +2219,7 @@ def _fill_nar1_pdf(data):
         if hkid:
             _set_text(doc, fmap, 'fill_14_P.3', hkid)
 
-    # ── P.4 法人秘书 ──
+    # ── P.4 法人秘書 ──
     _set_text(doc, fmap, 'fill_1_P.4', br8)
     if corp_secs:
         s = corp_secs[0]
@@ -2234,7 +2277,7 @@ def _fill_nar1_pdf(data):
     # ── P.7 ──
     _set_text(doc, fmap, 'fill_1_P.7', br8)
 
-    # ── P.8 总结 + 签署 ──
+    # ── P.8 總結 + 簽署 ──
     _set_text(doc, fmap, 'fill_1_P.8', br8)
     valid_members = [sh for sh in shareholders if (int(sh.get('shares', 0) or 0)) > 0]
     is_listed = '上市' in company_type or 'listed' in ct_lower
@@ -2261,7 +2304,7 @@ def _fill_nar1_pdf(data):
     if sched2_pages > 0:
         _set_text(doc, fmap, 'fill_10_P.8', str(sched2_pages))
 
-    # 签署人
+    # 簽署人
     signer = data.get('signer')
     signer_name = (signer or {}).get('name') or presenter.get('name', '')
     if signer_name:
@@ -2269,7 +2312,7 @@ def _fill_nar1_pdf(data):
     if day and month and year:
         _set_text(doc, fmap, 'fill_12_P.8', f'{day}/{month}/{year}')
 
-    # ── P.9 附表一（股东，前2人） ──
+    # ── P.9 附表一（股東，前2人） ──
     if valid_members and not is_listed:
         _set_text(doc, fmap, 'fill_1_P.9', day)
         _set_text(doc, fmap, 'fill_2_P.9', month)
@@ -2282,9 +2325,9 @@ def _fill_nar1_pdf(data):
         slots = [
             {'name': 7, 'surname': 8, 'other': 9, 'shares': 10, 'flat': 13, 'building': 14, 'street': 15, 'district': 16, 'country': 17},
             {'name': 18, 'surname': 19, 'other': 20, 'shares': 27, 'flat': 22, 'building': 23, 'street': 24, 'district': 25, 'country': 26},
-            # 实际上 P.9 slots 的字段映射需要确认。使用原始 TS 代码中的映射。
+            # 實際上 P.9 slots 的字段映射需要確認。使用原始 TS 代碼中的映射。
         ]
-        # 使用与 TS 代码一致的字段映射
+        # 使用與 TS 代碼一致的字段映射
         slots_ts = [
             {'name': 7, 'surname': 8, 'other': 9, 'shares': 10, 'flat': 13, 'building': 14, 'street': 15, 'district': 16, 'country': 17},
             {'name': 19, 'surname': 20, 'other': 21, 'shares': 22, 'flat': 25, 'building': 26, 'street': 27, 'district': 28, 'country': 29},
@@ -2317,7 +2360,7 @@ def _fill_nar1_pdf(data):
         _set_text(doc, fmap, 'fill_31_P.9', '1')  # current page
         _set_text(doc, fmap, 'fill_32_P.9', str(total_sch1))
 
-    # ── P.10 附表一续（股东 #3+#4）──
+    # ── P.10 附表一續（股東 #3+#4）──
     if len(valid_members) > 2 and not is_listed:
         _set_text(doc, fmap, 'fill_1_P.10', day)
         _set_text(doc, fmap, 'fill_2_P.10', month)
@@ -2366,7 +2409,7 @@ def _fill_nar1_pdf(data):
             _set_text(doc, fmap, 'fill_5_P.10', share_infos[0]['className'])
             _set_text(doc, fmap, 'fill_6_P.10', _fmt_int(share_infos[0]['shares']))
 
-    # ── P.11 续页A：自然人秘书 #2 ──
+    # ── P.11 續頁A：自然人秘書 #2 ──
     if len(nat_secs) > 1:
         s = nat_secs[1]
         _set_text(doc, fmap, 'fill_1_P.11', day)
@@ -2396,7 +2439,7 @@ def _fill_nar1_pdf(data):
         if tcsp:
             _set_text(doc, fmap, 'fill_20_P.11', tcsp)
 
-    # ── P.12 续页B：法人秘书 #2 ──
+    # ── P.12 續頁B：法人秘書 #2 ──
     if len(corp_secs) > 1:
         s = corp_secs[1]
         _set_text(doc, fmap, 'fill_1_P.12', day)
@@ -2416,7 +2459,7 @@ def _fill_nar1_pdf(data):
         if tcsp:
             _set_text(doc, fmap, 'fill_13_P.12', tcsp)
 
-    # ── P.13 续页C：自然人董事 #2 ──
+    # ── P.13 續頁C：自然人董事 #2 ──
     if len(nat_dirs) > 1:
         d = nat_dirs[1]
         _set_text(doc, fmap, 'fill_1_P.13', day)
@@ -2442,7 +2485,7 @@ def _fill_nar1_pdf(data):
             _set_text(doc, fmap, 'fill_18_P.13', d.get('nationality', '') or d.get('placeIncorporated', ''))
             _set_text(doc, fmap, 'fill_19_P.13', _parse_passport_partial(d['passportNumber']))
 
-    # ── P.14 续页D：法人董事 #2+#3 ──
+    # ── P.14 續頁D：法人董事 #2+#3 ──
     extra_corp_dirs = corp_dirs[1:]
     if extra_corp_dirs:
         _set_text(doc, fmap, 'fill_1_P.14', day)
@@ -2472,7 +2515,7 @@ def _fill_nar1_pdf(data):
             _set_text(doc, fmap, f'fill_{F["country"]}_P.14', office.get('region', '香港 Hong Kong'))
             _set_text(doc, fmap, f'fill_{F["email"]}_P.14', d.get('email', ''))
 
-    # ── P.15 续页E：公司纪录保存地点 ──
+    # ── P.15 續頁E：公司紀錄保存地點 ──
     company_records = data.get('companyRecords') or []
     valid_records = [r for r in company_records if (r.get('records', '') or '').strip() or (r.get('address', '') or '').strip()]
     if valid_records:
@@ -2485,7 +2528,7 @@ def _fill_nar1_pdf(data):
         _set_text(doc, fmap, 'fill_5_P.15', records_text)
         _set_text(doc, fmap, 'fill_6_P.15', address_text)
 
-    # ── 删除空白页（P.16-P.27 无 widget）──
+    # ── 刪除空白頁（P.16-P.27 無 widget）──
     blank_pages = []
     for pi in range(15, doc.page_count):  # 0-indexed: pages 16-27
         if not list(doc[pi].widgets()):
@@ -3012,6 +3055,179 @@ def generate_generic_form_pdf():
         return jsonify({'error': str(e)}), 500
 
 
+# ─── Auto-Fill CR Form PDF（自動填入公司資料的政府表格 PDF） ───
+
+@app.route('/api/generate-cr-form-pdf', methods=['POST', 'OPTIONS'])
+def generate_cr_form_pdf():
+    """Auto-fill a CR form PDF from company database data.
+    Request: {company_id, form_code (nar1|nd2a|...|nn9)}"""
+    if request.method == 'OPTIONS':
+        return ('', 204)
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        company_id = data.get('company_id')
+        form_code = (data.get('form_code') or '').lower()
+        if not company_id or not form_code:
+            return jsonify({'error': '缺少 company_id 或 form_code'}), 400
+
+        meta = CR_FORM_META.get(form_code)
+        if not meta:
+            return jsonify({'error': f'不支援的表格代碼：{form_code}'}), 400
+
+        db = get_db()
+        bundle = _docx_company_bundle(db, company_id)
+        if not bundle:
+            return jsonify({'error': '找不到該公司'}), 404
+        c = bundle['c']
+        name_en = c.get('name') or ''
+        name_cn = c.get('chinese_name') or ''
+        br = c.get('company_number') or ''
+        cr_num = c.get('ci_number') or ''
+
+        # Build PDF with fpdf2
+        pdf = FPDF()
+        pdf.add_page()
+        font_path = None
+        for sys_font in ['C:/Windows/Fonts/msjh.ttc', 'C:/Windows/Fonts/Deng.ttf', 'C:/Windows/Fonts/simsun.ttc']:
+            if os.path.exists(sys_font):
+                font_path = sys_font
+                break
+        if font_path:
+            pdf.add_font('TC', '', font_path)
+            pdf.add_font('TC', 'B', font_path)
+            ft = 'TC'
+        else:
+            ft = 'Helvetica'
+
+        def _t(text):
+            return (text or '').encode('utf-8', errors='replace').decode('utf-8')
+
+        def _person_label(m):
+            en = (m.get('name_english') or '').strip()
+            cn = (m.get('name_chinese') or '').strip()
+            if en and cn:
+                return f"{en}（{cn}）"
+            return en or cn or '—'
+
+        # Header
+        pdf.set_font(ft, 'B', 16)
+        pdf.cell(0, 10, _t(meta['title']), new_x=XPos.LMARGIN, new_y=YPos.NEXT, align='C')
+        pdf.set_font(ft, '', 10)
+        pdf.cell(0, 7, _t(f"{meta['code']} — {meta['title_en']}"), new_x=XPos.LMARGIN, new_y=YPos.NEXT, align='C')
+        pdf.cell(0, 7, _t(f"公司註冊處表格 · 由系統自動填入 {name_en or name_cn} 的資料生成草稿"),
+                 new_x=XPos.LMARGIN, new_y=YPos.NEXT, align='C')
+        pdf.ln(4)
+
+        # Company info section
+        pdf.set_font(ft, 'B', 12)
+        pdf.cell(0, 7, _t('公司基本資料'), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.set_font(ft, '', 9)
+        info_rows = [
+            ('英文名稱', name_en), ('中文名稱', name_cn),
+            ('商業登記號碼 (BR)', br), ('公司註冊編號 (CR)', cr_num),
+            ('公司類型', c.get('company_type')), ('成立日期', _docx_fmt_date(c.get('incorporation_date'))),
+            ('狀態', c.get('status')), ('註冊辦事處地址', bundle['address']),
+            ('電郵', c.get('email')), ('電話', c.get('phone')),
+        ]
+        for label, val in info_rows:
+            if val:
+                pdf.cell(50, 5, _t(label) + ':', 0, 0)
+                pdf.cell(0, 5, _t(str(val)), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.ln(3)
+
+        # Directors & Secretaries (most forms)
+        has_officers = form_code in ('nar1','nd2a','nd2b','nd4','nnc1','nn1','nn3','nn6','nn7')
+        if has_officers:
+            pdf.set_font(ft, 'B', 11)
+            pdf.cell(0, 7, _t(f"董事（{len(bundle['directors'])} 人）"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.set_font(ft, '', 9)
+            if bundle['directors']:
+                for d in bundle['directors']:
+                    pdf.cell(0, 5, _t(f"  {_person_label(d)}  |  {d.get('id_number') or d.get('passport_number') or ''}  |  委任: {_docx_fmt_date(d.get('date_appointed'))}  |  {d.get('address') or ''}"),
+                             new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            else:
+                pdf.cell(0, 5, _t('  （無董事記錄）'), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.ln(2)
+
+            pdf.set_font(ft, 'B', 11)
+            pdf.cell(0, 7, _t(f"公司秘書（{len(bundle['secretaries'])} 人）"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.set_font(ft, '', 9)
+            if bundle['secretaries']:
+                for s in bundle['secretaries']:
+                    pdf.cell(0, 5, _t(f"  {_person_label(s)}  |  TCSP: {s.get('tcsp_number') or ''}  |  委任: {_docx_fmt_date(s.get('date_appointed'))}"),
+                             new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            else:
+                pdf.cell(0, 5, _t('  （無秘書記錄）'), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.ln(3)
+
+        # Shareholders
+        has_shares = form_code in ('nar1','nsc1','nnc1','nn1','nn3')
+        if has_shares:
+            ts = bundle['total_shares']
+            pdf.set_font(ft, 'B', 11)
+            pdf.cell(0, 7, _t(f"股東／股本結構（總發行股數：{ts}）"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.set_font(ft, '', 9)
+            if bundle['shareholders']:
+                for sh in bundle['shareholders']:
+                    pct = f"{round(int(sh.get('shares') or 0) * 100 / ts, 2)}%" if ts else '—'
+                    pdf.cell(0, 5, _t(f"  {_person_label(sh)}  |  {sh.get('shares')} 股  |  {sh.get('share_type') or '普通股'}  |  {pct}"),
+                             new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            else:
+                pdf.cell(0, 5, _t('  （無股東記錄）'), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.ln(3)
+
+        # Form-specific blocks
+        if form_code == 'nar1':
+            pdf.set_font(ft, '', 9)
+            pdf.cell(0, 5, _t('重要控制人登記冊 (SCR) 是否備存於公司註冊辦事處？  是 □  否 □'), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.cell(0, 5, _t('截至申報日期之董事／秘書／股東資料以上表為準。'), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        if form_code in ('nr1', 'ndr1', 'nn9'):
+            pdf.set_font(ft, '', 9)
+            pdf.cell(0, 5, _t(f"現有註冊地址：{bundle['address'] or '（未填）'}"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.cell(0, 5, _t('變更後註冊地址（請手動填寫）：＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿'), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        if form_code == 'nsc1':
+            pdf.set_font(ft, '', 9)
+            for line in ['配發日期：＿＿＿＿＿＿＿＿', '配發股份類別：＿＿＿＿＿＿＿＿', '每股發行價：＿＿＿＿＿＿＿＿', '配發總額：＿＿＿＿＿＿＿＿']:
+                pdf.cell(0, 5, _t(line), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        if form_code in ('nnc1', 'nn1'):
+            pdf.set_font(ft, '', 9)
+            pdf.cell(0, 5, _t('擬成立公司之名稱／形式等詳情，請參考上方公司基本資料。'), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        if form_code in ('nnc2',):
+            pdf.set_font(ft, '', 9)
+            pdf.cell(0, 5, _t('更改後公司名稱（請手動填寫）：＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿'), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+        # Signature block
+        pdf.ln(6)
+        pdf.set_font(ft, 'B', 11)
+        pdf.cell(0, 7, _t('簽署 / SIGNED:'), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.ln(5)
+        pdf.set_font(ft, '', 10)
+        pdf.cell(0, 8, _t('_______________________________'), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.cell(0, 6, _t('董事 / Director       日期 Date：＿＿＿＿＿＿'), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.ln(3)
+        pdf.cell(0, 8, _t('_______________________________'), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.cell(0, 6, _t('公司秘書 / Company Secretary       日期 Date：＿＿＿＿＿＿'), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+        # Footer
+        pdf.ln(6)
+        pdf.set_font(ft, '', 7)
+        pdf.cell(0, 5, _t(f"本文件由公司秘書管理系統自動生成 · {datetime.now().strftime('%Y-%m-%d %H:%M')}"),
+                 new_x=XPos.LMARGIN, new_y=YPos.NEXT, align='C')
+
+        pdf_bytes = bytes(pdf.output())
+        safe_name = re.sub(r'[^\w一-鿿-]', '_', (name_en or name_cn or 'company'))[:30]
+        filename = f"{meta['code']}_{meta['title']}_{safe_name}.pdf"
+        return jsonify({
+            'success': True,
+            'pdf': base64.b64encode(pdf_bytes).decode('ascii'),
+            'filename': filename,
+        })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
 # ─── Generic Template PDF Filler（PyMuPDF 填充任何 AcroForm 模板） ───
 
 @app.route('/api/generate-template-pdf', methods=['POST'])
@@ -3168,6 +3384,23 @@ DOCX_TYPES = {
     'members_register':  '成員（股東）名冊',
     'board_resolution':  '董事會書面決議',
     'meeting_minutes':   '董事會會議記錄',
+    'cr_form':           '政府表格 (Word)',
+}
+CR_FORM_META = {
+    'nar1':  {'code': 'NAR1',  'title': '周年申報表',           'title_en': 'Annual Return'},
+    'nd2a':  {'code': 'ND2A',  'title': '更改公司秘書及董事通知書（委任／停任）', 'title_en': 'Notice of Change of Company Secretary and Director (Appointment/Cessation)'},
+    'nd2b':  {'code': 'ND2B',  'title': '更改公司秘書及董事詳情通知書',       'title_en': 'Notice of Change in Particulars of Company Secretary and Director'},
+    'nd4':   {'code': 'ND4',   'title': '公司秘書及董事辭任通知書',           'title_en': 'Notice of Resignation of Company Secretary and Director'},
+    'ndr1':  {'code': 'NDR1',  'title': '撤銷註冊申請書',                    'title_en': 'Application for Deregistration'},
+    'nr1':   {'code': 'NR1',   'title': '註冊辦事處地址變更通知書',           'title_en': 'Notice of Change of Registered Office Address'},
+    'nsc1':  {'code': 'NSC1',  'title': '股份配發申報書',                    'title_en': 'Return of Allotment'},
+    'nnc1':  {'code': 'NNC1',  'title': '法團成立表格（股份有限公司）',        'title_en': 'Incorporation Form (Company Limited by Shares)'},
+    'nnc2':  {'code': 'NNC2',  'title': '更改公司名稱通知書',                 'title_en': 'Notice of Change of Company Name'},
+    'nn1':   {'code': 'NN1',   'title': '註冊非香港公司註冊申請書',            'title_en': 'Application for Registration as Registered Non-Hong Kong Company'},
+    'nn3':   {'code': 'NN3',   'title': '註冊非香港公司周年申報表',            'title_en': 'Annual Return of Registered Non-Hong Kong Company'},
+    'nn6':   {'code': 'NN6',   'title': '非香港公司更改秘書及董事（委任／停任）', 'title_en': 'Change of Company Secretary and Director of Non-Hong Kong Company'},
+    'nn7':   {'code': 'NN7',   'title': '非香港公司更改秘書及董事詳情',         'title_en': 'Change in Particulars of Company Secretary and Director of Non-Hong Kong Company'},
+    'nn9':   {'code': 'NN9',   'title': '非香港公司更改地址申報表',            'title_en': 'Notice of Change of Address of Non-Hong Kong Company'},
 }
 
 
@@ -3404,6 +3637,107 @@ def _build_docx(db, company_id, doc_type, extra=None):
             doc.add_paragraph()
             para('_______________________________', size=11)
             para(f"{_docx_person_label(m)}　董事 / Director", size=10)
+    elif doc_type == 'cr_form':
+        form_code = (extra.get('form_code') or '').lower()
+        meta = CR_FORM_META.get(form_code, {})
+        if not meta:
+            return None, None
+        label = f"{meta['code']}_{meta['title']}"  # 檔名含表格編號+中文名
+        company_header()
+        h(f"{meta['title']} {meta['code']}", size=15)
+        h(meta['title_en'], size=11, bold=False)
+        para(f'公司註冊處表格 {meta["code"]} — 由系統自動填入公司資料生成草稿', size=9)
+        doc.add_paragraph()
+
+        # ── 共用欄位：公司基本資料 ──
+        kv_table([
+            ('公司英文名稱', name_en),
+            ('公司中文名稱', name_cn),
+            ('商業登記號碼 (BR)', br),
+            ('公司註冊編號 (CR)', cr),
+            ('公司類型', c.get('company_type')),
+            ('註冊辦事處地址', bundle['address']),
+            ('電郵', c.get('email')),
+            ('電話', c.get('phone')),
+            ('成立日期', _docx_fmt_date(c.get('incorporation_date'))),
+            ('公司狀態', c.get('status')),
+        ])
+        doc.add_paragraph()
+
+        # ── 董事 / 秘書（大部分表格都需要）──
+        has_officers = form_code in ('nar1','nd2a','nd2b','nd4','nnc1','nn1','nn3','nn6','nn7')
+        if has_officers:
+            h(f"董事（{len(bundle['directors'])}）", size=13, center=False)
+            members_table(
+                ['姓名', '身份', '身份證／護照／公司編號', '委任日期', '辭任日期', '地址', '電郵'],
+                [[_docx_person_label(m),
+                  '法人' if m.get('identity') == 'corporate' else '自然人',
+                  m.get('id_number') or m.get('passport_number') or m.get('tcsp_number') or '',
+                  _docx_fmt_date(m.get('date_appointed')),
+                  _docx_fmt_date(m.get('date_ceased')),
+                  m.get('address') or '',
+                  m.get('email') or '']
+                 for m in bundle['directors']] or [['（無）', '', '', '', '', '', '']])
+            doc.add_paragraph()
+            h(f"公司秘書（{len(bundle['secretaries'])}）", size=13, center=False)
+            members_table(
+                ['姓名', '身份', 'TCSP／公司編號', '委任日期', '地址', '電郵'],
+                [[_docx_person_label(m),
+                  '法人' if m.get('identity') == 'corporate' else '自然人',
+                  m.get('tcsp_number') or '',
+                  _docx_fmt_date(m.get('date_appointed')),
+                  m.get('address') or '',
+                  m.get('email') or '']
+                 for m in bundle['secretaries']] or [['（無）', '', '', '', '', '']])
+            doc.add_paragraph()
+
+        # ── 股東 / 股本 ──
+        has_shares = form_code in ('nar1','nsc1','nnc1','nn1','nn3')
+        if has_shares:
+            ts = bundle['total_shares']
+            h(f"股東／股本結構（總發行股數：{ts}）", size=13, center=False)
+            members_table(
+                ['股東', '持股數', '股份類別', '已繳股款', '佔比'],
+                [[_docx_person_label(m),
+                  m.get('shares') or '0',
+                  m.get('share_type') or '普通股',
+                  m.get('paid_up') or '',
+                  (f"{round(int(m.get('shares') or 0) * 100 / ts, 2)}%" if ts else '—')]
+                 for m in bundle['shareholders']] or [['（無）', '', '', '', '']])
+            doc.add_paragraph()
+
+        # ── NAR1 額外欄位 ──
+        if form_code == 'nar1':
+            para('重要控制人登記冊 (SCR) 是否備存於公司註冊辦事處？　是 □　否 □', size=11)
+            para(f"截至申報日期之董事／秘書／股東資料以上表為準。", size=10)
+            doc.add_paragraph()
+
+        # ── 地址變更類 (NR1 / NDR1 / NN9) ──
+        if form_code in ('nr1', 'ndr1', 'nn9'):
+            para('現有註冊地址：', bold=True, size=11)
+            para(bundle['address'] or '（未填）', size=11)
+            para('變更後註冊地址（請手動填寫）：', bold=True, size=11)
+            para('＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿', size=11)
+            doc.add_paragraph()
+
+        # ── 股份配發 (NSC1) 額外欄位 ──
+        if form_code == 'nsc1':
+            para('配發日期：＿＿＿＿＿＿＿＿', size=11)
+            para('配發股份類別：＿＿＿＿＿＿＿＿', size=11)
+            para('每股發行價：＿＿＿＿＿＿＿＿', size=11)
+            para('配發總額：＿＿＿＿＿＿＿＿', size=11)
+            doc.add_paragraph()
+
+        # ── 簽署區 ──
+        doc.add_paragraph()
+        para('簽署 / SIGNED:', bold=True, size=11)
+        doc.add_paragraph()
+        para('_______________________________', size=11)
+        para(f"董事 / Director　　日期 Date：＿＿＿＿＿＿＿＿", size=10)
+        doc.add_paragraph()
+        para('_______________________________', size=11)
+        para(f"公司秘書 / Company Secretary　　日期 Date：＿＿＿＿＿＿＿＿", size=10)
+
     else:
         return None, None
 
@@ -3440,6 +3774,7 @@ def generate_docx():
                 'content': data.get('content'),
                 'meeting_date': data.get('meeting_date'),
                 'location': data.get('location'),
+                'form_code': data.get('form_code'),
             })
         if docx_bytes is None:
             return jsonify({'error': '找不到該公司'}), 404
@@ -3610,5 +3945,10 @@ if __name__ == '__main__':
     print("[SERVER] Local API running at http://localhost:5000")
     print("[SERVER] Admin account: admin@localhost / admin123")
     print("[SERVER] Register new accounts at /api/auth/register (no admin required)")
-    print(f"[SERVER] SMTP: {'configured (' + SMTP_HOST + ')' if SMTP_HOST else 'NOT configured — emails are SIMULATED & logged'}")
+    if RESEND_API_KEY:
+        print(f"[SERVER] Email: Resend API configured (onboarding@resend.dev)")
+    elif SMTP_HOST:
+        print(f"[SERVER] SMTP: configured ({SMTP_HOST})")
+    else:
+        print(f"[SERVER] Email: NOT configured — emails are SIMULATED & logged")
     app.run(host='0.0.0.0', port=5000, debug=True)

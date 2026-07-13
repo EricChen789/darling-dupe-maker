@@ -1187,7 +1187,7 @@ const Logs = () => {
     <div>
       <PageHeader
         title="公司日誌"
-        description="ROD（董事登記冊）與 ROM（成員登記冊）等公司歷史文件，可線上閱讀與編輯"
+        description="ROD（董事登記冊）與 ROM（成員登記冊）等公司歷史文件，可線上閲讀與編輯"
         actions={
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={() => refetch()}>

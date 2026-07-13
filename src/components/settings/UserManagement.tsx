@@ -92,7 +92,7 @@ export const UserManagement = () => {
       setUsers(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error('Error fetching users:', err);
-      toast({ title: '載入失敗', description: '無法取得用戶清單', variant: 'destructive' });
+      toast({ title: '載入失敗', description: '無法取得用户清單', variant: 'destructive' });
     }
     setLoading(false);
   }, []);
@@ -120,7 +120,7 @@ export const UserManagement = () => {
     const next = u.is_active ? 0 : 1;
     try {
       await adminFetch(`/api/admin/users/${u.id}`, { method: 'PUT', body: JSON.stringify({ is_active: next }) });
-      toast({ title: next ? '用戶已啟用' : '用戶已停用' });
+      toast({ title: next ? '用户已啟用' : '用户已停用' });
       fetchUsers();
     } catch (err: any) {
       toast({ title: '操作失敗', description: err.message, variant: 'destructive' });
@@ -143,7 +143,7 @@ export const UserManagement = () => {
           role: newRole,
         }),
       });
-      toast({ title: '用戶已建立', description: `${newEmail} 已成功建立` });
+      toast({ title: '用户已建立', description: `${newEmail} 已成功建立` });
       setAddDialogOpen(false);
       setNewEmail('');
       setNewPassword('');
@@ -161,10 +161,10 @@ export const UserManagement = () => {
       toast({ title: '無法刪除自己', variant: 'destructive' });
       return;
     }
-    if (!confirm('確定要刪除此用戶嗎？此操作無法復原。')) return;
+    if (!confirm('確定要刪除此用户嗎？此操作無法復原。')) return;
     try {
       await adminFetch(`/api/admin/users/${userId}`, { method: 'DELETE' });
-      toast({ title: '用戶已刪除' });
+      toast({ title: '用户已刪除' });
       fetchUsers();
     } catch (err: any) {
       toast({ title: '刪除失敗', description: err.message, variant: 'destructive' });
@@ -175,9 +175,9 @@ export const UserManagement = () => {
     return (
       <div className="bg-card border border-border rounded-lg p-6 max-w-4xl">
         <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-          <Shield className="h-5 w-5" /> 用戶管理
+          <Shield className="h-5 w-5" /> 用户管理
         </h2>
-        <p className="text-muted-foreground">您沒有管理用戶的權限。</p>
+        <p className="text-muted-foreground">您沒有管理用户的權限。</p>
       </div>
     );
   }
@@ -186,7 +186,7 @@ export const UserManagement = () => {
     <div className="bg-card border border-border rounded-lg p-6 max-w-4xl">
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-lg font-semibold flex items-center gap-2">
-          <Shield className="h-5 w-5" /> 用戶管理
+          <Shield className="h-5 w-5" /> 用户管理
         </h2>
         <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
           <DialogTrigger asChild>
@@ -221,7 +221,7 @@ export const UserManagement = () => {
                 </Select>
               </div>
               <Button onClick={handleCreateUser} disabled={creating} className="w-full">
-                {creating ? '建立中...' : '建立用戶'}
+                {creating ? '建立中...' : '建立用户'}
               </Button>
             </div>
           </DialogContent>
@@ -342,7 +342,7 @@ export const UserManagement = () => {
                 <div>
                   <Label>帳號狀態</Label>
                   <p className="text-xs text-muted-foreground">
-                    {editIsActive ? '啟用中 — 用戶可正常登入' : '已停用 — 用戶無法登入'}
+                    {editIsActive ? '啟用中 — 用户可正常登入' : '已停用 — 用户無法登入'}
                   </p>
                 </div>
                 <Button

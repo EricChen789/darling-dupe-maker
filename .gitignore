@@ -34,3 +34,4 @@ __pycache__/
 .dev.vars
 local.db
 local-server/storage/
+local-server/.resend_key

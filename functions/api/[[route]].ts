@@ -227,10 +227,10 @@ addRoute("GET", "/api/auth/me", async (_req, _env, user) => {
   return json(user);
 });
 
-// ─── 用戶管理（admin，10.1–10.3）───
+// ─── 用户管理（admin，10.1–10.3）───
 const VALID_ROLES = ["admin", "moderator", "user"];
 
-// GET /api/admin/users — 列出所有用戶 + 角色 + 啟用狀態
+// GET /api/admin/users — 列出所有用户 + 角色 + 啟用狀態
 addRoute("GET", "/api/admin/users", async (_req, env, user) => {
   requireAdmin(user);
   const users = await env.DB.prepare(
@@ -245,7 +245,7 @@ addRoute("GET", "/api/admin/users", async (_req, env, user) => {
   return json(out);
 });
 
-// POST /api/admin/users — 建立用戶
+// POST /api/admin/users — 建立用户
 addRoute("POST", "/api/admin/users", async (req, env, user) => {
   requireAdmin(user);
   const { email, password, display_name, role } = await req.json() as
@@ -294,7 +294,7 @@ addRoute("PUT", "/api/admin/users/:id", async (req, env, user, params) => {
   return json({ success: true });
 });
 
-// DELETE /api/admin/users/:id — 刪除用戶
+// DELETE /api/admin/users/:id — 刪除用户
 addRoute("DELETE", "/api/admin/users/:id", async (_req, env, user, params) => {
   requireAdmin(user);
   await env.DB.prepare("DELETE FROM user_roles WHERE user_id = ?").bind(params.id).run();

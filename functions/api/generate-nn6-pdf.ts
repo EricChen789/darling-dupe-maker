@@ -1,5 +1,5 @@
 // POST /api/generate-nn6-pdf
-// 非香港公司更改秘书及董事（委任/停任）—— 移植自 local-server/server.py:_fill_nd2a_pdf(template='NN6-template.pdf')
+// 非香港公司更改秘書及董事（委任/停任）—— 移植自 local-server/server.py:_fill_nd2a_pdf(template='NN6-template.pdf')
 // body: { brNumber, companyName, officers[], signerName, signDate, presentorName, presentorAddress, presentorContact }
 // resp: { pdf: '<base64>' }
 
@@ -79,7 +79,7 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
     }
     const form = pdfDoc.getForm();
 
-    const usedPages = new Set<number>([1]); // P.1 始终保留（1-based）
+    const usedPages = new Set<number>([1]); // P.1 始終保留（1-based）
 
     const setF = (name: string, value?: string) => {
       if (value == null || value === "") return;
@@ -93,7 +93,7 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
       try { form.getCheckBox(name).check(); } catch { /* skip */ }
     };
 
-    // BR：去非字母数字后取前 8 位
+    // BR：去非字母數字後取前 8 位
     const br8 = (data.brNumber || "").replace(/[^0-9A-Za-z]/g, "").slice(0, 8);
     setF("fill_1_P.1", br8);
     setF("fill_2_P.1", data.companyName);
@@ -128,9 +128,9 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
       checkF(officer.type === "appointment" ? `cb_3_P.${p}` : `cb_4_P.${p}`);
     });
 
-    // 签署人 + 提交人（P.1 底部）
+    // 簽署人 + 提交人（P.1 底部）
     const sd = (data.signDate || "").split(/[-/]/);
-    if (sd.length >= 3) setF("fill_11_P.1", `${sd[2]}/${sd[1]}/${sd[0]}`); // 反转成 D/M/Y
+    if (sd.length >= 3) setF("fill_11_P.1", `${sd[2]}/${sd[1]}/${sd[0]}`); // 反轉成 D/M/Y
     setF("fill_12_P.1", data.signerName);
     setF("fill_13_P.1", data.presentorName);
     setF("fill_14_P.1", data.presentorAddress);
@@ -138,7 +138,7 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
 
     form.flatten();
 
-    // 删空白页：保留 P.1 + 有值的页，其余倒序删除
+    // 刪空白頁：保留 P.1 + 有值的頁，其餘倒序刪除
     for (let pi = pdfDoc.getPageCount() - 1; pi >= 1; pi--) {
       if (!usedPages.has(pi + 1)) pdfDoc.removePage(pi);
     }

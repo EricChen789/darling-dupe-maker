@@ -125,7 +125,7 @@ export default function NDR1GeneratorForm({ onBack, initialCompanyId }: NDR1Gene
             </label>
             <label className="flex items-center gap-3 cursor-pointer">
               <Checkbox checked={formData.noOutstandingLiabilities} onCheckedChange={v => update('noOutstandingLiabilities', !!v)} />
-              <span className="text-sm">公司沒有尚未清償的債務（包括稅款及罰款）</span>
+              <span className="text-sm">公司沒有尚未清償的債務（包括税款及罰款）</span>
             </label>
             <label className="flex items-center gap-3 cursor-pointer">
               <Checkbox checked={formData.noLegalProceedings} onCheckedChange={v => update('noLegalProceedings', !!v)} />

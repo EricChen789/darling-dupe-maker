@@ -158,7 +158,7 @@ const Companies = () => {
     <div>
       <PageHeader
         title="公司管理"
-        description={`管理客戶公司資料及註冊資訊（共 ${companies.length} 間）`}
+        description={`管理客户公司資料及註冊資訊（共 ${companies.length} 間）`}
         actions={
           <div className="flex items-center gap-2">
             <Button variant={showSearch ? "default" : "outline"} size="sm" onClick={() => setShowSearch(!showSearch)}

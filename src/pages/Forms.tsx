@@ -180,7 +180,7 @@ const Forms = () => {
       <div>
         <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
           <FileText className="h-5 w-5" />
-          稅務局表格
+          税務局表格
         </h2>
         <div className="space-y-3">
           {irdForms.map((form) => (
@@ -228,9 +228,9 @@ const Forms = () => {
               <tr className="border-b border-border/50"><td className="py-2 pr-4">公司成立(股份有限公司)</td><td className="py-2 pr-4 font-medium text-foreground">NNC1</td><td className="py-2 pr-4">公司註冊處</td><td className="py-2">—</td></tr>
               <tr className="border-b border-border/50"><td className="py-2 pr-4">公司更名</td><td className="py-2 pr-4 font-medium text-foreground">NNC2</td><td className="py-2 pr-4">公司註冊處</td><td className="py-2">15 日</td></tr>
               <tr className="border-b border-border/50"><td className="py-2 pr-4">註冊非香港公司</td><td className="py-2 pr-4 font-medium text-foreground">NN1 / NN3 / NN6 / NN7 / NN9</td><td className="py-2 pr-4">公司註冊處</td><td className="py-2">—</td></tr>
-              <tr className="border-b border-border/50"><td className="py-2 pr-4">業務/營業地址</td><td className="py-2 pr-4 font-medium text-foreground">IRC 3111A</td><td className="py-2 pr-4">稅務局</td><td className="py-2">1 個月</td></tr>
+              <tr className="border-b border-border/50"><td className="py-2 pr-4">業務/營業地址</td><td className="py-2 pr-4 font-medium text-foreground">IRC 3111A</td><td className="py-2 pr-4">税務局</td><td className="py-2">1 個月</td></tr>
               <tr className="border-b border-border/50"><td className="py-2 pr-4">股份轉讓</td><td className="py-2 pr-4 font-medium text-foreground">下次 NAR1</td><td className="py-2 pr-4">公司註冊處</td><td className="py-2">年報時</td></tr>
-              <tr><td className="py-2 pr-4">個人通訊地址</td><td className="py-2 pr-4 font-medium text-foreground">I.R. 1249</td><td className="py-2 pr-4">稅務局</td><td className="py-2">1 個月</td></tr>
+              <tr><td className="py-2 pr-4">個人通訊地址</td><td className="py-2 pr-4 font-medium text-foreground">I.R. 1249</td><td className="py-2 pr-4">税務局</td><td className="py-2">1 個月</td></tr>
             </tbody>
           </table>
         </div>

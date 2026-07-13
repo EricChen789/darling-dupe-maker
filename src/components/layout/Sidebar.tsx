@@ -1,4 +1,4 @@
-import { Link, useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { Download, Wrench, UserCheck, AlertTriangle, FileDown, Bell, FolderOpen, Mail, FileType, Search } from 'lucide-react';
 import { Building2, Users, FileText, Receipt, ClipboardList, Settings, LogOut, Table, PanelLeftClose, PanelLeft, LayoutDashboard, UserCog } from 'lucide-react';
@@ -11,7 +11,7 @@ interface SidebarProps {
 }
 
 const navItems: { path: string; label: string; icon: any; external?: boolean }[] = [
-  { path: '/dashboard', label: '儀表板', icon: LayoutDashboard },
+  { path: '/dashboard', label: '儀錶板', icon: LayoutDashboard },
   { path: '/companies', label: '公司管理', icon: Building2 },
   { path: '/people', label: '自然人管理', icon: Users },
   { path: '/presenters', label: '提交人資料', icon: UserCheck },
@@ -43,6 +43,7 @@ const ADMIN_ONLY_PATHS = new Set([
 
 const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {
   const location = useLocation();
+  const navigate = useNavigate();
   const { user, signOut } = useAuth();
   const isAdmin = user?.role === 'admin';
 
@@ -112,10 +113,10 @@ const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {
                   {!collapsed && <span>{item.label}</span>}
                 </a>
               ) : (
-                <Link
-                  to={item.path}
+                <span
+                  onClick={() => navigate(item.path)}
                   className={cn(
-                    "flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors",
+                    "flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors cursor-pointer",
                     isActive
                       ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
                       : "text-sidebar-foreground hover:bg-muted",
@@ -124,7 +125,7 @@ const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {
                 >
                   <item.icon className="h-4 w-4 shrink-0" />
                   {!collapsed && <span>{item.label}</span>}
-                </Link>
+                </span>
               );
               
               return (
@@ -147,10 +148,10 @@ const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {
             {visibleBottomItems.map((item) => {
               const isActive = location.pathname === item.path;
               const linkContent = (
-                <Link
-                  to={item.path}
+                <span
+                  onClick={() => navigate(item.path)}
                   className={cn(
-                    "flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors",
+                    "flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors cursor-pointer",
                     isActive
                       ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
                       : "text-sidebar-foreground hover:bg-muted",
@@ -159,7 +160,7 @@ const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {
                 >
                   <item.icon className="h-4 w-4 shrink-0" />
                   {!collapsed && <span>{item.label}</span>}
-                </Link>
+                </span>
               );
               
               return (

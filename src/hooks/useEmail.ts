@@ -66,7 +66,7 @@ export const EMAIL_VARIABLES: { key: string; label: string }[] = [
   { key: 'company_name_cn', label: '公司中文名稱' },
   { key: 'br_number', label: '商業登記號碼' },
   { key: 'company_email', label: '公司電郵' },
-  { key: 'client_name', label: '客戶／聯絡人' },
+  { key: 'client_name', label: '客户／聯絡人' },
   { key: 'due_date', label: '到期日' },
   { key: 'invoice_number', label: '發票編號' },
   { key: 'amount', label: '金額' },

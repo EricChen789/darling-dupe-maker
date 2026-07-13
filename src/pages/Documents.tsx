@@ -110,7 +110,7 @@ export default function Documents() {
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold">文件管理</h1>
-        <p className="text-muted-foreground mt-1">上傳、儲存和閱讀 PDF 文件</p>
+        <p className="text-muted-foreground mt-1">上傳、儲存和閲讀 PDF 文件</p>
       </div>
 
       {/* Upload Area */}
@@ -198,7 +198,7 @@ export default function Documents() {
                 </div>
                 <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                   <Button variant="ghost" size="sm" onClick={() => viewPdf(doc)}>
-                    <Eye className="h-4 w-4 mr-1" /> 閱讀
+                    <Eye className="h-4 w-4 mr-1" /> 閲讀
                   </Button>
                   <Button
                     variant="ghost"

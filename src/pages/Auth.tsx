@@ -45,7 +45,7 @@ const Auth = () => {
       if (!resp.ok) {
         toast({ title: '註冊失敗', description: data.error || 'Failed', variant: 'destructive' });
       } else {
-        toast({ title: '註冊成功', description: '新用戶已建立，可以使用密碼登入。' });
+        toast({ title: '註冊成功', description: '新用户已建立，可以使用密碼登入。' });
         setIsLogin(true);
       }
     } catch (e: any) {
@@ -61,7 +61,7 @@ const Auth = () => {
         <CardHeader className="text-center">
           <CardTitle className="text-2xl">{isLogin ? '登入' : '註冊'}</CardTitle>
           <CardDescription>
-            {isLogin ? '登入您的帳戶以繼續' : '建立新帳戶（需管理員權限）'}
+            {isLogin ? '登入您的帳户以繼續' : '建立新帳户（需管理員權限）'}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -98,7 +98,7 @@ const Auth = () => {
             </Button>
           </form>
           <div className="mt-4 text-center text-sm">
-            {isLogin ? '還沒有帳戶？' : '已有帳戶？'}
+            {isLogin ? '還沒有帳户？' : '已有帳户？'}
             <Button variant="link" className="px-1" onClick={() => setIsLogin(!isLogin)}>
               {isLogin ? '註冊' : '登入'}
             </Button>

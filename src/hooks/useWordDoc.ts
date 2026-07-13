@@ -13,9 +13,10 @@ export const DOCX_DOC_TYPES: { key: string; label: string; description: string; 
 export interface GenerateDocxInput {
   company_id: string;
   doc_type: string;
-  content?: string;       // 決議 / 會議記錄的議決事項內文
-  meeting_date?: string;  // 會議 / 決議日期
-  location?: string;      // 會議地點
+  form_code?: string;     // CR form code (nar1, nd2a, nd2b, ...)
+  content?: string;
+  meeting_date?: string;
+  location?: string;
 }
 
 interface GenerateDocxResult {

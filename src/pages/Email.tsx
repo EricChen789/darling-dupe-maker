@@ -29,7 +29,7 @@ import {
 
 const TYPE_LABEL: Record<string, string> = {
   invoice: '發票郵件',
-  collection: '客戶資料收集',
+  collection: '客户資料收集',
   reminder: '申報提醒',
   general: '一般',
   incoming: '📥 收到郵件',
@@ -174,7 +174,7 @@ const Email = () => {
     <div>
       <PageHeader
         title="郵件模塊"
-        description="郵件模板管理、變數替換、發票／客戶資料收集郵件、定時發送任務"
+        description="郵件模板管理、變數替換、發票／客户資料收集郵件、定時發送任務"
       />
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
@@ -347,7 +347,7 @@ const Email = () => {
                 <SelectContent>
                   <SelectItem value="all">全部</SelectItem>
                   <SelectItem value="invoice">發票郵件</SelectItem>
-                  <SelectItem value="collection">客戶資料收集</SelectItem>
+                  <SelectItem value="collection">客户資料收集</SelectItem>
                   <SelectItem value="reminder">申報提醒</SelectItem>
                   <SelectItem value="general">一般</SelectItem>
                   <SelectItem value="incoming">📥 收到郵件</SelectItem>
@@ -459,7 +459,7 @@ const Email = () => {
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="invoice">發票郵件</SelectItem>
-                      <SelectItem value="collection">客戶資料收集</SelectItem>
+                      <SelectItem value="collection">客户資料收集</SelectItem>
                       <SelectItem value="reminder">申報提醒</SelectItem>
                       <SelectItem value="general">一般</SelectItem>
                     </SelectContent>

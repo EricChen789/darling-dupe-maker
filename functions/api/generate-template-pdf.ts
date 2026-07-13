@@ -47,7 +47,7 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
     };
 
     const template = data.template || "";
-    // 安全校验：只取文件名、必须 .pdf、不含路径穿越
+    // 安全校驗：只取文件名、必須 .pdf、不含路徑穿越
     if (!template.endsWith(".pdf") || template.includes("/") || template.includes("\\") || template.includes("..")) {
       return jsonResp({ error: "Invalid template name" }, 400);
     }
@@ -76,14 +76,14 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
         const tf = form.getTextField(name);
         tf.setText(value != null ? String(value) : "");
         if (customFont) tf.updateAppearances(customFont);
-      } catch { /* 字段不存在或类型不符，跳过 */ }
+      } catch { /* 字段不存在或類型不符，跳過 */ }
     }
 
-    // 勾选框（通用端点用 check()，等价于 field_value = True）
+    // 勾選框（通用端點用 check()，等價於 field_value = True）
     for (const name of data.checkboxes || []) {
       try {
         form.getCheckBox(name).check();
-      } catch { /* 跳过 */ }
+      } catch { /* 跳過 */ }
     }
 
     form.flatten();

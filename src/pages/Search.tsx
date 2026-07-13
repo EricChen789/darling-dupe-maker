@@ -149,7 +149,7 @@ const Search = () => {
     <div>
       <PageHeader
         title="歷史檢索"
-        description="全域搜尋公司與自然人，並查閱公司當前／歷史董事、股東、股份轉讓及重要控制人登記冊"
+        description="全域搜尋公司與自然人，並查閲公司當前／歷史董事、股東、股份轉讓及重要控制人登記冊"
       />
 
       {/* 6.1 全域搜尋 */}
@@ -216,7 +216,7 @@ const Search = () => {
         <div className="flex items-center gap-3 mb-4 max-w-xl">
           <Label className="text-xs whitespace-nowrap">公司登記冊：</Label>
           <Select value={companyId} onValueChange={setCompanyId}>
-            <SelectTrigger><SelectValue placeholder="選擇公司查閱登記冊…" /></SelectTrigger>
+            <SelectTrigger><SelectValue placeholder="選擇公司查閲登記冊…" /></SelectTrigger>
             <SelectContent>
               {companies.map(c => (
                 <SelectItem key={c.id} value={c.id}>{c.name}{c.chineseName ? `（${c.chineseName}）` : ''}</SelectItem>

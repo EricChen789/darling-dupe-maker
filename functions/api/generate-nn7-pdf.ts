@@ -1,5 +1,5 @@
 // POST /api/generate-nn7-pdf
-// 非香港公司更改秘书及董事详情 —— 移植自 local-server/server.py:_fill_nd2b_pdf(template='NN7-template.pdf')
+// 非香港公司更改秘書及董事詳情 —— 移植自 local-server/server.py:_fill_nd2b_pdf(template='NN7-template.pdf')
 // body: { brNumber, companyName, role, identity, nameEnglish, nameChinese, idNumber, address,
 //         changeType, newNameEnglish, newNameChinese, newIdNumber, newAddress, changeDescription,
 //         effectiveDate, signerName, signDate, presentorName, presentorAddress, presentorContact }
@@ -82,7 +82,7 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
 
     const br8 = (data.brNumber || "").replace(/[^0-9A-Za-z]/g, "").slice(0, 8);
 
-    // 英文姓名拆分：姓=最后一段，其余=前面所有段
+    // 英文姓名拆分：姓=最後一段，其餘=前面所有段
     const nameParts = (data.nameEnglish || "").trim().split(/\s+/).filter(Boolean);
     let surname = "", other = "";
     if (nameParts.length > 1) {
@@ -105,12 +105,12 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
       setF("fill_5_P.1", other);
       setF("fill_7_P.1", data.idNumber);
 
-      // P.2 变更详情：目前后端仅支持地址变更
+      // P.2 變更詳情：目前後端僅支持地址變更
       if (data.changeType === "address" && data.newAddress) {
         setF("fill_19_P.2", data.newAddress);
       }
 
-      // P.6 受保护资料
+      // P.6 受保護資料
       checkF(role === "secretary" ? "cb_1_P.6" : "cb_2_P.6");
       setF("fill_2_P.6", data.nameChinese);
       setF("fill_3_P.6", surname);
@@ -123,7 +123,7 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
     setF("fill_9_P.1", data.presentorAddress);
     setF("fill_10_P.1", data.presentorContact);
 
-    // P.3 签署（signDate 原样，不拆分）
+    // P.3 簽署（signDate 原樣，不拆分）
     setF("fill_30_P.3", data.signerName);
     setF("fill_31_P.3", data.signDate);
 

@@ -22,7 +22,7 @@ const DOC_TYPE_LABEL: Record<string, string> = {
   SHARE_TRANSFER: '股份轉讓',
   BANKING: '銀行文件',
   CORRESPONDENCE: '往來函件',
-  BIR51: '利得稅報稅表 (BIR51)',
+  BIR51: '利得税報税表 (BIR51)',
   AUDIT: '審計報告',
   AUDIT_REPORT: '審計報告',
   BR_RENEWAL: '商業登記續期',

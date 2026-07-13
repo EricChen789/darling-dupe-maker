@@ -7,7 +7,7 @@ interface Env {
 // ============================================================================
 // NAR1 PDF Generator — 原生 AcroForm 模式
 //
-// 策略（與用戶提供的「正確」NAR1 PDF 相同）：
+// 策略（與用户提供的「正確」NAR1 PDF 相同）：
 //  - 不嵌入任何字體（避免 NotoSansTC 12MB 觸發 Edge Function WORKER_LIMIT）
 //  - 模板本身已包含 /PMingLiU (Type0, UniCNS-UTF16-H) 字體資源
 //  - 含中文的欄位：把 widget 的 /DA 設為 "/PMingLiU 12 Tf 0 g"
@@ -15,7 +15,7 @@ interface Env {
 //  - 純 ASCII 欄位：保留模板原 /DA (/Helv)，用 PDFString 寫入 /V
 //  - 設置 AcroForm /NeedAppearances = true
 //      → Adobe Reader / Chrome / Preview 開啟時自動以 PMingLiU 渲染中文
-//      → 確保各 PDF 閱讀器顯示一致，不再亂碼
+//      → 確保各 PDF 閲讀器顯示一致，不再亂碼
 // ============================================================================
 
 const corsHeaders = {

@@ -81,7 +81,7 @@ export default function Reminders() {
         await upsert.mutateAsync({
           company_id: c.id, reminder_type: 'NAR1',
           title: `${c.name} — NAR1 周年申報`, due_date: dueStr, status: 'pending',
-          notes: `成立週年 ${fmtISO(thisYear)} + 42 日`,
+          notes: `成立周年 ${fmtISO(thisYear)} + 42 日`,
         });
         created++;
       }
@@ -278,7 +278,7 @@ export default function Reminders() {
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="NAR1">NAR1 周年申報</SelectItem>
-                      <SelectItem value="IRD">IRD 報稅</SelectItem>
+                      <SelectItem value="IRD">IRD 報税</SelectItem>
                       <SelectItem value="SCR">SCR 更新</SelectItem>
                       <SelectItem value="BR_RENEWAL">商業登記續期</SelectItem>
                       <SelectItem value="OTHER">其他</SelectItem>

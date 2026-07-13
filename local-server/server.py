@@ -3064,6 +3064,10 @@ def generate_cr_form_pdf():
     if request.method == 'OPTIONS':
         return ('', 204)
     try:
+        u = get_user()
+        if not u:
+            return jsonify({'error': 'Not authenticated'}), 401
+
         data = request.get_json(force=True, silent=True) or {}
         company_id = data.get('company_id')
         form_code = (data.get('form_code') or '').lower()
@@ -3759,6 +3763,10 @@ def generate_docx():
     if request.method == 'OPTIONS':
         return ('', 204)
     try:
+        u = get_user()
+        if not u:
+            return jsonify({'error': 'Not authenticated'}), 401
+
         data = request.get_json(force=True, silent=True) or {}
         company_id = data.get('company_id')
         doc_type = data.get('doc_type')

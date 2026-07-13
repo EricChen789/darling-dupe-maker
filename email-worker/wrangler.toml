@@ -1,0 +1,23 @@
+# Email Worker — 處理定時發送 + 接收郵件
+name = "secretary-email-worker"
+main = "index.ts"
+compatibility_date = "2025-05-19"
+compatibility_flags = ["nodejs_compat"]
+
+# ── D1 數據庫（與 Pages 共用同一個）──
+[[d1_databases]]
+binding = "DB"
+database_name = "secretary-db"
+database_id = "d623d895-04fb-497f-8a68-df2f148dc412"
+
+# ── 定時檢查排程郵件（每 60 秒）──
+[triggers]
+crons = ["* * * * *"]
+
+# ── 環境變數 ──
+[vars]
+SENDER_EMAIL = "noreply@muselabs.org"
+SENDER_NAME = "Muse Labs 公司秘書"
+
+# ⚠️ 部署前請修改 SENDER_EMAIL 為你擁有 SPF 的域名，
+#    並在該域名的 DNS 加入：v=spf1 include:mailchannels.net ~all

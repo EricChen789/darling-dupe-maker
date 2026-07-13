@@ -29,7 +29,11 @@ bucket_name = "company-logs"
 binding = "BACKUPS"
 bucket_name = "backups"
 
-# Environment variables for Supabase JWT verification
+# Environment variables
 [vars]
+# 郵件發送設定（MailChannels，需 SPF 記錄才真正寄出）
+SENDER_EMAIL = "noreply@secretary-email-worker.czijun59.workers.dev"
+SENDER_NAME = "Muse Labs 公司秘書"
+# Supabase JWT 驗證（已廢棄，保留相容）
 SUPABASE_URL = "https://uqcsgmmsrgtlcqutaomg.supabase.co"
 SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVxY3NnbW1zcmd0bGNxdXRhb21nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAwMTA2NzYsImV4cCI6MjA4NTU4NjY3Nn0.AWo97hF1eOJ43H4_deUplIS8Y7ckSIxWmw-7TlX9GY4"

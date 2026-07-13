@@ -32,10 +32,11 @@ const TYPE_LABEL: Record<string, string> = {
   collection: '客戶資料收集',
   reminder: '申報提醒',
   general: '一般',
+  incoming: '📥 收到郵件',
 };
 
 const typeBadge = (t: string) => (
-  <Badge variant={t === 'invoice' ? 'default' : t === 'reminder' ? 'destructive' : 'secondary'} className="text-xs">
+  <Badge variant={t === 'invoice' ? 'default' : t === 'reminder' ? 'destructive' : t === 'incoming' ? 'default' : 'secondary'} className="text-xs">
     {TYPE_LABEL[t] || t}
   </Badge>
 );
@@ -44,6 +45,7 @@ const statusBadge = (s: string) => {
   if (s === 'sent') return <Badge className="text-xs bg-green-600 hover:bg-green-600">已發送</Badge>;
   if (s === 'scheduled') return <Badge variant="secondary" className="text-xs">已排程</Badge>;
   if (s === 'failed') return <Badge variant="destructive" className="text-xs">失敗</Badge>;
+  if (s === 'incoming') return <Badge className="text-xs bg-blue-600 hover:bg-blue-600">已收到</Badge>;
   return <Badge variant="outline" className="text-xs">{s}</Badge>;
 };
 
@@ -165,6 +167,7 @@ const Email = () => {
     sent: logs.filter(l => l.status === 'sent').length,
     scheduled: logs.filter(l => l.status === 'scheduled').length,
     failed: logs.filter(l => l.status === 'failed').length,
+    incoming: logs.filter(l => l.status === 'incoming').length,
   }), [templates, logs]);
 
   return (
@@ -174,9 +177,10 @@ const Email = () => {
         description="郵件模板管理、變數替換、發票／客戶資料收集郵件、定時發送任務"
       />
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
         <StatCard label="郵件模板" value={stats.templates} />
         <StatCard label="已發送" value={stats.sent} valueClassName="text-green-600" />
+        <StatCard label="已收到" value={stats.incoming} valueClassName="text-blue-600" />
         <StatCard label="已排程" value={stats.scheduled} valueClassName="text-primary" />
         <StatCard label="發送失敗" value={stats.failed} valueClassName="text-destructive" />
       </div>
@@ -346,6 +350,7 @@ const Email = () => {
                   <SelectItem value="collection">客戶資料收集</SelectItem>
                   <SelectItem value="reminder">申報提醒</SelectItem>
                   <SelectItem value="general">一般</SelectItem>
+                  <SelectItem value="incoming">📥 收到郵件</SelectItem>
                 </SelectContent>
               </Select>
               {logTypeFilter !== 'all' && (

@@ -1,6 +1,36 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { supabase } from '@/integrations/supabase/client';
 import { Company } from '@/types';
+
+// ── API helpers ──
+const API = '/api';
+function token() { return localStorage.getItem('secretary_jwt') || ''; }
+function authHeaders(): Record<string, string> {
+  return { 'Content-Type': 'application/json', Authorization: `Bearer ${token()}` };
+}
+
+async function apiGet(path: string) {
+  const resp = await fetch(`${API}${path}`, { headers: authHeaders() });
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  return resp.json();
+}
+
+async function apiPost(path: string, body: any) {
+  const resp = await fetch(`${API}${path}`, { method: 'POST', headers: authHeaders(), body: JSON.stringify(body) });
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  return resp.json();
+}
+
+async function apiPut(path: string, body: any) {
+  const resp = await fetch(`${API}${path}`, { method: 'PUT', headers: authHeaders(), body: JSON.stringify(body) });
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  return resp.json();
+}
+
+async function apiDelete(path: string) {
+  const resp = await fetch(`${API}${path}`, { method: 'DELETE', headers: authHeaders() });
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  return resp.json();
+}
 
 export interface EmailTemplate {
   id: string;
@@ -72,18 +102,12 @@ export function buildCompanyVars(company?: Company | null): Record<string, strin
   };
 }
 
-// ── 模板 CRUD ──
+// ── 模板 CRUD（fetch → API，兼容本地 Flask 和生產 Functions）──
 export function useEmailTemplates() {
   return useQuery({
     queryKey: ['email_templates'],
     queryFn: async (): Promise<EmailTemplate[]> => {
-      const { data, error } = await supabase
-        .from('email_templates' as any)
-        .select('*')
-        .order('created_at', { ascending: true })
-        .limit(1000);
-      if (error) throw error;
-      return (data || []) as unknown as EmailTemplate[];
+      return apiGet('/email_templates');
     },
   });
 }
@@ -100,11 +124,9 @@ export function useSaveEmailTemplate() {
         is_default: t.is_default ? 1 : 0,
       };
       if (t.id) {
-        const { error } = await supabase.from('email_templates' as any).update(payload).eq('id', t.id);
-        if (error) throw error;
+        return apiPut(`/email_templates/${t.id}`, payload);
       } else {
-        const { error } = await supabase.from('email_templates' as any).insert(payload);
-        if (error) throw error;
+        return apiPost('/email_templates', payload);
       }
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['email_templates'] }),
@@ -115,25 +137,18 @@ export function useDeleteEmailTemplate() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase.from('email_templates' as any).delete().eq('id', id);
-      if (error) throw error;
+      return apiDelete(`/email_templates/${id}`);
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['email_templates'] }),
   });
 }
 
-// ── 發送記錄 ──
+// ── 發送記錄（包含已發送、排程、收到 incoming 郵件）──
 export function useEmailLogs() {
   return useQuery({
     queryKey: ['email_logs'],
     queryFn: async (): Promise<EmailLog[]> => {
-      const { data, error } = await supabase
-        .from('email_logs' as any)
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(2000);
-      if (error) throw error;
-      return (data || []) as unknown as EmailLog[];
+      return apiGet('/email_logs?limit=2000');
     },
     refetchInterval: 30000, // 讓排程郵件狀態變化能自動反映
   });

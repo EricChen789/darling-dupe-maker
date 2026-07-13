@@ -114,6 +114,7 @@ const Email = () => {
         scheduled_at: sendMode === 'scheduled'
           ? new Date(scheduledAt).toISOString()
           : undefined,
+        variables: vars,
       });
       if (res.status === 'scheduled') {
         toast({ title: '已排程', description: `郵件將於指定時間自動發送` });

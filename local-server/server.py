@@ -20,9 +20,9 @@ import urllib.request
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.utils import formataddr
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from flask import Flask, request, jsonify, g, Response
-from fpdf import FPDF
+from fpdf import FPDF, XPos, YPos
 
 app = Flask(__name__)
 DB_PATH = os.path.join(os.path.dirname(__file__), 'local.db')
@@ -80,7 +80,8 @@ def verify_jwt(token: str) -> dict | None:
         if payload.get('exp') and payload['exp'] < time.time():
             return None
         return payload
-    except Exception:
+    except Exception as e:
+        print(f"[JWT] Verification failed: {e}")
         return None
 
 # ─── Password ───
@@ -95,7 +96,8 @@ def verify_password(password: str, stored: str) -> bool:
         salt = base64.urlsafe_b64decode(salt_b64 + '=' * (4 - len(salt_b64) % 4))
         key = hashlib.pbkdf2_hmac('sha256', password.encode(), salt, 100000, dklen=32)
         return base64url(key) == hash_b64
-    except Exception:
+    except (ValueError, TypeError) as e:
+        print(f"[AUTH] Password verification error: {e}")
         return False
 
 # ─── Auth (dev mode: always returns admin) ───
@@ -518,7 +520,7 @@ def create_pdf():
     pdf = FPDF(orientation='P', unit='pt', format='A4')
     if font_path:
         try:
-            pdf.add_font('TC', style='', fname=font_path, uni=True)
+            pdf.add_font('TC', style='', fname=font_path)
         except Exception as e:
             print(f"[PDF] Failed to load font {font_path}: {e}")
     if not font_path:
@@ -753,7 +755,7 @@ def auto_migrate():
         company = db.execute("SELECT id, name, email FROM companies LIMIT 1").fetchone()
         cid = company[0] if company else None
         templates = {r[0]: r[1] for r in db.execute("SELECT template_type, id FROM email_templates").fetchall()}
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         # EM-04: sent invoice email
         if cid and 'invoice' in templates:
             db.execute(
@@ -774,7 +776,7 @@ def auto_migrate():
                  now))
         # EM-06: scheduled reminder (future)
         if cid and 'reminder' in templates:
-            future = (datetime.utcnow() + timedelta(days=5)).isoformat()
+            future = (datetime.now(timezone.utc) + timedelta(days=5)).isoformat()
             db.execute(
                 "INSERT INTO email_logs (id, company_id, template_id, to_email, subject, body, status, scheduled_at, email_type) "
                 "VALUES (?, ?, ?, ?, ?, ?, 'scheduled', ?, 'reminder')",
@@ -870,7 +872,7 @@ def process_scheduled_emails():
     db = sqlite3.connect(DB_PATH)
     db.row_factory = sqlite3.Row
     try:
-        now = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S')
+        now = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S')
         due = db.execute(
             "SELECT * FROM email_logs WHERE status = 'scheduled' AND scheduled_at IS NOT NULL "
             "AND scheduled_at <= ? ORDER BY scheduled_at ASC LIMIT 50",
@@ -880,7 +882,7 @@ def process_scheduled_emails():
             ok, err, _sim = deliver_email(row['to_email'], row['subject'], row['body'], row['cc_email'] or '')
             db.execute(
                 "UPDATE email_logs SET status = ?, sent_at = ?, error = ?, updated_at = datetime('now') WHERE id = ?",
-                ('sent' if ok else 'failed', datetime.utcnow().isoformat() if ok else None, err, row['id'])
+                ('sent' if ok else 'failed', datetime.now(timezone.utc).isoformat() if ok else None, err, row['id'])
             )
             db.commit()
             print(f"[SCHEDULER] Processed scheduled email {row['id']} -> {'sent' if ok else 'failed'}")
@@ -943,8 +945,10 @@ def send_email():
     if scheduled_at:
         try:
             when = datetime.fromisoformat(scheduled_at.replace('Z', ''))
-            is_scheduled = when > datetime.utcnow()
-        except ValueError:
+            if when.tzinfo is None:
+                when = when.replace(tzinfo=timezone.utc)
+            is_scheduled = when > datetime.now(timezone.utc)
+        except (ValueError, TypeError):
             is_scheduled = False
 
     if is_scheduled:
@@ -962,7 +966,7 @@ def send_email():
         "INSERT INTO email_logs (id, company_id, template_id, to_email, cc_email, subject, body, status, sent_at, error, email_type) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (log_id, data.get('company_id'), data.get('template_id'), to_email, cc_email, subject, body,
-         status, datetime.utcnow().isoformat() if ok else None, err, email_type)
+         status, datetime.now(timezone.utc).isoformat() if ok else None, err, email_type)
     )
     db.commit()
     return jsonify({'success': ok, 'id': log_id, 'status': status, 'simulated': simulated, 'error': err}), (200 if ok else 502)
@@ -1539,20 +1543,67 @@ def storage_delete(bucket, filepath):
 
 
 # ─── Generic CRUD ───
+# SQL-safe identifier pattern: alphanumeric + underscore, must start with letter or underscore
+_SAFE_ID_RE = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*$')
+
+def _safe_ident(name: str) -> bool:
+    """Return True if `name` is a safe SQL identifier (no injection risk)."""
+    return bool(_SAFE_ID_RE.match(name))
+
+
 @app.route('/api/<table_name>', methods=['GET'])
 def table_list(table_name):
     if table_name not in TABLES:
         return jsonify({'error': 'Not found'}), 404
     db = get_db()
-    # Build query from search params — allow any query param as WHERE filter
-    reserved = {'search', 'limit', 'offset'}
+    # Build query from search params — supports operator suffixes: __neq, __gt, __lt,
+    # __gte, __lte, __like, __ilike, __in, __is.  Plain keys → eq.
+    reserved = {'search', 'limit', 'offset', '_order', '_order_dir'}
     where = []
     bindings = []
     for key in request.args:
         if key in reserved:
             continue
         val = request.args.get(key)
-        if val:
+        if val is None or val == '':
+            continue
+        # Operator suffix: column__op
+        if '__' in key:
+            col, op = key.rsplit('__', 1)
+            if not _safe_ident(col):
+                continue  # skip unsafe column names
+            if op == 'neq':
+                where.append(f"{col} != ?")
+                bindings.append(val)
+            elif op == 'gt':
+                where.append(f"{col} > ?")
+                bindings.append(val)
+            elif op == 'lt':
+                where.append(f"{col} < ?")
+                bindings.append(val)
+            elif op == 'gte':
+                where.append(f"{col} >= ?")
+                bindings.append(val)
+            elif op == 'lte':
+                where.append(f"{col} <= ?")
+                bindings.append(val)
+            elif op in ('like', 'ilike'):
+                where.append(f"{col} LIKE ?")
+                bindings.append(val)
+            elif op == 'in':
+                vals = [v.strip() for v in val.split(',') if v.strip()]
+                if vals:
+                    placeholders = ','.join(['?'] * len(vals))
+                    where.append(f"{col} IN ({placeholders})")
+                    bindings.extend(vals)
+            elif op == 'is':
+                where.append(f"{col} IS {val}")  # val is SQL literal e.g. NULL, NOT NULL
+            else:
+                where.append(f"{key} = ?")
+                bindings.append(val)
+        else:
+            if not _safe_ident(key):
+                continue  # skip unsafe column names
             where.append(f"{key} = ?")
             bindings.append(val)
     search = request.args.get('search')
@@ -1563,11 +1614,17 @@ def table_list(table_name):
     sql = f"SELECT * FROM {table_name}"
     if where:
         sql += " WHERE " + " AND ".join(where)
-    try:
-        db.execute(f"SELECT created_at FROM {table_name} LIMIT 1")
-        sql += " ORDER BY created_at DESC"
-    except sqlite3.OperationalError:
-        pass
+    # Order: use _order param if provided, otherwise default to created_at DESC
+    order_col = request.args.get('_order')
+    if order_col and _safe_ident(order_col):
+        order_dir = request.args.get('_order_dir', 'asc')
+        sql += f" ORDER BY {order_col} {'DESC' if order_dir == 'desc' else 'ASC'}"
+    else:
+        try:
+            db.execute(f"SELECT created_at FROM {table_name} LIMIT 1")
+            sql += " ORDER BY created_at DESC"
+        except sqlite3.OperationalError:
+            pass
     limit = min(int(request.args.get( 'limit', '100')), 1000)
     offset = int(request.args.get( 'offset', '0'))
     sql += f" LIMIT {limit} OFFSET {offset}"
@@ -2889,23 +2946,23 @@ def generate_generic_form_pdf():
 
         # Title
         pdf.set_font(font_name, 'B', 16)
-        pdf.cell(0, 10, safe_text(data.get('title', '')), ln=True, align='C')
+        pdf.cell(0, 10, safe_text(data.get('title', '')), new_x=XPos.LMARGIN, new_y=YPos.NEXT, align='C')
         if data.get('subtitle'):
             pdf.set_font(font_name, '', 10)
-            pdf.cell(0, 7, safe_text(data['subtitle']), ln=True, align='C')
+            pdf.cell(0, 7, safe_text(data['subtitle']), new_x=XPos.LMARGIN, new_y=YPos.NEXT, align='C')
         pdf.ln(4)
 
         # Form code + company info
         pdf.set_font(font_name, '', 10)
         if data.get('formCode'):
             pdf.cell(30, 6, 'Form Code:', 0, 0)
-            pdf.cell(0, 6, safe_text(data['formCode']), ln=True)
+            pdf.cell(0, 6, safe_text(data['formCode']), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         if data.get('companyName'):
             pdf.cell(30, 6, 'Company:', 0, 0)
-            pdf.cell(0, 6, safe_text(data['companyName']), ln=True)
+            pdf.cell(0, 6, safe_text(data['companyName']), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         if data.get('brNumber'):
             pdf.cell(30, 6, 'BR No.:', 0, 0)
-            pdf.cell(0, 6, safe_text(data['brNumber']), ln=True)
+            pdf.cell(0, 6, safe_text(data['brNumber']), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.ln(4)
 
         # Sections
@@ -2913,7 +2970,7 @@ def generate_generic_form_pdf():
         for sec in sections:
             if sec.get('heading'):
                 pdf.set_font(font_name, 'B', 11)
-                pdf.cell(0, 7, safe_text(sec['heading']), ln=True)
+                pdf.cell(0, 7, safe_text(sec['heading']), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
                 pdf.ln(1)
 
             if sec.get('rows'):
@@ -2922,7 +2979,7 @@ def generate_generic_form_pdf():
                     label = safe_text(row[0]) if len(row) > 0 else ''
                     value = safe_text(row[1]) if len(row) > 1 else ''
                     pdf.cell(50, 5, label + ':', 0, 0)
-                    pdf.cell(0, 5, value, ln=True)
+                    pdf.cell(0, 5, value, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
                 pdf.ln(2)
 
             if sec.get('paragraph'):
@@ -2934,7 +2991,7 @@ def generate_generic_form_pdf():
                 pdf.set_font(font_name, '', 9)
                 for b in sec['bullets']:
                     pdf.cell(5, 5, '', 0, 0)
-                    pdf.cell(0, 5, chr(8226) + ' ' + safe_text(b), ln=True)
+                    pdf.cell(0, 5, chr(8226) + ' ' + safe_text(b), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
                 pdf.ln(2)
 
         # Signature lines
@@ -2943,7 +3000,7 @@ def generate_generic_form_pdf():
             pdf.ln(6)
             pdf.set_font(font_name, '', 10)
             for sl in sig_lines:
-                pdf.cell(0, 8, safe_text(sl), ln=True)
+                pdf.cell(0, 8, safe_text(sl), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
                 pdf.ln(2)
 
         pdf_bytes = bytes(pdf.output())

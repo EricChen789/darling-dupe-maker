@@ -14,7 +14,6 @@ import {
 import { toast } from '@/hooks/use-toast';
 import { downloadAndOpenBase64Pdf } from '@/lib/downloadPdf';
 import { Company, Person, Shareholder } from '@/types';
-import { supabase } from '@/integrations/supabase/client';
 import {
   useShareTransactions, useUpsertShareTransaction, useDeleteShareTransaction,
   type ShareTransaction,

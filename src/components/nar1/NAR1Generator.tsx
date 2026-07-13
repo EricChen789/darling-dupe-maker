@@ -20,7 +20,6 @@ import {
 } from '@/components/ui/select';
 import { FileText, Download, Loader2 } from 'lucide-react';
 import { Company } from '@/types';
-import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 import { usePresenters } from '@/hooks/usePresenters';
 import { downloadBase64Pdf } from '@/lib/downloadPdf';

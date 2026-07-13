@@ -32,4 +32,5 @@ migrations/import_batch_*.sql
 __pycache__/
 *.pyc
 .dev.vars
+local.db
 local-server/storage/

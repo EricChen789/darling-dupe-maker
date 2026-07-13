@@ -148,6 +148,7 @@ export interface SendEmailInput {
   company_id?: string;
   template_id?: string;
   scheduled_at?: string; // ISO；留空即立即發送
+  variables?: Record<string, string>; // 服務端變數替換 {key} → value
 }
 
 export function useSendEmail() {

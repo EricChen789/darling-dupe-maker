@@ -63,6 +63,8 @@ class D1QueryBuilder implements QueryBuilder {
   private _single: boolean = false;
   private _returnRow: boolean = false;
   private tableId: string | null = null;
+  private _orderCol: string | null = null;
+  private _orderAsc: boolean = true;
 
   constructor(table: string) {
     this.table = table;
@@ -101,17 +103,21 @@ class D1QueryBuilder implements QueryBuilder {
     return this;
   }
 
-  neq(column: string, value: any): QueryBuilder { return this; }
-  gt(column: string, value: any): QueryBuilder { return this; }
-  lt(column: string, value: any): QueryBuilder { return this; }
-  gte(column: string, value: any): QueryBuilder { return this; }
-  lte(column: string, value: any): QueryBuilder { return this; }
-  like(column: string, pattern: string): QueryBuilder { this.filters[column] = pattern; return this; }
-  ilike(column: string, pattern: string): QueryBuilder { this.filters[column] = pattern; return this; }
-  in(column: string, values: any[]): QueryBuilder { return this; }
-  is(column: string, value: any): QueryBuilder { return this; }
+  neq(column: string, value: any): QueryBuilder { this.filters[`${column}__neq`] = value; return this; }
+  gt(column: string, value: any): QueryBuilder { this.filters[`${column}__gt`] = value; return this; }
+  lt(column: string, value: any): QueryBuilder { this.filters[`${column}__lt`] = value; return this; }
+  gte(column: string, value: any): QueryBuilder { this.filters[`${column}__gte`] = value; return this; }
+  lte(column: string, value: any): QueryBuilder { this.filters[`${column}__lte`] = value; return this; }
+  like(column: string, pattern: string): QueryBuilder { this.filters[`${column}__like`] = pattern; return this; }
+  ilike(column: string, pattern: string): QueryBuilder { this.filters[`${column}__ilike`] = pattern; return this; }
+  in(column: string, values: any[]): QueryBuilder { this.filters[`${column}__in`] = values.join(','); return this; }
+  is(column: string, value: any): QueryBuilder { this.filters[`${column}__is`] = value === null ? 'NULL' : String(value); return this; }
 
-  order(column: string, options?: { ascending?: boolean }): QueryBuilder { return this; }
+  order(column: string, options?: { ascending?: boolean }): QueryBuilder {
+    this._orderCol = column;
+    this._orderAsc = options?.ascending ?? true;
+    return this;
+  }
 
   range(from: number, to: number): QueryBuilder {
     this._offset = from;
@@ -135,6 +141,10 @@ class D1QueryBuilder implements QueryBuilder {
       }
       params.set("limit", String(this._limit));
       if (this._offset) params.set("offset", String(this._offset));
+      if (this._orderCol) {
+        params.set("_order", this._orderCol);
+        params.set("_order_dir", this._orderAsc ? "asc" : "desc");
+      }
 
       let result: any;
 

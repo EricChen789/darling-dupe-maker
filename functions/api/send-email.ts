@@ -1,18 +1,15 @@
-// Cloudflare Pages Function: Send Email via MailChannels
-// MailChannels 是 Cloudflare Workers 的合作夥伴，Workers 可免費發送郵件。
+// Cloudflare Pages Function: Send Email via Resend API
+// Resend 免費方案：100 封/天，使用 onboarding@resend.dev 發送
 //
-// 前置設定（一次性）：
-//   1. 在發送域名的 DNS 加入 SPF 記錄：v=spf1 include:mailchannels.net ~all
-//   2. 在 wrangler.toml 或 Pages Dashboard 設定環境變數：
-//      SENDER_EMAIL  — 發件人電郵（必須與 SPF 域名匹配）
-//      SENDER_NAME   — 發件人名稱（可選，預設 "Muse Labs 公司秘書"）
-//   3. 若無 SPF 域名，MailChannels 會拒收（202 但實際不發送）。
+// 前置設定：
+//   1. 在 resend.com 註冊帳號，取得 API Key
+//   2. 在 Cloudflare Dashboard 設定 RESEND_API_KEY
 
 interface Env {
   DB: D1Database;
   JWT_SECRET?: string;
-  SENDER_EMAIL?: string;
   SENDER_NAME?: string;
+  RESEND_API_KEY?: string;
 }
 
 const corsHeaders = {
@@ -113,32 +110,38 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
     return json({ success: true, id: logId, status: "scheduled" });
   }
 
-  // ── 立即發送：經 MailChannels ──
-  const senderEmail = context.env.SENDER_EMAIL || "noreply@secretary-email-worker.czijun59.workers.dev";
-  const senderName = context.env.SENDER_NAME || "Muse Labs 公司秘書";
+  // ── 立即發送：經 Resend API ──
+  const apiKey = context.env.RESEND_API_KEY;
+  if (!apiKey) {
+    // 無 API Key：記錄為 failed，返回提示
+    const errMsg = "RESEND_API_KEY not configured. Get your API key at https://resend.com";
+    await context.env.DB.prepare(
+      `INSERT INTO email_logs (id, company_id, template_id, to_email, cc_email, subject, body, status, error, email_type, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'failed', ?, ?, ?, ?)`
+    ).bind(logId, companyId, templateId, to, cc, finalSubject, finalBody, errMsg, emailType, now, now).run();
+    return json({ success: false, id: logId, status: "failed", error: errMsg });
+  }
 
   try {
-    // MailChannels Send API（Cloudflare Workers 自動授權，無需 API Key）
-    const mcResp = await fetch("https://api.mailchannels.net/tx/v1/send", {
+    const senderName = context.env.SENDER_NAME || "Muse Labs";
+    const resp = await fetch("https://api.resend.com/emails", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify({
-        personalizations: [{
-          to: [{ email: to }],
-          ...(cc ? { cc: [{ email: cc }] } : {}),
-        }],
-        from: { email: senderEmail, name: senderName },
+        from: `${senderName} <onboarding@resend.dev>`,
+        to: [to],
+        ...(cc ? { cc: [cc] } : {}),
         subject: finalSubject,
-        content: [{
-          type: "text/html",
-          value: finalBody.replace(/\n/g, "<br>"),
-        }],
+        html: finalBody.replace(/\n/g, "<br>"),
       }),
     });
 
-    const mcBody = await mcResp.text().catch(() => "");
-    const sent = mcResp.ok || mcResp.status === 202;
-    const errMsg = sent ? "" : `MailChannels HTTP ${mcResp.status}: ${mcBody}`.slice(0, 500);
+    const respBody = await resp.text().catch(() => "");
+    const sent = resp.ok;
+    const errMsg = sent ? "" : `Resend HTTP ${resp.status}: ${respBody}`.slice(0, 500);
 
     await context.env.DB.prepare(
       `INSERT INTO email_logs (id, company_id, template_id, to_email, cc_email, subject, body, status, sent_at, error, email_type, created_at, updated_at)
@@ -152,7 +155,7 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
     ).run();
 
     if (!sent) {
-      console.error(`[send-email] MailChannels error: ${errMsg}`);
+      console.error(`[send-email] Resend error: ${errMsg}`);
     }
 
     return json({

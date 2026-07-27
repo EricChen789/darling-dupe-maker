@@ -2005,16 +2005,19 @@ def generate_scr_pdf():
     hdr_size = 8
     row_h = 14
 
-    # ── Block 1: 公司名稱 only (no English label), value + underline to the right ──
+    # ── Block 1: NAME OF COMPANY (top) + 公司名稱 (bottom), stacked labels ──
+    label_en = "NAME OF COMPANY:  "
     label_cn = "公司名稱:  "
+    tnr(label_en, M, y, size=hdr_size, bold=True)
     tc(label_cn, M, y + row_h, size=hdr_size)
+    lw_en = pdf.get_string_width(label_en)
     lw_cn = pdf.get_string_width(label_cn)
-    val_x = M + lw_cn + 2
-    # Company name — use English name (Chinese below if available)
+    val_x = M + max(lw_en, lw_cn) + 2
+    # Company name on the Chinese row
     tc(co_name, val_x, y + row_h, size=hdr_size)
     if co_name_ch:
         tc(co_name_ch, val_x + pdf.get_string_width(co_name) + 10, y + row_h, size=hdr_size)
-    # Underline at bottom of Chinese label row
+    # Underline at bottom of Chinese row
     val_w = pdf.get_string_width(co_name) + (pdf.get_string_width(co_name_ch) + 10 if co_name_ch else 0)
     pdf.line(val_x, y + row_h + 12, val_x + max(val_w, 120), y + row_h + 12)
     y += row_h * 2 + 4

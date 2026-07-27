@@ -2065,16 +2065,12 @@ def generate_scr_pdf():
     # ── Header: NAME OF COMPANY full width, then COMPANY NUMBER || JURISDICTION side by side ──
     col_a_x = M
 
-    # Row 1 (English): NAME OF COMPANY
+    # Row 1 (English): NAME OF COMPANY — label only, no value/underline
     tnr("NAME OF COMPANY:  ", col_a_x, y, size=hdr_size, bold=True)
-    nc_label_w = pdf.get_string_width("NAME OF COMPANY:  ")
-    tnr(co_name, col_a_x + nc_label_w, y, size=hdr_size)
-    name_val_w = pdf.get_string_width(co_name)
-    line_h(col_a_x + nc_label_w, col_a_x + nc_label_w + max(name_val_w, 150), y + 11)
 
-    y += 14
+    y += 12
 
-    # Row 2 (Chinese): 公司名稱
+    # Row 2 (Chinese): 公司名稱 — with value + underline
     tc("公司名稱:  ", col_a_x, y, size=hdr_size)
     cn_label_w = pdf.get_string_width("公司名稱:  ")
     tc(co_name_ch if co_name_ch else co_name, col_a_x + cn_label_w, y, size=hdr_size)
@@ -2083,25 +2079,17 @@ def generate_scr_pdf():
 
     y += 16
 
-    # Row 3 (English): COMPANY NUMBER _______  JURISDICTION: HONG KONG
+    # Row 3 (English): COMPANY NUMBER  |  JURISDICTION — labels only, no values/underlines
     tnr("COMPANY NUMBER:  ", col_a_x, y, size=hdr_size, bold=True)
     num_label_w = pdf.get_string_width("COMPANY NUMBER:  ")
-    tnr(br, col_a_x + num_label_w, y, size=hdr_size)
-    br_val_w = pdf.get_string_width(br)
-    br_underline_end = col_a_x + num_label_w + max(br_val_w, 100)
-    line_h(col_a_x + num_label_w, br_underline_end, y + 11)
+    br_underline_end = col_a_x + num_label_w + 100
 
-    # JURISDICTION right after COMPANY NUMBER underline
     jur_x = br_underline_end + 24
     tnr("JURISDICTION:  ", jur_x, y, size=hdr_size, bold=True)
-    jlw = pdf.get_string_width("JURISDICTION:  ")
-    tnr("HONG KONG", jur_x + jlw, y, size=hdr_size)
-    jur_val_w = pdf.get_string_width("HONG KONG")
-    line_h(jur_x + jlw, jur_x + jlw + max(jur_val_w, 80), y + 11)
 
     y += 14
 
-    # Row 4 (Chinese): 公司編號 _______  司法管轄區: HONG KONG
+    # Row 4 (Chinese): 公司編號 _______  司法管轄區: HONG KONG — with underlines
     tc("公司編號:  ", col_a_x, y, size=hdr_size)
     num2_label_w = pdf.get_string_width("公司編號:  ")
     tc(br, col_a_x + num2_label_w, y, size=hdr_size)

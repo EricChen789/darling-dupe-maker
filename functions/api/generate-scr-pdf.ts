@@ -176,65 +176,49 @@ export async function onRequest(context: { request: Request; env: Env }) {
     const br = rget(company, 'company_number') || '';
 
     // ═══════════════════════════════ HEADER ═══════════════════════════════
-    // 坐标：pdf-lib 原点左下，y 向上。用 top-down 逻辑：yTop = PAGE_H - offset
-    let y = PAGE_H - 22;  // 22pt from top = local `y = 22` in fpdf2
+    // 坐标：pdf-lib 原点左下，y 向上。y 值 = PAGE_H - local_y（对标 fpdf2 的 y 坐标）
+    let y = PAGE_H - 22;  // local: y = 22
     const hdrSize = 8;
 
     // Title — right side, bold
     drawMixedRight(page, "SIGNIFICANT CONTROLLERS REGISTER", { x: PAGE_W - M, y, size: 13, cjk: f.cjk, ascii: f.ascii, bold: true });
     drawMixedRight(page, "重要控制人登記冊", { x: PAGE_W - M, y: y - 18, size: 11, cjk: f.cjk, ascii: f.ascii, bold: true });
 
-    // Header: NAME OF COMPANY full width, then COMPANY NUMBER || JURISDICTION side by side
+    // ── Header: NAME OF COMPANY full width, then COMPANY NUMBER || JURISDICTION side by side ──
+    // English rows: labels only (no values, no underlines)
+    // Chinese rows: labels + values + underlines
     const colA = M;
 
-    // Row 1 (English): NAME OF COMPANY
+    // Row 1 (English): NAME OF COMPANY — label only, no value/underline  (local: y+=12)
     drawMixed(page, "NAME OF COMPANY:  ", { x: colA, y, size: hdrSize, cjk: f.cjk, ascii: f.ascii, bold: true });
-    const ncLabelW = widthOfText("NAME OF COMPANY:  ", f.cjk, f.ascii, hdrSize);
-    drawMixed(page, coName, { x: colA + ncLabelW, y, size: hdrSize, cjk: f.cjk, ascii: f.ascii });
-    const nameValW = widthOfText(coName, f.cjk, f.ascii, hdrSize);
-    hline(page, colA + ncLabelW, colA + ncLabelW + Math.max(nameValW, 150), y - 2, 0.5);
+    y -= 12;
 
-    y -= 14;  // local: y += 14
-
-    // Row 2 (Chinese): 公司名稱
+    // Row 2 (Chinese): 公司名稱 — with value + underline  (local: y+=16)
     drawMixed(page, "公司名稱:  ", { x: colA, y, size: hdrSize, cjk: f.cjk, ascii: f.ascii });
     const cnLabelW = widthOfText("公司名稱:  ", f.cjk, f.ascii, hdrSize);
     drawMixed(page, coNameCh || coName, { x: colA + cnLabelW, y, size: hdrSize, cjk: f.cjk, ascii: f.ascii });
     const cnValW = widthOfText(coNameCh || coName, f.cjk, f.ascii, hdrSize);
     hline(page, colA + cnLabelW, colA + cnLabelW + Math.max(cnValW, 150), y - 2, 0.5);
+    y -= 16;
 
-    y -= 16;  // local: y += 16
-
-    // Row 3 (English): COMPANY NUMBER _______  JURISDICTION: HONG KONG
+    // Row 3 (English): COMPANY NUMBER  |  JURISDICTION — labels only, no values/underlines  (local: y+=14)
     drawMixed(page, "COMPANY NUMBER:  ", { x: colA, y, size: hdrSize, cjk: f.cjk, ascii: f.ascii, bold: true });
     const numLabelW = widthOfText("COMPANY NUMBER:  ", f.cjk, f.ascii, hdrSize);
-    drawMixed(page, br, { x: colA + numLabelW, y, size: hdrSize, cjk: f.cjk, ascii: f.ascii });
-    const brValW = widthOfText(br, f.cjk, f.ascii, hdrSize);
-    const brUnderlineEnd = colA + numLabelW + Math.max(brValW, 100);
-    hline(page, colA + numLabelW, brUnderlineEnd, y - 2, 0.5);
-
-    // JURISDICTION right after COMPANY NUMBER underline
+    const brUnderlineEnd = colA + numLabelW + 100;
     const jurX = brUnderlineEnd + 24;
     drawMixed(page, "JURISDICTION:  ", { x: jurX, y, size: hdrSize, cjk: f.cjk, ascii: f.ascii, bold: true });
-    const jlw = widthOfText("JURISDICTION:  ", f.cjk, f.ascii, hdrSize);
-    drawMixed(page, "HONG KONG", { x: jurX + jlw, y, size: hdrSize, cjk: f.cjk, ascii: f.ascii });
-    const jurValW = widthOfText("HONG KONG", f.cjk, f.ascii, hdrSize);
-    hline(page, jurX + jlw, jurX + jlw + Math.max(jurValW, 80), y - 2, 0.5);
+    y -= 14;
 
-    y -= 14;  // local: y += 14
-
-    // Row 4 (Chinese): 公司編號 _______  司法管轄區: HONG KONG
+    // Row 4 (Chinese): 公司編號 _______  司法管轄區: HONG KONG — with underlines  (local: y+=16)
     drawMixed(page, "公司編號:  ", { x: colA, y, size: hdrSize, cjk: f.cjk, ascii: f.ascii });
     const num2LabelW = widthOfText("公司編號:  ", f.cjk, f.ascii, hdrSize);
     drawMixed(page, br, { x: colA + num2LabelW, y, size: hdrSize, cjk: f.cjk, ascii: f.ascii });
     const br2ValW = widthOfText(br, f.cjk, f.ascii, hdrSize);
     const br2UnderlineEnd = colA + num2LabelW + Math.max(br2ValW, 100);
     hline(page, colA + num2LabelW, br2UnderlineEnd, y - 2, 0.5);
-
     drawMixed(page, "司法管轄區:  HONG KONG", { x: jurX, y, size: hdrSize, cjk: f.cjk, ascii: f.ascii });
     hline(page, jurX, jurX + 120, y - 2, 0.5);
-
-    y -= 16;  // local: y += 16
+    y -= 16;
 
     // Separator
     hline(page, M, PAGE_W - M, y, 0.5);

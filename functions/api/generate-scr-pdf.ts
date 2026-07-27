@@ -139,7 +139,11 @@ function hline(page: any, x1: number, x2: number, y: number, thickness: number =
   page.drawLine({ start: { x: x1, y }, end: { x: x2, y }, color: BLACK, thickness });
 }
 
-// ── Main handler ──
+// ══════════════════════════════════════════════════════════════
+//  Main handler — line-by-line mirror of local Flask server.py
+//  fpdf2 (top-left origin, y↓) → pdf-lib (bottom-left origin, y↑)
+//  Mapping: cloud_y = PAGE_H - local_y, cloud y-=X = local y+=X
+// ══════════════════════════════════════════════════════════════
 export async function onRequest(context: { request: Request; env: Env }) {
   const { request, env } = context;
   if (request.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
@@ -171,61 +175,62 @@ export async function onRequest(context: { request: Request; env: Env }) {
 
     let page = pdf.addPage([PAGE_W, PAGE_H]);
 
+    // ── Company Data ──
     const coName = rget(company, 'name') || '';
     const coNameCh = rget(company, 'chinese_name') || '';
     const br = rget(company, 'company_number') || '';
 
-    // ═══════════════════════════════ HEADER ═══════════════════════════════
-    // 坐标：pdf-lib 原点左下，y 向上。y 值 = PAGE_H - local_y（对标 fpdf2 的 y 坐标）
-    let y = PAGE_H - 22;  // local: y = 22
+    // ═══════════════════════ HEADER BLOCK ═══════════════════════
+
+    let y = PAGE_H - 34;  // local: y = 22 (+12pt baseline adjustment for pdf-lib)
     const hdrSize = 8;
 
-    // Title — right side, bold
+    // ── Title on right side ──  (local: title_x = PW - M)
     drawMixedRight(page, "SIGNIFICANT CONTROLLERS REGISTER", { x: PAGE_W - M, y, size: 13, cjk: f.cjk, ascii: f.ascii, bold: true });
     drawMixedRight(page, "重要控制人登記冊", { x: PAGE_W - M, y: y - 18, size: 11, cjk: f.cjk, ascii: f.ascii, bold: true });
 
     // ── Header: NAME OF COMPANY full width, then COMPANY NUMBER || JURISDICTION side by side ──
-    // English rows: labels only (no values, no underlines)
-    // Chinese rows: labels + values + underlines
-    const colA = M;
+    const colA = M;  // local: col_a_x = M
 
-    // Row 1 (English): NAME OF COMPANY — label only, no value/underline  (local: y+=12)
+    // Row 1 (English): NAME OF COMPANY — label only, no value/underline  (local: y += 12)
     drawMixed(page, "NAME OF COMPANY:  ", { x: colA, y, size: hdrSize, cjk: f.cjk, ascii: f.ascii, bold: true });
     y -= 12;
 
-    // Row 2 (Chinese): 公司名稱 — with value + underline  (local: y+=16)
+    // Row 2 (Chinese): 公司名稱 — with value + underline  (local: y += 16)
     drawMixed(page, "公司名稱:  ", { x: colA, y, size: hdrSize, cjk: f.cjk, ascii: f.ascii });
     const cnLabelW = widthOfText("公司名稱:  ", f.cjk, f.ascii, hdrSize);
     drawMixed(page, coNameCh || coName, { x: colA + cnLabelW, y, size: hdrSize, cjk: f.cjk, ascii: f.ascii });
     const cnValW = widthOfText(coNameCh || coName, f.cjk, f.ascii, hdrSize);
-    hline(page, colA + cnLabelW, colA + cnLabelW + Math.max(cnValW, 150), y - 2, 0.5);
+    hline(page, colA + cnLabelW, colA + cnLabelW + Math.max(cnValW, 150), y - 11);  // local: line_h(..., y + 11)
     y -= 16;
 
-    // Row 3 (English): COMPANY NUMBER  |  JURISDICTION — labels only, no values/underlines  (local: y+=14)
+    // Row 3 (English): COMPANY NUMBER  |  JURISDICTION — labels only, no values/underlines  (local: y += 14)
     drawMixed(page, "COMPANY NUMBER:  ", { x: colA, y, size: hdrSize, cjk: f.cjk, ascii: f.ascii, bold: true });
     const numLabelW = widthOfText("COMPANY NUMBER:  ", f.cjk, f.ascii, hdrSize);
-    const brUnderlineEnd = colA + numLabelW + 100;
-    const jurX = brUnderlineEnd + 24;
+    const brUnderlineEnd = colA + numLabelW + 100;  // local: br_underline_end
+    const jurX = brUnderlineEnd + 24;                // local: jur_x
     drawMixed(page, "JURISDICTION:  ", { x: jurX, y, size: hdrSize, cjk: f.cjk, ascii: f.ascii, bold: true });
     y -= 14;
 
-    // Row 4 (Chinese): 公司編號 _______  司法管轄區: HONG KONG — with underlines  (local: y+=16)
+    // Row 4 (Chinese): 公司編號 _______  司法管轄區: HONG KONG — with underlines  (local: y += 16)
     drawMixed(page, "公司編號:  ", { x: colA, y, size: hdrSize, cjk: f.cjk, ascii: f.ascii });
     const num2LabelW = widthOfText("公司編號:  ", f.cjk, f.ascii, hdrSize);
     drawMixed(page, br, { x: colA + num2LabelW, y, size: hdrSize, cjk: f.cjk, ascii: f.ascii });
     const br2ValW = widthOfText(br, f.cjk, f.ascii, hdrSize);
     const br2UnderlineEnd = colA + num2LabelW + Math.max(br2ValW, 100);
-    hline(page, colA + num2LabelW, br2UnderlineEnd, y - 2, 0.5);
+    hline(page, colA + num2LabelW, br2UnderlineEnd, y - 11);  // local: line_h(..., y + 11)
+
     drawMixed(page, "司法管轄區:  HONG KONG", { x: jurX, y, size: hdrSize, cjk: f.cjk, ascii: f.ascii });
-    hline(page, jurX, jurX + 120, y - 2, 0.5);
+    hline(page, jurX, jurX + 120, y - 11);  // local: line_h(..., y + 11)
     y -= 16;
 
-    // Separator
+    // Separator  (local: line_h(M, PW - M, y, w=0.5); y += 12)
     hline(page, M, PAGE_W - M, y, 0.5);
-    y -= 12;  // local: y += 12
+    y -= 12;
 
-    // ═══════════════════════════════ DATA TABLE ═══════════════════════════════
-    // Column widths — EXACT match with local Flask
+    // ═══════════════════════ DATA TABLE ═══════════════════════
+
+    // Docx gridCol DXA: merged[1526], 2154, 2835, 2551, 2551, 1701, 1814
     const colRatios = [1526, 2154, 2835, 2551, 2551, 1701, 1814];
     const totalDxa = colRatios.reduce((a, b) => a + b, 0);
     const col_w = colRatios.map(r => r * CW / totalDxa);
@@ -236,11 +241,13 @@ export async function onRequest(context: { request: Request; env: Env }) {
     for (let i = 0; i < col_w.length - 1; i++) col_x.push(col_x[i] + col_w[i]);
     const endX = PAGE_W - M;
 
-    function drawCellBorder(x0: number, y0: number, w: number, h: number) {
-      page.drawRectangle({ x: x0, y: y0 - h, width: w, height: h, borderColor: BLACK, borderWidth: 0.3 });
+    function drawCellBorder(x0: number, yTop: number, w: number, h: number) {
+      // local: pdf.rect(x0, y0, w, h) — y0 is top-left
+      // pdf-lib: drawRectangle from bottom-left, so yBottom = yTop - h
+      page.drawRectangle({ x: x0, y: yTop - h, width: w, height: h, borderColor: BLACK, borderWidth: 0.3 });
     }
 
-    // ── Table headers (matching local: hdr_line_h=10, font size 7 bold, hdr_h = max_lines*10+6) ──
+    // ── Bilingual Multi-line Table Headers ──
     const hdrLabels: [string, number][] = [
       ["Entry Date", 0],
       ["Name", 1],
@@ -251,11 +258,13 @@ export async function onRequest(context: { request: Request; env: Env }) {
       ["Remarks\n備註", 6],
     ];
 
-    const hdrLineH = 10;      // matches local hdr_line_h = 10
+    const hdrLineH = 10;  // local: hdr_line_h = 10
     const maxHdrLines = Math.max(...hdrLabels.map(([l]) => l.split('\n').length));
-    const hdrH = maxHdrLines * hdrLineH + 6;  // matches local hdr_h = max*10 + 6
+    const hdrH = maxHdrLines * hdrLineH + 6;  // local: hdr_h = max_hdr_lines * hdr_line_h + 6
 
     function drawTableHeaders(atY: number) {
+      // local: atY is y (top of header row in fpdf2)
+      // pdf-lib: atY is the TOP of the header row (higher y)
       for (const [label, ci] of hdrLabels) {
         const x0 = col_x[ci];
         const cwVal = ci < col_w.length ? col_w[ci] : (endX - col_x[ci]);
@@ -263,15 +272,16 @@ export async function onRequest(context: { request: Request; env: Env }) {
         const lines = label.split('\n');
         const textBlockH = lines.length * hdrLineH;
         // local: text_start_y = y + (hdr_h - text_block_h) / 2
-        // pdf-lib: text baseline = atY - (hdrH - textBlockH) / 2
+        // cloud: text is drawn BELOW atY. baseline = atY - offset
+        // offset = (hdrH - textBlockH) / 2  (same as local, just going down instead of up)
         const textStartY = atY - (hdrH - textBlockH) / 2;
         for (let li = 0; li < lines.length; li++) {
           const lineText = lines[li];
           if (!lineText) continue;
           const lw = widthOfText(lineText, f.cjk, f.ascii, 7);
           const lx = x0 + (cwVal - lw) / 2;
-          // local: text at text_start_y + li*hdr_line_h, with bold font
-          // pdf-lib: text baseline = textStartY - li * hdrLineH
+          // local: text at text_start_y + li * hdr_line_h (going down)
+          // cloud: text at textStartY - li * hdrLineH (going down from top)
           drawMixed(page, lineText, { x: lx, y: textStartY - li * hdrLineH, size: 7, cjk: f.cjk, ascii: f.ascii, bold: true });
         }
       }
@@ -281,8 +291,8 @@ export async function onRequest(context: { request: Request; env: Env }) {
     y -= hdrH;  // local: y += hdr_h
 
     // ── Data Rows ──
-    const dataSize = 8;       // matches local data_size = 8
-    const minRowH = 20;       // matches local min_row_h = 20
+    const dataSize = 8;   // local: data_size = 8
+    const minRowH = 20;   // local: min_row_h = 20
 
     if (scrs.length === 0) {
       const emptyH = minRowH;
@@ -291,9 +301,10 @@ export async function onRequest(context: { request: Request; env: Env }) {
         drawCellBorder(col_x[ci], y, cwVal, emptyH);
       }
       drawMixed(page, "(No SCR records / 尚無重要控制人記錄)", { x: M + 4, y: y - 4 - 8, size: 8, cjk: f.cjk, ascii: f.ascii });
-      y -= emptyH;
+      y -= emptyH;  // local: y += empty_h
     } else {
       for (const s of scrs) {
+        // Build nature of control
         const natures: string[] = [];
         if (rget(s, 'nature_shares')) natures.push('>25% shares');
         if (rget(s, 'nature_voting')) natures.push('>25% voting');
@@ -307,6 +318,7 @@ export async function onRequest(context: { request: Request; env: Env }) {
         const nameCh = rget(s, 'name_chinese') || '';
         const nameDisplay = nameCh ? `${nameCh}  ${nameEn}`.trim() : (nameEn || '(unnamed)');
 
+        // ID / Company info
         let idBlock: string;
         if (isNat) {
           const idNo = rget(s, 'id_number') || rget(s, 'passport_number') || '-';
@@ -328,7 +340,8 @@ export async function onRequest(context: { request: Request; env: Env }) {
         const natureText = natures.join(', ') || '-';
         const dateBecame = rget(s, 'date_became') || '-';
         const dateCea = rget(s, 'date_ceased') || '';
-        let dateDisplay = dateCea ? `${dateBecame}  /  ${dateCea}` : `${dateBecame}  /`;
+        // Paul Tang format: date column has "YYYY-MM-DD  /" (current) or "YYYY-MM-DD  /  YYYY-MM-DD" (ceased)
+        const dateDisplay = dateCea ? `${dateBecame}  /  ${dateCea}` : `${dateBecame}  /`;
 
         let entryDate = rget(s, 'created_at') || '';
         if (entryDate && entryDate.length > 10) entryDate = entryDate.slice(0, 10);
@@ -344,7 +357,7 @@ export async function onRequest(context: { request: Request; env: Env }) {
         const remarks = remarksParts.join('\n');
         const rowData = [entryDate, nameDisplay, addr, idBlock, natureText, dateDisplay, remarks];
 
-        // Calculate row height (matching local logic)
+        // Calculate row height from longest wrapped cell
         let rowH = minRowH;
         for (let ci = 0; ci < rowData.length; ci++) {
           const txt = rowData[ci];
@@ -356,6 +369,7 @@ export async function onRequest(context: { request: Request; env: Env }) {
         }
 
         // Page break — local: if y + row_h > PH - 70
+        // cloud: y is top of row, y - rowH is bottom. bottom must stay above 70
         if (y - rowH < 70) {
           hline(page, M, endX, y, 0.5);
           const pg2 = pdf.addPage([PAGE_W, PAGE_H]);
@@ -369,7 +383,6 @@ export async function onRequest(context: { request: Request; env: Env }) {
           y -= 8;   // local: y += 8
           drawTableHeaders(y);
           y -= hdrH;
-          // Switch drawing to new page
           page = pg2;
         }
 
@@ -385,10 +398,12 @@ export async function onRequest(context: { request: Request; env: Env }) {
             const cwAvail = Math.max(cwVal - cellPad * 2, 20);
             const lines = wrapText(String(txt), f.cjk, f.ascii, dataSize, cwAvail);
             const isRemarksCol = (ci === 6);  // Remarks column — center per Paul Tang format
+            // local: y + 2 + li * (data_size + 4)
+            // cloud: y is top of row, text drawn below it
             for (let li = 0; li < lines.length; li++) {
               const lineText = lines[li];
               if (!lineText) continue;
-              const lineY = y - 2 - li * (dataSize + 4) - dataSize;
+              const lineY = y - 2 - li * (dataSize + 4) - dataSize;  // local: y + 2 + li * (data_size + 4)
               const font = hasCjk(lineText) ? f.cjk : f.ascii;
               if (isRemarksCol) {
                 const lw = font.widthOfTextAtSize(lineText, dataSize);
@@ -400,7 +415,7 @@ export async function onRequest(context: { request: Request; env: Env }) {
             }
           }
         }
-        y -= rowH;
+        y -= rowH;  // local: y += row_h
       }
     }
 
@@ -408,14 +423,15 @@ export async function onRequest(context: { request: Request; env: Env }) {
     hline(page, M, endX, y, 0.5);
     y -= 14;  // local: y += 14
 
-    // ═══════════════════════════════ ADDITIONAL MATTERS ═══════════════════════════════
-    const addHdrH = 26;
-    const addContentH = 48;
-    const addW = CW * 0.5;
+    // ═══════════════════════ ADDITIONAL MATTERS — 2×2 table ═══════════════════════
+    const addHdrH = 26;     // local: add_h_hdr = 26
+    const addContentH = 48; // local: add_h_content = 48
+    const addW = CW * 0.5;  // local: add_w
 
-    // Row 0: Headers — vertically centered with more bottom padding, Remarks centered
+    // Row 0: Headers
     drawCellBorder(M, y, addW, addHdrH);
     drawCellBorder(M + addW, y, addW, addHdrH);
+    // local: y + 4, y + 14  →  cloud: y - 4, y - 14
     drawMixed(page, "Additional Matterse", { x: M + 3, y: y - 4, size: 7, cjk: f.cjk, ascii: f.ascii, bold: true });
     drawMixed(page, "额外事項", { x: M + 3, y: y - 14, size: 7, cjk: f.cjk, ascii: f.ascii });
     // Remarks — centered horizontally
@@ -423,12 +439,12 @@ export async function onRequest(context: { request: Request; env: Env }) {
     drawMixed(page, "Remarks", { x: M + addW + (addW - rmkW) / 2, y: y - 4, size: 7, cjk: f.cjk, ascii: f.ascii, bold: true });
     const rmkChW = f.cjk.widthOfTextAtSize("備註", 7);
     drawMixed(page, "備註", { x: M + addW + (addW - rmkChW) / 2, y: y - 14, size: 7, cjk: f.cjk, ascii: f.ascii });
-    y -= addHdrH;
+    y -= addHdrH;  // local: y += add_h_hdr
 
     // Row 1: Empty content cells
     drawCellBorder(M, y, addW, addContentH);
     drawCellBorder(M + addW, y, addW, addContentH);
-    // y not decremented further
+    // local: y += add_h_content (no op since we don't draw past this)
 
     const bytes = new Uint8Array(await pdf.save());
     return new Response(JSON.stringify({ pdf: uint8ToBase64(bytes) }), {

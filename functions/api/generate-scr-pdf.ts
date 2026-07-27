@@ -12,19 +12,13 @@ const corsHeaders = {
 
 const CHINESE_FONT_URL = 'https://cdn.jsdelivr.net/fontsource/fonts/noto-sans-tc@latest/chinese-traditional-400-normal.woff2';
 
-// Portrait A4 — SCR stays Portrait per user spec (item 92)
-const PAGE_W = 595;
-const PAGE_H = 842;
-const MARGIN = 35;
-const CONTENT_W = PAGE_W - MARGIN * 2;
+// Landscape A4 — Paul Tang reference format
+const PAGE_W = 842;
+const PAGE_H = 595;
+const M = 28;
+const CW = PAGE_W - M * 2; // 786pt
 
-// RTF colour constants
-const BLUE = rgb(0, 0, 1);
-const GREY_HDR = rgb(227 / 255, 227 / 255, 227 / 255);
-const LINE_DARK = rgb(0.4, 0.4, 0.4);
-const LINE_LIGHT = rgb(0.82, 0.82, 0.82);
-
-// ── Mixed-font helpers (ASCII → Helvetica, everything else → CJK font) ──
+// ── Mixed-font helpers ──
 function isAsciiChar(ch: string): boolean { return ch.charCodeAt(0) <= 0x7F; }
 
 function segmentText(text: string): { text: string; useCjk: boolean }[] {
@@ -45,7 +39,7 @@ function segmentText(text: string): { text: string; useCjk: boolean }[] {
 }
 
 function drawMixed(page: any, text: string, opts: { x: number; y: number; size: number; cjk: any; ascii: any; color?: any }) {
-  const clean = text.replace(/[\n\r\t]/g, ' ');
+  const clean = (text || "").replace(/[\n\r\t]/g, ' ');
   const segs = segmentText(clean);
   let x = opts.x;
   for (const s of segs) {
@@ -55,15 +49,41 @@ function drawMixed(page: any, text: string, opts: { x: number; y: number; size: 
   }
 }
 
+function drawMixedRight(page: any, text: string, opts: { x: number; y: number; size: number; cjk: any; ascii: any; color?: any }) {
+  const clean = (text || "").replace(/[\n\r\t]/g, ' ');
+  const segs = segmentText(clean);
+  let totalW = 0;
+  for (const s of segs) totalW += (s.useCjk ? opts.cjk : opts.ascii).widthOfTextAtSize(s.text, opts.size);
+  let x = opts.x - totalW;
+  for (const s of segs) {
+    const font = s.useCjk ? opts.cjk : opts.ascii;
+    page.drawText(s.text, { x, y: opts.y, size: opts.size, font, ...(opts.color ? { color: opts.color } : {}) });
+    x += font.widthOfTextAtSize(s.text, opts.size);
+  }
+}
+
+function drawMixedCenter(page: any, text: string, opts: { x: number; y: number; size: number; cjk: any; ascii: any; color?: any }) {
+  const clean = (text || "").replace(/[\n\r\t]/g, ' ');
+  const segs = segmentText(clean);
+  let totalW = 0;
+  for (const s of segs) totalW += (s.useCjk ? opts.cjk : opts.ascii).widthOfTextAtSize(s.text, opts.size);
+  let x = opts.x - totalW / 2;
+  for (const s of segs) {
+    const font = s.useCjk ? opts.cjk : opts.ascii;
+    page.drawText(s.text, { x, y: opts.y, size: opts.size, font, ...(opts.color ? { color: opts.color } : {}) });
+    x += font.widthOfTextAtSize(s.text, opts.size);
+  }
+}
+
 function widthOfText(text: string, cjk: any, ascii: any, size: number): number {
   let w = 0;
-  for (const s of segmentText(text)) w += (s.useCjk ? cjk : ascii).widthOfTextAtSize(s.text, size);
+  for (const s of segmentText(text || "")) w += (s.useCjk ? cjk : ascii).widthOfTextAtSize(s.text, size);
   return w;
 }
 
 function wrapText(text: string, cjk: any, ascii: any, fontSize: number, maxWidth: number): string[] {
   const lines: string[] = [];
-  const paragraphs = text.split('\n');
+  const paragraphs = (text || "").split('\n');
   for (const para of paragraphs) {
     if (!para) { lines.push(""); continue; }
     let current = "";
@@ -80,83 +100,21 @@ function wrapText(text: string, cjk: any, ascii: any, fontSize: number, maxWidth
   return lines;
 }
 
-// ── Page header (blue company info, title with date) ──
-function drawPageHeader(page: any, f: { cjk: any; ascii: any },
-  title: string, company: any): number {
-  const today = new Date().toLocaleDateString('en-GB');
-  let y = PAGE_H - 45;
-
-  drawMixed(page, (company as any).name || "", { x: MARGIN, y, size: 14, cjk: f.cjk, ascii: f.ascii, color: BLUE });
-  y -= 20;
-
-  const br = (company as any).company_number || "";
-  drawMixed(page, `Company Number:  ${br}`, { x: MARGIN, y, size: 10, cjk: f.cjk, ascii: f.ascii, color: BLUE });
-  y -= 22;
-
-  drawMixed(page, `${title} AT ${today}`, { x: MARGIN, y, size: 12, cjk: f.cjk, ascii: f.ascii, color: BLUE });
-  y -= 24;
-
-  page.drawLine({ start: { x: MARGIN, y }, end: { x: PAGE_W - MARGIN, y }, color: rgb(0, 0, 0), thickness: 0.8 });
-  return y - 10;
+function rget(row: any, key: string, dflt: any = null): any {
+  const v = row ? row[key] : undefined;
+  return v !== null && v !== undefined ? v : dflt;
 }
 
-// ── Grey header row (RTF style: no vertical lines, 9pt) ──
-function drawTableHeaderRow(page: any, f: { cjk: any; ascii: any },
-  cols: { x: number; w: number; label: string }[], y: number): number {
-  const fontSize = 9;
-  let maxLines = 1;
-  const wrappedLabels: string[][] = [];
-  for (const c of cols) {
-    const lines = wrapText(c.label, f.cjk, f.ascii, fontSize, c.w - 8);
-    wrappedLabels.push(lines);
-    if (lines.length > maxLines) maxLines = lines.length;
-  }
-  const rowH = Math.max(maxLines * 13 + 8, 26);
-
-  page.drawRectangle({
-    x: MARGIN, y: y - rowH, width: CONTENT_W, height: rowH,
-    color: GREY_HDR,
-  });
-
-  for (let i = 0; i < cols.length; i++) {
-    for (let li = 0; li < wrappedLabels[i].length; li++) {
-      drawMixed(page, wrappedLabels[i][li], {
-        x: cols[i].x, y: y - 4 - li * 12, size: fontSize, cjk: f.cjk, ascii: f.ascii,
-      });
-    }
-  }
-
-  page.drawLine({ start: { x: MARGIN, y }, end: { x: PAGE_W - MARGIN, y }, color: LINE_DARK, thickness: 0.5 });
-  page.drawLine({ start: { x: MARGIN, y: y - rowH }, end: { x: PAGE_W - MARGIN, y: y - rowH }, color: LINE_DARK, thickness: 0.5 });
-
-  return y - rowH;
+function hline(page: any, x1: number, x2: number, y: number, thickness: number = 0.3, color: any = rgb(0, 0, 0)) {
+  page.drawLine({ start: { x: x1, y }, end: { x: x2, y }, color, thickness });
 }
 
-// ── Data row (RTF style: no vertical lines, no alternating colour) ──
-function drawDataRow(page: any, f: { cjk: any; ascii: any },
-  cols: { x: number; w: number; label: string }[],
-  values: string[], y: number): number {
-  const fontSize = 9;
-  let maxLines = 1;
-  const wrapped: string[][] = [];
-  for (let i = 0; i < values.length; i++) {
-    const lines = wrapText(values[i] || "", f.cjk, f.ascii, fontSize, cols[i].w - 8);
-    wrapped.push(lines);
-    if (lines.length > maxLines) maxLines = lines.length;
-  }
-  const rowH = Math.max(maxLines * 13 + 8, 24);
+function vline(page: any, x: number, y1: number, y2: number, thickness: number = 0.2, color: any = rgb(0, 0, 0)) {
+  page.drawLine({ start: { x, y: y1 }, end: { x, y: y2 }, color, thickness });
+}
 
-  for (let i = 0; i < values.length; i++) {
-    for (let li = 0; li < wrapped[i].length; li++) {
-      drawMixed(page, wrapped[i][li], {
-        x: cols[i].x, y: y - 4 - li * 12, size: fontSize, cjk: f.cjk, ascii: f.ascii,
-      });
-    }
-  }
-
-  page.drawLine({ start: { x: MARGIN, y: y - rowH }, end: { x: PAGE_W - MARGIN, y: y - rowH }, color: LINE_LIGHT, thickness: 0.3 });
-
-  return y - rowH;
+function drawRect(page: any, x: number, y: number, w: number, h: number, thickness: number = 0.3) {
+  page.drawRectangle({ x, y: y - h, width: w, height: h, borderColor: rgb(0, 0, 0), borderWidth: thickness });
 }
 
 export async function onRequest(context: { request: Request; env: Env }) {
@@ -164,7 +122,7 @@ export async function onRequest(context: { request: Request; env: Env }) {
   if (request.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
   try {
-    const { companyId } = await request.json();
+    const { companyId } = await request.json() as any;
     if (!companyId) {
       return new Response(JSON.stringify({ error: 'companyId required' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -188,86 +146,293 @@ export async function onRequest(context: { request: Request; env: Env }) {
     const asciiFont = await pdf.embedFont(StandardFonts.Helvetica);
     const f = { cjk: cjkFont, ascii: asciiFont };
 
-    // ── SCR Register — Portrait A4, RTF-matched styling ──
-    let page = pdf.addPage([PAGE_W, PAGE_H]);
-    let y = drawPageHeader(page, f, "SIGNIFICANT CONTROLLERS REGISTER\n重要控制人登記冊", company);
+    const coName = rget(company, 'name') || '';
+    const coNameCh = rget(company, 'chinese_name') || '';
+    const br = rget(company, 'company_number') || '';
 
-    // 7-column layout (Portrait-optimised)
-    const x0 = MARGIN + 2;
-    const scrCols = [
-      { label: "Entry\nDate",                 x: x0,       w: 42 },
-      { label: "Name of\nController",         x: x0 + 43,  w: 105 },
-      { label: "ID / Company\nNumber",        x: x0 + 149, w: 68 },
-      { label: "Address",                     x: x0 + 218, w: 118 },
-      { label: "Nature of\nControl",          x: x0 + 337, w: 72 },
-      { label: "Date Became\n/ Ceased",       x: x0 + 410, w: 60 },
-      { label: "Remarks",                     x: x0 + 471, w: 58 },
+    let page = pdf.addPage([PAGE_W, PAGE_H]);
+    const hdrSize = 8;
+    let y = PAGE_H - 22; // 573 — top of page
+
+    // ═══════════════════════════════════════════════
+    // HEADER: NAME OF COMPANY || COMPANY NUMBER side by side + title right
+    // ═══════════════════════════════════════════════
+
+    // Title — right side
+    drawMixedRight(page, "SIGNIFICANT CONTROLLERS REGISTER", { x: PAGE_W - M, y, size: 13, cjk: f.cjk, ascii: f.ascii });
+    drawMixedRight(page, "重要控制人登記冊", { x: PAGE_W - M, y: y - 18, size: 11, cjk: f.cjk, ascii: f.ascii });
+
+    // Company info — left side: NAME || NUMBER side by side
+    const colA = M;
+    const colB = M + 380;
+
+    // Row 1 (English)
+    drawMixed(page, "NAME OF COMPANY:  ", { x: colA, y, size: hdrSize, cjk: f.cjk, ascii: f.ascii });
+    const ncLabelW = widthOfText("NAME OF COMPANY:  ", f.cjk, f.ascii, hdrSize);
+    drawMixed(page, coName, { x: colA + ncLabelW, y, size: hdrSize, cjk: f.cjk, ascii: f.ascii });
+
+    drawMixed(page, "COMPANY NUMBER:  ", { x: colB, y, size: hdrSize, cjk: f.cjk, ascii: f.ascii });
+    const numLabelW = widthOfText("COMPANY NUMBER:  ", f.cjk, f.ascii, hdrSize);
+    drawMixed(page, br, { x: colB + numLabelW, y, size: hdrSize, cjk: f.cjk, ascii: f.ascii });
+
+    // Underlines below English row
+    const nameValW = widthOfText(coName, f.cjk, f.ascii, hdrSize);
+    hline(page, colA + ncLabelW, colA + ncLabelW + Math.max(nameValW, 150), y - 1, 0.5);
+    const brValW = widthOfText(br, f.cjk, f.ascii, hdrSize);
+    hline(page, colB + numLabelW, colB + numLabelW + Math.max(brValW, 100), y - 1, 0.5);
+
+    y -= 14;
+
+    // Row 2 (Chinese)
+    drawMixed(page, "公司名稱:  ", { x: colA, y, size: hdrSize, cjk: f.cjk, ascii: f.ascii });
+    const cnLabelW = widthOfText("公司名稱:  ", f.cjk, f.ascii, hdrSize);
+    drawMixed(page, coNameCh || coName, { x: colA + cnLabelW, y, size: hdrSize, cjk: f.cjk, ascii: f.ascii });
+
+    drawMixed(page, "公司編號:  ", { x: colB, y, size: hdrSize, cjk: f.cjk, ascii: f.ascii });
+    const num2LabelW = widthOfText("公司編號:  ", f.cjk, f.ascii, hdrSize);
+    drawMixed(page, br, { x: colB + num2LabelW, y, size: hdrSize, cjk: f.cjk, ascii: f.ascii });
+
+    // Underlines below Chinese row
+    const cnValW = widthOfText(coNameCh || coName, f.cjk, f.ascii, hdrSize);
+    hline(page, colA + cnLabelW, colA + cnLabelW + Math.max(cnValW, 150), y - 1, 0.5);
+    hline(page, colB + num2LabelW, colB + num2LabelW + Math.max(brValW, 100), y - 1, 0.5);
+
+    y -= 20;
+
+    // ── JURISDICTION (below header, per docx order) ──
+    drawMixed(page, "JURISDICTION:  ", { x: M, y, size: hdrSize, cjk: f.cjk, ascii: f.ascii });
+    const jlw = widthOfText("JURISDICTION:  ", f.cjk, f.ascii, hdrSize);
+    drawMixed(page, "HONG KONG", { x: M + jlw, y, size: hdrSize, cjk: f.cjk, ascii: f.ascii });
+    y -= 11;
+    drawMixed(page, "司法管轄區:  HONG KONG", { x: M, y, size: hdrSize, cjk: f.cjk, ascii: f.ascii });
+    y -= 16;
+
+    // Separator
+    hline(page, M, PAGE_W - M, y, 0.5);
+    y -= 12;
+
+    // ═══════════════════════════════════════════════
+    // DATA TABLE (7 cols, grid borders, bilingual headers)
+    // Column widths per docx gridCol, ID column widened
+    // ═══════════════════════════════════════════════
+    const colRatios = [1526, 2154, 2835, 2551, 2551, 1701, 1814];
+    const totalDxa = colRatios.reduce((a, b) => a + b, 0);
+    const col_w = colRatios.map(r => r * CW / totalDxa);
+    col_w[3] += 8;  // widen ID column
+    col_w[4] -= 8;  // narrow Nature column
+
+    const col_x: number[] = [M];
+    for (let i = 0; i < col_w.length - 1; i++) col_x.push(col_x[i] + col_w[i]);
+    const endX = PAGE_W - M;
+
+    // ── Bilingual Multi-line Table Headers ──
+    const hdrLabels: [string, number][] = [
+      ["Entry Date\n錄入日期", 0],
+      ["Name\n姓名／名稱", 1],
+      ["Correspondence Address\n(for Registrable Person)\n通訊地址（自然人）\nRegistered Office Address\n(for Legal Entity)\n註冊／主要營業地址（法人）", 2],
+      ["ID / PPT No. (Issuing Country)\n(for Registrable Person)\n身份證／護照號碼\n（簽發國家）（自然人）\nCompany No. (Place of Incorp.)\n/ Legal Form\n公司編號（成立地方）\n／法律形式（法人）", 3],
+      ["Nature of Control\n控制性質", 4],
+      ["Becoming Date\n(Cessation Date)\n開始日期\n（終止日期）", 5],
+      ["Remarks\n備註", 6],
     ];
 
-    y = drawTableHeaderRow(page, f, scrCols, y);
-    let rowNum = 0;
+    const hdrLineH = 10;
+    const maxHdrLines = Math.max(...hdrLabels.map(([l]) => l.split('\n').length));
+    const hdrH = maxHdrLines * hdrLineH + 6;
+    const hdrY0 = y;
 
-    if (scrs.length === 0) {
-      drawMixed(page, '(No significant controllers / 尚無重要控制人記錄)', {
-        x: MARGIN + 5, y: y - 18, size: 9, cjk: f.cjk, ascii: f.ascii, color: rgb(0.5, 0.5, 0.5),
-      });
-    } else {
-      for (const s of scrs) {
-        const natures: string[] = [];
-        if (s.nature_shares) natures.push('Shares >25%');
-        if (s.nature_voting) natures.push('Voting >25%');
-        if (s.nature_appoint) natures.push('Appoint Director');
-        if (s.nature_influence) natures.push('Sig. Influence');
-        if (s.nature_trust) natures.push('Trust Control');
-        if (s.nature_other) natures.push(s.nature_other);
-
-        const isNatural = (s.identity || "natural") === "natural";
-        const idInfo = isNatural
-          ? (s.id_number || s.passport_number || "-")
-          : (s.company_number_ref || "-");
-        const enteredDate = s.date_became || s.created_at?.slice(0, 10) || "-";
-
-        const values = [
-          enteredDate,
-          s.name_english || s.name_chinese || '(unnamed)',
-          idInfo,
-          (s.address || "").slice(0, 55),
-          natures.join(', ') || '-',
-          `${s.date_became || "-"}${s.date_ceased ? "\nCeased: " + s.date_ceased : ""}`,
-          s.date_ceased ? "Ceased" : "Current",
-        ];
-
-        rowNum++;
-
-        if (y - 40 < 60) {
-          page = pdf.addPage([PAGE_W, PAGE_H]);
-          y = drawPageHeader(page, f, "SIGNIFICANT CONTROLLERS REGISTER (Cont'd)\n重要控制人登記冊（續）", company);
-          y = drawTableHeaderRow(page, f, scrCols, y);
-        }
-
-        y = drawDataRow(page, f, scrCols, values, y);
-
-        // Designated representative note
-        if (s.is_designated_rep && s.designated_rep_name) {
-          y -= 2;
-          if (y < 60) {
-            page = pdf.addPage([PAGE_W, PAGE_H]);
-            y = drawPageHeader(page, f, "SIGNIFICANT CONTROLLERS REGISTER (Cont'd)\n重要控制人登記冊（續）", company);
-          }
-          drawMixed(page, `  > Designated Rep / 指定代表: ${s.designated_rep_name || "-"}  |  Contact / 聯絡: ${s.designated_rep_contact || "-"}`, {
-            x: MARGIN + 5, y, size: 8, cjk: f.cjk, ascii: f.ascii, color: rgb(0.3, 0.3, 0.6),
-          });
-          y -= 14;
-        }
+    for (const [label, ci] of hdrLabels) {
+      const x0 = col_x[ci];
+      const cwVal = ci < col_w.length ? col_w[ci] : (endX - col_x[ci]);
+      drawRect(page, x0, y, cwVal, hdrH);
+      const lines = label.split('\n');
+      const textBlockH = lines.length * hdrLineH;
+      const textStartY = y - (hdrH - textBlockH) / 2;
+      for (let li = 0; li < lines.length; li++) {
+        const lineText = lines[li];
+        const hasCjk = /[一-鿿　-〿＀-￯]/.test(lineText);
+        const font = hasCjk ? f.cjk : f.ascii;
+        const lw = font.widthOfTextAtSize(lineText, 7);
+        const lx = x0 + (cwVal - lw) / 2;
+        page.drawText(lineText, { x: lx, y: textStartY - li * hdrLineH, size: 7, font });
       }
     }
+
+    y -= hdrH;
+    const tableTopY = hdrY0;
+
+    // ── Data Rows ──
+    const dataSize = 8;
+    const minRowH = 20;
+
+    // Continuation header helper
+    const drawContHdr = (): number => {
+      let cy = PAGE_H - 22;
+      drawMixedCenter(page, "SIGNIFICANT CONTROLLERS REGISTER (Cont'd)", { x: PAGE_W / 2, y: cy, size: 13, cjk: f.cjk, ascii: f.ascii });
+      cy -= 16;
+      drawMixedCenter(page, "重要控制人登記冊（續）", { x: PAGE_W / 2, y: cy, size: 11, cjk: f.cjk, ascii: f.ascii });
+      cy -= 14;
+      hline(page, M, PAGE_W - M, cy, 0.5);
+      cy -= 8;
+      for (const [label, ci] of hdrLabels) {
+        const x0 = col_x[ci];
+        const cwVal = ci < col_w.length ? col_w[ci] : (endX - col_x[ci]);
+        drawRect(page, x0, cy, cwVal, hdrH);
+        const lines = label.split('\n');
+        const textBlockH = lines.length * hdrLineH;
+        const textStartY = cy - (hdrH - textBlockH) / 2;
+        for (let li = 0; li < lines.length; li++) {
+          const lineText = lines[li];
+          const hasCjk = /[一-鿿　-〿＀-￯]/.test(lineText);
+          const font = hasCjk ? f.cjk : f.ascii;
+          const lw = font.widthOfTextAtSize(lineText, 7);
+          const lx = x0 + (cwVal - lw) / 2;
+          page.drawText(lineText, { x: lx, y: textStartY - li * hdrLineH, size: 7, font });
+        }
+      }
+      cy -= hdrH;
+      return cy;
+    };
+
+    if (scrs.length === 0) {
+      const emptyH = minRowH;
+      for (let ci = 0; ci < col_x.length; ci++) {
+        const cwVal = ci < col_w.length ? col_w[ci] : (endX - col_x[ci]);
+        drawRect(page, col_x[ci], y, cwVal, emptyH);
+      }
+      drawMixed(page, "(No SCR records / 尚無重要控制人記錄)", { x: M + 4, y: y - 16, size: 8, cjk: f.cjk, ascii: f.ascii });
+      y -= emptyH;
+    } else {
+      for (const s of scrs) {
+        // Build nature of control
+        const natures: string[] = [];
+        if (rget(s, 'nature_shares')) natures.push('>25% shares');
+        if (rget(s, 'nature_voting')) natures.push('>25% voting');
+        if (rget(s, 'nature_appoint')) natures.push('Appoint/remove directors');
+        if (rget(s, 'nature_influence')) natures.push('Sig. influence');
+        if (rget(s, 'nature_trust')) natures.push('Trust control');
+        if (rget(s, 'nature_other')) natures.push(rget(s, 'nature_other'));
+
+        const isNat = rget(s, 'identity') !== 'corporate';
+        const nameEn = rget(s, 'name_english') || '';
+        const nameCh = rget(s, 'name_chinese') || '';
+        const nameDisplay = nameCh ? `${nameCh}  ${nameEn}`.trim() : (nameEn || '(unnamed)');
+
+        // ID / Company info
+        let idBlock: string;
+        if (isNat) {
+          const idNo = rget(s, 'id_number') || rget(s, 'passport_number') || '-';
+          const passportCountry = rget(s, 'passport_country') || '';
+          idBlock = `ID/PPT: ${idNo}`;
+          if (passportCountry) idBlock += ` (${passportCountry})`;
+          idBlock += " | Natural Person";
+        } else {
+          const compNo = rget(s, 'company_number_ref') || '-';
+          const placeIncorp = rget(s, 'place_of_incorporation') || '';
+          const legalForm = rget(s, 'legal_form') || '';
+          idBlock = `Co No: ${compNo}`;
+          if (placeIncorp) idBlock += ` (${placeIncorp})`;
+          if (legalForm) idBlock += ` | ${legalForm}`;
+          idBlock += " | Body Corporate";
+        }
+
+        const addr = (rget(s, 'address') || '').slice(0, 200);
+        const natureText = natures.join(', ') || '-';
+        const dateBecame = rget(s, 'date_became') || '-';
+        const dateCea = rget(s, 'date_ceased') || '';
+        let dateDisplay = dateCea ? `${dateBecame}  /  ${dateCea}` : `${dateBecame}  /  Current`;
+
+        if (rget(s, 'is_designated_rep') && rget(s, 'designated_rep_name')) {
+          const repName = rget(s, 'designated_rep_name');
+          dateDisplay += `\nRep: ${repName}`;
+        }
+
+        let entryDate = rget(s, 'created_at') || '';
+        if (entryDate && entryDate.length > 10) entryDate = entryDate.slice(0, 10);
+
+        const remarks = rget(s, 'remarks') || '';
+        const rowData = [entryDate, nameDisplay, addr, idBlock, natureText, dateDisplay, remarks];
+
+        // Calculate row height
+        let rowH = minRowH;
+        const cellLinesList: number[] = [];
+        for (let ci = 0; ci < rowData.length; ci++) {
+          const txt = rowData[ci];
+          if (!txt) { cellLinesList.push(1); continue; }
+          const cellPad = 4;
+          const cwAvail = (ci < col_w.length ? col_w[ci] : (endX - col_x[ci])) - cellPad;
+          const lines = wrapText(String(txt), f.cjk, f.ascii, dataSize, Math.max(cwAvail, 20));
+          cellLinesList.push(lines.length);
+          rowH = Math.max(rowH, lines.length * (dataSize + 4) + 4);
+        }
+
+        // Page break
+        if (y - rowH < 50) {
+          hline(page, M, endX, y, 0.5);
+          page = pdf.addPage([PAGE_W, PAGE_H]);
+          y = drawContHdr();
+        }
+
+        // Draw row cells
+        for (let ci = 0; ci < rowData.length; ci++) {
+          const x0 = col_x[ci];
+          const cwVal = ci < col_w.length ? col_w[ci] : (endX - col_x[ci]);
+          drawRect(page, x0, y, cwVal, rowH);
+
+          const txt = rowData[ci];
+          if (txt) {
+            const cellPad = 3;
+            const cwAvail = Math.max(cwVal - cellPad * 2, 20);
+            const lines = wrapText(String(txt), f.cjk, f.ascii, dataSize, cwAvail);
+            for (let li = 0; li < lines.length; li++) {
+              const lineText = lines[li];
+              if (!lineText) continue;
+              const hasCjk = /[一-鿿　-〿＀-￯]/.test(lineText);
+              const font = hasCjk ? f.cjk : f.ascii;
+              page.drawText(lineText, {
+                x: x0 + cellPad,
+                y: y - 2 - li * (dataSize + 4) - dataSize,
+                size: dataSize,
+                font,
+              });
+            }
+          }
+        }
+        y -= rowH;
+      }
+    }
+
+    // Table bottom border
+    hline(page, M, endX, y, 0.5);
+    y -= 14;
+
+    // ═══════════════════════════════════════════════
+    // ADDITIONAL MATTERS — 2×2 table (header row + content row)
+    // ═══════════════════════════════════════════════
+    const addHdrH = 20;
+    const addContentH = 48;
+    const addW = CW * 0.5;
+
+    // Row 0: Headers
+    drawRect(page, M, y, addW, addHdrH);
+    drawRect(page, M + addW, y, addW, addHdrH);
+    drawMixed(page, "Additional Matters", { x: M + 3, y: y - 3, size: 7, cjk: f.cjk, ascii: f.ascii });
+    drawMixed(page, "附加事項", { x: M + 3, y: y - 12, size: 7, cjk: f.cjk, ascii: f.ascii });
+    drawMixed(page, "Remarks", { x: M + addW + 3, y: y - 3, size: 7, cjk: f.cjk, ascii: f.ascii });
+    drawMixed(page, "備註", { x: M + addW + 3, y: y - 12, size: 7, cjk: f.cjk, ascii: f.ascii });
+    y -= addHdrH;
+
+    // Row 1: Empty content cells
+    drawRect(page, M, y, addW, addContentH);
+    drawRect(page, M + addW, y, addW, addContentH);
+    // y not decremented further — these are the last elements
 
     const bytes = await pdf.save();
     return new Response(bytes, {
       headers: {
         ...corsHeaders,
         'Content-Type': 'application/pdf',
-        'Content-Disposition': `inline; filename="SCR_${(company as any).company_number || 'company'}.pdf"`,
+        'Content-Disposition': `inline; filename="SCR_${br || 'company'}.pdf"`,
       },
     });
   } catch (e: any) {

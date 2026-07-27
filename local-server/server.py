@@ -1233,27 +1233,43 @@ def pdf_wrap_text(pdf, text, width, size=7):
 
 
 def draw_register_header(pdf, company, title_en, quorum=None):
-    """Draw the standard register page header matching RTF sample style.
+    """Draw the standard register page header — Paul Tang black & white style.
     Returns y position after header + separator line."""
     y = 45
 
-    pdf_draw(pdf, rget(company, 'name') or '', MARGIN, y, size=14, color=BLUE, bold=True)
+    # Company name — TNR bold, black
+    co_name = rget(company, 'name') or ''
+    pdf.set_font('TNR', 'B', 14)
+    pdf.set_text_color(0, 0, 0)
+    tw = pdf.get_string_width(co_name)
+    pdf.set_xy(PAGE_W / 2 - tw / 2, y)
+    pdf.cell(tw, 16, co_name)
     y += 19
 
     br = rget(company, 'company_number')
     cn_line = f"Company Number:  {br}" if br else "Company Number:"
-    pdf_draw(pdf, cn_line, MARGIN, y, size=10, color=BLUE, bold=True)
+    pdf.set_font('TNR', '', 10)
+    tw2 = pdf.get_string_width(cn_line)
+    pdf.set_xy(PAGE_W / 2 - tw2 / 2, y)
+    pdf.cell(tw2, 12, cn_line)
 
     if quorum is not None:
-        pdf_draw_right(pdf, f"Quorum:  {quorum}", PAGE_W - MARGIN, y, size=9)
+        pdf.set_font('TNR', '', 9)
+        q_text = f"Quorum:  {quorum}"
+        qw = pdf.get_string_width(q_text)
+        pdf.set_xy(PAGE_W - MARGIN - qw, y)
+        pdf.cell(qw, 12, q_text)
     y += 20
 
     today = datetime.now().strftime('%d/%m/%Y')
     title_full = f"{title_en} AT {today}"
-    pdf_draw(pdf, title_full, MARGIN, y, size=12, color=BLUE, bold=True)
+    pdf.set_font('TNR', 'B', 12)
+    pdf.set_text_color(0, 0, 0)
+    pdf.set_xy(MARGIN, y)
+    pdf.cell(0, 14, title_full)
     y += 22
 
-    pdf_line_h(pdf, MARGIN, PAGE_W - MARGIN, y, color=BLUE, width=0.8)
+    pdf_line_h(pdf, MARGIN, PAGE_W - MARGIN, y, color=(0, 0, 0), width=0.8)
     return y + 12
 
 
@@ -1268,8 +1284,8 @@ def draw_form_value(pdf, value, x_val, y, size=9):
 
 
 def draw_grey_header_row(pdf, cols, y):
-    """Draw a grey-background header row. cols = [(text, x, w), ...].
-    Returns y below row. Text wraps within column width."""
+    """Draw a white-background header row (Paul Tang style). cols = [(text, x, w), ...].
+    Returns y below row. Text wraps within column width. No grey fill, no vertical lines."""
     hdr_size = 7
     label_lines = []
     max_lines = 1
@@ -1279,27 +1295,32 @@ def draw_grey_header_row(pdf, cols, y):
         max_lines = max(max_lines, len(lines))
     row_h = max(max_lines * 11 + 6, 22)
 
-    pdf_rect_fill(pdf, MARGIN, y, CONTENT_W, row_h, GREY_HDR)
-
-    pdf.set_text_color(40, 40, 40)
+    # White background — no fill (transparent)
+    # Draw header text in black
+    pdf.set_text_color(0, 0, 0)
     for i, (text, x, w) in enumerate(cols):
         for li, line_text in enumerate(label_lines[i]):
             pdf.set_xy(x, y + 3 + li * 10)
-            pdf.set_font('TC', size=hdr_size)
+            # Use TNR for ASCII, TC for CJK
+            has_cjk = any('一' <= ch <= '鿿' or '　' <= ch <= '〿' for ch in line_text)
+            if has_cjk:
+                pdf.set_font('TC', size=hdr_size)
+            else:
+                pdf.set_font('TNR', size=hdr_size)
             pdf.cell(w, 10, line_text)
 
-    pdf.set_draw_color(140, 140, 140)
+    # Top + bottom borders only (black, no vertical dividers)
+    pdf.set_draw_color(0, 0, 0)
     pdf.line(MARGIN, y, PAGE_W - MARGIN, y)
     pdf.line(MARGIN, y + row_h, PAGE_W - MARGIN, y + row_h)
-    pdf.set_draw_color(170, 170, 170)
-    for _, x, _ in cols:
-        pdf.line(x - 3, y, x - 3, y + row_h)
+    pdf.set_draw_color(0, 0, 0)
 
     return y + row_h
 
 
 def draw_data_row(pdf, cols, y, alt=False):
-    """Draw a data row. cols = [(text, x, w), ...]. Returns y below row."""
+    """Draw a data row (Paul Tang style — no alternating colour, no vertical lines).
+    cols = [(text, x, w), ...]. Returns y below row."""
     size = 7
     wrapped = []
     max_lines = 1
@@ -1309,21 +1330,22 @@ def draw_data_row(pdf, cols, y, alt=False):
         max_lines = max(max_lines, len(lines))
     row_h = max(max_lines * 11 + 6, 20)
 
-    if alt:
-        pdf_rect_fill(pdf, MARGIN, y, CONTENT_W, row_h, (248, 248, 252))
-
-    pdf.set_text_color(25, 25, 25)
+    # No alternating background
+    pdf.set_text_color(0, 0, 0)
     for i, (text, x, w) in enumerate(cols):
         for li, line_text in enumerate(wrapped[i]):
             pdf.set_xy(x, y + 3 + li * 10)
-            pdf.set_font('TC', size=size)
+            has_cjk = any('一' <= ch <= '鿿' or '　' <= ch <= '〿' for ch in line_text)
+            if has_cjk:
+                pdf.set_font('TC', size=size)
+            else:
+                pdf.set_font('TNR', size=size)
             pdf.cell(w, 10, line_text)
 
-    pdf.set_draw_color(210, 210, 210)
+    # Thin bottom border only (no vertical lines)
+    pdf.set_draw_color(180, 180, 180)
     pdf.line(MARGIN, y + row_h, PAGE_W - MARGIN, y + row_h)
-    pdf.set_draw_color(220, 220, 220)
-    for _, x, _ in cols:
-        pdf.line(x - 3, y, x - 3, y + row_h)
+    pdf.set_draw_color(0, 0, 0)
 
     return y + row_h
 
@@ -1936,7 +1958,7 @@ def generate_secretaries_register_pdf():
 @app.route('/api/generate-scr-pdf', methods=['POST'])
 def generate_scr_pdf():
     """Significant Controllers Register — matching Paul Tang & Co reference format.
-    Portrait A4, 7-column table, white headers, Times New Roman, bilingual titles."""
+    Landscape A4, 7-column table, bilingual headers, grid borders, Times New Roman + TC."""
     data = request.get_json(silent=True) or {}
     company_id = data.get('companyId', '')
     if not company_id:
@@ -1951,40 +1973,38 @@ def generate_scr_pdf():
         "SELECT * FROM significant_controllers WHERE company_id = ? ORDER BY created_at",
         (company_id,)).fetchall()
 
-    M = 30
+    M = 28
     PW, PH = 842, 595  # Landscape A4
-    CW = PW - 2 * M
+    CW = PW - 2 * M  # 786pt content width
 
     pdf = create_pdf(landscape=True)
     pdf.add_page()
     pdf.set_auto_page_break(auto=False)
 
     # ── Helpers ──
-    def tnr(text, x, y, size=9, bold=False, align='L', color=(0, 0, 0)):
+    def has_cjk(text):
+        s = str(text or '')
+        return any('一' <= ch <= '鿿' or '　' <= ch <= '〿' or '＀' <= ch <= '￯' for ch in s)
+
+    def tnr(text, x, y, size=8, bold=False, align='L'):
         style = 'B' if bold else ''
         pdf.set_font('TNR', style, size)
-        pdf.set_text_color(*color)
-        if align == 'C':
-            tw = pdf.get_string_width(str(text or ''))
-            x = x - tw / 2
-        elif align == 'R':
-            tw = pdf.get_string_width(str(text or ''))
-            x = x - tw
+        pdf.set_text_color(0, 0, 0)
+        tw = pdf.get_string_width(str(text or ''))
+        if align == 'C': x = x - tw / 2
+        elif align == 'R': x = x - tw
         pdf.set_xy(x, y)
-        pdf.cell(0, size + 2, str(text or ''))
+        pdf.cell(tw + 2, size + 2, str(text or ''))
 
-    def tc(text, x, y, size=9, bold=False, align='L'):
+    def tc(text, x, y, size=8, bold=False, align='L'):
         style = 'B' if bold else ''
         pdf.set_font('TC', style, size)
         pdf.set_text_color(0, 0, 0)
-        if align == 'C':
-            tw = pdf.get_string_width(str(text or ''))
-            x = x - tw / 2
-        elif align == 'R':
-            tw = pdf.get_string_width(str(text or ''))
-            x = x - tw
+        tw = pdf.get_string_width(str(text or ''))
+        if align == 'C': x = x - tw / 2
+        elif align == 'R': x = x - tw
         pdf.set_xy(x, y)
-        pdf.cell(0, size + 2, str(text or ''))
+        pdf.cell(tw + 2, size + 2, str(text or ''))
 
     def line_h(x1, x2, y, w=0.3, color=(0, 0, 0)):
         pdf.set_draw_color(*color)
@@ -1996,147 +2016,194 @@ def generate_scr_pdf():
         pdf.set_line_width(w)
         pdf.line(x, y1, x, y2)
 
-    # ── Page Header (matching Paul Tang reference) ──
-    y = 22
+    def draw_cell_border(x0, y0, w, h):
+        pdf.set_draw_color(0, 0, 0)
+        pdf.set_line_width(0.3)
+        pdf.rect(x0, y0, w, h)
+
+    def wrap_text_to_lines(text, font_name, style, size, max_w):
+        if not text:
+            return ['']
+        s = str(text)
+        pdf.set_font(font_name, style, size)
+        all_lines = []
+        # First split by explicit newlines, then wrap each chunk
+        for chunk in s.split('\n'):
+            if not chunk:
+                all_lines.append('')
+                continue
+            current = ''
+            for ch in chunk:
+                trial = current + ch
+                if pdf.get_string_width(trial) > max_w and current:
+                    all_lines.append(current)
+                    current = ch
+                else:
+                    current = trial
+            if current:
+                all_lines.append(current)
+        return all_lines if all_lines else ['']
+
+    # ── Company Data ──
     co_name = rget(company, 'name') or ''
     co_name_ch = rget(company, 'chinese_name') or ''
     br = rget(company, 'company_number') or ''
 
+    # ═══════════════════════════════════════════════════════
+    # HEADER BLOCK (borderless table: company info left, title right)
+    # Per docx: header table first, then JURISDICTION below
+    # ═══════════════════════════════════════════════════════
+
+    y = 22
     hdr_size = 8
-    row_h = 14
-    top_y = y  # remember starting y for title alignment
 
-    # ── Title: right-aligned at same height as NAME OF COMPANY ──
-    title_y = y
-    tnr("SIGNIFICANT CONTROLLERS REGISTER", PW - M, title_y, size=13, bold=True, align='R')
+    # ── Title on right side ──
+    title_x = PW - M
+    tnr("SIGNIFICANT CONTROLLERS REGISTER", title_x, y, size=13, bold=True, align='R')
+    tc("重要控制人登記冊", title_x, y + 18, size=11, bold=True, align='R')
 
-    # ── Block 1: NAME OF COMPANY (top) + 公司名稱 (bottom), stacked labels ──
-    label_en = "NAME OF COMPANY:  "
-    label_cn = "公司名稱:  "
-    tnr(label_en, M, y, size=hdr_size, bold=True)
-    tc(label_cn, M, y + row_h, size=hdr_size)
-    lw_en = pdf.get_string_width(label_en)
-    lw_cn = pdf.get_string_width(label_cn)
-    val_x = M + max(lw_en, lw_cn) + 2
-    # Company name on the Chinese row
-    tc(co_name, val_x, y + row_h, size=hdr_size)
-    if co_name_ch:
-        tc(co_name_ch, val_x + pdf.get_string_width(co_name) + 10, y + row_h, size=hdr_size)
-    # Underline at bottom of Chinese row
-    val_w = pdf.get_string_width(co_name) + (pdf.get_string_width(co_name_ch) + 10 if co_name_ch else 0)
-    pdf.line(val_x, y + row_h + 12, val_x + max(val_w, 120), y + row_h + 12)
+    # ── Company info on left: NAME OF COMPANY || COMPANY NUMBER side by side ──
+    left_w = CW * 0.72  # ~566pt for company info
+    col_a_x = M         # left column: name
+    col_b_x = M + 380   # right column: number
 
-    # Chinese title — below English title
-    tc("重要控制人登記冊", PW - M, title_y + 16, size=11, bold=True, align='R')
+    # Row 1 (English): NAME OF COMPANY  |  COMPANY NUMBER
+    tnr("NAME OF COMPANY:  ", col_a_x, y, size=hdr_size, bold=True)
+    nc_label_w = pdf.get_string_width("NAME OF COMPANY:  ")
+    tnr(co_name, col_a_x + nc_label_w, y, size=hdr_size)
 
-    y += row_h * 2 + 4
-    y += 4
+    tnr("COMPANY NUMBER:  ", col_b_x, y, size=hdr_size, bold=True)
+    num_label_w = pdf.get_string_width("COMPANY NUMBER:  ")
+    tnr(br, col_b_x + num_label_w, y, size=hdr_size)
 
-    # ── Block 2: COMPANY NUMBER (top) + 公司編號 (bottom), stacked labels ──
-    cn_label_en = "COMPANY NUMBER:  "
-    cn_label_cn = "公司編號:  "
-    jur_label_en = "JURISDICTION:  "
-    jur_label_cn = "司法管轄區:  "
+    # Underlines
+    name_val_w = pdf.get_string_width(co_name)
+    line_h(col_a_x + nc_label_w, col_a_x + nc_label_w + max(name_val_w, 150), y + 11)
+    br_val_w = pdf.get_string_width(br)
+    line_h(col_b_x + num_label_w, col_b_x + num_label_w + max(br_val_w, 100), y + 11)
 
-    # Left: COMPANY NUMBER / 公司編號 stacked
-    tnr(cn_label_en, M, y, size=hdr_size, bold=True)
-    tc(cn_label_cn, M, y + row_h, size=hdr_size)
-    cnlw_en = pdf.get_string_width(cn_label_en)
-    cnlw_cn = pdf.get_string_width(cn_label_cn)
-    cn_val_x = M + max(cnlw_en, cnlw_cn) + 2
-    tnr(br, cn_val_x, y + row_h, size=hdr_size) if br else None
-    cn_end = cn_val_x + pdf.get_string_width(br) if br else cn_val_x + 100
-    # Underline at bottom of Chinese row
-    pdf.line(cn_val_x, y + row_h + 12, max(cn_end, cn_val_x + 60), y + row_h + 12)
+    y += 14
 
-    # Right: JURISDICTION —紧挨着 COMPANY NUMBER 下划线后面
-    cn_ul_end = max(cn_end, cn_val_x + 60)
-    jur_x = cn_ul_end + 25
-    tnr(jur_label_en, jur_x, y, size=hdr_size, bold=True)
-    tc(jur_label_cn, jur_x, y + row_h, size=hdr_size)
-    jlw_en = pdf.get_string_width(jur_label_en)
-    jlw_cn = pdf.get_string_width(jur_label_cn)
-    jur_val_x = jur_x + max(jlw_en, jlw_cn) + 2
-    tnr("HONG KONG", jur_val_x, y + row_h, size=hdr_size)
-    jur_end = jur_val_x + pdf.get_string_width("HONG KONG")
-    # Underline at bottom of Chinese row
-    pdf.line(jur_val_x, y + row_h + 12, max(jur_end, jur_val_x + 40), y + row_h + 12)
-    y += row_h * 2 + 6
+    # Row 2 (Chinese): 公司名稱  |  公司編號
+    tc("公司名稱:  ", col_a_x, y, size=hdr_size)
+    cn_label_w = pdf.get_string_width("公司名稱:  ")
+    tc(co_name_ch if co_name_ch else co_name, col_a_x + cn_label_w, y, size=hdr_size)
 
-    # Separator line after header
-    y += 4
+    tc("公司編號:  ", col_b_x, y, size=hdr_size)
+    num2_label_w = pdf.get_string_width("公司編號:  ")
+    tc(br, col_b_x + num2_label_w, y, size=hdr_size)
+
+    # Underlines
+    cn_val_w = pdf.get_string_width(co_name_ch or co_name)
+    line_h(col_a_x + cn_label_w, col_a_x + cn_label_w + max(cn_val_w, 150), y + 11)
+    br2_val_w = pdf.get_string_width(br)
+    line_h(col_b_x + num2_label_w, col_b_x + num2_label_w + max(br2_val_w, 100), y + 11)
+
+    y += 20
+
+    # ── JURISDICTION line (below header, per docx order) ──
+    tnr("JURISDICTION:  ", M, y, size=hdr_size, bold=True)
+    jlw = pdf.get_string_width("JURISDICTION:  ")
+    tnr("HONG KONG", M + jlw, y, size=hdr_size)
+    y += 11
+    tc("司法管轄區:  HONG KONG", M, y, size=hdr_size)
+    y += 16
+
+    # Separator
     line_h(M, PW - M, y, w=0.5)
-    y += 10
+    y += 12
 
-    # ── Table columns (7 cols, matching Paul Tang reference - landscape) ──
-    col_w = [
-        60,   # 1. Entry Date
-        115,  # 2. Name
-        150,  # 3. Correspondence Address / Registered Office
-        135,  # 4. ID/PPT No. / Company No. / Legal Form
-        135,  # 5. Nature of Control
-        90,   # 6. Becoming Date / Cessation Date
-        97,   # 7. Remarks
-    ]
+    # ═══════════════════════════════════════════════════════
+    # DATA TABLE (7 columns, grid borders, bilingual headers)
+    # Column widths per docx gridCol proportions with ID column widened
+    # ═══════════════════════════════════════════════════════
+
+    # Docx gridCol DXA: merged[1526], 2154, 2835, 2551, 2551, 1701, 1814
+    # Total=15132 DXA. Scale to CW=786pt, then widen ID col (+8pt) and narrow Nature (-8pt)
+    col_ratios = [1526, 2154, 2835, 2551, 2551, 1701, 1814]
+    total_dxa = sum(col_ratios)
+    col_w = [r * CW / total_dxa for r in col_ratios]
+    # Widen ID column (index 3) and narrow Nature column (index 4)
+    col_w[3] += 8   # ID: ~140pt
+    col_w[4] -= 8   # Nature: ~124pt
+
     col_x = [M]
     for w in col_w[:-1]:
         col_x.append(col_x[-1] + w)
     end_x = PW - M
 
-    # ── Table Header ──
-    hdr_y0 = y
-    hdr_size = 8
+    # ── Bilingual Multi-line Table Headers ──
     hdr_labels = [
-        ("Entry Date", 0), ("Name", 1),
-        ("Correspondence Address / Registered Office Address", 2),
-        ("ID/PPT No. (Issuing Country) / Company No. (Place of Incorp.) / Legal Form", 3),
-        ("Nature of Control", 4),
-        ("Becoming Date / Cessation Date", 5),
-        ("Remarks", 6),
+        ("Entry Date\n錄入日期", 0),
+        ("Name\n姓名／名稱", 1),
+        ("Correspondence Address\n(for Registrable Person)\n通訊地址（自然人）\nRegistered Office Address\n(for Legal Entity)\n註冊／主要營業地址（法人）", 2),
+        ("ID / PPT No. (Issuing Country)\n(for Registrable Person)\n身份證／護照號碼\n（簽發國家）（自然人）\nCompany No. (Place of Incorp.)\n/ Legal Form\n公司編號（成立地方）\n／法律形式（法人）", 3),
+        ("Nature of Control\n控制性質", 4),
+        ("Becoming Date\n(Cessation Date)\n開始日期\n（終止日期）", 5),
+        ("Remarks\n備註", 6),
     ]
-    hdr_h = 18
+
+    hdr_lines_counts = [len(lbl.split('\n')) for lbl, _ in hdr_labels]
+    hdr_line_h = 10
+    max_hdr_lines = max(hdr_lines_counts)
+    hdr_h = max_hdr_lines * hdr_line_h + 6
+
+    hdr_y0 = y
+
     for label, ci in hdr_labels:
-        tnr(label, col_x[ci] + 2, y + 2, size=hdr_size, bold=True)
+        x0 = col_x[ci]
+        cw_val = col_w[ci] if ci < len(col_w) else (end_x - col_x[ci])
+        draw_cell_border(x0, y, cw_val, hdr_h)
+        lines = label.split('\n')
+        text_block_h = len(lines) * hdr_line_h
+        text_start_y = y + (hdr_h - text_block_h) / 2
+        for li, line_text in enumerate(lines):
+            font_name = 'TC' if has_cjk(line_text) else 'TNR'
+            pdf.set_font(font_name, 'B', 7)
+            pdf.set_text_color(0, 0, 0)
+            lw = pdf.get_string_width(line_text)
+            lx = x0 + (cw_val - lw) / 2
+            pdf.set_xy(lx, text_start_y + li * hdr_line_h)
+            pdf.cell(lw, hdr_line_h, line_text)
+
     y += hdr_h
-    line_h(M, end_x, y, w=0.4)
-    # Vertical lines for header
-    for ci in range(len(col_x)):
-        line_v(col_x[ci], hdr_y0, y, w=0.25)
-    line_v(end_x, hdr_y0, y, w=0.25)
     table_top_y = hdr_y0
 
     # ── Data Rows ──
-    data_size = 9
-    data_row_h = 22
-    row_num = 0
+    data_size = 8
+    min_row_h = 20
 
     if not scrs:
-        tc("(No SCR records / 尚無重要控制人記錄)", M + 3, y + 8, size=9)
-        y += data_row_h
+        empty_h = min_row_h
+        for ci in range(len(col_x)):
+            cw_val = col_w[ci] if ci < len(col_w) else (end_x - col_x[ci])
+            draw_cell_border(col_x[ci], y, cw_val, empty_h)
+        tc("(No SCR records / 尚無重要控制人記錄)", M + 4, y + 4, size=8)
+        y += empty_h
     else:
         for s in scrs:
-            # Build nature of control text
+            # Build nature of control
             natures = []
-            if rget(s, 'nature_shares'): natures.append('Holds >25% shares')
-            if rget(s, 'nature_voting'): natures.append('>25% voting rights')
+            if rget(s, 'nature_shares'): natures.append('>25% shares')
+            if rget(s, 'nature_voting'): natures.append('>25% voting')
             if rget(s, 'nature_appoint'): natures.append('Appoint/remove directors')
-            if rget(s, 'nature_influence'): natures.append('Significant influence')
+            if rget(s, 'nature_influence'): natures.append('Sig. influence')
             if rget(s, 'nature_trust'): natures.append('Trust control')
             if rget(s, 'nature_other'): natures.append(rget(s, 'nature_other'))
 
             is_nat = rget(s, 'identity') != 'corporate'
             name_en = rget(s, 'name_english') or ''
             name_ch = rget(s, 'name_chinese') or ''
-            name_display = f"{name_en}  {name_ch}".strip() or '(unnamed)'
+            name_display = f"{name_ch}  {name_en}".strip() if name_ch else (name_en or '(unnamed)')
 
-            # Build ID info block — horizontal single line
+            # ID / Company info
             if is_nat:
                 id_no = rget(s, 'id_number') or rget(s, 'passport_number') or '-'
                 passport_country = rget(s, 'passport_country') or ''
                 id_block = f"ID/PPT: {id_no}"
                 if passport_country:
                     id_block += f" ({passport_country})"
-                id_block += " | Natural Person / 自然人"
+                id_block += " | Natural Person"
             else:
                 comp_no = rget(s, 'company_number_ref') or '-'
                 place_incorp = rget(s, 'place_of_incorporation') or ''
@@ -2146,43 +2213,47 @@ def generate_scr_pdf():
                     id_block += f" ({place_incorp})"
                 if legal_form:
                     id_block += f" | {legal_form}"
-                id_block += " | Body Corporate / 法人"
+                id_block += " | Body Corporate"
 
-            addr = (rget(s, 'address') or '')[:150]
+            addr = (rget(s, 'address') or '')[:200]
             nature_text = ', '.join(natures) if natures else '-'
             date_became = rget(s, 'date_became') or '-'
             date_cea = rget(s, 'date_ceased') or ''
-            ceased_text = date_cea if date_cea else 'Current / 現任'
+            date_display = f"{date_became}  /  {date_cea}" if date_cea else f"{date_became}  /  Current"
 
-            # Designated rep info — horizontal
             if rget(s, 'is_designated_rep') and rget(s, 'designated_rep_name'):
                 rep_name = rget(s, 'designated_rep_name')
-                rep_contact = rget(s, 'designated_rep_contact') or ''
-                ceased_text += f" | Rep: {rep_name}"
-                if rep_contact:
-                    ceased_text += f" ({rep_contact})"
+                date_display += f"\nRep: {rep_name}"
 
             entry_date = rget(s, 'created_at') or ''
             if entry_date and len(entry_date) > 10:
                 entry_date = entry_date[:10]
 
-            row_num += 1
+            remarks = rget(s, 'remarks') or ''
+            row_data = [entry_date, name_display, addr, id_block, nature_text, date_display, remarks]
 
-            # Calculate row height based on content lines
-            num_lines = 1
-            for txt in [name_display, addr, id_block, nature_text, ceased_text]:
-                # Estimate lines based on text length vs column width
-                ci_for_txt = [0, 1, 2, 3, 4, 5][[name_display, addr, id_block, nature_text, ceased_text, ''].index(txt)] if txt in [name_display, addr, id_block, nature_text, ceased_text] else 0
-                lines_needed = max(1, -(-len(str(txt)) * data_size // col_w[ci_for_txt])) if txt else 1
-                num_lines = max(num_lines, min(lines_needed, 3))
-            data_row_h = max(num_lines * 14 + 4, 22)
+            # Calculate row height from longest wrapped cell
+            row_h = min_row_h
+            cell_lines_list = []
+            for ci, txt in enumerate(row_data):
+                if not txt:
+                    cell_lines_list.append(1)
+                    continue
+                font_name = 'TC' if has_cjk(str(txt)) else 'TNR'
+                pdf.set_font(font_name, '', data_size)
+                cell_pad = 4
+                cw_avail = (col_w[ci] if ci < len(col_w) else (end_x - col_x[ci])) - cell_pad
+                if cw_avail < 20:
+                    cw_avail = 20
+                lines = wrap_text_to_lines(str(txt), font_name, '', data_size, cw_avail)
+                cell_lines_list.append(len(lines))
+                row_h = max(row_h, len(lines) * (data_size + 4) + 4)
 
-            # Page break if needed
-            if y + data_row_h > PH - 40:
-                line_h(M, end_x, y, w=0.4)
+            # Page break
+            if y + row_h > PH - 70:
+                line_h(M, end_x, y, w=0.5)
                 pdf.add_page()
                 y = 22
-                # Simplified continuation header
                 tnr("SIGNIFICANT CONTROLLERS REGISTER (Cont'd)", PW / 2, y, size=13, bold=True, align='C')
                 y += 16
                 tc("重要控制人登記冊（續）", PW / 2, y, size=11, bold=True, align='C')
@@ -2191,34 +2262,67 @@ def generate_scr_pdf():
                 y += 8
                 hdr_y0 = y
                 for label, ci in hdr_labels:
-                    tnr(label, col_x[ci] + 2, y + 2, size=hdr_size, bold=True)
+                    x0 = col_x[ci]
+                    cw_val = col_w[ci] if ci < len(col_w) else (end_x - col_x[ci])
+                    draw_cell_border(x0, y, cw_val, hdr_h)
+                    lines = label.split('\n')
+                    text_block_h = len(lines) * hdr_line_h
+                    text_start_y = y + (hdr_h - text_block_h) / 2
+                    for li, line_text in enumerate(lines):
+                        font_name = 'TC' if has_cjk(line_text) else 'TNR'
+                        pdf.set_font(font_name, 'B', 7)
+                        pdf.set_text_color(0, 0, 0)
+                        lw = pdf.get_string_width(line_text)
+                        lx = x0 + (cw_val - lw) / 2
+                        pdf.set_xy(lx, text_start_y + li * hdr_line_h)
+                        pdf.cell(lw, hdr_line_h, line_text)
                 y += hdr_h
-                line_h(M, end_x, y, w=0.4)
-                for ci in range(len(col_x)):
-                    line_v(col_x[ci], hdr_y0, y, w=0.25)
-                line_v(end_x, hdr_y0, y, w=0.25)
+                table_top_y = hdr_y0
 
-            # Draw data — horizontal text
-            row_data = [
-                (entry_date, 0), (name_display, 1), (addr, 2),
-                (id_block, 3), (nature_text, 4),
-                (f"{date_became}  /  {ceased_text}", 5), ('', 6),
-            ]
-            for text, ci in row_data:
-                if text:
-                    has_cjk = any('一' <= ch <= '鿿' or '　' <= ch <= '〿' for ch in str(text))
-                    if has_cjk:
-                        tc(str(text), col_x[ci] + 2, y + 2, size=data_size)
-                    else:
-                        tnr(str(text), col_x[ci] + 2, y + 2, size=data_size)
+            # Draw row cells
+            for ci, txt in enumerate(row_data):
+                x0 = col_x[ci]
+                cw_val = col_w[ci] if ci < len(col_w) else (end_x - col_x[ci])
+                draw_cell_border(x0, y, cw_val, row_h)
+                if txt:
+                    font_name = 'TC' if has_cjk(str(txt)) else 'TNR'
+                    pdf.set_font(font_name, '', data_size)
+                    pdf.set_text_color(0, 0, 0)
+                    cell_pad = 3
+                    cw_avail = cw_val - cell_pad * 2
+                    if cw_avail < 20:
+                        cw_avail = 20
+                    lines = wrap_text_to_lines(str(txt), font_name, '', data_size, cw_avail)
+                    for li, line_text in enumerate(lines):
+                        pdf.set_xy(x0 + cell_pad, y + 2 + li * (data_size + 4))
+                        pdf.cell(cw_avail, data_size + 4, line_text)
+            y += row_h
 
-            y += data_row_h
-            line_h(M, end_x, y, w=0.2, color=(150, 150, 150))
-
-    # Draw outer table border
+    # Table bottom border
     line_h(M, end_x, y, w=0.5)
-    line_v(M, table_top_y, y, w=0.5)
-    line_v(end_x, table_top_y, y, w=0.5)
+    y += 14
+
+    # ═══════════════════════════════════════════════════════
+    # ADDITIONAL MATTERS — 2×2 table (header row + content row)
+    # ═══════════════════════════════════════════════════════
+    add_h_hdr = 20  # header row height
+    add_h_content = 48  # content row height
+    add_w = CW * 0.5
+
+    # Row 0: Headers
+    add_y0 = y
+    draw_cell_border(M, y, add_w, add_h_hdr)
+    draw_cell_border(M + add_w, y, add_w, add_h_hdr)
+    tnr("Additional Matters", M + 3, y + 3, size=7, bold=True)
+    tc("附加事項", M + 3, y + 12, size=7)
+    tnr("Remarks", M + add_w + 3, y + 3, size=7, bold=True)
+    tc("備註", M + add_w + 3, y + 12, size=7)
+    y += add_h_hdr
+
+    # Row 1: Empty content cells
+    draw_cell_border(M, y, add_w, add_h_content)
+    draw_cell_border(M + add_w, y, add_w, add_h_content)
+    y += add_h_content
 
     pdf_bytes = bytes(pdf.output())
     import base64 as b64
@@ -2391,6 +2495,8 @@ def _build_bought_sold_note(pdf, company, tx):
     to_name = tx.get('to_name', '')
     shares = tx.get('shares', 0) or 0
     par_val = tx.get('price_per_share', '1.00')
+    if not par_val or par_val == '':
+        par_val = '1.00'
     consideration = tx.get('total_consideration') or (shares * float(par_val))
     tx_date = tx.get('transaction_date', '')
     co_name = company.get('name', '')

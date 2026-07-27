@@ -1165,12 +1165,8 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
     console.log(`Generating NAR1 for: ${companyData.name} (BR: ${companyData.brNumber})`);
     const pdfBytes = await buildNAR1Pdf(companyData);
 
-    return new Response(pdfBytes.buffer as ArrayBuffer, {
-      headers: {
-        ...corsHeaders,
-        "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="NAR1_${companyData.brNumber}_${Date.now()}.pdf"`,
-      },
+    return new Response(JSON.stringify({ pdf: uint8ToBase64(pdfBytes) }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
     console.error("Error generating PDF:", error);

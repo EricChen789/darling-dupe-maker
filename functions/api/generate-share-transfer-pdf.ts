@@ -229,7 +229,8 @@ async function buildInstrumentOfTransfer(
   });
 }
 
-// ── Bought / Sold Note ──
+// ── Bought / Sold Note (Paul Tang reference format) ──
+// Free-form layout, tab-stop alignment, 16pt bold title, 1.5pt thick line, TNR 12pt
 async function buildBoughtSoldNote(
   pdf: PDFDocument, fonts: { cjk: any; ascii: any; asciiBold: any },
   company: any, transaction: any, allTransactions: any[],
@@ -237,8 +238,8 @@ async function buildBoughtSoldNote(
   const { cjk: cjkFont, ascii: asciiFont, asciiBold } = fonts;
   const page = pdf.addPage([PAGE_W, PAGE_H]);
   const halfH = PAGE_H / 2;
-  const labelX = MARGIN + 8;
-  const valueX = MARGIN + 180;
+  const labelX = MARGIN + 5;
+  const valueX = PAGE_W / 3 + 10;  // ~30% label, ~70% value
 
   const tx = transaction || (allTransactions.length > 0 ? allTransactions[0] : {});
   const fromName = tx.from_name || "";
@@ -249,84 +250,109 @@ async function buildBoughtSoldNote(
   const txDate = tx.transaction_date || "";
   const coName = company.name || "";
 
-  // Format shares with comma
   const sharesFmt = typeof shares === 'number' ? shares.toLocaleString('en-US') : String(shares);
-  // Format consideration with comma
-  const consFmt = typeof consideration === 'number' ? consideration.toLocaleString('en-US') : String(consideration);
+  const consFmt = typeof consideration === 'number' ? consideration.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : String(consideration);
 
-  const drawRow = (label: string, value: string, yPos: number, size = 9) => {
+  // Thick title line: ~70% page width
+  const lineW = (PAGE_W - 2 * MARGIN) * 0.7;
+  const lineStart = (PAGE_W - lineW) / 2;
+
+  const drawRow = (label: string, value: string, yPos: number, size = 12) => {
     drawMixed(page, label, { x: labelX, y: yPos, size, cjkFont, asciiFont, color: rgb(0, 0, 0) });
-    drawMixed(page, value, { x: valueX, y: yPos, size, cjkFont, asciiFont, color: rgb(0, 0, 0) });
+    drawMixed(page, value || "", { x: valueX, y: yPos, size, cjkFont, asciiFont, color: rgb(0, 0, 0) });
   };
 
-  // ═══ Sold Note — TOP half ═══
-  let y = PAGE_H - 42;
+  // ═══ SOLD NOTE — TOP half ═══
+  let y = PAGE_H - 50;
+
+  // Title: 16pt bold, centered
+  const soldNoteW = widthOfText("Sold Note", cjkFont, asciiFont, 16);
   drawMixed(page, "Sold Note", {
-    x: PAGE_W / 2 - 30, y, size: 14, cjkFont, asciiFont,
+    x: PAGE_W / 2 - soldNoteW / 2, y, size: 16, cjkFont, asciiFont,
+  });
+  y -= 4;
+  drawMixed(page, "賣出票據", {
+    x: PAGE_W / 2 - widthOfText("賣出票據", cjkFont, asciiFont, 11) / 2, y, size: 11, cjkFont, asciiFont,
   });
   y -= 22;
-  page.drawLine({ start: { x: MARGIN, y }, end: { x: PAGE_W - MARGIN, y }, color: rgb(0, 0, 0), thickness: 0.4 });
-  y -= 16;
+
+  // Thick black line (1.5pt)
+  page.drawLine({ start: { x: lineStart, y }, end: { x: lineStart + lineW, y }, color: rgb(0, 0, 0), thickness: 1.5 });
+  y -= 18;
 
   drawRow("Name of Purchaser (Transferee):", toName, y); y -= 18;
   drawRow("Address:", "", y); y -= 18;
   drawRow("Occupation:", "", y); y -= 18;
   drawRow("Name of Company:", coName, y); y -= 18;
-  drawRow("Number of Shares:", `${sharesFmt}    of    HK$${parVal}    each`, y); y -= 18;
-  drawRow("Consideration Received:", consideration ? `HK$${consFmt}` : "", y); y -= 18;
+  drawRow("Number of Shares:", `${sharesFmt}  of  HK$${parVal}  each`, y); y -= 18;
+  if (consideration) {
+    drawRow("Consideration Received:", `HK$${consFmt}`, y); y -= 18;
+  } else {
+    drawRow("Consideration Received:", "", y); y -= 18;
+  }
 
-  y -= 8;
-  // Transferor centred + underline
-  const transferorText = `(Transferor)  ${fromName}`;
-  const transferorW = widthOfText(transferorText, cjkFont, asciiFont, 9);
-  drawMixed(page, transferorText, {
-    x: PAGE_W / 2 - transferorW / 2, y, size: 9, cjkFont, asciiFont,
-  });
-  // Underline after transferor text to right edge
-  const sigStart = PAGE_W / 2 + transferorW / 2 + 6;
-  page.drawLine({ start: { x: sigStart, y: y + 2 }, end: { x: PAGE_W - MARGIN, y: y + 2 }, color: rgb(0, 0, 0), thickness: 0.5 });
-  y -= 14;
-  drawMixed(page, coName, {
-    x: sigStart, y, size: 7, cjkFont, asciiFont, color: rgb(0, 0, 0),
-  });
+  y -= 10;
+  // Transferor signature: text + underline to right margin
+  const tfText = `(Transferor)  ${fromName}`;
+  drawMixed(page, tfText, { x: labelX, y, size: 12, cjkFont, asciiFont });
+  const tfW = widthOfText(tfText, cjkFont, asciiFont, 12);
+  const sigEnd = labelX + tfW + 10;
+  page.drawLine({ start: { x: sigEnd, y: y + 3 }, end: { x: PAGE_W - MARGIN, y: y + 3 }, color: rgb(0, 0, 0), thickness: 0.6 });
+  y -= 16;
+  drawMixed(page, coName, { x: sigEnd, y, size: 8, cjkFont, asciiFont });
   y -= 14;
 
-  // Hong Kong, Dated at bottom-left of top half
-  y = halfH + 14;
   drawMixed(page, `Hong Kong, Dated  ${txDate}`, {
-    x: labelX, y, size: 9, cjkFont, asciiFont,
+    x: labelX, y, size: 12, cjkFont, asciiFont,
   });
+  y -= 24;
 
-  // Divider at mid-page
-  page.drawLine({ start: { x: MARGIN, y: halfH }, end: { x: PAGE_W - MARGIN, y: halfH }, color: rgb(0, 0, 0), thickness: 0.4 });
+  // ═══ DIVIDER ═══
+  page.drawLine({ start: { x: MARGIN, y: halfH }, end: { x: PAGE_W - MARGIN, y: halfH }, color: rgb(0.39, 0.39, 0.39), thickness: 0.5 });
 
-  // ═══ Bought Note — BOTTOM half ═══
-  y = halfH - 14;
+  y = halfH - 18;
+
+  // ═══ BOUGHT NOTE — BOTTOM half ═══
+  // Title: 16pt bold, centered
   drawMixed(page, "Bought Note", {
-    x: PAGE_W / 2 - 30, y, size: 14, cjkFont, asciiFont,
+    x: PAGE_W / 2 - widthOfText("Bought Note", cjkFont, asciiFont, 16) / 2, y, size: 16, cjkFont, asciiFont,
+  });
+  y -= 4;
+  drawMixed(page, "買入票據", {
+    x: PAGE_W / 2 - widthOfText("買入票據", cjkFont, asciiFont, 11) / 2, y, size: 11, cjkFont, asciiFont,
   });
   y -= 22;
-  page.drawLine({ start: { x: MARGIN, y }, end: { x: PAGE_W - MARGIN, y }, color: rgb(0, 0, 0), thickness: 0.4 });
-  y -= 16;
+
+  // Thick black line
+  page.drawLine({ start: { x: lineStart, y }, end: { x: lineStart + lineW, y }, color: rgb(0, 0, 0), thickness: 1.5 });
+  y -= 18;
 
   drawRow("Name of Seller (Transferor):", fromName, y); y -= 18;
   drawRow("Address:", "", y); y -= 18;
   drawRow("Occupation:", "", y); y -= 18;
   drawRow("Name of Company:", coName, y); y -= 18;
-  drawRow("Number of Shares:", `${sharesFmt}    of    HK$${parVal}    each`, y); y -= 18;
-  drawRow("Consideration Received:", consideration ? `HK$${consFmt}` : "", y); y -= 18;
+  drawRow("Number of Shares:", `${sharesFmt}  of  HK$${parVal}  each`, y); y -= 18;
+  if (consideration) {
+    drawRow("Consideration Received:", `HK$${consFmt}`, y); y -= 18;
+  } else {
+    drawRow("Consideration Received:", "", y); y -= 18;
+  }
 
-  y -= 8;
-  drawMixed(page, `(Transferee)  ${toName}`, {
-    x: labelX, y, size: 9, cjkFont, asciiFont,
-  });
+  y -= 10;
+  // Transferee signature: text + underline to right margin
+  const teeText = `(Transferee)  ${toName}`;
+  drawMixed(page, teeText, { x: labelX, y, size: 12, cjkFont, asciiFont });
+  const teeW = widthOfText(teeText, cjkFont, asciiFont, 12);
+  const teeEnd = labelX + teeW + 10;
+  page.drawLine({ start: { x: teeEnd, y: y + 3 }, end: { x: PAGE_W - MARGIN, y: y + 3 }, color: rgb(0, 0, 0), thickness: 0.6 });
   y -= 18;
   drawMixed(page, `Hong Kong, Dated  ${txDate}`, {
-    x: labelX, y, size: 9, cjkFont, asciiFont,
+    x: labelX, y, size: 12, cjkFont, asciiFont,
   });
 
+  // Footer
   drawMixed(page, `Generated by Muse Labs | ${new Date().toISOString().slice(0, 10)}`, {
-    x: MARGIN, y: 20, size: 6, cjkFont, asciiFont, color: rgb(0.6, 0.6, 0.6),
+    x: MARGIN, y: 20, size: 7, cjkFont, asciiFont, color: rgb(0.6, 0.6, 0.6),
   });
 }
 

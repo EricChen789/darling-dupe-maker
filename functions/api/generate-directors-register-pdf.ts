@@ -12,6 +12,14 @@ const corsHeaders = {
 
 const CHINESE_FONT_URL = "https://cdn.jsdelivr.net/fontsource/fonts/noto-sans-tc@latest/chinese-traditional-400-normal.woff2";
 
+function uint8ToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
 // Landscape A4 — matching RTF sample (16838×11906 twips)
 const PAGE_W = 842;
 const PAGE_H = 595;
@@ -97,28 +105,32 @@ function wrapText(text: string, cjk: any, ascii: any, fontSize: number, maxWidth
   return lines;
 }
 
-// ── RTF-style page header ──
+// ── Paul Tang page header (black & white) ──
 function drawPageHeader(page: any, f: { cjk: any; ascii: any },
   title: string, company: any, quorum: number | null): number {
-  const today = new Date().toLocaleDateString('en-GB'); // DD/MM/YYYY
+  const today = new Date().toLocaleDateString('en-GB');
   let y = PAGE_H - 45;
 
-  // Company name — blue bold (simulated with blue colour since Noto Sans TC has one weight)
-  drawMixed(page, (company as any).name || "", { x: MARGIN, y, size: 14, cjk: f.cjk, ascii: f.ascii, color: BLUE });
+  // Company name — centered, black, 14pt
+  const coName = (company as any).name || "";
+  const coNameW = widthOfText(coName, f.cjk, f.ascii, 14);
+  drawMixed(page, coName, { x: PAGE_W / 2 - coNameW / 2, y, size: 14, cjk: f.cjk, ascii: f.ascii });
   y -= 20;
 
-  // Company Number — blue
+  // Company Number — centered, black
   const br = (company as any).company_number || "";
-  drawMixed(page, `Company Number:  ${br}`, { x: MARGIN, y, size: 10, cjk: f.cjk, ascii: f.ascii, color: BLUE });
+  const brLine = `Company Number:  ${br}`;
+  const brW = widthOfText(brLine, f.cjk, f.ascii, 10);
+  drawMixed(page, brLine, { x: PAGE_W / 2 - brW / 2, y, size: 10, cjk: f.cjk, ascii: f.ascii });
 
-  // Quorum — right-aligned small
+  // Quorum — right-aligned
   if (quorum !== null) {
-    drawMixedRight(page, `Quorum:  ${quorum}`, { x: PAGE_W - MARGIN, y, size: 9, cjk: f.cjk, ascii: f.ascii, color: BLUE });
+    drawMixedRight(page, `Quorum:  ${quorum}`, { x: PAGE_W - MARGIN, y, size: 9, cjk: f.cjk, ascii: f.ascii });
   }
   y -= 22;
 
-  // Title — blue
-  drawMixed(page, `${title} AT ${today}`, { x: MARGIN, y, size: 12, cjk: f.cjk, ascii: f.ascii, color: BLUE });
+  // Title — black
+  drawMixed(page, `${title} AT ${today}`, { x: MARGIN, y, size: 12, cjk: f.cjk, ascii: f.ascii });
   y -= 24;
 
   // Black separator line
@@ -126,11 +138,10 @@ function drawPageHeader(page: any, f: { cjk: any; ascii: any },
   return y - 10;
 }
 
-// ── Grey header row (RTF style: no vertical lines, 9pt black text) ──
+// ── White header row (Paul Tang style: no grey fill, no vertical lines) ──
 function drawTableHeaderRow(page: any, f: { cjk: any; ascii: any },
   cols: { x: number; w: number; label: string }[], y: number): number {
   const fontSize = 9;
-  // Calculate row height from wrapped header labels
   let maxLines = 1;
   const wrappedLabels: string[][] = [];
   for (const c of cols) {
@@ -140,11 +151,7 @@ function drawTableHeaderRow(page: any, f: { cjk: any; ascii: any },
   }
   const rowH = Math.max(maxLines * 13 + 8, 26);
 
-  // Grey background
-  page.drawRectangle({
-    x: MARGIN, y: y - rowH, width: CONTENT_W, height: rowH,
-    color: GREY_HDR,
-  });
+  // White background — no fill
 
   // Header text — black, 9pt
   for (let i = 0; i < cols.length; i++) {
@@ -155,9 +162,9 @@ function drawTableHeaderRow(page: any, f: { cjk: any; ascii: any },
     }
   }
 
-  // Top + bottom borders only (no vertical dividers)
-  page.drawLine({ start: { x: MARGIN, y }, end: { x: PAGE_W - MARGIN, y }, color: LINE_DARK, thickness: 0.5 });
-  page.drawLine({ start: { x: MARGIN, y: y - rowH }, end: { x: PAGE_W - MARGIN, y: y - rowH }, color: LINE_DARK, thickness: 0.5 });
+  // Top + bottom borders only (black, no vertical dividers)
+  page.drawLine({ start: { x: MARGIN, y }, end: { x: PAGE_W - MARGIN, y }, color: rgb(0, 0, 0), thickness: 0.5 });
+  page.drawLine({ start: { x: MARGIN, y: y - rowH }, end: { x: PAGE_W - MARGIN, y: y - rowH }, color: rgb(0, 0, 0), thickness: 0.5 });
 
   return y - rowH;
 }
@@ -327,8 +334,9 @@ export async function onRequest(context: { request: Request; env: Env }) {
     }
 
     const bytes = await pdf.save();
-    return new Response(bytes, {
-      headers: { ...corsHeaders, "Content-Type": "application/pdf" },
+    const byteArray = new Uint8Array(bytes);
+    return new Response(JSON.stringify({ pdf: uint8ToBase64(byteArray) }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e: any) {
     console.error("generate-directors-register-pdf error:", e);

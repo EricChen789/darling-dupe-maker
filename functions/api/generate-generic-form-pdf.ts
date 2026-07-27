@@ -28,7 +28,11 @@ interface DocPayload {
   signatureLines?: string[]; // e.g. ["Director: ____________", "Date: ____________"]
 }
 
-export async function onRequest(context: { request: Request; env: any }) {
+interface Env {
+  // No specific bindings needed — this function generates PDFs from scratch
+}
+
+export async function onRequest(context: { request: Request; env: Env }) {
   const { request } = context;
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -164,12 +168,18 @@ export async function onRequest(context: { request: Request; env: any }) {
     }
 
     const bytes = await pdf.save();
-    return new Response(bytes, {
-      headers: {
-        ...corsHeaders,
-        "Content-Type": "application/pdf",
-        "Content-Disposition": `inline; filename="${data.formCode}_${data.brNumber || "doc"}.pdf"`,
-      },
+
+    // Base64 encode — use safe character-by-character approach (same as generate-cr-form-pdf.ts)
+    const byteArray = new Uint8Array(bytes);
+    let binary = "";
+    for (let i = 0; i < byteArray.length; i++) {
+      binary += String.fromCharCode(byteArray[i]);
+    }
+    const base64 = btoa(binary);
+
+    return new Response(JSON.stringify({ pdf: base64 }), {
+      status: 200,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e: any) {
     console.error("generate-generic-form-pdf error:", e);

@@ -1997,21 +1997,67 @@ def generate_scr_pdf():
         pdf.line(x, y1, x, y2)
 
     # ── Page Header (matching Paul Tang reference) ──
-    y = 28
+    y = 30
     co_name = rget(company, 'name') or ''
     co_name_ch = rget(company, 'chinese_name') or ''
     br = rget(company, 'company_number') or ''
 
-    tnr(f"NAME OF COMPANY: {co_name}", M, y, size=8, bold=True)
+    # Line 1: NAME OF COMPANY: <value> — with underline under value
+    label1 = "NAME OF COMPANY:  "
+    tnr(label1, M, y, size=8, bold=True)
+    lw1 = pdf.get_string_width(label1)
+    tnr(co_name, M + lw1, y, size=8)
+    vw1 = pdf.get_string_width(co_name)
+    if co_name:
+        pdf.line(M + lw1, y + 11, M + lw1 + vw1, y + 11)  # underline
+    y += 16
+
+    # Line 2: 公司名稱: <Chinese name> — with underline
     if co_name_ch:
-        tc(f"公司名稱: {co_name_ch}", M, y + 12, size=8)
-    y += 26
+        label2 = "公司名稱:  "
+        tc(label2, M, y, size=8)
+        lw2 = pdf.get_string_width(label2)
+        tc(co_name_ch, M + lw2, y, size=8)
+        vw2 = pdf.get_string_width(co_name_ch)
+        if co_name_ch:
+            pdf.line(M + lw2, y + 11, M + lw2 + vw2, y + 11)
+        y += 16
+
+    y += 4
+
+    # Line 3: COMPANY NUMBER: <BR> (left)  +  JURISDICTION: HONG KONG (right)
     if br:
-        tnr(f"COMPANY NUMBER: {br}", M, y, size=8, bold=True)
-        y += 14
+        label3 = "COMPANY NUMBER:  "
+        tnr(label3, M, y, size=8, bold=True)
+        lw3 = pdf.get_string_width(label3)
+        tnr(br, M + lw3, y, size=8)
+        vw3 = pdf.get_string_width(br)
+        if br:
+            pdf.line(M + lw3, y + 11, M + lw3 + vw3, y + 11)
+
+    # JURISDICTION on the right
+    jur_label = "JURISDICTION:  "
+    jur_text = "HONG KONG"
+    jur_x = PW / 2 + 20
+    tnr(jur_label, jur_x, y, size=8, bold=True)
+    jlw = pdf.get_string_width(jur_label)
+    tnr(jur_text, jur_x + jlw, y, size=8)
+    jvw = pdf.get_string_width(jur_text)
+    pdf.line(jur_x + jlw, y + 11, jur_x + jlw + jvw, y + 11)
+    y += 16
+
+    # Line 4: 司法管轄區: 香港 — right side, below JURISDICTION
+    jcn_label = "司法管轄區:  "
+    jcn_text = "香港"
+    tc(jcn_label, jur_x, y, size=8)
+    jcn_lw = pdf.get_string_width(jcn_label)
+    tc(jcn_text, jur_x + jcn_lw, y, size=8)
+    jcn_vw = pdf.get_string_width(jcn_text)
+    pdf.line(jur_x + jcn_lw, y + 11, jur_x + jcn_lw + jcn_vw, y + 11)
+    y += 20
 
     # Title — bilingual centered
-    y += 6
+    y += 4
     tnr("SIGNIFICANT CONTROLLERS REGISTER", PW / 2, y, size=13, bold=True, align='C')
     y += 16
     tc("重要控制人登記冊", PW / 2, y, size=11, bold=True, align='C')

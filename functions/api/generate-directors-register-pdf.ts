@@ -91,15 +91,24 @@ function wrapText(text: string, cjk: any, ascii: any, fontSize: number, maxWidth
   const paragraphs = text.split('\n');
   for (const para of paragraphs) {
     if (!para) { lines.push(""); continue; }
-    let current = "";
-    for (const ch of para) {
-      const test = current + ch;
-      if (widthOfText(test, cjk, ascii, fontSize) > maxWidth && current.length > 0) {
-        lines.push(current);
-        current = ch;
-      } else { current = test; }
+    // Fast path: whole paragraph fits
+    if (widthOfText(para, cjk, ascii, fontSize) <= maxWidth) {
+      lines.push(para);
+      continue;
     }
-    if (current) lines.push(current);
+    // Binary search for line break positions → O(n log n) instead of O(n²)
+    let start = 0;
+    while (start < para.length) {
+      let lo = start + 1, hi = para.length;
+      while (lo < hi) {
+        const mid = Math.floor((lo + hi + 1) / 2);
+        if (widthOfText(para.slice(start, mid), cjk, ascii, fontSize) <= maxWidth) lo = mid;
+        else hi = mid - 1;
+      }
+      if (lo === start) lo = start + 1; // ensure at least one char
+      lines.push(para.slice(start, lo));
+      start = lo;
+    }
   }
   if (lines.length === 0) lines.push("");
   return lines;
@@ -273,7 +282,7 @@ export async function onRequest(context: { request: Request; env: Env }) {
         const addr = isNat ? (p.address || "") : (p.registered_office || p.address || "");
         let nameBlock = nameEn;
         if (nameCh) nameBlock += "\n" + nameCh;
-        if (addr) nameBlock += "\n" + addr.slice(0, 120);
+        if (addr) nameBlock += "\n" + addr.slice(0, 80);
 
         // DOB/Place/Nation block
         let dobBlock: string;

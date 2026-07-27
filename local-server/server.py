@@ -515,16 +515,26 @@ def find_font():
     print("[FONT] WARNING: No CJK font found, PDF will have no Chinese text!")
     return None
 
-def create_pdf():
-    """Create an fpdf2 FPDF instance with Chinese font (cached)."""
+def create_pdf(landscape=False):
+    """Create an fpdf2 FPDF instance with Chinese font (cached) + Times New Roman."""
+    orient = 'L' if landscape else 'P'
     font_path = find_font()
-    pdf = FPDF(orientation='P', unit='pt', format='A4')
+    pdf = FPDF(orientation=orient, unit='pt', format='A4')
     if font_path:
         try:
             pdf.add_font('TC', style='', fname=font_path)
             pdf.add_font('TC', style='B', fname=font_path)
         except Exception as e:
             print(f"[PDF] Failed to load font {font_path}: {e}")
+    # Register Times New Roman for English text (Paul Tang reference style)
+    tnr_dir = 'C:/Windows/Fonts'
+    for style_name, fname in [('', 'times.ttf'), ('B', 'timesbd.ttf'), ('I', 'timesi.ttf'), ('BI', 'timesbi.ttf')]:
+        tnr_path = os.path.join(tnr_dir, fname)
+        if os.path.exists(tnr_path):
+            try:
+                pdf.add_font('TNR', style=style_name, fname=tnr_path)
+            except Exception:
+                pass
     if not font_path:
         pdf.set_font('Helvetica', size=10)
     pdf.set_auto_page_break(auto=True, margin=60)
@@ -1341,6 +1351,8 @@ def _rom_txn_cols():
 
 @app.route('/api/generate-shareholders-register-pdf', methods=['POST'])
 def generate_shareholders_register_pdf():
+    """Register of Members (ROM) — matching Paul Tang & Co reference format.
+    Portrait A4, 18-column table, white headers, Times New Roman, thin black lines."""
     data = request.get_json(silent=True) or {}
     company_id = data.get('companyId', '')
     if not company_id:
@@ -1366,122 +1378,299 @@ def generate_shareholders_register_pdf():
             f"SELECT * FROM persons WHERE id IN ({placeholders})", person_ids).fetchall()
         person_map = {p['id']: p for p in persons}
 
-    # Map transactions by person for grouping
     tx_by_person = {}
     for t in txs:
         key = (rget(t, 'from_name') or rget(t, 'to_name') or '').strip().upper()
         if key:
             tx_by_person.setdefault(key, []).append(t)
 
+    M = 28  # margin
+    PW, PH = 595, 842  # A4 portrait in pt
+    CW = PW - 2 * M  # content width
+
     pdf = create_pdf()
     pdf.add_page()
     pdf.set_auto_page_break(auto=False)
 
-    quorum = len(roles) if roles else None
-    y = draw_register_header(pdf, company, "REGISTER OF MEMBERS", quorum)
+    # ── Helper: draw text with TNR (English) or TC (CJK) ──
+    def tnr(text, x, y, size=9, bold=False, align='L', color=(0, 0, 0)):
+        """Draw text with Times New Roman font."""
+        style = 'B' if bold else ''
+        pdf.set_font('TNR', style, size)
+        pdf.set_text_color(*color)
+        if align == 'C':
+            tw = pdf.get_string_width(str(text or ''))
+            x = x - tw / 2
+        elif align == 'R':
+            tw = pdf.get_string_width(str(text or ''))
+            x = x - tw
+        pdf.set_xy(x, y)
+        pdf.cell(0, size + 2, str(text or ''))
 
-    txn_cols = _rom_txn_cols()
+    def tc(text, x, y, size=9, bold=False, align='L', color=(0, 0, 0)):
+        """Draw text with CJK font."""
+        style = 'B' if bold else ''
+        pdf.set_font('TC', style, size)
+        pdf.set_text_color(*color)
+        if align == 'C':
+            tw = pdf.get_string_width(str(text or ''))
+            x = x - tw / 2
+        elif align == 'R':
+            tw = pdf.get_string_width(str(text or ''))
+            x = x - tw
+        pdf.set_xy(x, y)
+        pdf.cell(0, size + 2, str(text or ''))
+
+    def line_h(x1, x2, y, w=0.3, color=(0, 0, 0)):
+        pdf.set_draw_color(*color)
+        pdf.set_line_width(w)
+        pdf.line(x1, y, x2, y)
+
+    def line_v(x, y1, y2, w=0.3, color=(0, 0, 0)):
+        pdf.set_draw_color(*color)
+        pdf.set_line_width(w)
+        pdf.line(x, y1, x, y2)
+
+    # ── Page Header ──
+    y = 35
+    co_name = rget(company, 'name') or ''
+    tnr(co_name, PW / 2, y, size=12, bold=True, align='C')
+    y += 18
+    br = rget(company, 'company_number') or ''
+    tnr(f"Company Number: {br}", PW / 2, y, size=9, align='C')
+    y += 2
+
+    # "REGISTER OF MEMBERS" right-aligned
+    tnr("REGISTER OF MEMBERS", PW - M, 35, size=13, bold=True, align='R')
+
+    y += 14
+    line_h(M, PW - M, y, w=0.4)
+
+    # ── Table columns (18 cols, based on Paul Tang reference) ──
+    # Adjust widths for portrait A4 (CW ≈ 539pt)
+    col_w = [
+        54,  # 1. Full Name
+        60,  # 2. Address
+        37,  # 3. Occupation
+        37,  # 4. Merchant
+        40,  # 5. Date Entered
+        40,  # 6. Date Ceasing
+        # Shares Acquired (5 sub-cols):
+        28,  # 7. Cert No
+        46,  # 8. Distinctive Nos
+        28,  # 9. No. of Shares
+        30,  # 10. Consideration
+        30,  # 11. Transfer Deed No
+        # Shares Transferred (4 sub-cols):
+        28,  # 12. Cert No
+        46,  # 13. Distinctive Nos
+        28,  # 14. No. of Shares
+        30,  # 15. Consideration
+        30,  # 16. Total Shares Held
+        32,  # 17. Remarks
+        32,  # 18. Entry Made By
+    ]
+    # Build x positions
+    col_x = [M]
+    for w in col_w[:-1]:
+        col_x.append(col_x[-1] + w)
+
+    def draw_table_border(top_y, bottom_y):
+        """Draw outer border and vertical lines for the table."""
+        line_h(M, PW - M, top_y, w=0.4)
+        line_h(M, PW - M, bottom_y, w=0.4)
+        line_v(M, top_y, bottom_y, w=0.4)
+        line_v(PW - M, top_y, bottom_y, w=0.4)
+
+    def draw_row_sep(row_y, start_col=0):
+        """Draw horizontal line across row, and vertical lines between cols."""
+        end_x = PW - M
+        line_h(col_x[start_col], end_x, row_y, w=0.25, color=(100, 100, 100))
+        for i in range(start_col, len(col_x)):
+            line_v(col_x[i], row_y - 50, row_y, w=0.2, color=(150, 150, 150))
+
+    # ── Table Header Row 1: Main headers ──
+    y += 8
+    hdr_y0 = y
+    hdr1_labels = [
+        ("Full\nName", 0), ("Address", 1), ("Occupation", 2), ("Merchant", 3),
+        ("Date Entered\nas Member", 4), ("Date Ceasing\nto be Member", 5),
+    ]
+    # Draw hdr row 1 labels
+    hdr_size = 6.5
+    row_h1 = 26
+    for label, ci in hdr1_labels:
+        cx = col_x[ci]
+        cw_val = col_w[ci]
+        tnr(label, cx + 1, y + 1, size=hdr_size, bold=True)
+    # "Shares Acquired" spanning cols 6-10
+    sacq_x1 = col_x[6]
+    sacq_x2 = col_x[10] + col_w[10]
+    sacq_cx = (sacq_x1 + sacq_x2) / 2
+    tnr("Shares Acquired", sacq_cx, y + 1, size=hdr_size, bold=True, align='C')
+    # "Shares Transferred" spanning cols 11-14
+    strf_x1 = col_x[11]
+    strf_x2 = col_x[14] + col_w[14]
+    strf_cx = (strf_x1 + strf_x2) / 2
+    tnr("Shares Transferred", strf_cx, y + 1, size=hdr_size, bold=True, align='C')
+    # Remaining headers
+    for label, ci in [("Total\nShares Held", 15), ("Remarks", 16), ("Entry\nMade By", 17)]:
+        cx = col_x[ci]
+        tnr(label, cx + 1, y + 1, size=hdr_size, bold=True)
+
+    y += row_h1
+    line_h(M, PW - M, y, w=0.3)
+    # Vertical separators for header row 1
+    for ci in [0, 1, 2, 3, 4, 5, 6, 11, 15, 16, 17]:
+        line_v(col_x[ci], hdr_y0, y, w=0.2, color=(150, 150, 150))
+    line_v(col_x[10] + col_w[10], hdr_y0, y, w=0.2, color=(150, 150, 150))
+    line_v(col_x[14] + col_w[14], hdr_y0, y, w=0.2, color=(150, 150, 150))
+
+    # ── Table Header Row 2: Sub-columns under Shares Acquired / Transferred ──
+    hdr_y1 = y
+    row_h2 = 22
+    sub_labels = [
+        ("Cert\nNo", 6), ("Distinctive Nos.\n(From → To)", 7),
+        ("No. of\nShares", 8), ("Consideration\nPaid", 9), ("Transfer\nDeed No", 10),
+        ("Cert\nNo", 11), ("Distinctive Nos.\n(From → To)", 12),
+        ("No. of\nShares", 13), ("Consideration\nPaid", 14),
+    ]
+    for label, ci in sub_labels:
+        tnr(label, col_x[ci] + 1, y + 1, size=6, bold=True)
+    y += row_h2
+    line_h(M, PW - M, y, w=0.4)
+
+    table_top_y = hdr_y0
+    table_bottom_y = y
+
+    # ── Data Rows ──
     row_num = 0
+    data_size = 6.5
+    data_row_h = 16
 
     if not roles:
-        pdf_draw(pdf, "(No shareholders / 尚無股東記錄)", MARGIN + 5, y + 15, size=9)
-        y += 25
+        tc("(No shareholders / 尚無股東記錄)", M + 3, y + 8, size=9)
+        y += 24
+        table_bottom_y = y
     else:
         for r in roles:
             p = person_map.get(r['person_id'], {})
             name_en = rget(p, 'name_english') or rget(p, 'name_chinese') or '(unnamed)'
-            name_ch = rget(p, 'name_chinese') if rget(p, 'name_english') else ''
-            addr = rget(p, 'address') or ''
-            hkid = rget(p, 'id_number') or rget(p, 'passport_number') or ''
             is_nat = rget(p, 'identity') != 'corporate'
+            hkid = rget(p, 'id_number') or rget(p, 'passport_number') or ''
+            addr = rget(p, 'address') or ''
+            occupation = rget(p, 'occupation') or ''
+            merchant = rget(p, 'merchant') or ''
 
-            if y + 120 > PAGE_H - 50:
-                pdf.add_page()
-                y = draw_register_header(pdf, company, "REGISTER OF MEMBERS (Cont'd)", quorum)
+            date_app = rget(r, 'date_appointed') or '-'
+            date_cea = rget(r, 'date_ceased') or ''
 
-            if row_num > 0:
-                pdf_line_h(pdf, MARGIN, PAGE_W - MARGIN, y, width=0.6)
-                y += 6
-
-            row_num += 1
-
-            # ── Name line ──
-            y0 = y
-            label_x = MARGIN + 3
-            val_x = MARGIN + 58
-
-            draw_form_label(pdf, "Name", label_x, y, size=9)
-            name_display = name_en
-            if is_nat and hkid:
-                name_display = f"{name_en} (Hong Kong ID No: {hkid})"
-            elif not is_nat and hkid:
-                name_display = f"{name_en} (Company No: {hkid})"
-            draw_form_value(pdf, name_display, val_x, y, size=9)
-            if name_ch:
-                pdf_draw(pdf, name_ch, val_x + 20, y, size=8)
-            y += 16
-
-            # ── Address line ──
-            draw_form_label(pdf, "Address", label_x, y, size=9)
-            addr_lines = pdf_wrap_text(pdf, addr, CONTENT_W - 90, 9)
-            for ai, al in enumerate(addr_lines):
-                pdf_draw(pdf, al, val_x, y + ai * 11, size=9)
-            y += max(len(addr_lines), 1) * 12 + 4
-
-            pdf_line_h(pdf, MARGIN, PAGE_W - MARGIN, y, color=(200, 200, 200))
-            y += 6
-
-            # ── Security + Dates line ──
             share_type = rget(r, 'share_type') or 'ORD'
             currency = rget(r, 'currency') or 'HKD'
             issue_price = rget(r, 'issue_price') or '1.00'
-            paid_up = rget(r, 'paid_up') or issue_price
-            sec_desc = f"{share_type} - {currency}${issue_price} ORDINARY FULLY PAID ({currency}$)"
-
-            draw_form_label(pdf, "Security", label_x, y, size=9)
-            pdf_draw(pdf, sec_desc, val_x, y, size=9, bold=True)
-
-            date_app = rget(r, 'date_appointed') or '-'
-            date_cea = rget(r, 'date_ceased') or '-'
-            date_label_x = PAGE_W - MARGIN - 210
-            pdf_draw(pdf, "Date", date_label_x, y, size=9, bold=True)
-            pdf_draw(pdf, date_app, date_label_x + 40, y, size=9)
-            ceased_label_x = date_label_x + 110
-            pdf_draw(pdf, "Date Ceased", ceased_label_x, y, size=9, bold=True)
-            pdf_draw(pdf, date_cea if date_cea != '-' else '', ceased_label_x + 65, y, size=9)
-            y += 18
-
-            # ── Share Transactions Grey Header + Data Rows ──
-            if y + 60 > PAGE_H - 50:
-                pdf.add_page()
-                y = draw_register_header(pdf, company, "REGISTER OF MEMBERS (Cont'd)", quorum)
-
-            y = draw_grey_header_row(pdf, txn_cols, y)
+            shares = rget(r, 'shares') or 0
+            cert_no = rget(r, 'certificate_number') or '-'
 
             person_name_key = name_en.strip().upper()
             person_txs = tx_by_person.get(person_name_key, [])
 
+            # Page break if needed (each member ~3-5 data rows)
+            if y + 80 > PH - 50:
+                pdf.add_page()
+                y = 35
+                tnr(co_name, PW / 2, y, size=12, bold=True, align='C')
+                y += 18
+                tnr(f"Company Number: {br}", PW / 2, y, size=9, align='C')
+                tnr("REGISTER OF MEMBERS (Cont'd)", PW - M, 35, size=13, bold=True, align='R')
+                y += 14
+                line_h(M, PW - M, y, w=0.4)
+                y += 8
+                # Redraw headers (simplified)
+                hdr_y0 = y
+                for label, ci in hdr1_labels:
+                    tnr(label.replace('\n', ' '), col_x[ci] + 1, y + 1, size=hdr_size, bold=True)
+                tnr("Shares Acquired", sacq_cx, y + 1, size=hdr_size, bold=True, align='C')
+                tnr("Shares Transferred", strf_cx, y + 1, size=hdr_size, bold=True, align='C')
+                for label, ci in [("Total\nShares Held", 15), ("Remarks", 16), ("Entry\nMade By", 17)]:
+                    tnr(label, col_x[ci] + 1, y + 1, size=hdr_size, bold=True)
+                y += row_h1
+                line_h(M, PW - M, y, w=0.3)
+                for label, ci in sub_labels:
+                    tnr(label.replace('\n', ' '), col_x[ci] + 1, y + 1, size=6, bold=True)
+                y += row_h2
+                line_h(M, PW - M, y, w=0.4)
+                table_top_y = hdr_y0
+
+            row_num += 1
+            row_start_y = y
+
             if not person_txs:
-                shares_count = str(r['shares'] or 0)
+                # Single row with all data
                 row_data = [
-                    (date_app,             txn_cols[0][1], txn_cols[0][2]),
-                    ('Allotment',           txn_cols[1][1], txn_cols[1][2]),
-                    (shares_count,          txn_cols[2][1], txn_cols[2][2]),
-                    (f"{currency}${issue_price}", txn_cols[3][1], txn_cols[3][2]),
-                    (f"{currency}${paid_up}", txn_cols[4][1], txn_cols[4][2]),
-                    (rget(r, 'certificate_number') or '-', txn_cols[5][1], txn_cols[5][2]),
-                    ('-',                   txn_cols[6][1], txn_cols[6][2]),
-                    (shares_count,          txn_cols[7][1], txn_cols[7][2]),
-                    ('-',                   txn_cols[8][1], txn_cols[8][2]),
+                    name_en, addr, occupation, merchant, date_app, date_cea,
+                    cert_no, '-', str(shares), f"{currency}${issue_price}", '-',
+                    '-', '-', '-', '-',
+                    str(shares), '', ''
                 ]
-                y = draw_data_row(pdf, row_data, y, alt=(row_num % 2 == 0))
+                for i, val in enumerate(row_data):
+                    tnr(str(val)[:30], col_x[i] + 1, y + 1, size=data_size)
+                y += data_row_h
             else:
+                # First row: member info + first transaction
                 running_balance = 0
-                for tx in person_txs:
-                    if y + 28 > PAGE_H - 50:
+                first_tx = person_txs[0]
+                tx_type = rget(first_tx, 'transaction_type') or 'Transfer'
+                tx_date = rget(first_tx, 'transaction_date') or '-'
+                tx_shares = int(first_tx['shares'] or 0)
+                tx_price = rget(first_tx, 'price_per_share') or issue_price
+                tx_currency = rget(first_tx, 'currency') or currency
+                tx_from = rget(first_tx, 'from_name') or ''
+                tx_to = rget(first_tx, 'to_name') or ''
+                tx_inst = rget(first_tx, 'instrument_number') or '-'
+                tx_cert = rget(first_tx, 'certificate_number') or cert_no
+
+                is_in = tx_to.strip().upper() == person_name_key
+                is_out = tx_from.strip().upper() == person_name_key
+                if is_in:
+                    running_balance = tx_shares
+                elif is_out:
+                    running_balance = -tx_shares
+                else:
+                    running_balance = tx_shares
+
+                first_row = [
+                    name_en, addr, occupation, merchant, date_app, date_cea,
+                    tx_cert, f"{tx_inst}", str(tx_shares), f"{tx_currency}${tx_price}", tx_inst,
+                    '-', '-', '-', '-',
+                    str(running_balance), '', ''
+                ]
+                for i, val in enumerate(first_row):
+                    tnr(str(val)[:30], col_x[i] + 1, y + 1, size=data_size)
+                y += data_row_h
+
+                # Subsequent transaction rows
+                for tx in person_txs[1:]:
+                    if y + data_row_h > PH - 50:
                         pdf.add_page()
-                        y = draw_register_header(pdf, company, "REGISTER OF MEMBERS (Cont'd)", quorum)
-                        y = draw_grey_header_row(pdf, txn_cols, y)
+                        y = 35
+                        tnr(co_name, PW / 2, y, size=12, bold=True, align='C')
+                        tnr("REGISTER OF MEMBERS (Cont'd)", PW - M, 35, size=13, bold=True, align='R')
+                        y += 32
+                        line_h(M, PW - M, y, w=0.4)
+                        y += 8
+                        hdr_y0 = y
+                        for label, ci in hdr1_labels:
+                            tnr(label.replace('\n', ' '), col_x[ci] + 1, y + 1, size=hdr_size, bold=True)
+                        tnr("Shares Acquired", sacq_cx, y + 1, size=hdr_size, bold=True, align='C')
+                        tnr("Shares Transferred", strf_cx, y + 1, size=hdr_size, bold=True, align='C')
+                        for label, ci in [("Total\nShares Held", 15), ("Remarks", 16), ("Entry\nMade By", 17)]:
+                            tnr(label, col_x[ci] + 1, y + 1, size=hdr_size, bold=True)
+                        y += row_h1
+                        line_h(M, PW - M, y, w=0.3)
+                        for label, ci in sub_labels:
+                            tnr(label.replace('\n', ' '), col_x[ci] + 1, y + 1, size=6, bold=True)
+                        y += row_h2
+                        line_h(M, PW - M, y, w=0.4)
 
                     tx_type = rget(tx, 'transaction_type') or 'Transfer'
                     tx_date = rget(tx, 'transaction_date') or '-'
@@ -1491,34 +1680,37 @@ def generate_shareholders_register_pdf():
                     tx_from = rget(tx, 'from_name') or ''
                     tx_to = rget(tx, 'to_name') or ''
                     tx_inst = rget(tx, 'instrument_number') or '-'
+                    tx_cert = rget(tx, 'certificate_number') or '-'
 
-                    is_out = tx_from.strip().upper() == person_name_key
                     is_in = tx_to.strip().upper() == person_name_key
-
+                    is_out = tx_from.strip().upper() == person_name_key
                     if is_in:
                         running_balance += tx_shares
-                        tfr_info = tx_from
                     elif is_out:
                         running_balance -= tx_shares
-                        tfr_info = f"To: {tx_to}"
                     else:
                         running_balance += tx_shares
-                        tfr_info = ''
 
-                    row_data = [
-                        (tx_date,                txn_cols[0][1], txn_cols[0][2]),
-                        (tx_type,                txn_cols[1][1], txn_cols[1][2]),
-                        (str(tx_shares),         txn_cols[2][1], txn_cols[2][2]),
-                        (f"{tx_currency}${tx_price}", txn_cols[3][1], txn_cols[3][2]),
-                        (f"{tx_currency}${tx_price}", txn_cols[4][1], txn_cols[4][2]),
-                        (tx_inst,                txn_cols[5][1], txn_cols[5][2]),
-                        ('-',                    txn_cols[6][1], txn_cols[6][2]),
-                        (str(running_balance),   txn_cols[7][1], txn_cols[7][2]),
-                        (tfr_info,               txn_cols[8][1], txn_cols[8][2]),
+                    tx_row = [
+                        '', '', '', '', tx_date, '',
+                        tx_cert, f"{tx_inst}", str(tx_shares), f"{tx_currency}${tx_price}", tx_inst,
+                        '-', '-', '-', '-',
+                        str(running_balance), '', ''
                     ]
-                    y = draw_data_row(pdf, row_data, y, alt=(row_num % 2 == 0))
+                    for i, val in enumerate(tx_row):
+                        if val:
+                            tnr(str(val)[:30], col_x[i] + 1, y + 1, size=data_size)
+                    y += data_row_h
 
-            y += 12
+            # Row separator line
+            line_h(M, PW - M, y, w=0.2, color=(180, 180, 180))
+            table_bottom_y = y
+
+    # Draw outer table border
+    line_h(M, PW - M, table_top_y, w=0.5)
+    line_h(M, PW - M, table_bottom_y, w=0.5)
+    line_v(M, table_top_y, table_bottom_y, w=0.5)
+    line_v(PW - M, table_top_y, table_bottom_y, w=0.5)
 
     pdf_bytes = bytes(pdf.output())
     import base64 as b64
@@ -1743,7 +1935,8 @@ def generate_secretaries_register_pdf():
 
 @app.route('/api/generate-scr-pdf', methods=['POST'])
 def generate_scr_pdf():
-    """Significant Controllers Register — matching ROD table style."""
+    """Significant Controllers Register — matching Paul Tang & Co reference format.
+    Portrait A4, 7-column table, white headers, Times New Roman, bilingual titles."""
     data = request.get_json(silent=True) or {}
     company_id = data.get('companyId', '')
     if not company_id:
@@ -1758,70 +1951,222 @@ def generate_scr_pdf():
         "SELECT * FROM significant_controllers WHERE company_id = ? ORDER BY created_at",
         (company_id,)).fetchall()
 
+    M = 30
+    PW, PH = 595, 842
+    CW = PW - 2 * M
+
     pdf = create_pdf()
     pdf.add_page()
     pdf.set_auto_page_break(auto=False)
 
-    y = draw_register_header(pdf, company, "SIGNIFICANT CONTROLLERS REGISTER")
+    # ── Helpers ──
+    def tnr(text, x, y, size=9, bold=False, align='L', color=(0, 0, 0)):
+        style = 'B' if bold else ''
+        pdf.set_font('TNR', style, size)
+        pdf.set_text_color(*color)
+        if align == 'C':
+            tw = pdf.get_string_width(str(text or ''))
+            x = x - tw / 2
+        elif align == 'R':
+            tw = pdf.get_string_width(str(text or ''))
+            x = x - tw
+        pdf.set_xy(x, y)
+        pdf.cell(0, size + 2, str(text or ''))
 
-    x0 = MARGIN + 3
-    scr_cols = [
-        ("Name",              x0,         100),
-        ("Identity /\nID No / Passport /\nCompany Reg No", x0 + 101,  82),
-        ("Address",           x0 + 184,   105),
-        ("Nature of\nControl", x0 + 290,  82),
-        ("Date Became\nController", x0 + 373,  58),
-        ("Date Ceased /\nDesignated Rep", x0 + 432,  58),
+    def tc(text, x, y, size=9, bold=False, align='L'):
+        style = 'B' if bold else ''
+        pdf.set_font('TC', style, size)
+        pdf.set_text_color(0, 0, 0)
+        if align == 'C':
+            tw = pdf.get_string_width(str(text or ''))
+            x = x - tw / 2
+        elif align == 'R':
+            tw = pdf.get_string_width(str(text or ''))
+            x = x - tw
+        pdf.set_xy(x, y)
+        pdf.cell(0, size + 2, str(text or ''))
+
+    def line_h(x1, x2, y, w=0.3, color=(0, 0, 0)):
+        pdf.set_draw_color(*color)
+        pdf.set_line_width(w)
+        pdf.line(x1, y, x2, y)
+
+    def line_v(x, y1, y2, w=0.3, color=(0, 0, 0)):
+        pdf.set_draw_color(*color)
+        pdf.set_line_width(w)
+        pdf.line(x, y1, x, y2)
+
+    # ── Page Header (matching Paul Tang reference) ──
+    y = 28
+    co_name = rget(company, 'name') or ''
+    co_name_ch = rget(company, 'chinese_name') or ''
+    br = rget(company, 'company_number') or ''
+
+    tnr(f"NAME OF COMPANY: {co_name}", M, y, size=8, bold=True)
+    if co_name_ch:
+        tc(f"公司名稱: {co_name_ch}", M, y + 12, size=8)
+    y += 26
+    if br:
+        tnr(f"COMPANY NUMBER: {br}", M, y, size=8, bold=True)
+        y += 14
+
+    # Title — bilingual centered
+    y += 6
+    tnr("SIGNIFICANT CONTROLLERS REGISTER", PW / 2, y, size=13, bold=True, align='C')
+    y += 16
+    tc("重要控制人登記冊", PW / 2, y, size=11, bold=True, align='C')
+    y += 18
+    line_h(M, PW - M, y, w=0.5)
+    y += 10
+
+    # ── Table columns (7 cols, matching Paul Tang reference) ──
+    col_w = [
+        52,   # 1. Entry Date
+        82,   # 2. Name
+        110,  # 3. Correspondence Address / Registered Office
+        90,   # 4. ID/PPT No. / Company No. / Legal Form
+        82,   # 5. Nature of Control
+        68,   # 6. Becoming Date / Cessation Date
+        52,   # 7. Remarks
     ]
+    col_x = [M]
+    for w in col_w[:-1]:
+        col_x.append(col_x[-1] + w)
+    end_x = PW - M
 
-    y = draw_grey_header_row(pdf, scr_cols, y)
+    # ── Table Header ──
+    hdr_y0 = y
+    hdr_size = 7
+    hdr_labels = [
+        ("Entry\nDate", 0), ("Name", 1),
+        ("Correspondence Address /\nRegistered Office Address", 2),
+        ("ID/PPT No. (Issuing Country) /\nCompany No. (Place of Incorp.) /\nLegal Form", 3),
+        ("Nature of\nControl", 4),
+        ("Becoming Date /\nCessation Date", 5),
+        ("Remarks", 6),
+    ]
+    hdr_h = 32
+    for label, ci in hdr_labels:
+        tnr(label, col_x[ci] + 2, y + 1, size=hdr_size, bold=True)
+    y += hdr_h
+    line_h(M, end_x, y, w=0.4)
+    # Vertical lines for header
+    for ci in range(len(col_x)):
+        line_v(col_x[ci], hdr_y0, y, w=0.25)
+    line_v(end_x, hdr_y0, y, w=0.25)
+    table_top_y = hdr_y0
+
+    # ── Data Rows ──
+    data_size = 7.5
     row_num = 0
 
     if not scrs:
-        pdf_draw(pdf, "(No SCR records / 尚無重要控制人記錄)", MARGIN + 5, y + 12, size=8)
+        tc("(No SCR records / 尚無重要控制人記錄)", M + 3, y + 10, size=8)
+        y += 24
     else:
         for s in scrs:
+            # Build nature of control text
             natures = []
             if rget(s, 'nature_shares'): natures.append('Holds >25% shares')
             if rget(s, 'nature_voting'): natures.append('>25% voting rights')
             if rget(s, 'nature_appoint'): natures.append('Appoint/remove directors')
             if rget(s, 'nature_influence'): natures.append('Significant influence')
             if rget(s, 'nature_trust'): natures.append('Trust control')
-            if rget(s, 'nature_other'): natures.append(s['nature_other'])
+            if rget(s, 'nature_other'): natures.append(rget(s, 'nature_other'))
 
             is_nat = rget(s, 'identity') != 'corporate'
-            name = f"{rget(s, 'name_english') or ''}\n{rget(s, 'name_chinese') or ''}".strip() or '(unnamed)'
-            id_info = rget(s, 'id_number') or rget(s, 'passport_number') or '-' if is_nat else rget(s, 'company_number_ref') or '-'
-            identity = 'Natural Person\n自然人' if is_nat else 'Body Corporate\n法人'
+            name_en = rget(s, 'name_english') or ''
+            name_ch = rget(s, 'name_chinese') or ''
+            name_display = f"{name_en}\n{name_ch}".strip() or '(unnamed)'
 
-            addr = (rget(s, 'address') or '')[:100]
+            # Build ID info block
+            if is_nat:
+                id_no = rget(s, 'id_number') or rget(s, 'passport_number') or '-'
+                passport_country = rget(s, 'passport_country') or ''
+                id_block = f"ID/PPT No: {id_no}"
+                if passport_country:
+                    id_block += f"\n(Issuing Country: {passport_country})"
+                id_block += "\n(Natural Person / 自然人)"
+            else:
+                comp_no = rget(s, 'company_number_ref') or '-'
+                place_incorp = rget(s, 'place_of_incorporation') or ''
+                legal_form = rget(s, 'legal_form') or ''
+                id_block = f"Company No: {comp_no}"
+                if place_incorp:
+                    id_block += f"\n(Place of Incorp.: {place_incorp})"
+                if legal_form:
+                    id_block += f"\n{legal_form}"
+                id_block += "\n(Body Corporate / 法人)"
+
+            addr = (rget(s, 'address') or '')[:120]
             nature_text = '\n'.join(natures) or '-'
             date_became = rget(s, 'date_became') or '-'
             date_cea = rget(s, 'date_ceased') or ''
+            ceased_text = date_cea if date_cea else 'Current\n現任'
 
-            ceased_block = date_cea if date_cea else 'Current\n現任'
+            # Designated rep info
             if rget(s, 'is_designated_rep') and rget(s, 'designated_rep_name'):
                 rep_name = rget(s, 'designated_rep_name')
                 rep_contact = rget(s, 'designated_rep_contact') or ''
-                ceased_block += f"\nRep: {rep_name}"
+                ceased_text += f"\nRep: {rep_name}"
                 if rep_contact:
-                    ceased_block += f"\nContact: {rep_contact}"
+                    ceased_text += f"\nContact: {rep_contact}"
+
+            entry_date = rget(s, 'created_at') or ''
+            if entry_date and len(entry_date) > 10:
+                entry_date = entry_date[:10]
 
             row_num += 1
-            if y + 50 > PAGE_H - 50:
-                pdf.add_page()
-                y = draw_register_header(pdf, company, "SIGNIFICANT CONTROLLERS REGISTER (Cont'd)")
-                y = draw_grey_header_row(pdf, scr_cols, y)
 
+            # Calculate row height based on content
+            row_h = max(data_size * 6 + 4, 28)
+
+            # Page break if needed
+            if y + row_h > PH - 50:
+                # Draw bottom border of current table
+                line_h(M, end_x, y, w=0.4)
+                pdf.add_page()
+                y = 28
+                tnr(f"NAME OF COMPANY: {co_name}", M, y, size=8, bold=True)
+                y += 14
+                tnr("SIGNIFICANT CONTROLLERS REGISTER (Cont'd)", PW / 2, y, size=13, bold=True, align='C')
+                y += 16
+                tc("重要控制人登記冊（續）", PW / 2, y, size=11, bold=True, align='C')
+                y += 18
+                line_h(M, PW - M, y, w=0.5)
+                y += 10
+                hdr_y0 = y
+                for label, ci in hdr_labels:
+                    tnr(label, col_x[ci] + 2, y + 1, size=hdr_size, bold=True)
+                y += hdr_h
+                line_h(M, end_x, y, w=0.4)
+                for ci in range(len(col_x)):
+                    line_v(col_x[ci], hdr_y0, y, w=0.25)
+                line_v(end_x, hdr_y0, y, w=0.25)
+
+            # Draw data
+            row_y0 = y
             row_data = [
-                (name,             scr_cols[0][1], scr_cols[0][2]),
-                (f"{identity}\n{id_info}", scr_cols[1][1], scr_cols[1][2]),
-                (addr,             scr_cols[2][1], scr_cols[2][2]),
-                (nature_text,      scr_cols[3][1], scr_cols[3][2]),
-                (date_became,      scr_cols[4][1], scr_cols[4][2]),
-                (ceased_block,     scr_cols[5][1], scr_cols[5][2]),
+                (entry_date, 0), (name_display, 1), (addr, 2),
+                (id_block, 3), (nature_text, 4),
+                (f"{date_became}\n{ceased_text}", 5), ('', 6),
             ]
-            y = draw_data_row(pdf, row_data, y, alt=(row_num % 2 == 0))
+            for text, ci in row_data:
+                if text:
+                    # Use TC for CJK, TNR for English - detect if text has CJK
+                    has_cjk = any('一' <= ch <= '鿿' or '　' <= ch <= '〿' for ch in str(text))
+                    if has_cjk:
+                        tc(str(text), col_x[ci] + 2, y + 1, size=data_size)
+                    else:
+                        tnr(str(text), col_x[ci] + 2, y + 1, size=data_size)
+
+            y += row_h
+            line_h(M, end_x, y, w=0.2, color=(150, 150, 150))
+
+    # Draw outer table border
+    line_h(M, end_x, y, w=0.5)
+    line_v(M, table_top_y, y, w=0.5)
+    line_v(end_x, table_top_y, y, w=0.5)
 
     pdf_bytes = bytes(pdf.output())
     import base64 as b64
@@ -1980,12 +2325,15 @@ def _build_instrument_of_transfer(pdf, company, tx, all_txs):
 
 
 def _build_bought_sold_note(pdf, company, tx):
+    """Bought & Sold Note — matching Paul Tang & Co reference format.
+    Free-form layout (no table), tab-stop alignment, Times New Roman, thick title lines."""
     pdf.add_page()
     pdf.set_auto_page_break(auto=False)
-    y, left, page_w = 45, 45, 595
-    half_h = 842 / 2
-    label_x = left + 8
-    value_x = left + 180
+    M = 40  # margin
+    PW, PH = 595, 842
+    half_h = PH / 2
+    label_x = M + 5
+    value_x = PW / 3 + 10  # ~30% for label, 70% for value
 
     from_name = tx.get('from_name', '')
     to_name = tx.get('to_name', '')
@@ -1995,67 +2343,128 @@ def _build_bought_sold_note(pdf, company, tx):
     tx_date = tx.get('transaction_date', '')
     co_name = company.get('name', '')
 
-    def draw_row(label, value, y_pos, size=9):
-        pdf_draw(pdf, label, label_x, y_pos, size=size, gray=0)
-        pdf_draw(pdf, value, value_x, y_pos, size=size, gray=0)
+    def tnr(text, x, y, size=12, bold=False, align='L'):
+        style = 'B' if bold else ''
+        pdf.set_font('TNR', style, size)
+        pdf.set_text_color(0, 0, 0)
+        if align == 'C':
+            tw = pdf.get_string_width(str(text or ''))
+            x = x - tw / 2
+        pdf.set_xy(x, y)
+        pdf.cell(0, size + 3, str(text or ''))
 
-    # ═══ Sold Note — TOP half ═══
-    y = 842 - 42
-    pdf_draw(pdf, "Sold Note 賣出票據", page_w / 2 - 30, y, size=14)
+    def tc(text, x, y, size=12, bold=False):
+        style = 'B' if bold else ''
+        pdf.set_font('TC', style, size)
+        pdf.set_text_color(0, 0, 0)
+        pdf.set_xy(x, y)
+        pdf.cell(0, size + 3, str(text or ''))
+
+    def draw_row(label, value, y_pos, size=12):
+        """Draw label (left) + value (right) pair using tab-stop alignment."""
+        tnr(label, label_x, y_pos, size=size)
+        tnr(str(value or ''), value_x, y_pos, size=size)
+
+    # ══════════════════════════════════════
+    # SOLD NOTE — TOP half
+    # ══════════════════════════════════════
+    y = PH - 50
+
+    # Title: centered, 16pt bold TNR
+    tnr("Sold Note", PW / 2, y, size=16, bold=True, align='C')
+    y -= 4
+    tc("賣出票據", PW / 2, y, size=11, bold=False)
     y -= 22
-    pdf.line(left, y, page_w - left, y)
-    y -= 16
 
+    # Thick black line under title (1.5pt, ~70% page width)
+    line_w = (PW - 2 * M) * 0.7
+    line_start = (PW - line_w) / 2
+    pdf.set_draw_color(0, 0, 0)
+    pdf.set_line_width(1.5)
+    pdf.line(line_start, y, line_start + line_w, y)
+    pdf.set_line_width(0.3)
+    y -= 18
+
+    # Content rows — 12pt TNR
     draw_row("Name of Purchaser (Transferee):", to_name, y); y -= 18
     draw_row("Address:", "", y); y -= 18
     draw_row("Occupation:", "", y); y -= 18
     draw_row("Name of Company:", co_name, y); y -= 18
-    draw_row("Number of Shares:", f"{shares:,}    of    HK${par_val}    each", y); y -= 18
-    draw_row("Consideration Received:", f"HK${consideration:,.2f}" if consideration else "", y); y -= 18
+    draw_row("Number of Shares:", f"{shares:,}  of  HK${par_val}  each", y); y -= 18
+    if consideration:
+        draw_row("Consideration Received:", f"HK${consideration:,.2f}", y); y -= 18
+    else:
+        draw_row("Consideration Received:", "", y); y -= 18
 
-    y -= 8
-    # Transferor — centered text + underline to right margin
-    transferor_text = f"(Transferor)  {from_name}"
-    tf_w = pdf.get_string_width(transferor_text)
-    tf_x = page_w / 2 - tf_w / 2
-    pdf_draw(pdf, transferor_text, tf_x, y, size=9)
-    sig_end = tf_x + tf_w + 6
-    pdf.line(sig_end, y + 2, page_w - left, y + 2)
-    y -= 14
-    pdf_draw(pdf, co_name, sig_end, y, size=7)
-    y -= 14
-
-    y = half_h + 14
-    pdf_draw(pdf, f"Hong Kong, Dated  {tx_date}", label_x, y, size=9)
-
-    # Divider
-    pdf.line(left, half_h, page_w - left, half_h)
-
-    # ═══ Bought Note — BOTTOM half ═══
-    y = half_h - 14
-    pdf_draw(pdf, "Bought Note 買入票據", page_w / 2 - 30, y, size=14)
-    y -= 22
-    pdf.line(left, y, page_w - left, y)
+    y -= 10
+    # Transferor signature line
+    tnr(f"(Transferor)  {from_name}", label_x, y, size=12)
+    sig_tf_w = pdf.get_string_width(f"(Transferor)  {from_name}")
+    sig_end = label_x + sig_tf_w + 10
+    # Signature underline from end of text to right margin
+    pdf.set_line_width(0.6)
+    pdf.line(sig_end, y + 3, PW - M, y + 3)
+    pdf.set_line_width(0.3)
     y -= 16
+    tnr(co_name, sig_end, y, size=8)
+    y -= 14
 
+    # Date line
+    tnr(f"Hong Kong, Dated  {tx_date}", label_x, y, size=12)
+    y -= 24
+
+    # ══════════════════════════════════════
+    # DIVIDER
+    # ══════════════════════════════════════
+    pdf.set_draw_color(100, 100, 100)
+    pdf.set_line_width(0.5)
+    pdf.line(M, half_h, PW - M, half_h)
+    pdf.set_line_width(0.3)
+    pdf.set_draw_color(0, 0, 0)
+
+    y = half_h - 18
+
+    # ══════════════════════════════════════
+    # BOUGHT NOTE — BOTTOM half
+    # ══════════════════════════════════════
+    # Title: centered, 16pt bold TNR
+    tnr("Bought Note", PW / 2, y, size=16, bold=True, align='C')
+    y -= 4
+    tc("買入票據", PW / 2, y, size=11)
+    y -= 22
+
+    # Thick black line under title
+    pdf.set_draw_color(0, 0, 0)
+    pdf.set_line_width(1.5)
+    pdf.line(line_start, y, line_start + line_w, y)
+    pdf.set_line_width(0.3)
+    y -= 18
+
+    # Content rows
     draw_row("Name of Seller (Transferor):", from_name, y); y -= 18
     draw_row("Address:", "", y); y -= 18
     draw_row("Occupation:", "", y); y -= 18
     draw_row("Name of Company:", co_name, y); y -= 18
-    draw_row("Number of Shares:", f"{shares:,}    of    HK${par_val}    each", y); y -= 18
-    draw_row("Consideration Received:", f"HK${consideration:,.2f}" if consideration else "", y); y -= 18
+    draw_row("Number of Shares:", f"{shares:,}  of  HK${par_val}  each", y); y -= 18
+    if consideration:
+        draw_row("Consideration Received:", f"HK${consideration:,.2f}", y); y -= 18
+    else:
+        draw_row("Consideration Received:", "", y); y -= 18
 
-    y -= 8
-    # Transferee — with underline to right margin
-    transferee_text = f"(Transferee)  {to_name}"
-    tee_w = pdf.get_string_width(transferee_text)
-    pdf_draw(pdf, transferee_text, label_x, y, size=9)
-    pdf.line(label_x + tee_w + 6, y + 2, page_w - left, y + 2)
+    y -= 10
+    # Transferee signature line
+    tnr(f"(Transferee)  {to_name}", label_x, y, size=12)
+    sig_tee_w = pdf.get_string_width(f"(Transferee)  {to_name}")
+    sig_tee_end = label_x + sig_tee_w + 10
+    pdf.set_line_width(0.6)
+    pdf.line(sig_tee_end, y + 3, PW - M, y + 3)  # horizontal line to right
+    pdf.set_line_width(0.3)
     y -= 18
-    pdf_draw(pdf, f"Hong Kong, Dated  {tx_date}", label_x, y, size=9)
+    tnr(f"Hong Kong, Dated  {tx_date}", label_x, y, size=12)
 
-    pdf_draw(pdf, f"Generated by Muse Labs | {datetime.now().strftime('%Y-%m-%d')}",
-             left, 20, size=6, gray=150)
+    # Footer
+    tnr(f"Generated by Muse Labs | {datetime.now().strftime('%Y-%m-%d')}",
+        M, 20, size=7)
 
 
 def _build_share_certificate(pdf, company, tx):

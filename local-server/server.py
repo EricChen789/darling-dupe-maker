@@ -1952,10 +1952,10 @@ def generate_scr_pdf():
         (company_id,)).fetchall()
 
     M = 30
-    PW, PH = 595, 842
+    PW, PH = 842, 595  # Landscape A4
     CW = PW - 2 * M
 
-    pdf = create_pdf()
+    pdf = create_pdf(landscape=True)
     pdf.add_page()
     pdf.set_auto_page_break(auto=False)
 
@@ -2019,15 +2019,15 @@ def generate_scr_pdf():
     line_h(M, PW - M, y, w=0.5)
     y += 10
 
-    # ── Table columns (7 cols, matching Paul Tang reference) ──
+    # ── Table columns (7 cols, matching Paul Tang reference - landscape) ──
     col_w = [
-        52,   # 1. Entry Date
-        82,   # 2. Name
-        110,  # 3. Correspondence Address / Registered Office
-        90,   # 4. ID/PPT No. / Company No. / Legal Form
-        82,   # 5. Nature of Control
-        68,   # 6. Becoming Date / Cessation Date
-        52,   # 7. Remarks
+        60,   # 1. Entry Date
+        115,  # 2. Name
+        150,  # 3. Correspondence Address / Registered Office
+        135,  # 4. ID/PPT No. / Company No. / Legal Form
+        135,  # 5. Nature of Control
+        90,   # 6. Becoming Date / Cessation Date
+        97,   # 7. Remarks
     ]
     col_x = [M]
     for w in col_w[:-1]:

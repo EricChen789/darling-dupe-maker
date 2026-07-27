@@ -169,6 +169,8 @@ export async function onRequest(context: { request: Request; env: Env }) {
     const asciiFont = await pdf.embedFont(StandardFonts.Helvetica);
     const f = { cjk: cjkFont, ascii: asciiFont };
 
+    let page = pdf.addPage([PAGE_W, PAGE_H]);
+
     const coName = rget(company, 'name') || '';
     const coNameCh = rget(company, 'chinese_name') || '';
     const br = rget(company, 'company_number') || '';

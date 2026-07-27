@@ -2055,11 +2055,11 @@ def generate_scr_pdf():
     pdf.line(jur_val_x, y + row_h + 12, max(jur_end, jur_val_x + 40), y + row_h + 12)
     y += row_h * 2 + 6
 
-    # Title — bilingual centered
+    # Title — right-aligned, next to company name underline
     y += 4
-    tnr("SIGNIFICANT CONTROLLERS REGISTER", PW / 2, y, size=13, bold=True, align='C')
+    tnr("SIGNIFICANT CONTROLLERS REGISTER", PW - M, y, size=13, bold=True, align='R')
     y += 16
-    tc("重要控制人登記冊", PW / 2, y, size=11, bold=True, align='C')
+    tc("重要控制人登記冊", PW - M, y, size=11, bold=True, align='R')
     y += 18
     line_h(M, PW - M, y, w=0.5)
     y += 10

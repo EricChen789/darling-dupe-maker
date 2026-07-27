@@ -563,6 +563,16 @@ addRoute("GET", "/api/search", async (req, env, _user) => {
   return json(out);
 });
 
+// ─── Cleanup orphan persons ───
+
+addRoute("POST", "/api/persons/cleanup-orphans", async (_req, env, user) => {
+  requireAdmin(user);
+  const result = await env.DB.prepare(
+    "DELETE FROM persons WHERE id IN (SELECT p.id FROM persons p LEFT JOIN person_company_roles r ON p.id = r.person_id WHERE r.person_id IS NULL)"
+  ).run();
+  return json({ success: true, deleted: result.meta?.changes || 0 });
+});
+
 addRoute("POST", "/api/backup", async (_req, env, user) => {
   requireAdmin(user);
   for (const table of TABLES) {

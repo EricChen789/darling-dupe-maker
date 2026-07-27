@@ -522,6 +522,7 @@ def create_pdf():
     if font_path:
         try:
             pdf.add_font('TC', style='', fname=font_path)
+            pdf.add_font('TC', style='B', fname=font_path)
         except Exception as e:
             print(f"[PDF] Failed to load font {font_path}: {e}")
     if not font_path:
@@ -2000,7 +2001,7 @@ def _build_bought_sold_note(pdf, company, tx):
 
     # ═══ Sold Note — TOP half ═══
     y = 842 - 42
-    pdf_draw(pdf, "Sold Note 賣出票據", page_w / 2 - 50, y, size=14)
+    pdf_draw(pdf, "Sold Note 賣出票據", page_w / 2 - 30, y, size=14)
     y -= 22
     pdf.line(left, y, page_w - left, y)
     y -= 16
@@ -2013,10 +2014,15 @@ def _build_bought_sold_note(pdf, company, tx):
     draw_row("Consideration Received:", f"HK${consideration:,.2f}" if consideration else "", y); y -= 18
 
     y -= 8
+    # Transferor — centered text + underline to right margin
     transferor_text = f"(Transferor)  {from_name}"
-    pdf_draw(pdf, transferor_text, page_w / 2 - 40, y, size=9)
+    tf_w = pdf.get_string_width(transferor_text)
+    tf_x = page_w / 2 - tf_w / 2
+    pdf_draw(pdf, transferor_text, tf_x, y, size=9)
+    sig_end = tf_x + tf_w + 6
+    pdf.line(sig_end, y + 2, page_w - left, y + 2)
     y -= 14
-    pdf_draw(pdf, co_name, page_w / 2 + 60, y, size=7)
+    pdf_draw(pdf, co_name, sig_end, y, size=7)
     y -= 14
 
     y = half_h + 14
@@ -2027,7 +2033,7 @@ def _build_bought_sold_note(pdf, company, tx):
 
     # ═══ Bought Note — BOTTOM half ═══
     y = half_h - 14
-    pdf_draw(pdf, "Bought Note 買入票據", page_w / 2 - 50, y, size=14)
+    pdf_draw(pdf, "Bought Note 買入票據", page_w / 2 - 30, y, size=14)
     y -= 22
     pdf.line(left, y, page_w - left, y)
     y -= 16
@@ -2040,7 +2046,11 @@ def _build_bought_sold_note(pdf, company, tx):
     draw_row("Consideration Received:", f"HK${consideration:,.2f}" if consideration else "", y); y -= 18
 
     y -= 8
-    pdf_draw(pdf, f"(Transferee)  {to_name}", label_x, y, size=9)
+    # Transferee — with underline to right margin
+    transferee_text = f"(Transferee)  {to_name}"
+    tee_w = pdf.get_string_width(transferee_text)
+    pdf_draw(pdf, transferee_text, label_x, y, size=9)
+    pdf.line(label_x + tee_w + 6, y + 2, page_w - left, y + 2)
     y -= 18
     pdf_draw(pdf, f"Hong Kong, Dated  {tx_date}", label_x, y, size=9)
 
@@ -2065,7 +2075,7 @@ def _build_share_certificate(pdf, company, tx):
     pdf.set_line_width(0.2)
 
     y = page_h - 70
-    pdf_draw(pdf, "股票證書 / SHARE CERTIFICATE", page_w / 2 - 90, y, size=16)
+    pdf_draw(pdf, "股票證書 / SHARE CERTIFICATE", page_w / 2 - 150, y, size=16)
     y -= 28
     pdf.line(80, y, page_w - 80, y)
     y -= 24
@@ -2089,11 +2099,11 @@ def _build_share_certificate(pdf, company, tx):
     shares_val = tx.get('shares', '________')
     price = tx.get('price_per_share', '____')
 
-    pdf_draw(pdf, holder_name, page_w / 2 - 40, y, size=13)
+    pdf_draw(pdf, holder_name, page_w / 2 - 80, y, size=13)
     y -= 22
     pdf_draw(pdf, "is/are the registered holder(s) of", 50, y, size=10, gray=80)
     y -= 22
-    pdf_draw(pdf, f"{shares_val} {share_class} Share(s)", page_w / 2 - 40, y, size=13)
+    pdf_draw(pdf, f"{shares_val} {share_class} Share(s)", page_w / 2 - 60, y, size=13)
     y -= 22
     pdf_draw(pdf, f"of HK$ {price} each fully paid", 50, y, size=10, gray=80)
     y -= 22

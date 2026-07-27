@@ -2041,8 +2041,9 @@ def generate_scr_pdf():
     # Underline at bottom of Chinese row
     pdf.line(cn_val_x, y + row_h + 12, max(cn_end, cn_val_x + 60), y + row_h + 12)
 
-    # Right: JURISDICTION / 司法管轄區 stacked, both show HONG KONG
-    jur_x = PW / 2 + 30
+    # Right: JURISDICTION —紧挨着 COMPANY NUMBER 下划线后面
+    cn_ul_end = max(cn_end, cn_val_x + 60)
+    jur_x = cn_ul_end + 25
     tnr(jur_label_en, jur_x, y, size=hdr_size, bold=True)
     tc(jur_label_cn, jur_x, y + row_h, size=hdr_size)
     jlw_en = pdf.get_string_width(jur_label_en)

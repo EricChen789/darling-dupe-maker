@@ -2005,53 +2005,49 @@ def generate_scr_pdf():
     hdr_size = 8
     row_h = 14
 
-    # ── Block 1: Company Name (English on top, Chinese below, underline at bottom) ──
-    label_en = "NAME OF COMPANY:  "
+    # ── Block 1: 公司名稱 only (no English label), value + underline to the right ──
     label_cn = "公司名稱:  "
-    tnr(label_en, M, y, size=hdr_size, bold=True)
     tc(label_cn, M, y + row_h, size=hdr_size)
-    # Measure wider label for value offset
-    lw_en = pdf.get_string_width(label_en)
     lw_cn = pdf.get_string_width(label_cn)
-    val_x = M + max(lw_en, lw_cn) + 2
-    # Values
-    tnr(co_name, val_x, y, size=hdr_size)
-    tc(co_name_ch, val_x, y + row_h, size=hdr_size) if co_name_ch else None
-    # Underline — from bottom of Chinese row
-    val_end = val_x + max(pdf.get_string_width(co_name), pdf.get_string_width(co_name_ch or ''))
-    pdf.line(val_x, y + row_h + 12, max(val_end, val_x + 100), y + row_h + 12)
-    y += row_h * 2 + 6
+    val_x = M + lw_cn + 2
+    # Company name — use English name (Chinese below if available)
+    tc(co_name, val_x, y + row_h, size=hdr_size)
+    if co_name_ch:
+        tc(co_name_ch, val_x + pdf.get_string_width(co_name) + 10, y + row_h, size=hdr_size)
+    # Underline at bottom of Chinese label row
+    val_w = pdf.get_string_width(co_name) + (pdf.get_string_width(co_name_ch) + 10 if co_name_ch else 0)
+    pdf.line(val_x, y + row_h + 12, val_x + max(val_w, 120), y + row_h + 12)
+    y += row_h * 2 + 4
 
     y += 4
 
-    # ── Block 2: COMPANY NUMBER (left) + JURISDICTION (right) ──
+    # ── Block 2: COMPANY NUMBER (top) + 公司編號 (bottom), stacked labels ──
     cn_label_en = "COMPANY NUMBER:  "
-    cn_label_cn = ""
+    cn_label_cn = "公司編號:  "
     jur_label_en = "JURISDICTION:  "
     jur_label_cn = "司法管轄區:  "
-    jur_text_en = "HONG KONG"
-    jur_text_cn = "香港"
 
-    # Left: COMPANY NUMBER
+    # Left: COMPANY NUMBER / 公司編號 stacked
     tnr(cn_label_en, M, y, size=hdr_size, bold=True)
-    cn_lw = pdf.get_string_width(cn_label_en)
-    cn_val_x = M + cn_lw
-    tnr(br, cn_val_x, y, size=hdr_size) if br else None
+    tc(cn_label_cn, M, y + row_h, size=hdr_size)
+    cnlw_en = pdf.get_string_width(cn_label_en)
+    cnlw_cn = pdf.get_string_width(cn_label_cn)
+    cn_val_x = M + max(cnlw_en, cnlw_cn) + 2
+    tnr(br, cn_val_x, y + row_h, size=hdr_size) if br else None
     cn_end = cn_val_x + pdf.get_string_width(br) if br else cn_val_x + 100
-    # Underline
-    pdf.line(cn_val_x, y + 12, max(cn_end, cn_val_x + 60), y + 12)
+    # Underline at bottom of Chinese row
+    pdf.line(cn_val_x, y + row_h + 12, max(cn_end, cn_val_x + 60), y + row_h + 12)
 
-    # Right: JURISDICTION (English on top, Chinese below)
+    # Right: JURISDICTION / 司法管轄區 stacked, both show HONG KONG
     jur_x = PW / 2 + 30
     tnr(jur_label_en, jur_x, y, size=hdr_size, bold=True)
     tc(jur_label_cn, jur_x, y + row_h, size=hdr_size)
     jlw_en = pdf.get_string_width(jur_label_en)
     jlw_cn = pdf.get_string_width(jur_label_cn)
     jur_val_x = jur_x + max(jlw_en, jlw_cn) + 2
-    tnr(jur_text_en, jur_val_x, y, size=hdr_size)
-    tc(jur_text_cn, jur_val_x, y + row_h, size=hdr_size)
-    jur_end = jur_val_x + max(pdf.get_string_width(jur_text_en), pdf.get_string_width(jur_text_cn))
-    # Underline — from bottom of Chinese row
+    tnr("HONG KONG", jur_val_x, y + row_h, size=hdr_size)
+    jur_end = jur_val_x + pdf.get_string_width("HONG KONG")
+    # Underline at bottom of Chinese row
     pdf.line(jur_val_x, y + row_h + 12, max(jur_end, jur_val_x + 40), y + row_h + 12)
     y += row_h * 2 + 6
 

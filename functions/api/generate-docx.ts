@@ -3,7 +3,7 @@
 // 移植自 local-server/server.py:_build_docx（Cloudflare Workers 跑不了 python-docx，故手寫）
 // body: { company_id, doc_type, content?, meeting_date?, location? }
 // resp: { success: true, docx: '<base64>', filename, doc_type }
-// 5 種 doc_type: company_profile / directors_register / members_register / board_resolution / meeting_minutes
+// 6 種 doc_type: company_profile / directors_register / members_register / board_resolution / meeting_minutes / scr_register
 
 interface Env {
   DB: D1Database;
@@ -21,6 +21,7 @@ const DOCX_TYPES: Record<string, string> = {
   members_register: "成員（股東）名冊",
   board_resolution: "董事會書面決議",
   meeting_minutes: "董事會會議記錄",
+  scr_register: "重要控制人登記冊",
 };
 
 const CJK_FONT = "Microsoft JhengHei";
@@ -292,7 +293,232 @@ function nowStamp(): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
-// ─────────────────────────── 文件正文組裝 ───────────────────────────
+function rget(row: any, key: string, dflt: any = null): any {
+  const v = row ? row[key] : undefined;
+  return v !== null && v !== undefined ? v : dflt;
+}
+
+async function fetchScrData(env: Env, companyId: string): Promise<any[]> {
+  const { results } = await env.DB.prepare(
+    "SELECT * FROM significant_controllers WHERE company_id = ? ORDER BY created_at"
+  ).bind(companyId).all();
+  return (results || []) as any[];
+}
+
+// ─────────────────────────── SCR 登記冊（Paul Tang 格式）───────────────────────────
+
+function buildScrRegister(bundle: Bundle, scrs: any[]): string {
+  const c = bundle.c;
+  const nameEn = c.name || "";
+  const nameCn = c.chinese_name || "";
+  const br = c.company_number || "";
+
+  const blocks: string[] = [];
+
+  // ── Page: Landscape A4 (swapped w/h) ──
+  // We'll use a separate sectPr at the end
+
+  // ── Header table: Company Name (left) | SCR Title (right) ──
+  const titleEn = "SIGNIFICANT CONTROLLERS REGISTER";
+  const titleCn = "重要控制人登記冊";
+
+  // Table[0]: 1 row x 2 cols — left=company, right=SCR title
+  const coLine1 = nameEn || nameCn || "公司";
+  const coLine2 = nameCn && nameEn ? nameCn : "";
+  const coCell = coLine2 ? `${coLine1}\n${coLine2}` : coLine1;
+  const titleCell = `${titleEn}\n${titleCn}`;
+
+  // DXA widths: total ~9000 for portrait-style table in landscape page
+  const headerW1 = 6000;
+  const headerW2 = 3000;
+
+  blocks.push(`<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr><w:tblGrid><w:gridCol w:w="${headerW1}"/><w:gridCol w:w="${headerW2}"/></w:tblGrid>`);
+
+  // Row: company name (left) + SCR title (right)
+  blocks.push(`<w:tr>`);
+  // Left cell — company name
+  blocks.push(`<w:tc><w:tcPr><w:tcW w:w="${headerW1}" w:type="dxa"/></w:tcPr>`);
+  blocks.push(`<w:p><w:r><w:rPr><w:b/><w:sz w:val="24"/><w:szCs w:val="24"/></w:rPr><w:t xml:space="preserve">${esc(coLine1)}</w:t></w:r></w:p>`);
+  if (coLine2) {
+    blocks.push(`<w:p><w:r><w:rPr><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr><w:t xml:space="preserve">${esc(coLine2)}</w:t></w:r></w:p>`);
+  }
+  blocks.push(`</w:tc>`);
+  // Right cell — SCR title
+  blocks.push(`<w:tc><w:tcPr><w:tcW w:w="${headerW2}" w:type="dxa"/></w:tcPr>`);
+  blocks.push(`<w:p><w:pPr><w:jc w:val="right"/></w:pPr><w:r><w:rPr><w:b/><w:sz w:val="26"/><w:szCs w:val="26"/></w:rPr><w:t xml:space="preserve">${esc(titleEn)}</w:t></w:r></w:p>`);
+  blocks.push(`<w:p><w:pPr><w:jc w:val="right"/></w:pPr><w:r><w:rPr><w:b/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr><w:t xml:space="preserve">${esc(titleCn)}</w:t></w:r></w:p>`);
+  blocks.push(`</w:tc>`);
+  blocks.push(`</w:tr>`);
+  blocks.push(`</w:tbl>`);
+
+  blocks.push(EMPTY_P);
+
+  // ── JURISDICTION line ──
+  blocks.push(P(`JURISDICTION:  HONG KONG`, { size: 8, bold: true }));
+  blocks.push(P(`司法管轄區:  HONG KONG`, { size: 8 }));
+
+  // ── Company Number line ──
+  blocks.push(P(`COMPANY NUMBER:  ${esc(br)}`, { size: 8, bold: true }));
+  blocks.push(P(`公司編號:  ${esc(br)}`, { size: 8 }));
+
+  blocks.push(EMPTY_P);
+
+  // ── Separator ──
+  blocks.push(`<w:p><w:pPr><w:pBdr><w:bottom w:val="single" w:sz="6" w:space="1" w:color="000000"/></w:pBdr></w:p></w:p>`);
+  blocks.push(EMPTY_P);
+
+  // ── 7-Column Data Table (matching Paul Tang docx gridCol ratios) ──
+  const colRatios = [1526, 2154, 2835, 2551, 2551, 1701, 1814];
+  const totalDxa = colRatios.reduce((a, b) => a + b, 0);
+  const totalWidth = 14000; // DXA for landscape
+  const colW = colRatios.map(r => Math.floor(r * totalWidth / totalDxa));
+  colW[3] += 8;
+  colW[4] -= 8;
+
+  const hdrLabels = [
+    "Entry Date\n登記日期",
+    "Name\n姓名／名稱",
+    "Correspondence Address (for Registrable Person)\n通訊地址（自然人）\nRegistered Office Address (for Legal Entity)\n註冊／主要營業地址（法律實體）",
+    "ID / PPT No. (Issuing Country) (for Registrable Person)\n身份證／護照號碼（簽發國家）（自然人）\nCompany No. (Place of Incorp.) Legal Form (for Legal Entity)\n公司編號（成立地方）法律形式（法律實體）",
+    "Nature of Control\n控制性質",
+    "Becoming Date (Cessation Date)\n起始日期（終止日期）",
+    "Remarks\n備註",
+  ];
+
+  // Build table
+  blocks.push(`<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/>${TBL_BORDERS}</w:tblPr>`);
+  blocks.push(`<w:tblGrid>${colW.map(w => `<w:gridCol w:w="${w}"/>`).join("")}</w:tblGrid>`);
+
+  // Header row
+  blocks.push(`<w:tr>`);
+  for (let ci = 0; ci < hdrLabels.length; ci++) {
+    const label = hdrLabels[ci];
+    const lines = label.split('\n');
+    blocks.push(`<w:tc><w:tcPr><w:tcW w:w="${colW[ci]}" w:type="dxa"/><w:vAlign w:val="center"/></w:tcPr>`);
+    for (const line of lines) {
+      blocks.push(`<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/><w:sz w:val="14"/><w:szCs w:val="14"/></w:rPr><w:t xml:space="preserve">${esc(line)}</w:t></w:r></w:p>`);
+    }
+    blocks.push(`</w:tc>`);
+  }
+  blocks.push(`</w:tr>`);
+
+  // Data rows
+  if (scrs.length === 0) {
+    blocks.push(`<w:tr>`);
+    const emptyW = colW.reduce((a, b) => a + b, 0);
+    blocks.push(`<w:tc><w:tcPr><w:gridSpan w:val="7"/><w:tcW w:w="${emptyW}" w:type="dxa"/></w:tcPr>`);
+    blocks.push(`<w:p><w:r><w:rPr><w:sz w:val="16"/><w:szCs w:val="16"/></w:rPr><w:t xml:space="preserve">(No SCR records / 尚無重要控制人記錄)</w:t></w:r></w:p>`);
+    blocks.push(`</w:tc></w:tr>`);
+  } else {
+    for (const s of scrs) {
+      // Build nature of control
+      const natures: string[] = [];
+      if (rget(s, 'nature_shares')) natures.push('>25% shares');
+      if (rget(s, 'nature_voting')) natures.push('>25% voting');
+      if (rget(s, 'nature_appoint')) natures.push('Appoint/remove directors');
+      if (rget(s, 'nature_influence')) natures.push('Sig. influence');
+      if (rget(s, 'nature_trust')) natures.push('Trust control');
+      if (rget(s, 'nature_other')) natures.push(rget(s, 'nature_other'));
+
+      const isNat = rget(s, 'identity') !== 'corporate';
+      const sNameEn = rget(s, 'name_english') || '';
+      const sNameCh = rget(s, 'name_chinese') || '';
+      const nameDisplay = sNameCh ? `${sNameCh}  ${sNameEn}`.trim() : (sNameEn || '(unnamed)');
+
+      let idBlock: string;
+      if (isNat) {
+        const idNo = rget(s, 'id_number') || rget(s, 'passport_number') || '-';
+        const passportCountry = rget(s, 'passport_country') || '';
+        idBlock = `ID/PPT: ${idNo}`;
+        if (passportCountry) idBlock += ` (${passportCountry})`;
+        idBlock += " | Natural Person";
+      } else {
+        const compNo = rget(s, 'company_number_ref') || '-';
+        const placeIncorp = rget(s, 'place_of_incorporation') || '';
+        const legalForm = rget(s, 'legal_form') || '';
+        idBlock = `Co No: ${compNo}`;
+        if (placeIncorp) idBlock += ` (${placeIncorp})`;
+        if (legalForm) idBlock += ` | ${legalForm}`;
+        idBlock += " | Body Corporate";
+      }
+
+      const addr = (rget(s, 'address') || '').slice(0, 200);
+      const natureText = natures.join(', ') || '-';
+      const dateBecame = rget(s, 'date_became') || '-';
+      const dateCea = rget(s, 'date_ceased') || '';
+      const dateDisplay = dateCea ? `${dateBecame}  /  ${dateCea}` : `${dateBecame}  /`;
+
+      let entryDate = rget(s, 'created_at') || '';
+      if (entryDate && entryDate.length > 10) entryDate = entryDate.slice(0, 10);
+
+      const remarksParts: string[] = [];
+      if (!dateCea) remarksParts.push("Current / 現任");
+      if (rget(s, 'is_designated_rep') && rget(s, 'designated_rep_name')) {
+        remarksParts.push(`Rep: ${rget(s, 'designated_rep_name')}`);
+      }
+      const userRemarks = rget(s, 'remarks') || '';
+      if (userRemarks) remarksParts.push(userRemarks);
+      const remarks = remarksParts.join('\n');
+
+      const rowData = [entryDate, nameDisplay, addr, idBlock, natureText, dateDisplay, remarks];
+
+      blocks.push(`<w:tr>`);
+      for (let ci = 0; ci < rowData.length; ci++) {
+        const txt = rowData[ci];
+        blocks.push(`<w:tc><w:tcPr><w:tcW w:w="${colW[ci]}" w:type="dxa"/><w:vAlign w:val="center"/></w:tcPr>`);
+        const textLines = String(txt || '').split('\n');
+        for (const line of textLines) {
+          const jc = ci === 6 ? '<w:jc w:val="center"/>' : ''; // Remarks centered
+          blocks.push(`<w:p><w:pPr>${jc}</w:pPr><w:r><w:rPr><w:sz w:val="16"/><w:szCs w:val="16"/></w:rPr><w:t xml:space="preserve">${esc(line)}</w:t></w:r></w:p>`);
+        }
+        blocks.push(`</w:tc>`);
+      }
+      blocks.push(`</w:tr>`);
+    }
+  }
+
+  blocks.push(`</w:tbl>`);
+  blocks.push(EMPTY_P);
+
+  // ── Additional Matters 2×2 table ──
+  const addW = Math.floor(totalWidth / 2);
+  blocks.push(`<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/>${TBL_BORDERS}</w:tblPr><w:tblGrid><w:gridCol w:w="${addW}"/><w:gridCol w:w="${addW}"/></w:tblGrid>`);
+
+  // Header row
+  blocks.push(`<w:tr>`);
+  blocks.push(`<w:tc><w:tcPr><w:tcW w:w="${addW}" w:type="dxa"/></w:tcPr>`);
+  blocks.push(`<w:p><w:r><w:rPr><w:b/><w:sz w:val="14"/><w:szCs w:val="14"/></w:rPr><w:t xml:space="preserve">Additional Matters</w:t></w:r></w:p>`);
+  blocks.push(`<w:p><w:r><w:rPr><w:sz w:val="14"/><w:szCs w:val="14"/></w:rPr><w:t xml:space="preserve">额外事項</w:t></w:r></w:p>`);
+  blocks.push(`</w:tc>`);
+  blocks.push(`<w:tc><w:tcPr><w:tcW w:w="${addW}" w:type="dxa"/></w:tcPr>`);
+  blocks.push(`<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/><w:sz w:val="14"/><w:szCs w:val="14"/></w:rPr><w:t xml:space="preserve">Remarks</w:t></w:r></w:p>`);
+  blocks.push(`<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:sz w:val="14"/><w:szCs w:val="14"/></w:rPr><w:t xml:space="preserve">備註</w:t></w:r></w:p>`);
+  blocks.push(`</w:tc>`);
+  blocks.push(`</w:tr>`);
+
+  // Empty content row
+  blocks.push(`<w:tr>`);
+  blocks.push(`<w:tc><w:tcPr><w:tcW w:w="${addW}" w:type="dxa"/></w:tcPr><w:p/></w:tc>`);
+  blocks.push(`<w:tc><w:tcPr><w:tcW w:w="${addW}" w:type="dxa"/></w:tcPr><w:p/></w:tc>`);
+  blocks.push(`</w:tr>`);
+  blocks.push(`</w:tbl>`);
+
+  // 頁腳
+  blocks.push(EMPTY_P);
+  blocks.push(P(`本文件由公司秘書管理系統自動生成 · ${nowStamp()}`, { size: 8, center: true }));
+
+  // Landscape A4 sectPr
+  const landscapeSectPr =
+    '<w:sectPr><w:pgSz w:w="16838" w:h="11906" w:orient="landscape"/>' +
+    '<w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr>';
+
+  return (
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" ' +
+    'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+    "<w:body>" + blocks.join("") + landscapeSectPr + "</w:body></w:document>"
+  );
+}
 
 function buildBody(bundle: Bundle, docType: string, extra: { content?: string; meeting_date?: string; location?: string }): string | null {
   const c = bundle.c;
@@ -511,6 +737,34 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
     if (!companyId) return json({ error: "缺少 company_id" }, 400);
     if (!(docType in DOCX_TYPES)) {
       return json({ error: `不支援的文件類型：${docType}`, supported: Object.keys(DOCX_TYPES) }, 400);
+    }
+
+    // SCR register needs separate data fetch
+    if (docType === "scr_register") {
+      const bundle = await companyBundle(env, companyId);
+      if (!bundle) return json({ error: "找不到該公司" }, 404);
+      const scrs = await fetchScrData(env, companyId);
+      const documentXml = buildScrRegister(bundle, scrs);
+
+      const enc = new TextEncoder();
+      const zipBytes = buildZip([
+        { name: "[Content_Types].xml", data: enc.encode(CONTENT_TYPES_XML) },
+        { name: "_rels/.rels", data: enc.encode(RELS_XML) },
+        { name: "word/_rels/document.xml.rels", data: enc.encode(DOC_RELS_XML) },
+        { name: "word/styles.xml", data: enc.encode(STYLES_XML) },
+        { name: "word/document.xml", data: enc.encode(documentXml) },
+      ]);
+
+      const label = DOCX_TYPES[docType];
+      const nm = safeName(bundle.c.name || bundle.c.chinese_name || "company");
+      const filename = `${nm}_${label}.docx`;
+
+      return json({
+        success: true,
+        docx: uint8ToBase64(zipBytes),
+        filename,
+        doc_type: docType,
+      });
     }
 
     const bundle = await companyBundle(env, companyId);

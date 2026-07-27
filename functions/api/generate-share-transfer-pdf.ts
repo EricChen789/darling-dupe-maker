@@ -118,6 +118,39 @@ export async function onRequest(context: { request: Request; env: Env }) {
     ).bind(companyId).all();
     const shareholders = (rolesResult.results || []) as any[];
 
+    // ── Auto-build transaction from shareholders when no transaction exists ──
+    // Mirrors local Flask server.py: if no share_transactions record,
+    // auto-build from first 2 shareholders (natural persons preferred).
+    if (!transaction && allTransactions.length === 0) {
+      const shResult = await env.DB.prepare(
+        `SELECT p.id as person_id, p.name_english, p.address,
+                p.addr_flat, p.addr_building, p.addr_street, p.addr_district, p.addr_region,
+                pcr.shares, pcr.share_type, pcr.issue_price
+         FROM person_company_roles pcr
+         JOIN persons p ON p.id = pcr.person_id
+         WHERE pcr.company_id = ? AND pcr.role = 'shareholder'
+         ORDER BY p.identity = 'natural' DESC, p.name_english`
+      ).bind(companyId).all();
+      const shs = (shResult.results || []) as any[];
+      if (shs.length >= 2) {
+        const s1 = shs[0], s2 = shs[1];
+        const shShares = s1.shares || 0;
+        const shPrice = parseFloat(s1.issue_price) || 1.00;
+        const today = new Date().toISOString().slice(0, 10);
+        transaction = {
+          from_person_id: s1.person_id,
+          from_name: s1.name_english,
+          to_person_id: s2.person_id,
+          to_name: s2.name_english,
+          shares: shShares,
+          share_type: s1.share_type || 'Ordinary',
+          price_per_share: s1.issue_price || '1.00',
+          total_consideration: shShares * shPrice,
+          transaction_date: today,
+        };
+      }
+    }
+
     // Load CJK font (Noto Sans TC WOFF2)
     const fontResp = await fetch(CHINESE_FONT_URL, { headers: { Accept: "*/*" } });
     if (!fontResp.ok) throw new Error("Failed to load Chinese font");

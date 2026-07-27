@@ -13,7 +13,7 @@ import {
   Shield, FileDigit, FileCheck, Stamp,
 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
-import { downloadAndOpenBase64Pdf } from '@/lib/downloadPdf';
+import { downloadAndOpenBase64Pdf, downloadBase64File, DOCX_MIME } from '@/lib/downloadPdf';
 import { Company, Person, Shareholder } from '@/types';
 import {
   useShareTransactions, useUpsertShareTransaction, useDeleteShareTransaction,
@@ -63,10 +63,12 @@ async function downloadRegister(fnName: string, companyId: string, brNumber: str
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url_);
     } else {
-      // JSON response (Flask) — { pdf: "<base64>" }
+      // JSON response — { pdf: "<base64>" } or { docx: "<base64>" }
       const result = await res.json();
       if (result.pdf) {
         downloadAndOpenBase64Pdf(result.pdf, filename);
+      } else if (result.docx) {
+        downloadBase64File(result.docx, result.filename || filename, DOCX_MIME);
       } else if (result.error) {
         throw new Error(result.error);
       } else {

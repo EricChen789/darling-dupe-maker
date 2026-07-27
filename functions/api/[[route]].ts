@@ -460,6 +460,14 @@ for (const table of TABLES) {
     const values = keys.map(k => data[k]);
     values.push(params.id);
     await env.DB.prepare(`UPDATE ${table} SET ${setClauses}, updated_at = datetime('now') WHERE id = ?`).bind(...values).run();
+    // ─── Company version snapshot: auto-record on every company update (mirrors Flask) ───
+    if (table === "companies") {
+      try {
+        await recordCompanyVersion(env.DB, params.id);
+      } catch (e: any) {
+        console.error(`[VERSION] snapshot failed: ${e.message}`);
+      }
+    }
     return json({ success: true });
   });
 
@@ -530,7 +538,15 @@ addRoute("GET", "/api/companies/:id/full", async (_req, env, _user, params) => {
   const company = await env.DB.prepare("SELECT * FROM companies WHERE id = ?").bind(params.id).first();
   if (!company) return error("Company not found", 404);
   const officers = await env.DB.prepare("SELECT * FROM officers WHERE company_id = ?").bind(params.id).all();
-  const shareholders = await env.DB.prepare("SELECT * FROM shareholders WHERE company_id = ?").bind(params.id).all();
+  // Read shareholders from person_company_roles (same source as frontend hooks & Flask server.py)
+  const shareholders = await env.DB.prepare(
+    "SELECT pcr.*, p.name_english AS person_name_english, p.name_chinese AS person_name_chinese, " +
+    "p.identity AS person_identity, p.id_number AS person_id_number, p.address AS person_address, " +
+    "p.email AS person_email, p.service_address AS person_service_address " +
+    "FROM person_company_roles pcr " +
+    "LEFT JOIN persons p ON p.id = pcr.person_id " +
+    "WHERE pcr.company_id = ? AND pcr.role = 'shareholder'"
+  ).bind(params.id).all();
   const scrs = await env.DB.prepare("SELECT * FROM significant_controllers WHERE company_id = ?").bind(params.id).all();
   const logs = await env.DB.prepare("SELECT * FROM company_logs WHERE company_id = ?").bind(params.id).all();
   return json({ ...company, officers: officers.results, shareholders: shareholders.results, significant_controllers: scrs.results, logs: logs.results });
@@ -584,6 +600,63 @@ addRoute("POST", "/api/backup", async (_req, env, user) => {
 
 // ─── Company Versions ───
 
+// Shared version-snapshot fields & labels (mirrors Flask VERSION_FIELDS)
+const VERSION_FIELDS = [
+  "name", "chinese_name", "company_number", "ci_number", "trading_name",
+  "business_nature", "company_type", "business_code", "status",
+  "incorporation_date", "jurisdiction", "reg_flat", "reg_building",
+  "reg_street", "reg_district", "reg_region", "email", "phone", "signer_role_id",
+];
+const VERSION_FIELD_LABELS: Record<string, string> = {
+  name: "英文名稱", chinese_name: "中文名稱", company_number: "商業登記號碼",
+  ci_number: "公司註冊編號", trading_name: "商業名稱", business_nature: "業務性質",
+  company_type: "公司類型", business_code: "業務代碼", status: "狀態",
+  incorporation_date: "成立日期", jurisdiction: "司法管轄區",
+  reg_flat: "註冊地址-室/樓/座", reg_building: "註冊地址-大廈", reg_street: "註冊地址-街道",
+  reg_district: "註冊地址-區", reg_region: "註冊地址-地區", email: "電郵地址",
+  phone: "電話", signer_role_id: "簽署人",
+};
+
+async function recordCompanyVersion(db: D1Database, companyId: string, changedBy = ""): Promise<number | null> {
+  const company = await db.prepare("SELECT * FROM companies WHERE id = ?").bind(companyId).first() as any;
+  if (!company) return null;
+
+  // Build current snapshot
+  const snap: Record<string, string> = {};
+  for (const k of VERSION_FIELDS) {
+    snap[k] = company[k] !== null && company[k] !== undefined ? String(company[k]) : "";
+  }
+
+  // Compare with latest version
+  const latest = await db.prepare(
+    "SELECT * FROM company_versions WHERE company_id = ? ORDER BY version_no DESC LIMIT 1"
+  ).bind(companyId).first() as any;
+
+  let changed: string[] = [];
+  let versionNo = 1;
+  if (latest) {
+    let prevSnap: Record<string, string> = {};
+    try { prevSnap = JSON.parse(latest.snapshot || "{}"); } catch { /* keep default */ }
+    for (const k of VERSION_FIELDS) {
+      if ((prevSnap[k] || "") !== (snap[k] || "")) changed.push(k);
+    }
+    if (changed.length === 0) return null; // No real change, skip duplicate version
+    versionNo = (latest.version_no || 0) + 1;
+  }
+
+  const labels = changed.map(k => VERSION_FIELD_LABELS[k] || k);
+  const summary = versionNo === 1 ? "建立初始版本" : `更新：${labels.join("、")}`;
+
+  await db.prepare(
+    "INSERT INTO company_versions (id, company_id, version_no, snapshot, changed_fields, change_summary, changed_by) VALUES (?, ?, ?, ?, ?, ?, ?)"
+  ).bind(
+    generateUUID(), companyId, versionNo,
+    JSON.stringify(snap), JSON.stringify(changed), summary, changedBy
+  ).run();
+
+  return versionNo;
+}
+
 addRoute("GET", "/api/companies/:id/versions", async (_req, env, _user, params) => {
   const { results } = await env.DB.prepare(
     "SELECT * FROM company_versions WHERE company_id = ? ORDER BY version_no DESC"
@@ -600,66 +673,10 @@ addRoute("GET", "/api/companies/:id/versions", async (_req, env, _user, params) 
 
 addRoute("POST", "/api/companies/:id/versions/snapshot", async (req, env, user, params) => {
   requireAdmin(user);
-  const companyId = params.id;
-
-  // Get current company data
-  const company = await env.DB.prepare("SELECT * FROM companies WHERE id = ?").bind(companyId).first() as any;
-  if (!company) return error("Company not found", 404);
-
-  // Build snapshot with VERSION_FIELDS
-  const versionFields = [
-    "name", "chinese_name", "company_number", "ci_number", "trading_name",
-    "business_nature", "company_type", "business_code", "status",
-    "incorporation_date", "jurisdiction", "reg_flat", "reg_building",
-    "reg_street", "reg_district", "reg_region", "email", "phone", "signer_role_id",
-  ];
-  const snap: Record<string, string> = {};
-  for (const k of versionFields) {
-    snap[k] = company[k] !== null && company[k] !== undefined ? String(company[k]) : "";
-  }
-
-  // Compare with latest version
-  const latest = await env.DB.prepare(
-    "SELECT * FROM company_versions WHERE company_id = ? ORDER BY version_no DESC LIMIT 1"
-  ).bind(companyId).first() as any;
-
-  let changed: string[] = [];
-  let versionNo = 1;
-  if (latest) {
-    let prevSnap: Record<string, string> = {};
-    try { prevSnap = JSON.parse(latest.snapshot || "{}"); } catch { /* keep default */ }
-    for (const k of versionFields) {
-      if ((prevSnap[k] || "") !== (snap[k] || "")) changed.push(k);
-    }
-    if (changed.length === 0) {
-      return json({ success: true, version_no: null, created: false, message: "No changes since last version" });
-    }
-    versionNo = (latest.version_no || 0) + 1;
-  }
-
-  const fieldLabels: Record<string, string> = {
-    name: "英文名稱", chinese_name: "中文名稱", company_number: "商業登記號碼",
-    ci_number: "公司註冊編號", trading_name: "商業名稱", business_nature: "業務性質",
-    company_type: "公司類型", business_code: "業務代碼", status: "狀態",
-    incorporation_date: "成立日期", jurisdiction: "司法管轄區",
-    reg_flat: "註冊地址-室/樓/座", reg_building: "註冊地址-大廈", reg_street: "註冊地址-街道",
-    reg_district: "註冊地址-區", reg_region: "註冊地址-地區", email: "電郵地址",
-    phone: "電話", signer_role_id: "簽署人",
-  };
-  const labels = changed.map(k => fieldLabels[k] || k);
-  const summary = versionNo === 1 ? "建立初始版本" : `更新：${labels.join("、")}`;
-
   const body = await req.json().catch(() => ({})) as Record<string, any>;
   const changedBy = body.changed_by || "";
-
-  await env.DB.prepare(
-    "INSERT INTO company_versions (id, company_id, version_no, snapshot, changed_fields, change_summary, changed_by) VALUES (?, ?, ?, ?, ?, ?, ?)"
-  ).bind(
-    generateUUID(), companyId, versionNo,
-    JSON.stringify(snap), JSON.stringify(changed), summary, changedBy
-  ).run();
-
-  return json({ success: true, version_no: versionNo, created: true });
+  const v = await recordCompanyVersion(env.DB, params.id, changedBy);
+  return json({ success: true, version_no: v, created: v !== null });
 });
 
 // ─── Form History ───

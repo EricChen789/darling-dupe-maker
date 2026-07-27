@@ -17,6 +17,7 @@ import base64
 import smtplib
 import threading
 import urllib.request
+import tempfile
 import requests
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -24,6 +25,39 @@ from email.utils import formataddr
 from datetime import datetime, timedelta, timezone
 from flask import Flask, request, jsonify, g, Response
 from fpdf import FPDF, XPos, YPos
+
+# Word COM for RTF→PDF conversion (Windows only)
+try:
+    import pythoncom
+    import win32com.client
+    _HAS_WORD_COM = True
+except ImportError:
+    _HAS_WORD_COM = False
+
+# Thread-safe lock for Word COM (Word is single-instance)
+_word_lock = threading.Lock()
+
+# RTF template paths (Paul Tang reference files)
+_RTF_DIR = os.path.join(os.path.dirname(__file__), '..', '..', '秘书系统文件', '汇出股权转让文件')
+_RTF_BS_NOTE = os.path.join(_RTF_DIR, 'Testing Bought Sold note_fixed.rtf')
+_RTF_INSTRUMENT = os.path.join(_RTF_DIR, 'Testing Instrument of transfer.rtf')
+_RTF_CERTIFICATE = os.path.join(_RTF_DIR, 'Testing Share Certificate.rtf')
+
+# Register RTF templates (Paul Tang reference samples)
+_RTF_REGISTER_DIR = os.path.join(os.path.dirname(__file__), '..', '..', '秘书系统文件', 'rod rom')
+_RTF_ROM = os.path.join(_RTF_REGISTER_DIR, 'Testing ROM.rtf')
+_RTF_ROD = os.path.join(_RTF_REGISTER_DIR, 'Testing ROD.rtf')
+
+# python-docx for register DOCX generation
+try:
+    from docx import Document as DocxDocument
+    from docx.shared import Pt, Cm
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.enum.table import WD_TABLE_ALIGNMENT
+    from docx.oxml.ns import qn
+    _HAS_DOCX = True
+except ImportError:
+    _HAS_DOCX = False
 
 app = Flask(__name__)
 DB_PATH = os.path.join(os.path.dirname(__file__), 'local.db')
@@ -1406,6 +1440,25 @@ def generate_shareholders_register_pdf():
         if key:
             tx_by_person.setdefault(key, []).append(t)
 
+    # ── Try RTF template → Word COM Find & Replace → PDF first ──
+    if _HAS_WORD_COM:
+        pdf_bytes = _rtf_rom_to_pdf(db, company_id)
+        if pdf_bytes:
+            return jsonify({'pdf': base64.b64encode(pdf_bytes).decode('ascii')})
+
+    # ── Try DOCX → Word COM → PDF ──
+    if _HAS_WORD_COM and _HAS_DOCX:
+        docx_path = _build_rom_register_docx(db, company_id)
+        if docx_path:
+            pdf_bytes = _docx_to_pdf_via_word(docx_path)
+            try:
+                os.unlink(docx_path)
+            except:
+                pass
+            if pdf_bytes:
+                return jsonify({'pdf': base64.b64encode(pdf_bytes).decode('ascii')})
+
+    # ── Fallback: fpdf2 ──
     M = 28  # margin
     PW, PH = 595, 842  # A4 portrait in pt
     CW = PW - 2 * M  # content width
@@ -1765,6 +1818,19 @@ def generate_directors_register_pdf():
     directors = [r for r in roles if r['role'] == 'director']
     secretaries = [r for r in roles if r['role'] == 'secretary']
 
+    # ── Try DOCX → Word COM → PDF first ──
+    if _HAS_WORD_COM and _HAS_DOCX:
+        docx_path = _build_rod_register_docx(db, company_id)
+        if docx_path:
+            pdf_bytes = _docx_to_pdf_via_word(docx_path)
+            try:
+                os.unlink(docx_path)
+            except:
+                pass
+            if pdf_bytes:
+                return jsonify({'pdf': base64.b64encode(pdf_bytes).decode('ascii')})
+
+    # ── Fallback: fpdf2 ──
     pdf = create_pdf()
     pdf.add_page()
     pdf.set_auto_page_break(auto=False)
@@ -2400,6 +2466,348 @@ def storage_delete(bucket, filepath):
 
 
 # ─── Share Transfer PDFs (Instrument / Bought&Sold Note / Share Certificate) ───
+# ─── RTF → PDF via Word COM ───
+
+def _rtf_to_pdf_via_word(rtf_path, replacements, address_replacements=None,
+                         cert_replacements=None):
+    """Use Word COM to open RTF template, find & replace text, save as PDF.
+
+    Args:
+        rtf_path: Absolute path to the .rtf template file
+        replacements: dict of {find_text: replace_text} — simple single-line replacements.
+                      All occurrences are replaced (searches from start each time).
+                      Sorted by key length descending to prevent substring conflicts.
+        address_replacements: list of (old_lines, new_lines, occurrence) tuples for
+                      multi-line address blocks. Each entry replaces the Nth occurrence
+                      of old_lines[0] and its continuation lines.
+        cert_replacements: dict {placeholder, old_value, new_value} for certificate
+                      number replacement — finds placeholder text, then finds old_value
+                      after it and replaces only that occurrence (not globally).
+
+    Returns:
+        bytes: PDF file content, or None on failure
+    """
+    if not _HAS_WORD_COM:
+        return None
+    if not os.path.exists(rtf_path):
+        return None
+
+    with _word_lock:
+        pythoncom.CoInitialize()
+        word = None
+        tmp_pdf = None
+        try:
+            word = win32com.client.Dispatch('Word.Application')
+            word.Visible = False
+            word.DisplayAlerts = 0  # wdAlertsNone
+
+            doc = word.Documents.Open(rtf_path)
+            sel = word.Selection
+
+            # ── Simple replacements: find all occurrences, replace each ──
+            # Sort by key length DESC to prevent substring conflicts
+            # (e.g. "HK$10,000.00" must be processed before "10,000")
+            sorted_items = sorted(
+                replacements.items(),
+                key=lambda kv: len(kv[0]),
+                reverse=True,
+            )
+            for find_text, replace_text in sorted_items:
+                if not find_text:
+                    continue
+                replace_text = str(replace_text or '')
+                sel.HomeKey(Unit=6)  # wdStory = go to doc start
+                while sel.Find.Execute(
+                    FindText=find_text,
+                    MatchCase=True,
+                    Forward=True,
+                    Wrap=0,  # wdFindStop — don't wrap, search start→end
+                ):
+                    sel.Text = replace_text
+                    sel.Collapse(Direction=0)  # wdCollapseEnd — move past replacement for next find
+
+            # ── Multi-line address replacements ──
+            if address_replacements:
+                for old_lines, new_lines, occurrence in address_replacements:
+                    if not old_lines or not new_lines:
+                        continue
+                    _rtf_replace_address_block(doc, sel, old_lines, new_lines, occurrence)
+
+            # ── Certificate number (positional, not global) ──
+            if cert_replacements:
+                placeholder = cert_replacements.get('placeholder', '')
+                old_val = cert_replacements.get('old_value', '')
+                new_val = cert_replacements.get('new_value', '')
+                if placeholder and old_val and new_val:
+                    _rtf_replace_after_anchor(sel, placeholder, old_val, new_val)
+
+            # Save as PDF (FileFormat 17 = wdFormatPDF)
+            tmp_pdf = tempfile.mktemp(suffix='.pdf')
+            doc.SaveAs2(tmp_pdf, FileFormat=17)
+            doc.Close(False)
+
+            with open(tmp_pdf, 'rb') as f:
+                pdf_bytes = f.read()
+            return pdf_bytes
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            print(f"[RTF→PDF] Word COM error: {e}")
+            return None
+        finally:
+            if word:
+                try:
+                    word.Quit()
+                except:
+                    pass
+            if tmp_pdf and os.path.exists(tmp_pdf):
+                try:
+                    os.unlink(tmp_pdf)
+                except:
+                    pass
+            pythoncom.CoUninitialize()
+
+
+def _rtf_replace_address_block(doc, sel, old_lines, new_lines, occurrence=1):
+    """Replace the Nth occurrence of a multi-line address block.
+
+    Finds old_lines[0] (occurrence N), then replaces each subsequent line
+    with the corresponding new_lines entry. Works positionally — after replacing
+    line N, searches forward for the next line to replace.
+
+    Args:
+        doc: Word Document object
+        sel: Word Selection object
+        old_lines: list of strings — the template address lines to search for
+        new_lines: list of strings — the replacement address lines
+        occurrence: which occurrence of old_lines[0] to target (1-based)
+    """
+    # Find the Nth occurrence of the first address line
+    sel.HomeKey(Unit=6)  # wdStory
+    for _ in range(occurrence):
+        found = sel.Find.Execute(
+            FindText=old_lines[0],
+            MatchCase=True,
+            Forward=True,
+            Wrap=0,
+        )
+        if not found:
+            return
+        if _ < occurrence - 1:
+            sel.Collapse(Direction=0)  # wdCollapseEnd — move past this occurrence
+
+    # Replace first line
+    sel.Text = str(new_lines[0] or '')
+    sel.Collapse(Direction=0)  # wdCollapseEnd
+
+    # Replace continuation lines in order (they follow right after)
+    for i in range(1, len(old_lines)):
+        found = sel.Find.Execute(
+            FindText=old_lines[i],
+            MatchCase=True,
+            Forward=True,
+            Wrap=0,
+        )
+        if not found:
+            break
+        sel.Text = str(new_lines[i] if i < len(new_lines) else '')
+        sel.Collapse(Direction=0)
+
+
+def _rtf_replace_after_anchor(sel, anchor_text, old_value, new_value):
+    """Find anchor_text, then find the next occurrence of old_value and replace it.
+
+    Used for positional replacements where a global find/replace would be
+    too broad (e.g. replacing "3" would match ALL "3" characters).
+    """
+    sel.HomeKey(Unit=6)  # wdStory
+    found = sel.Find.Execute(
+        FindText=anchor_text,
+        MatchCase=True,
+        Forward=True,
+        Wrap=0,
+    )
+    if not found:
+        return
+    sel.Collapse(Direction=0)  # wdCollapseEnd
+    found = sel.Find.Execute(
+        FindText=old_value,
+        MatchCase=True,
+        Forward=True,
+        Wrap=0,
+    )
+    if not found:
+        return
+    sel.Text = str(new_value or '')
+
+
+# ─────────────────────────────────────────────
+# DOCX → PDF via Word COM
+# ─────────────────────────────────────────────
+
+def _docx_to_pdf_via_word(docx_path):
+    """Open a DOCX file in Word, save as PDF, return pdf_bytes or None.
+
+    This mirrors _rtf_to_pdf_via_word but for DOCX input — no Find & Replace,
+    just open, save-as-PDF, close.  Useful when the DOCX was already built by
+    python-docx with the correct content.
+    """
+    if not _HAS_WORD_COM:
+        return None
+    if not os.path.exists(docx_path):
+        return None
+
+    with _word_lock:
+        pythoncom.CoInitialize()
+        word = None
+        tmp_pdf = None
+        try:
+            word = win32com.client.Dispatch('Word.Application')
+            word.Visible = False
+            word.DisplayAlerts = 0  # wdAlertsNone
+
+            doc = word.Documents.Open(docx_path)
+            # Save as PDF (FileFormat 17 = wdFormatPDF)
+            tmp_pdf = tempfile.mktemp(suffix='.pdf')
+            doc.SaveAs2(tmp_pdf, FileFormat=17)
+            doc.Close(False)
+
+            with open(tmp_pdf, 'rb') as f:
+                pdf_bytes = f.read()
+            return pdf_bytes
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            print(f"[DOCX→PDF] Word COM error: {e}")
+            return None
+        finally:
+            if word:
+                try:
+                    word.Quit()
+                except:
+                    pass
+            if tmp_pdf and os.path.exists(tmp_pdf):
+                try:
+                    os.unlink(tmp_pdf)
+                except:
+                    pass
+            pythoncom.CoUninitialize()
+
+
+def _build_company_address(company):
+    """Build a full registered office address string from company record."""
+    parts = []
+    for k in ['reg_flat', 'reg_building', 'reg_street', 'reg_district']:
+        v = (company.get(k) or '').strip()
+        if v:
+            parts.append(v)
+    region = (company.get('reg_region') or '').strip()
+    jurisdiction = (company.get('jurisdiction') or '').strip()
+    return ', '.join(parts), region, jurisdiction
+
+
+def _get_person_address(db, person_id):
+    """Get a person's full address from the database."""
+    if not person_id:
+        return None, None
+    p = db.execute(
+        "SELECT addr_flat, addr_building, addr_street, addr_district, addr_region, address FROM persons WHERE id = ?",
+        (person_id,)).fetchone()
+    if not p:
+        return None, None
+    parts = [p[k] for k in ['addr_flat', 'addr_building', 'addr_street', 'addr_district'] if p[k]]
+    addr = ', '.join(parts) if parts else ''
+    # Fallback to unstructured address column if structured fields are empty
+    if not addr and p['address']:
+        addr = p['address']
+    region = p['addr_region'] or ''
+    return addr, region
+
+
+def _split_address_lines(addr, region, max_line_chars=55, max_lines=4):
+    """Split a full address string into multiple lines for RTF template replacement.
+
+    Splits at comma boundaries to keep lines under max_line_chars.
+    Region (e.g. 'HONG KONG', 'KOWLOON') is appended as the last line.
+    If the result exceeds max_lines, lines are merged from the end.
+    """
+    lines = []
+    if not addr and not region:
+        return lines
+
+    # Split address by commas and rebuild into lines
+    if addr:
+        parts = [p.strip() for p in addr.split(',')]
+        current = ''
+        for part in parts:
+            test = (current + ', ' + part).strip(', ') if current else part
+            if len(test) <= max_line_chars:
+                current = test
+            else:
+                if current:
+                    lines.append(current)
+                current = part
+        if current:
+            lines.append(current)
+
+    if region:
+        lines.append(region.strip())
+
+    # Merge from end to fit max_lines
+    while len(lines) > max_lines and len(lines) > 1:
+        # Merge last two lines
+        lines[-2] = lines[-2] + ', ' + lines[-1]
+        lines.pop()
+
+    return lines
+
+
+def _build_registered_office_lines(co_addr, co_region, co_juris):
+    """Build registered office address lines for Share Certificate template.
+
+    Returns a list of strings (1-4 lines).
+    """
+    lines = []
+    if co_addr:
+        # Split into parts
+        parts = [p.strip() for p in co_addr.split(',')]
+        # Line 1: first part (flat/unit + building)
+        lines.append(parts[0] if len(parts) > 0 else co_addr)
+        # Line 2: rest of address
+        if len(parts) > 1:
+            lines.append(', '.join(parts[1:]))
+    if co_region:
+        lines.append(co_region.strip())
+    if co_juris and co_juris != 'Hong Kong':
+        lines.append(co_juris.strip())
+    # Pad to at least 1 line
+    if not lines:
+        lines.append('')
+    return lines
+
+
+def _fmt_price(val, currency='HK$'):
+    """Format a price value for display."""
+    if val is None or val == '':
+        return ''
+    try:
+        return f"{currency}{float(val):,.2f}"
+    except (ValueError, TypeError):
+        return str(val)
+
+
+def _fmt_shares(val):
+    """Format share count for display."""
+    if val is None or val == '' or val == 0:
+        return ''
+    try:
+        return f"{int(val):,}"
+    except (ValueError, TypeError):
+        return str(val)
+
+
+# ─── Share Transfer PDF Generation ───
+
 @app.route('/api/generate-share-transfer-pdf', methods=['POST'])
 def generate_share_transfer_pdf():
     data = request.get_json(silent=True) or {}
@@ -2414,28 +2822,348 @@ def generate_share_transfer_pdf():
     if not company:
         return jsonify({'error': 'Company not found'}), 404
 
-    txs = db.execute(
+    tx = db.execute(
         "SELECT * FROM share_transactions WHERE company_id = ? ORDER BY transaction_date DESC",
-        (company_id,)).fetchall()
+        (company_id,)).fetchone()
 
-    tx = txs[0] if txs else {}
     company_dict = dict(company)
     tx_dict = dict(tx) if tx else {}
-    all_tx_dicts = [dict(t) for t in txs]
 
-    pdf = create_pdf()
-    if doc_type == 'share_certificate':
-        _build_share_certificate(pdf, company_dict, tx_dict)
-    elif doc_type == 'bought_sold_note':
-        _build_bought_sold_note(pdf, company_dict, tx_dict)
-    else:
-        _build_instrument_of_transfer(pdf, company_dict, tx_dict, all_tx_dicts)
+    # If no explicit transaction, auto-build from company shareholders
+    if not tx:
+        shareholders = db.execute(
+            """SELECT p.id as person_id, p.name_english, p.address,
+                      p.addr_flat, p.addr_building, p.addr_street, p.addr_district, p.addr_region,
+                      pcr.shares, pcr.share_type, pcr.issue_price
+               FROM person_company_roles pcr
+               JOIN persons p ON p.id = pcr.person_id
+               WHERE pcr.company_id = ? AND pcr.role = 'shareholder'
+               ORDER BY p.identity = 'natural' DESC, p.name_english
+            """, (company_id,)).fetchall()
+        if len(shareholders) >= 2:
+            s1, s2 = shareholders[0], shareholders[1]
+            tx_dict = {
+                'from_person_id': s1['person_id'],
+                'from_name': s1['name_english'],
+                'to_person_id': s2['person_id'],
+                'to_name': s2['name_english'],
+                'shares': s1['shares'] or 0,
+                'share_type': s1['share_type'] or 'Ordinary',
+                'price_per_share': s1['issue_price'] or '1.00',
+                'total_consideration': (s1['shares'] or 0) * float(s1['issue_price'] or 1.00) if s1['issue_price'] else 0,
+                'transaction_date': datetime.now().strftime('%Y-%m-%d'),
+            }
 
-    pdf_bytes = pdf.output()
+    # Try Word COM RTF→PDF first, fall back to fpdf2
+    pdf_bytes = None
+
+    if _HAS_WORD_COM:
+        if doc_type == 'share_certificate':
+            pdf_bytes = _build_share_certificate_rtf(db, company_dict, tx_dict)
+        elif doc_type == 'bought_sold_note':
+            pdf_bytes = _build_bought_sold_note_rtf(db, company_dict, tx_dict)
+        else:
+            pdf_bytes = _build_instrument_of_transfer_rtf(db, company_dict, tx_dict)
+
+    # Fallback to fpdf2 if Word COM failed or not available
+    if pdf_bytes is None:
+        pdf = create_pdf()
+        if doc_type == 'share_certificate':
+            _build_share_certificate_fpdf(pdf, company_dict, tx_dict)
+        elif doc_type == 'bought_sold_note':
+            _build_bought_sold_note_fpdf(pdf, company_dict, tx_dict)
+        else:
+            _build_instrument_of_transfer_fpdf(pdf, company_dict, tx_dict)
+        pdf_bytes = pdf.output()
+
     return jsonify({'pdf': base64.b64encode(pdf_bytes).decode('utf-8')})
 
 
-def _build_instrument_of_transfer(pdf, company, tx, all_txs):
+# ═══════════════════════════════════════════
+# RTF-based PDF generation (Paul Tang templates)
+# ═══════════════════════════════════════════
+
+def _build_instrument_of_transfer_rtf(db, company, tx):
+    """Generate Instrument of Transfer PDF from RTF template."""
+    if not os.path.exists(_RTF_INSTRUMENT):
+        return None
+
+    co_name = company.get('name', '')
+    from_name = tx.get('from_name', '')
+    to_name = tx.get('to_name', '')
+    shares = tx.get('shares', 0) or 0
+    par_val = tx.get('price_per_share') or ''
+    consideration = tx.get('total_consideration') or ''
+    if not consideration and shares and par_val:
+        try:
+            consideration = f"{shares * float(par_val):,.2f}"
+        except (ValueError, TypeError):
+            pass
+
+    cons_str = _fmt_price(consideration, 'HK$')
+    shares_str = _fmt_shares(shares)
+
+    replacements = {}
+
+    # Company name — "Testing Company Limited"
+    if co_name:
+        replacements['Testing Company Limited'] = co_name
+
+    # Transferor (from) — "ABC TESTING"
+    if from_name:
+        replacements['ABC TESTING'] = from_name
+
+    # Transferee (to) — "BCD TESTING"
+    if to_name:
+        replacements['BCD TESTING'] = to_name
+
+    # Consideration — "HK$10,000.00"
+    if cons_str:
+        replacements['HK$10,000.00'] = cons_str
+
+    # Shares — "10,000"
+    if shares_str:
+        replacements['10,000'] = shares_str
+
+    # ── Address replacements ──
+    # The Instrument template has TWO address blocks with DIFFERENT line breaks:
+    #   Block 1 (Transferor):
+    #     "ROOM 405 TUNG NING BUILDING, 249-253 DES VOEUX ROAD CENTRAL, SHEUNG WAN, HONG "
+    #     "KONG"
+    #   Block 2 (Transferee):
+    #     "ROOM 405 TUNG NING BUILDING, 249-253 DES VOEUX ROAD "
+    #     "CENTRAL, SHEUNG WAN, HONG KONG"
+    addr_replacements = []
+
+    # Transferor address — first occurrence of Block 1 format
+    from_addr, from_region = _get_person_address(db, tx.get('from_person_id'))
+    if from_addr or from_region:
+        xfer_lines = _split_address_lines(from_addr, from_region, max_lines=2)
+        addr_replacements.append(([
+            'ROOM 405 TUNG NING BUILDING, 249-253 DES VOEUX ROAD CENTRAL, SHEUNG WAN, HONG ',
+            'KONG',
+        ], xfer_lines, 1))
+
+    # Transferee address — first occurrence of Block 2 format
+    to_addr, to_region = _get_person_address(db, tx.get('to_person_id'))
+    if to_addr or to_region:
+        tfee_lines = _split_address_lines(to_addr, to_region, max_lines=2)
+        addr_replacements.append(([
+            'ROOM 405 TUNG NING BUILDING, 249-253 DES VOEUX ROAD ',
+            'CENTRAL, SHEUNG WAN, HONG KONG',
+        ], tfee_lines, 1))
+
+    return _rtf_to_pdf_via_word(_RTF_INSTRUMENT, replacements, addr_replacements or None)
+
+
+def _build_bought_sold_note_rtf(db, company, tx):
+    """Generate Bought & Sold Note PDF from RTF template."""
+    if not os.path.exists(_RTF_BS_NOTE):
+        return None
+
+    co_name = company.get('name', '')
+    from_name = tx.get('from_name', '')
+    to_name = tx.get('to_name', '')
+    shares = tx.get('shares', 0) or 0
+    par_val = tx.get('price_per_share') or ''
+    consideration = tx.get('total_consideration') or ''
+    tx_date = tx.get('transaction_date', '')
+
+    # Build consideration if not provided
+    if not consideration and shares and par_val:
+        try:
+            consideration = f"{shares * float(par_val):,.2f}"
+        except (ValueError, TypeError):
+            pass
+
+    # Format values
+    shares_str = _fmt_shares(shares)
+    par_val_str = _fmt_price(par_val, 'HK$')
+    cons_str = _fmt_price(consideration, 'HK$')
+
+    # Format transaction date: DD/MM/YYYY
+    tx_date_str = ''
+    if tx_date:
+        try:
+            dt = datetime.strptime(tx_date, '%Y-%m-%d')
+            tx_date_str = dt.strftime('%d/%m/%Y')
+        except ValueError:
+            tx_date_str = tx_date
+
+    # Query occupations for both parties (column may not exist in all DBs)
+    seller_occ = ''
+    buyer_occ = ''
+    from_pid = tx.get('from_person_id')
+    to_pid = tx.get('to_person_id')
+    try:
+        if from_pid:
+            p = db.execute("SELECT occupation FROM persons WHERE id = ?", (from_pid,)).fetchone()
+            if p and p['occupation']:
+                seller_occ = p['occupation']
+        if to_pid:
+            p = db.execute("SELECT occupation FROM persons WHERE id = ?", (to_pid,)).fetchone()
+            if p and p['occupation']:
+                buyer_occ = p['occupation']
+    except sqlite3.OperationalError:
+        pass  # occupation column doesn't exist
+
+    replacements = {}
+
+    # Seller (Transferor) = from_name → "ABC TESTING" in template
+    if from_name:
+        replacements['ABC TESTING'] = from_name
+
+    # Purchaser (Transferee) = to_name → "BCD TESTING" in template
+    if to_name:
+        replacements['BCD TESTING'] = to_name
+
+    # Company name → "Testing Company Limited" in template
+    if co_name:
+        replacements['Testing Company Limited'] = co_name
+
+    # Number of shares → "10,000" in template
+    if shares_str:
+        replacements['10,000'] = shares_str
+
+    # Price per share → "HK$1.00" in template
+    if par_val_str:
+        replacements['HK$1.00'] = par_val_str
+
+    # Total consideration → "HK$10,000.00" in template
+    if cons_str:
+        replacements['HK$10,000.00'] = cons_str
+
+    # Transaction date → "DD/MM/YYYY" in template (both Sold & Bought)
+    if tx_date_str:
+        replacements['DD/MM/YYYY'] = tx_date_str
+
+    # Occupation → "SELLER_OCCUP" in Bought Note, "BUYER_OCCUP" in Sold Note
+    # Always replace — clear placeholder if no occupation available
+    replacements['SELLER_OCCUP'] = seller_occ
+    replacements['BUYER_OCCUP'] = buyer_occ
+
+    # ── Address replacements ──
+    # Template addresses (2-line blocks, 2 occurrences: Seller then Purchaser)
+    addr_replacements = []
+    tpl_lines = [
+        'ROOM 405 TUNG NING BUILDING, 249-253 DES VOEUX ROAD ',
+        'CENTRAL, SHEUNG WAN, HONG KONG',
+    ]
+
+    # Seller address (first in document order)
+    from_addr, from_region = _get_person_address(db, tx.get('from_person_id'))
+    if from_addr or from_region:
+        seller_lines = _split_address_lines(from_addr, from_region, max_lines=2)
+        addr_replacements.append((tpl_lines, seller_lines, 1))
+
+    # Purchaser address (now first remaining, since Seller was just replaced)
+    to_addr, to_region = _get_person_address(db, tx.get('to_person_id'))
+    if to_addr or to_region:
+        buyer_lines = _split_address_lines(to_addr, to_region, max_lines=2)
+        addr_replacements.append((tpl_lines, buyer_lines, 1))
+
+    return _rtf_to_pdf_via_word(_RTF_BS_NOTE, replacements, addr_replacements or None)
+
+
+def _build_share_certificate_rtf(db, company, tx):
+    """Generate Share Certificate PDF from RTF template."""
+    if not os.path.exists(_RTF_CERTIFICATE):
+        return None
+
+    co_name = company.get('name', '')
+    co_number = company.get('company_number', '')
+    co_ci = company.get('ci_number', '')
+    inc_date = company.get('incorporation_date', '')
+    jurisdiction = company.get('jurisdiction', 'Hong Kong')
+    co_addr, co_region, co_juris = _build_company_address(company)
+
+    to_name = tx.get('to_name', '')
+    shares = tx.get('shares', 0) or 0
+    cert_no = tx.get('certificate_number') or tx.get('instrument_number', '')
+    tx_date = tx.get('transaction_date', '')
+
+    shares_str = _fmt_shares(shares)
+
+    replacements = {}
+
+    # Company name
+    if co_name:
+        replacements['Testing Company Limited'] = co_name
+
+    # Company number
+    if co_number:
+        replacements['0101234'] = co_number
+
+    # Shareholder name
+    if to_name:
+        replacements['BCD TESTING'] = to_name
+
+    # Shares
+    if shares_str:
+        replacements['10,000'] = shares_str
+
+    # HKID
+    if tx.get('to_person_id'):
+        pid = tx['to_person_id']
+        p = db.execute("SELECT id_number FROM persons WHERE id = ?", (pid,)).fetchone()
+        if p and p['id_number']:
+            replacements['Y231456(1)'] = p['id_number']
+
+    # Incorporation date
+    if inc_date:
+        try:
+            dt = datetime.strptime(inc_date, '%Y-%m-%d')
+            formatted_date = dt.strftime('%d/%m/%Y')
+        except ValueError:
+            formatted_date = inc_date
+        replacements['08/04/2022'] = formatted_date
+
+    # Certificate number — handled via positional replacement (not global,
+    # because "3" would match ALL "3" characters in the document).
+    cert_replacements = None
+    if cert_no:
+        cert_replacements = {
+            'placeholder': 'Certificate Number:',
+            'old_value': '3',
+            'new_value': str(cert_no),
+        }
+
+    # ── Address replacements ──
+    addr_replacements = []
+
+    # 1. Registered office address
+    if co_addr or co_region or co_juris:
+        reg_lines = _build_registered_office_lines(co_addr, co_region, co_juris)
+        tpl_reg_lines = [
+            'ROOM 408, JINDIXINGYUAN JINGUANGE,',
+            'NO.110, ELING SOUTH ROAD, HUICHENG DISTRICT,',
+            'HUIZHOU, GUANGDONG',
+            'CHINA',
+        ]
+        addr_replacements.append((tpl_reg_lines, reg_lines, 1))
+
+    # 2. Shareholder address
+    to_addr, to_region = _get_person_address(db, tx.get('to_person_id'))
+    if to_addr or to_region:
+        holder_lines = _split_address_lines(to_addr, to_region)
+        tpl_holder_lines = [
+            'ROOM 405 TUNG NING BUILDING',
+            '249-253 DES VOEUX ROAD CENTRAL',
+            'SHEUNG WAN',
+            'HONG KONG',
+        ]
+        addr_replacements.append((tpl_holder_lines, holder_lines, 1))
+
+    return _rtf_to_pdf_via_word(_RTF_CERTIFICATE, replacements,
+                                addr_replacements or None,
+                                cert_replacements=cert_replacements)
+
+
+# ═══════════════════════════════════════════
+# FPDF2 fallback PDF generation (original implementations)
+# ═══════════════════════════════════════════
+
+def _build_instrument_of_transfer_fpdf(pdf, company, tx):
     pdf.add_page()
     pdf.set_auto_page_break(auto=False)
     y, left = 45, 45
@@ -2492,7 +3220,7 @@ def _build_instrument_of_transfer(pdf, company, tx, all_txs):
              left, 30, size=7, gray=150)
 
 
-def _build_bought_sold_note(pdf, company, tx):
+def _build_bought_sold_note_fpdf(pdf, company, tx):
     """Bought & Sold Note — matching Paul Tang & Co reference format.
     Free-form layout (no table), tab-stop alignment, Times New Roman, thick title lines."""
     pdf.add_page()
@@ -2637,7 +3365,7 @@ def _build_bought_sold_note(pdf, company, tx):
         M, 20, size=7)
 
 
-def _build_share_certificate(pdf, company, tx):
+def _build_share_certificate_fpdf(pdf, company, tx):
     pdf.add_page()
     pdf.set_auto_page_break(auto=False)
     y, left, page_w = 45, 45, 595
@@ -4929,6 +5657,1034 @@ Context / Specific details from user:
         import traceback
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
+
+
+# ─────────────────────────────────────────────
+# ─────────────────────────────────────────────
+# ROM PDF from RTF template (Word COM Find & Replace)
+# Uses the Paul Tang RTF template directly — finds sample data in the
+# template and replaces with actual company/shareholder/transaction data.
+# ─────────────────────────────────────────────
+
+def _rtf_rom_to_pdf(db, company_id):
+    """Generate ROM PDF directly from Paul Tang RTF template via Word COM.
+
+    Opens Testing ROM.rtf, finds sample text placeholders, replaces them
+    with real data from the database, then saves as PDF.
+
+    Returns bytes (PDF content) or None on failure.
+    Falls back to DOCX approach if >2 shareholders.
+    """
+    if not _HAS_WORD_COM:
+        return None
+    if not os.path.exists(_RTF_ROM):
+        return None
+
+    # ── Load data ──
+    company = db.execute("SELECT * FROM companies WHERE id = ?", (company_id,)).fetchone()
+    if not company:
+        return None
+
+    roles = db.execute(
+        "SELECT * FROM person_company_roles WHERE company_id = ? AND role = 'shareholder'",
+        (company_id,)).fetchall()
+
+    person_ids = [r['person_id'] for r in roles]
+    person_map = {}
+    if person_ids:
+        placeholders = ','.join(['?'] * len(person_ids))
+        persons = db.execute(
+            f"SELECT * FROM persons WHERE id IN ({placeholders})", person_ids).fetchall()
+        person_map = {p['id']: p for p in persons}
+
+    txs = db.execute(
+        "SELECT * FROM share_transactions WHERE company_id = ? ORDER BY transaction_date",
+        (company_id,)).fetchall()
+
+    co_name = rget(company, 'name') or ''
+    co_br = rget(company, 'company_number') or ''
+    today = datetime.now()
+    report_date = today.strftime('%d %B %Y').upper()
+
+    # ── Prepare shareholders ──
+    shareholders = []
+    for role in roles:
+        p = person_map.get(role['person_id'], {})
+        name_en = (rget(p, 'name_english') or rget(p, 'name_chinese') or '(unnamed)')[:80]
+        id_type = rget(p, 'id_type') or 'HKID'
+        id_no = rget(p, 'id_number') or ''
+        id_str = f"({id_type} No: {id_no})" if id_no else ''
+        full_name = f"{name_en} {id_str}".strip()
+
+        addr, region = _get_person_address(db, p['id'])
+        if not addr:
+            addr = (rget(p, 'address') or '')[:100]
+        if region and region not in (addr or ''):
+            addr = f"{addr}, {region}".strip(', ')
+        addr = (addr or '')[:100]
+
+        date_cea = rget(role, 'date_ceased') or '-'
+        date_app = rget(role, 'date_appointed') or '-'
+        shares_held = int(rget(role, 'shares') or 0)
+        cert_no = rget(role, 'certificate_number') or '-'
+        currency = rget(role, 'currency') or 'HKD'
+        issue_price = rget(role, 'issue_price') or '1.00'
+        share_class = f"ORD - {currency}${issue_price} ORDINARY FULLY PAID ({currency})"
+
+        person_name_key = name_en.strip().upper()
+        person_txs = [
+            t for t in txs
+            if (rget(t, 'from_name') or rget(t, 'to_name') or '').strip().upper() == person_name_key
+        ]
+
+        shareholders.append({
+            'full_name': full_name,
+            'name_en': name_en,
+            'id_no': id_no,
+            'addr': addr,
+            'date_cea': date_cea,
+            'date_app': date_app,
+            'shares_held': shares_held,
+            'cert_no': cert_no,
+            'currency': currency,
+            'issue_price': issue_price,
+            'share_class': share_class,
+            'txs': person_txs,
+        })
+
+    # If >2 shareholders, fall back to DOCX approach
+    if len(shareholders) > 2:
+        return None
+
+    # ── Build replacements dict ──
+    # Keys sorted by length DESC to prevent substring conflicts
+    replacements = {}
+
+    # Company info (unique text)
+    if co_name:
+        replacements['Testing Company Limited'] = co_name
+    if co_br:
+        replacements['0101234'] = co_br
+
+    # Report date: replace in the full title phrase
+    template_title = 'REGISTER OF MEMBERS AT 05 APRIL 2024'
+    new_title = f'REGISTER OF MEMBERS AT {report_date}'
+    if new_title != template_title:
+        replacements[template_title] = new_title
+
+    # Shareholder 1 (unique name+ID string)
+    template_sh1_name = 'ABC TESTING (Hong Kong ID No : Y000000(1))'
+    if len(shareholders) >= 1:
+        replacements[template_sh1_name] = shareholders[0]['full_name']
+    else:
+        replacements[template_sh1_name] = ''
+
+    # Shareholder 2 (unique name+ID string)
+    template_sh2_name = 'BCD TESTING (Hong Kong ID No : Y231456(1))'
+    if len(shareholders) >= 2:
+        replacements[template_sh2_name] = shareholders[1]['full_name']
+    else:
+        replacements[template_sh2_name] = ''
+
+    # ── Copy RTF to temp file (avoid Chinese path issues with Word COM) ──
+    import shutil as _shutil
+    tmp_rtf = tempfile.mktemp(suffix='.rtf')
+    _shutil.copy2(_RTF_ROM, tmp_rtf)
+
+    # ── Word COM: open → replace → save as PDF ──
+    with _word_lock:
+        pythoncom.CoInitialize()
+        word = None
+        tmp_pdf_out = None
+        try:
+            word = win32com.client.Dispatch('Word.Application')
+            word.Visible = False
+            word.DisplayAlerts = 0  # wdAlertsNone
+
+            doc = word.Documents.Open(tmp_rtf)
+            sel = word.Selection
+
+            # Sort by key length DESC to prevent substring conflicts
+            sorted_items = sorted(
+                replacements.items(),
+                key=lambda kv: len(kv[0]),
+                reverse=True,
+            )
+            for find_text, replace_text in sorted_items:
+                if not find_text:
+                    continue
+                replace_text = str(replace_text or '')
+                sel.HomeKey(Unit=6)  # wdStory — go to doc start
+                while sel.Find.Execute(
+                    FindText=find_text,
+                    MatchCase=True,
+                    Forward=True,
+                    Wrap=0,  # wdFindStop
+                ):
+                    sel.Text = replace_text
+                    sel.Collapse(Direction=0)  # wdCollapseEnd
+
+            # Address replacements (positional, 2 occurrences)
+            # The RTF has the full address in a single text run per shareholder
+            tpl_addr_full = 'ROOM 405 TUNG NING BUILDING, 249-253 DES VOEUX ROAD CENTRAL, SHEUNG WAN, HONG KONG'
+            for i in range(min(2, len(shareholders))):
+                sh = shareholders[i]
+                if not sh['addr']:
+                    continue
+                # Find the (i+1)th occurrence of the full address line
+                sel.HomeKey(Unit=6)  # wdStory
+                for occ in range(i + 1):
+                    found = sel.Find.Execute(
+                        FindText=tpl_addr_full,
+                        MatchCase=True,
+                        Forward=True,
+                        Wrap=0,
+                    )
+                    if not found:
+                        break
+                    if occ < i:
+                        sel.Collapse(Direction=0)  # wdCollapseEnd — move past this occurrence
+                if not found:
+                    continue
+                sel.Text = str(sh['addr'] or '')[:100]
+                sel.Collapse(Direction=0)
+
+            # For any remaining template address occurrences (if <2 shareholders), clear them
+            # by replacing with empty string
+            for _ in range(2 - len(shareholders)):
+                sel.HomeKey(Unit=6)
+                found = sel.Find.Execute(
+                    FindText=tpl_addr_full,
+                    MatchCase=True,
+                    Forward=True,
+                    Wrap=0,
+                )
+                if not found:
+                    break
+                sel.Text = ''
+
+            # Share class / Security description (positional, 2 occurrences)
+            tpl_security = 'ORD - HK$1.00 ORDINARY FULLY PAID (HK$)'
+            for i in range(min(2, len(shareholders))):
+                sh = shareholders[i]
+                if not sh['share_class'] or sh['share_class'] == tpl_security:
+                    continue
+                sel.HomeKey(Unit=6)
+                for occ in range(i + 1):
+                    found = sel.Find.Execute(
+                        FindText=tpl_security,
+                        MatchCase=True,
+                        Forward=True,
+                        Wrap=0,
+                    )
+                    if not found:
+                        break
+                    if occ < i:
+                        sel.Collapse(Direction=0)
+                if not found:
+                    continue
+                sel.Text = str(sh['share_class'] or '')[:100]
+                sel.Collapse(Direction=0)
+
+            # ── Data row values replacement ──
+            # For each shareholder, navigate to the "Date Entered" grey header
+            # then sequentially replace template data values going forward.
+            # RTF text stream order after "Date Entered":
+            #   Units(10,000) → Date(08/04/2022) → Par(HK$1.00) →
+            #   PaidUp(HK$1.00) → Balance(10,000) → …(10,000) last
+            #
+            # IMPORTANT: (10,000) comes AFTER the primary data row in the
+            # RTF stream, so it must be replaced LAST.  Searching it first
+            # would skip past the data row and miss the correct values.
+            #
+            # Par/PaidUp use a compact currency format to prevent text
+            # overflow into the adjacent Certificate column (only 3pt gap).
+
+            # Compact currency prefix to keep Par/PaidUp values ≤7 chars
+            _CURRENCY_COMPACT = {
+                'HKD': 'HK$', 'USD': 'US$', 'CNY': '\xa5', 'RMB': '\xa5',
+                'GBP': '\xa3', 'EUR': '€', 'JPY': '\xa5',
+                'AUD': 'A$', 'SGD': 'S$', 'CAD': 'C$', 'TWD': 'NT$',
+            }
+
+            for i, sh in enumerate(shareholders):
+                if i >= 2:  # RTF template only supports 2 shareholders
+                    break
+                sh_shares = sh.get('shares_held', 0)
+                sh_date_app = sh.get('date_app', '-')
+                sh_currency = sh.get('currency', 'HKD')
+                sh_price = sh.get('issue_price', '1.00')
+                # Compact format: ~7 chars max to avoid Cert column overflow
+                ccy = _CURRENCY_COMPACT.get(
+                    sh_currency.upper(),
+                    sh_currency[:2] + '$' if len(sh_currency) >= 2 else sh_currency + '$'
+                )
+                par_str = f"{ccy}{sh_price}"
+
+                # Navigate to the (i+1)th "Date Entered" grey header
+                sel.HomeKey(Unit=6)  # wdStory
+                for occ in range(i + 1):
+                    found = sel.Find.Execute(
+                        FindText="Date Entered",
+                        MatchCase=True,
+                        Forward=True,
+                        Wrap=0,
+                    )
+                    if not found:
+                        break
+                    if occ < i:
+                        sel.Collapse(Direction=0)  # wdCollapseEnd
+                if not found:
+                    continue
+
+                # Collapse past the header text — now we're in this
+                # shareholder's data row area
+                sel.Collapse(Direction=0)  # wdCollapseEnd
+
+                # Steps 1-5: Primary data row (Subscription / Allotment)
+                # 1. Units: first 10,000 after header
+                if sel.Find.Execute(FindText="10,000", Forward=True, Wrap=0):
+                    sel.Text = f"{sh_shares:,}"
+                    sel.Collapse(Direction=0)
+
+                # 2. Date Entered value: 08/04/2022
+                if sel.Find.Execute(FindText="08/04/2022", Forward=True, Wrap=0):
+                    sel.Text = str(sh_date_app)
+                    sel.Collapse(Direction=0)
+
+                # 3. Par Value: first HK$1.00
+                if sel.Find.Execute(FindText="HK$1.00", Forward=True, Wrap=0):
+                    sel.Text = par_str
+                    sel.Collapse(Direction=0)
+
+                # 4. Paid Up Value: second HK$1.00
+                if sel.Find.Execute(FindText="HK$1.00", Forward=True, Wrap=0):
+                    sel.Text = par_str
+                    sel.Collapse(Direction=0)
+
+                # 5. Balance: second 10,000 after header
+                if sel.Find.Execute(FindText="10,000", Forward=True, Wrap=0):
+                    sel.Text = f"{sh_shares:,}"
+                    sel.Collapse(Direction=0)
+
+                # 6-7. Row 2 (Transfer In) — only for the last shareholder.
+                # Must run BEFORE the (10,000) search, which can reposition
+                # the selection on failure and break subsequent finds.
+                # Template SH2 Row 2: Units=10,000, Balance=20,000
+                if i == len(shareholders) - 1:
+                    if sel.Find.Execute(FindText="10,000", Forward=True, Wrap=0):
+                        sel.Text = f"{sh_shares:,}"
+                        sel.Collapse(Direction=0)
+
+                    if sel.Find.Execute(FindText="20,000", Forward=True, Wrap=0):
+                        sel.Text = f"{sh_shares:,}"
+                        sel.Collapse(Direction=0)
+
+                # 8. Distinctive Numbers: (10,000) — LAST, after all data rows
+                if sel.Find.Execute(FindText="(10,000)", Forward=True, Wrap=0):
+                    sel.Text = f"({sh_shares:,})"
+                    sel.Collapse(Direction=0)
+
+            # ── Backwards cleanup: catch any unreplaced template values ──
+            # Forward Find can be unreliable with RTF positioned text boxes
+            # (failed searches may reposition the cursor).  Searching
+            # backwards from the end of the document guarantees we only
+            # find template values that were missed by the forward pass.
+            last_shares = (
+                shareholders[-1].get('shares_held', 0) if shareholders
+                else 0
+            )
+            # Replace any remaining 20,000 (SH2 Row 2 Balance)
+            sel.EndKey(Unit=6)  # wdStory — go to end
+            while sel.Find.Execute(
+                FindText="20,000", Forward=False, Wrap=0
+            ):
+                sel.Text = f"{last_shares:,}"
+                sel.Collapse(Direction=1)  # wdCollapseStart
+
+            # Replace any remaining 10,000 (unreplaced Row 2 Units etc.)
+            sel.EndKey(Unit=6)  # wdStory — go to end
+            while sel.Find.Execute(
+                FindText="10,000", Forward=False, Wrap=0
+            ):
+                sel.Text = f"{last_shares:,}"
+                sel.Collapse(Direction=1)  # wdCollapseStart
+
+            # Save as PDF
+            tmp_pdf_out = tempfile.mktemp(suffix='.pdf')
+            doc.SaveAs2(tmp_pdf_out, FileFormat=17)
+            doc.Close(False)
+
+            with open(tmp_pdf_out, 'rb') as f:
+                pdf_bytes = f.read()
+            return pdf_bytes
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            print(f"[RTF ROM→PDF] Word COM error: {e}")
+            return None
+        finally:
+            if word:
+                try:
+                    word.Quit()
+                except:
+                    pass
+            if tmp_pdf_out and os.path.exists(tmp_pdf_out):
+                try:
+                    os.unlink(tmp_pdf_out)
+                except:
+                    pass
+            if os.path.exists(tmp_rtf):
+                try:
+                    os.unlink(tmp_rtf)
+                except:
+                    pass
+            pythoncom.CoUninitialize()
+
+
+# Register DOCX generators (ROM + ROD)
+# Build properly-structured Word documents with tables matching Paul Tang RTF format,
+# then convert to PDF via Word COM.  Uses python-docx for native Word table support
+# so any number of shareholders / officers is handled naturally.
+# ─────────────────────────────────────────────
+
+def _build_rom_register_docx(db, company_id):
+    """Generate ROM (Register of Members) as a .docx matching Paul Tang RTF format.
+
+    RTF reference: 秘书系统文件/rod rom/Testing ROM.rtf
+    Layout (Landscape A4):
+      - Page border + company name (blue bold) + Company Number + Quorum
+      - "REGISTER OF MEMBERS AT <date>" right-aligned
+      - Per-shareholder block:
+        * Name (label) + full name with HKID/passport
+        * Address (label) + full address
+        * Separator lines
+        * Security (label) + share class description + Date / Date Ceased
+        * Grey-header transaction sub-table (10 cols)
+
+    Returns path to temp .docx file, or None on failure.
+    """
+    if not _HAS_DOCX:
+        return None
+
+    company = db.execute("SELECT * FROM companies WHERE id = ?", (company_id,)).fetchone()
+    if not company:
+        return None
+
+    roles = db.execute(
+        "SELECT * FROM person_company_roles WHERE company_id = ? AND role = 'shareholder'",
+        (company_id,)).fetchall()
+    txs = db.execute(
+        "SELECT * FROM share_transactions WHERE company_id = ? ORDER BY transaction_date",
+        (company_id,)).fetchall()
+
+    person_ids = [r['person_id'] for r in roles]
+    person_map = {}
+    if person_ids:
+        placeholders = ','.join(['?'] * len(person_ids))
+        persons = db.execute(
+            f"SELECT * FROM persons WHERE id IN ({placeholders})", person_ids).fetchall()
+        person_map = {p['id']: p for p in persons}
+
+    co_name = rget(company, 'name') or ''
+    co_br = rget(company, 'company_number') or ''
+    today_str = datetime.now().strftime('%d %B %Y')
+
+    # ── Constants matching RTF reference ──
+    BLUE = '003399'         # ~RTF cf1 blue for headers
+    GREY = 'E3E3E3'         # RGB(227,227,227) table header background
+    FONT_EA = 'DengXian'    # East-Asian fallback for CJK text
+    LABEL_SIZE = Pt(9)
+    BODY_SIZE = Pt(9)
+    HEADER_SIZE = Pt(12)
+    TITLE_SIZE = Pt(13)
+
+    # ── Helpers ──
+    def _set_run(run, name='Arial', size=BODY_SIZE, bold=False, color=None):
+        """Set font on a run with proper East-Asian fallback."""
+        run.font.name = name
+        run.font.size = size
+        run.bold = bold
+        if color:
+            r, g, b = int(color[0:2], 16), int(color[2:4], 16), int(color[4:6], 16)
+            run.font.color.rgb = RGBColor(r, g, b)
+        # Set East-Asian font for CJK characters
+        rPr = run._element.get_or_add_rPr()
+        rFonts = rPr.find(qn('w:rFonts'))
+        if rFonts is None:
+            rFonts = OxmlElement('w:rFonts')
+            rPr.insert(0, rFonts)
+        rFonts.set(qn('w:eastAsia'), FONT_EA)
+
+    def _add_run(para, text, bold=False, size=BODY_SIZE, align=None, color=None):
+        """Add a run to a paragraph with consistent formatting."""
+        if align:
+            para.alignment = {'left': 0, 'center': 1, 'right': 2}.get(align, 0)
+        run = para.add_run(str(text or ''))
+        _set_run(run, size=size, bold=bold, color=color)
+        return run
+
+    def _add_para(doc, text, bold=False, size=BODY_SIZE, align='left', color=None,
+                  space_before=0, space_after=0):
+        """Add a paragraph with one run."""
+        para = doc.add_paragraph()
+        para.paragraph_format.space_before = Pt(space_before)
+        para.paragraph_format.space_after = Pt(space_after)
+        _add_run(para, text, bold=bold, size=size, align=align, color=color)
+        return para
+
+    def _set_cell_bg(cell, hex_color):
+        """Set cell background shading."""
+        tcPr = cell._element.get_or_add_tcPr()
+        shading = OxmlElement('w:shd')
+        shading.set(qn('w:fill'), hex_color)
+        shading.set(qn('w:val'), 'clear')
+        tcPr.insert(0, shading)
+
+    def _add_horizontal_line(doc, width_pt=1.5):
+        """Add a thin horizontal line paragraph (bottom border on empty para)."""
+        para = doc.add_paragraph()
+        para.paragraph_format.space_before = Pt(1)
+        para.paragraph_format.space_after = Pt(1)
+        pPr = para._element.get_or_add_pPr()
+        pBdr = pPr.find(qn('w:pBdr'))
+        if pBdr is None:
+            pBdr = OxmlElement('w:pBdr')
+            pPr.append(pBdr)
+        bottom = pBdr.find(qn('w:bottom'))
+        if bottom is None:
+            bottom = OxmlElement('w:bottom')
+            pBdr.append(bottom)
+        bottom.set(qn('w:val'), 'single')
+        bottom.set(qn('w:sz'), str(int(width_pt * 8)))  # eighths of a point
+        bottom.set(qn('w:space'), '1')
+        bottom.set(qn('w:color'), '000000')
+        return para
+
+    try:
+        from docx.oxml import OxmlElement
+        from docx.shared import RGBColor
+
+        doc = DocxDocument()
+
+        # ── Page setup: Landscape A4 ──
+        section = doc.sections[0]
+        section.page_width = Cm(29.7)
+        section.page_height = Cm(21.0)
+        section.top_margin = Cm(1.0)
+        section.bottom_margin = Cm(0.8)
+        section.left_margin = Cm(1.0)
+        section.right_margin = Cm(1.0)
+
+        # ── Page border (thin black, matching RTF reference) ──
+        sectPr = section._sectPr
+        pgBorders = OxmlElement('w:pgBorders')
+        pgBorders.set(qn('w:offsetFrom'), 'page')
+        for edge in ['top', 'left', 'bottom', 'right']:
+            b = OxmlElement(f'w:{edge}')
+            b.set(qn('w:val'), 'single')
+            b.set(qn('w:sz'), '4')
+            b.set(qn('w:space'), '24')
+            b.set(qn('w:color'), '000000')
+            pgBorders.append(b)
+        sectPr.append(pgBorders)
+
+        # Default style
+        style = doc.styles['Normal']
+        style.font.name = 'Arial'
+        style.font.size = BODY_SIZE
+        style.paragraph_format.space_before = Pt(0)
+        style.paragraph_format.space_after = Pt(0)
+        # Set East-Asian font on Normal style
+        rPr = style.element.get_or_add_rPr()
+        rFonts = rPr.find(qn('w:rFonts'))
+        if rFonts is None:
+            rFonts = OxmlElement('w:rFonts')
+            rPr.insert(0, rFonts)
+        rFonts.set(qn('w:eastAsia'), FONT_EA)
+
+        # ── Header block ──
+        # Company name (blue, bold, left)
+        _add_para(doc, co_name, bold=True, size=HEADER_SIZE, color=BLUE, space_after=2)
+
+        # Company Number + Quorum (blue) — Quorum on the right
+        hdr_table = doc.add_table(rows=1, cols=2)
+        hdr_table.autofit = True
+        c_br = hdr_table.rows[0].cells[0]
+        c_br.text = ''
+        _add_run(c_br.paragraphs[0], f"Company Number: {co_br}", bold=True, size=BODY_SIZE, color=BLUE)
+        c_q = hdr_table.rows[0].cells[1]
+        c_q.text = ''
+        _add_run(c_q.paragraphs[0], "Quorum:  1", size=Pt(8), color=BLUE, align='right')
+        # Remove table borders
+        for cell in hdr_table.rows[0].cells:
+            tcPr = cell._element.get_or_add_tcPr()
+            tcBorders = OxmlElement('w:tcBorders')
+            for edge in ['top', 'left', 'bottom', 'right']:
+                b = OxmlElement(f'w:{edge}')
+                b.set(qn('w:val'), 'none')
+                b.set(qn('w:sz'), '0')
+                b.set(qn('w:space'), '0')
+                b.set(qn('w:color'), 'auto')
+                tcBorders.append(b)
+            tcPr.append(tcBorders)
+
+        # Title: REGISTER OF MEMBERS AT <date> (blue, bold, right-aligned)
+        _add_para(doc, f"REGISTER OF MEMBERS AT {today_str}",
+                  bold=True, size=TITLE_SIZE, color=BLUE, align='right', space_before=6)
+
+        # Thick separator line
+        _add_horizontal_line(doc, width_pt=1.5)
+        _add_para(doc, '', size=Pt(2), space_after=0)  # tiny spacer
+
+        # ── Per-shareholder blocks ──
+        for role in roles:
+            p = person_map.get(role['person_id'], {})
+            name_en = (rget(p, 'name_english') or rget(p, 'name_chinese') or '(unnamed)')[:80]
+            name_zh = (rget(p, 'name_chinese') or '')[:40]
+            # Address: use structured fields with fallback to address column
+            addr, region = _get_person_address(db, p['id'])
+            if not addr:
+                addr = (rget(p, 'address') or '')[:100]
+            if region and region not in (addr or ''):
+                addr = f"{addr}, {region}".strip(', ')
+            addr = (addr or '')[:100]
+            id_type = rget(p, 'id_type') or 'HKID'
+            id_no = rget(p, 'id_number') or ''
+            date_app = rget(role, 'date_appointed') or '-'
+            date_cea = rget(role, 'date_ceased') or '-'
+            shares_held = rget(role, 'shares') or 0
+            cert_no = rget(role, 'certificate_number') or '-'
+            currency = rget(role, 'currency') or 'HKD'
+            issue_price = rget(role, 'issue_price') or '1.00'
+            # Build share class description
+            share_class = f"ORD - {currency}${issue_price} ORDINARY FULLY PAID ({currency})"
+
+            # Build ID string
+            if id_no:
+                id_str = f"({id_type} No: {id_no})"
+            else:
+                id_str = ''
+
+            # Full shareholder name line
+            full_name_line = f"{name_en} {id_str}".strip()
+            if name_zh:
+                full_name_line = f"{name_en} {name_zh} {id_str}".strip()
+
+            # --- Name row ---
+            name_table = doc.add_table(rows=1, cols=2)
+            name_table.autofit = True
+            nl = name_table.rows[0].cells[0]
+            nl.width = Cm(1.5)
+            nl.text = ''
+            _add_run(nl.paragraphs[0], 'Name', bold=True, size=LABEL_SIZE, color=BLUE)
+            nr = name_table.rows[0].cells[1]
+            nr.text = ''
+            _add_run(nr.paragraphs[0], full_name_line, bold=True, size=LABEL_SIZE, color=BLUE)
+            # Remove borders
+            for cell in name_table.rows[0].cells:
+                tcPr = cell._element.get_or_add_tcPr()
+                tcBorders = OxmlElement('w:tcBorders')
+                for edge in ['top', 'left', 'bottom', 'right']:
+                    b = OxmlElement(f'w:{edge}')
+                    b.set(qn('w:val'), 'none')
+                    b.set(qn('w:sz'), '0')
+                    b.set(qn('w:space'), '0')
+                    b.set(qn('w:color'), 'auto')
+                    tcBorders.append(b)
+                tcPr.append(tcBorders)
+
+            # --- Address row ---
+            addr_table = doc.add_table(rows=1, cols=2)
+            addr_table.autofit = True
+            al = addr_table.rows[0].cells[0]
+            al.width = Cm(1.5)
+            al.text = ''
+            _add_run(al.paragraphs[0], 'Address', size=LABEL_SIZE, color=BLUE)
+            ar = addr_table.rows[0].cells[1]
+            ar.text = ''
+            _add_run(ar.paragraphs[0], addr, size=LABEL_SIZE, color=BLUE)
+            for cell in addr_table.rows[0].cells:
+                tcPr = cell._element.get_or_add_tcPr()
+                tcBorders = OxmlElement('w:tcBorders')
+                for edge in ['top', 'left', 'bottom', 'right']:
+                    b = OxmlElement(f'w:{edge}')
+                    b.set(qn('w:val'), 'none')
+                    b.set(qn('w:sz'), '0')
+                    b.set(qn('w:space'), '0')
+                    b.set(qn('w:color'), 'auto')
+                    tcBorders.append(b)
+                tcPr.append(tcBorders)
+
+            # Separator (thick + thin)
+            _add_horizontal_line(doc, width_pt=1.0)
+            _add_para(doc, '', size=Pt(2), space_after=0)
+
+            # --- Security row ---
+            sec_table = doc.add_table(rows=1, cols=4)
+            sec_table.autofit = True
+            sl = sec_table.rows[0].cells[0]
+            sl.width = Cm(1.5)
+            sl.text = ''
+            _add_run(sl.paragraphs[0], 'Security', bold=True, size=LABEL_SIZE, color=BLUE)
+            sd = sec_table.rows[0].cells[1]
+            sd.width = Cm(10)
+            sd.text = ''
+            _add_run(sd.paragraphs[0], share_class, bold=True, size=LABEL_SIZE, color=BLUE)
+            sdt = sec_table.rows[0].cells[2]
+            sdt.width = Cm(1.2)
+            sdt.text = ''
+            _add_run(sdt.paragraphs[0], 'Date', bold=True, size=LABEL_SIZE, color=BLUE, align='right')
+            sdv = sec_table.rows[0].cells[3]
+            sdv.width = Cm(2)
+            sdv.text = ''
+            _add_run(sdv.paragraphs[0], str(date_app), size=LABEL_SIZE, color=BLUE)
+            # Date Ceased
+            row2 = sec_table.add_row()
+            sc = row2.cells[2]
+            sc.text = ''
+            _add_run(sc.paragraphs[0], 'Date Ceased', bold=True, size=LABEL_SIZE, color=BLUE, align='right')
+            scv = row2.cells[3]
+            scv.text = ''
+            if date_cea and date_cea != '-':
+                _add_run(scv.paragraphs[0], str(date_cea), size=LABEL_SIZE, color=BLUE)
+            for row in sec_table.rows:
+                for cell in row.cells:
+                    tcPr = cell._element.get_or_add_tcPr()
+                    tcBorders = OxmlElement('w:tcBorders')
+                    for edge in ['top', 'left', 'bottom', 'right']:
+                        b = OxmlElement(f'w:{edge}')
+                        b.set(qn('w:val'), 'none')
+                        b.set(qn('w:sz'), '0')
+                        b.set(qn('w:space'), '0')
+                        b.set(qn('w:color'), 'auto')
+                        tcBorders.append(b)
+                    tcPr.append(tcBorders)
+
+            # ── Transaction sub-table (grey header, 10 cols) ──
+            person_name_key = name_en.strip().upper()
+            person_txs = [t for t in txs
+                          if (rget(t, 'from_name') or rget(t, 'to_name') or '').strip().upper() == person_name_key]
+
+            # Always show initial subscription row + transaction rows
+            total_data_rows = 1 + len(person_txs)
+            tx_table = doc.add_table(rows=2 + total_data_rows, cols=9)
+            tx_table.style = 'Table Grid'
+            tx_table.alignment = WD_TABLE_ALIGNMENT.CENTER
+            tx_table.autofit = True
+
+            # Column widths (approximate, matching RTF proportions)
+            col_widths = [Cm(2.0), Cm(1.8), Cm(1.5), Cm(2.0), Cm(2.0),
+                          Cm(1.5), Cm(1.5), Cm(3.0), Cm(2.5)]
+            for ci, w in enumerate(col_widths):
+                for row in tx_table.rows:
+                    row.cells[ci].width = w
+
+            # Grey header row 1
+            hdr_texts = [
+                "Date Entered\n/ Ceased",
+                "Transaction\nType",
+                "Units",
+                "Par Value",
+                "Paid Up Value",
+                "Certificate\nNo",
+                "Balance",
+                "Transferred To/From,\nRedeemed, Reissued",
+                "Distinctive\nNumbers",
+            ]
+            for ci, txt in enumerate(hdr_texts):
+                cell = tx_table.rows[0].cells[ci]
+                cell.text = ''
+                _add_run(cell.paragraphs[0], txt, bold=True, size=Pt(7))
+                _set_cell_bg(cell, GREY)
+
+            # Grey header row 2 (sub-labels: Per Share under Par Value / Paid Up Value)
+            sub_labels = {3: "Per Share", 4: "Per Share"}
+            for ci, txt in sub_labels.items():
+                cell = tx_table.rows[1].cells[ci]
+                cell.text = ''
+                _add_run(cell.paragraphs[0], txt, bold=True, size=Pt(7))
+                _set_cell_bg(cell, GREY)
+            # Fill remaining grey cells in row 2
+            for ci in range(9):
+                if ci not in sub_labels:
+                    _set_cell_bg(tx_table.rows[1].cells[ci], GREY)
+
+            # ── Row 1: Initial subscription/allotment ──
+            initial_balance = int(shares_held) if shares_held else 0
+            initial_data = [
+                date_app,
+                'Subscription' if initial_balance > 0 else '-',
+                str(initial_balance) if initial_balance > 0 else '-',
+                f"{currency}${issue_price}" if initial_balance > 0 else '-',
+                f"{currency}${issue_price}" if initial_balance > 0 else '-',
+                str(cert_no),
+                str(initial_balance),
+                '', '']
+            for ci, val in enumerate(initial_data):
+                cell = tx_table.rows[2].cells[ci]
+                cell.text = ''
+                _add_run(cell.paragraphs[0], str(val)[:50], size=Pt(7))
+
+            # ── Subsequent rows: transactions ──
+            balance = initial_balance
+            for ti, tx in enumerate(person_txs):
+                tx_shares = int(rget(tx, 'shares') or 0)
+                tx_date = rget(tx, 'transaction_date') or '-'
+                tx_inst = rget(tx, 'instrument_number') or '-'
+                tx_cert = rget(tx, 'certificate_number') or cert_no
+                tx_price = rget(tx, 'price_per_share') or issue_price
+                tx_currency = rget(tx, 'currency') or currency
+
+                is_in = (rget(tx, 'to_name') or '').strip().upper() == person_name_key
+                is_out = (rget(tx, 'from_name') or '').strip().upper() == person_name_key
+                if is_in:
+                    balance += tx_shares
+                    tx_type = 'Transfer In'
+                    counterparty = rget(tx, 'from_name') or ''
+                elif is_out:
+                    balance -= tx_shares
+                    tx_type = 'Transfer Out'
+                    counterparty = rget(tx, 'to_name') or ''
+                else:
+                    balance += tx_shares
+                    tx_type = 'Allotment'
+                    counterparty = ''
+
+                row_data = [
+                    tx_date,
+                    tx_type,
+                    str(tx_shares),
+                    f"{tx_currency}${tx_price}",
+                    f"{tx_currency}${tx_price}",
+                    str(tx_cert),
+                    str(balance),
+                    counterparty,
+                    tx_inst,
+                ]
+                data_row_idx = 3 + ti  # after header rows (0,1) + initial row (2)
+                for ci, val in enumerate(row_data):
+                    cell = tx_table.rows[data_row_idx].cells[ci]
+                    cell.text = ''
+                    _add_run(cell.paragraphs[0], str(val)[:50], size=Pt(7))
+
+            # Spacer between shareholders
+            _add_para(doc, '', size=Pt(4), space_after=0)
+
+        # ── Footer: page number ──
+        _add_para(doc, '', size=Pt(6), space_before=12)
+        _add_para(doc, '- 1 -', size=Pt(8), align='center')
+
+        # ── Save ──
+        tmp_docx = tempfile.mktemp(suffix='.docx')
+        doc.save(tmp_docx)
+        return tmp_docx
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"[ROM DOCX] Error: {e}")
+        return None
+
+
+def _build_rod_register_docx(db, company_id):
+    """Generate ROD (Register of Officers) as a .docx with Word tables.
+
+    Matches the Paul Tang RTF reference format:
+      - Portrait A4, 6-column table
+      - Directors rendered first, then Secretaries
+      - Columns: Name/Address | DOB/Place/Occupation | ID/Passport |
+                 Position | Date Appointed | Reason/Date Ceased
+
+    Returns path to temp .docx file, or None on failure.
+    """
+    if not _HAS_DOCX:
+        return None
+
+    company = db.execute("SELECT * FROM companies WHERE id = ?", (company_id,)).fetchone()
+    if not company:
+        return None
+
+    roles = db.execute(
+        "SELECT * FROM person_company_roles WHERE company_id = ? AND role IN ('director', 'secretary')",
+        (company_id,)).fetchall()
+    person_ids = [r['person_id'] for r in roles]
+    person_map = {}
+    if person_ids:
+        placeholders = ','.join(['?'] * len(person_ids))
+        persons = db.execute(
+            f"SELECT * FROM persons WHERE id IN ({placeholders})", person_ids).fetchall()
+        person_map = {p['id']: p for p in persons}
+
+    directors = [r for r in roles if r['role'] == 'director']
+    secretaries = [r for r in roles if r['role'] == 'secretary']
+
+    co_name = rget(company, 'name') or ''
+    co_br = rget(company, 'company_number') or ''
+    today_str = datetime.now().strftime('%d %B %Y')
+    quorum = len(directors) if directors else None
+
+    # ── Helpers (same as ROM) ──
+    def _set_run(run, name='Times New Roman', size=Pt(9), bold=False):
+        run.font.name = name
+        run.font.size = size
+        run.bold = bold
+
+    def _cell(cell, text, bold=False, size=Pt(7), align='left'):
+        cell.text = ''
+        para = cell.paragraphs[0]
+        para.alignment = {'left': 0, 'center': 1, 'right': 2}.get(align, 0)
+        para.paragraph_format.space_before = Pt(1)
+        para.paragraph_format.space_after = Pt(1)
+        run = para.add_run(str(text or '')[:120])
+        _set_run(run, size=size, bold=bold)
+
+    def _para_run(para, text, bold=False, size=Pt(9), align='left'):
+        para.alignment = {'left': 0, 'center': 1, 'right': 2}.get(align, 0)
+        run = para.add_run(str(text or ''))
+        _set_run(run, size=size, bold=bold)
+
+    try:
+        doc = DocxDocument()
+        section = doc.sections[0]
+        section.page_width = Cm(21.0)
+        section.page_height = Cm(29.7)
+        section.top_margin = Cm(1.2)
+        section.bottom_margin = Cm(1.0)
+        section.left_margin = Cm(1.2)
+        section.right_margin = Cm(1.2)
+
+        style = doc.styles['Normal']
+        style.font.name = 'Times New Roman'
+        style.font.size = Pt(9)
+        style.paragraph_format.space_before = Pt(0)
+        style.paragraph_format.space_after = Pt(0)
+
+        # ── Header ──
+        header_table = doc.add_table(rows=1, cols=2)
+        header_table.autofit = True
+
+        c_left = header_table.rows[0].cells[0]
+        c_left.text = ''
+        p = c_left.paragraphs[0]
+        _para_run(p, co_name, bold=True, size=Pt(12))
+        p2 = c_left.add_paragraph()
+        _para_run(p2, f"Company Number: {co_br}", size=Pt(9))
+        if quorum:
+            p3 = c_left.add_paragraph()
+            _para_run(p3, f"Quorum: {quorum}", size=Pt(9))
+
+        c_right = header_table.rows[0].cells[1]
+        c_right.text = ''
+        pr = c_right.paragraphs[0]
+        _para_run(pr, "REGISTER OF OFFICERS", bold=True, size=Pt(13), align='right')
+
+        c_left.width = Cm(10)
+        c_right.width = Cm(6)
+
+        date_para = doc.add_paragraph()
+        _para_run(date_para, f"AT {today_str}", bold=True, size=Pt(9), align='right')
+
+        doc.add_paragraph()
+
+        # ── 6-column table ──
+        col_headers = [
+            "Name / Service /\nResidential Address",
+            "Date / Place Birth /\nPlace Incorporated /\nOccupation /",
+            "ID No / Passport\nDetails",
+            "Position",
+            "Date(s) Appointed\n/Meeting",
+            "Reason / Date(s)\nCeased",
+        ]
+
+        total_rows = 1 + len(directors) + len(secretaries)  # header + data
+        total_rows = max(total_rows, 3)
+        table = doc.add_table(rows=total_rows, cols=6)
+        table.style = 'Table Grid'
+        table.alignment = WD_TABLE_ALIGNMENT.CENTER
+
+        # Header row
+        for ci, label in enumerate(col_headers):
+            _cell(table.rows[0].cells[ci], label, bold=True, size=Pt(7), align='center')
+
+        # ── Data rows ──
+        data_row = 1
+
+        def _render_section(items, is_secretary=False):
+            nonlocal data_row
+            for role in items:
+                p = person_map.get(role['person_id'], {})
+                name_en = rget(p, 'name_english') or rget(p, 'name_chinese') or '(unnamed)'
+                name_ch = rget(p, 'name_chinese') if rget(p, 'name_english') else ''
+                is_nat = rget(p, 'identity') != 'corporate'
+
+                # Name / Address block
+                addr = (rget(p, 'address') or '') if is_nat else (rget(p, 'registered_office') or rget(p, 'address') or '')
+                name_block = name_en
+                if name_ch:
+                    name_block += f"\n{name_ch}"
+                if addr:
+                    name_block += f"\n{addr[:120]}"
+
+                # DOB / Place / Nation / Occupation
+                if is_nat:
+                    dob = rget(p, 'date_of_birth') or '-'
+                    pob = rget(p, 'place_of_birth') or '-'
+                    nat = rget(p, 'nationality') or '-'
+                    occupation = rget(p, 'occupation') or '-'
+                    dob_block = f"{dob}\n{pob}\n{nat}\n{occupation}"
+                else:
+                    poi = rget(p, 'place_incorporated') or '-'
+                    dob_block = f"{poi}\n-\n-\n-"
+
+                # ID block
+                id_info = (rget(p, 'id_number') or rget(p, 'passport_number') or '-') if is_nat else (rget(p, 'company_number_ref') or '-')
+
+                # Position
+                if is_secretary:
+                    position = "Secretary"
+                else:
+                    position = "Reserve Director" if rget(role, 'is_reserve') else "Director"
+
+                # Date Appointed
+                date_app = rget(role, 'date_appointed') or '-'
+
+                # Date Ceased / Reason
+                date_cea = rget(role, 'date_ceased')
+                if date_cea:
+                    reason_block = f"Resigned\n{date_cea}"
+                else:
+                    reason_block = "Current\n現任"
+
+                row_data = [name_block, dob_block, id_info, position, date_app, reason_block]
+                for ci, val in enumerate(row_data):
+                    _cell(table.rows[data_row].cells[ci], val, size=Pt(7))
+                data_row += 1
+
+        # Directors first
+        if directors:
+            _render_section(directors)
+        else:
+            _cell(table.rows[data_row].cells[0], "(No directors / 尚無董事記錄)", size=Pt(8))
+            for ci in range(1, 6):
+                _cell(table.rows[data_row].cells[ci], '', size=Pt(7))
+            data_row += 1
+
+        # Secretaries below
+        if secretaries:
+            _render_section(secretaries, is_secretary=True)
+
+        # ── Save ──
+        tmp_docx = tempfile.mktemp(suffix='.docx')
+        doc.save(tmp_docx)
+        return tmp_docx
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"[ROD DOCX] Error: {e}")
+        return None
 
 
 # ─── DOCX Document Generation (功能說明書 7.1) ───

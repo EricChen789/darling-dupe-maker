@@ -6,6 +6,7 @@ export const DOCX_DOC_TYPES: { key: string; label: string; description: string; 
   { key: 'company_profile', label: '公司資料摘要', description: '公司基本資料 + 董事 / 秘書 / 股東 / 股本結構總覽' },
   { key: 'directors_register', label: '董事名冊', description: '依《公司條例》第641條 — 董事姓名、證件、委任日期、住址' },
   { key: 'members_register', label: '成員（股東）名冊', description: '依《公司條例》第627條 — 股東持股、類別、佔比' },
+  { key: 'scr_register', label: '重要控制人登記冊 (SCR)', description: 'Paul Tang 格式 — 7 列表格，重要控制人姓名、證件、控制性質、日期' },
   { key: 'board_resolution', label: '董事會書面決議', description: '書面決議範本，自動帶入公司抬頭與董事簽署欄', needsContent: true },
   { key: 'meeting_minutes', label: '董事會會議記錄', description: '會議記錄範本，自動帶入出席董事、主席與議決事項', needsContent: true },
 ];

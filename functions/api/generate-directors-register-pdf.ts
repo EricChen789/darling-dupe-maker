@@ -269,28 +269,20 @@ export async function onRequest(context: { request: Request; env: Env }) {
 
     y = drawTableHeaderRow(page, f, rodCols, y);
 
-    let rowNum = 0;
-
     const renderSection = (items: any[], isSecretary: boolean) => {
       for (const r of items) {
         const p = personMap.get(r.person_id) || {};
         const nameEn = p.name_english || p.name_chinese || "(unnamed)";
-        const nameCh = p.name_english ? (p.name_chinese || "") : "";
         const isNat = (p.identity || "natural") === "natural";
 
-        // Name/Address block
-        const addr = isNat ? (p.address || "") : (p.registered_office || p.address || "");
-        let nameBlock = nameEn;
-        if (nameCh) nameBlock += "\n" + nameCh;
-        if (addr) nameBlock += "\n" + addr.slice(0, 80);
+        // Name/Address block — keep it short to save CPU
+        const addr = (isNat ? (p.address || "") : (p.registered_office || p.address || "")).slice(0, 50);
+        const nameBlock = addr ? `${nameEn}\n${addr}` : nameEn;
 
-        // DOB/Place/Nation block
-        let dobBlock: string;
-        if (isNat) {
-          dobBlock = `${p.date_of_birth || "-"}\n${p.place_of_birth || "-"}\n${p.nationality || "-"}`;
-        } else {
-          dobBlock = `${p.place_incorporated || "-"}\n-\n-`;
-        }
+        // DOB/Place/Nation block — single line for corporate
+        const dobBlock = isNat
+          ? `${p.date_of_birth || "-"}  ${p.place_of_birth || "-"}\n${p.nationality || "-"}`
+          : `${p.place_incorporated || "-"} (Corporate)`;
 
         // ID block
         const idInfo = isNat
@@ -304,10 +296,7 @@ export async function onRequest(context: { request: Request; env: Env }) {
         const dateApp = r.date_appointed || "-";
 
         // Date Ceased / Reason
-        const dateCea = r.date_ceased;
-        const reasonBlock = dateCea ? `Resigned\n${dateCea}` : "Current\n現任";
-
-        rowNum++;
+        const reasonBlock = r.date_ceased ? `Resigned\n${r.date_ceased}` : "Current";
 
         // Page break check
         if (y - 50 < 50) {

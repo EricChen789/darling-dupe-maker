@@ -8,7 +8,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { ArrowLeft, ArrowRight, Sparkles, Download, Loader2, Search, Bug } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useCompanies } from '@/hooks/useCompanies';
-import { usePresenters } from '@/hooks/usePresenters';
+import { usePresenterList } from '@/hooks/usePresenters';
 
 import { toast } from '@/hooks/use-toast';
 import { downloadBase64Pdf } from '@/lib/downloadPdf';
@@ -18,6 +18,8 @@ import { Page1Company } from './nar1/Page1Company';
 import { Page2ShareCapital } from './nar1/Page2ShareCapital';
 import { OfficerForm } from './nar1/OfficerForm';
 import { ShareholderForm } from './nar1/ShareholderForm';
+import { useSaveFormHistory } from '@/hooks/useFormHistory';
+import FormHistorySelector from './FormHistorySelector';
 
 interface FormWizardProps {
   formId: string;
@@ -46,7 +48,7 @@ function companyToFormData(company: Company): NAR1FormData {
   base.regBuilding = company.regBuilding || '';
   base.regStreet = company.regStreet || '';
   base.regDistrict = company.regDistrict || '';
-  base.regRegion = company.regRegion || '香港 Hong Kong';
+  base.regRegion = company.regRegion || '';
 
   if (company.companyType?.includes('私人') || company.companyType?.includes('Private')) {
     base.companyType = 'private';
@@ -70,6 +72,8 @@ function companyToFormData(company: Company): NAR1FormData {
     dateCeased: s.dateCeased || '',
     placeIncorporated: s.placeIncorporated || '',
     companyNumberRef: s.companyNumberRef || '',
+    brNumber: s.brNumber || '',
+    tcspNumber: s.tcspNumber || '',
   }));
   if (base.secretaries.length === 0) base.secretaries = [createEmptyFormData().secretaries[0]];
 
@@ -85,6 +89,7 @@ function companyToFormData(company: Company): NAR1FormData {
     dateCeased: d.dateCeased || '',
     placeIncorporated: d.placeIncorporated || '',
     companyNumberRef: d.companyNumberRef || '',
+    brNumber: d.brNumber || '',
   }));
   if (base.directors.length === 0) base.directors = [createEmptyFormData().directors[0]];
 
@@ -128,7 +133,15 @@ const FormWizard = ({ formId, onBack }: FormWizardProps) => {
   const [isDebugging, setIsDebugging] = useState(false);
 
   const { data: companies = [] } = useCompanies();
-  const { data: presenters = [] } = usePresenters();
+  const { data: presenters = [] } = usePresenterList();
+  const { mutate: saveFormHistory } = useSaveFormHistory();
+
+  const handleLoadHistory = (data: any) => {
+    if (data.formData) setFormData(prev => ({ ...prev, ...data.formData }));
+    if (data.selectedCompanyId) setSelectedCompanyId(data.selectedCompanyId);
+    setCurrentStep(7);  // Jump to confirm page so user can review, then click step tabs to edit
+    toast({ title: '已載入', description: '已載入過往紀錄，可在上方點擊步驟返回修改' });
+  };
 
   const filteredCompanies = useMemo(() => {
     if (!searchTerm) return companies.slice(0, 20);
@@ -207,18 +220,23 @@ const FormWizard = ({ formId, onBack }: FormWizardProps) => {
       street: formData.regStreet,
       district: formData.regDistrict,
       region: formData.regRegion,
+      country: formData.regRegion,
     },
+    email: formData.email,
+    phone: formData.website,
     directors: formData.directors.map(d => ({
       nameChinese: d.nameChinese,
       nameEnglish: d.nameEnglish,
       identity: d.identity,
       address: d.address,
       idNumber: d.idNumber,
+      passportNumber: d.passportNumber || '',
+      passportCountry: d.passportCountry || '',
       dateAppointed: d.dateAppointed,
       placeIncorporated: d.placeIncorporated,
       companyNumberRef: d.companyNumberRef,
       email: '',
-      brNumber: '',
+      brNumber: d.brNumber || '',
     })),
     secretaries: formData.secretaries.map(s => ({
       nameChinese: s.nameChinese,
@@ -226,11 +244,14 @@ const FormWizard = ({ formId, onBack }: FormWizardProps) => {
       identity: s.identity,
       address: s.address,
       idNumber: s.idNumber,
+      passportNumber: s.passportNumber || '',
+      passportCountry: s.passportCountry || '',
       dateAppointed: s.dateAppointed,
       placeIncorporated: s.placeIncorporated,
       companyNumberRef: s.companyNumberRef,
       email: '',
-      brNumber: '',
+      brNumber: s.brNumber || '',
+      tcspNumber: s.tcspNumber || '',
     })),
     shareholders: formData.shareholders.map(sh => ({
       name: sh.nameEnglish || sh.nameChinese,
@@ -243,6 +264,12 @@ const FormWizard = ({ formId, onBack }: FormWizardProps) => {
       shareType: sh.shareClass,
     })),
     returnDate: `${formData.returnDateYear}-${formData.returnDateMonth}-${formData.returnDateDay}`,
+    financialStartDay: formData.financialStartDay,
+    financialStartMonth: formData.financialStartMonth,
+    financialStartYear: formData.financialStartYear,
+    financialEndDay: formData.financialEndDay,
+    financialEndMonth: formData.financialEndMonth,
+    financialEndYear: formData.financialEndYear,
     presenter: (() => {
       const p = presenters.find(x => x.id === formData.presenterId);
       return {
@@ -254,6 +281,26 @@ const FormWizard = ({ formId, onBack }: FormWizardProps) => {
         email: p?.email || '',
         reference: formData.presenterReference || p?.reference || '',
       };
+    })(),
+    signer: (() => {
+      const role = formData.signerRole;
+      const idx = formData.signerIndex ?? 0;
+      if (!role) {
+        // 自動：第一個秘書 → 第一個董事
+        const firstSec = formData.secretaries[0];
+        if (firstSec && firstSec.nameEnglish) {
+          return { name: firstSec.nameEnglish || firstSec.nameChinese, role: 'secretary' };
+        }
+        const firstDir = formData.directors[0];
+        if (firstDir && firstDir.nameEnglish) {
+          return { name: firstDir.nameEnglish || firstDir.nameChinese, role: 'director' };
+        }
+        return null;
+      }
+      const list = role === 'secretary' ? formData.secretaries : formData.directors;
+      const officer = list[idx];
+      if (!officer || !officer.nameEnglish) return null;
+      return { name: officer.nameEnglish || officer.nameChinese, role };
     })(),
   });
 
@@ -278,6 +325,8 @@ const FormWizard = ({ formId, onBack }: FormWizardProps) => {
       const result = await resp.json();
       downloadBase64Pdf(result.pdf, filename);
       toast({ title: debugMode ? 'Debug PDF 已生成' : 'PDF 已生成', description: 'NAR1 表格已成功生成' });
+      // Save to form history
+      saveFormHistory({ formType: 'NAR1', formData: { formData, selectedCompanyId } });
     } catch (error) {
       console.error('Error generating PDF:', error);
       toast({ title: '生成失敗', description: error instanceof Error ? error.message : '無法生成 PDF', variant: 'destructive' });
@@ -295,6 +344,11 @@ const FormWizard = ({ formId, onBack }: FormWizardProps) => {
       <div className="mb-6">
         <h1 className="text-xl font-semibold">建立 NAR1 周年申報表</h1>
         <p className="text-sm text-muted-foreground">填寫完整 NAR1 表格資料並生成 PDF</p>
+      </div>
+
+      {/* Form History */}
+      <div className="mb-6">
+        <FormHistorySelector formType="NAR1" onSelect={handleLoadHistory} />
       </div>
 
       {/* Navigation */}
@@ -486,6 +540,214 @@ const FormWizard = ({ formId, onBack }: FormWizardProps) => {
               </div>
               <p className="text-xs text-muted-foreground">在「設定」頁面可管理提交人列表</p>
             </div>
+
+            {/* P.8 簽署人選擇 */}
+            {(() => {
+              const dirs = formData.directors.filter(d => d.nameEnglish || d.nameChinese);
+              const secs = formData.secretaries.filter(s => s.nameEnglish || s.nameChinese);
+              const role = formData.signerRole;
+              const idx = formData.signerIndex ?? 0;
+              const selectedName = role
+                ? (role === 'secretary' ? secs[idx] : dirs[idx])
+                : (secs[0] || dirs[0]);
+              const selectedRole: 'director' | 'secretary' | null = role
+                || (secs[0] ? 'secretary' : dirs[0] ? 'director' : null);
+
+              const crossOutDirector = selectedRole === 'secretary';
+              const crossOutSecretary = selectedRole === 'director';
+
+              const setSigner = (r: 'director' | 'secretary', i?: number) => {
+                setFormData({ ...formData, signerRole: r, signerIndex: i ?? 0 });
+              };
+
+              return (
+                <div className="space-y-3 border border-border rounded-lg p-4">
+                  <h3 className="text-sm font-semibold">簽署人（P.8）</h3>
+                  <p className="text-xs text-muted-foreground">
+                    P.8 簽署欄位需劃掉不適用的職位。點擊下方角色選擇簽署人，另一角色將自動以橫線劃掉。
+                  </p>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    {/* 董事 Director 欄 */}
+                    <div
+                      className={cn(
+                        'border rounded-lg p-3 space-y-2 cursor-pointer transition-colors',
+                        crossOutDirector
+                          ? 'border-destructive/30 bg-destructive/5'
+                          : selectedRole === 'director'
+                          ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                          : 'border-border bg-muted/20 hover:border-primary/50'
+                      )}
+                      onClick={() => {
+                        if (dirs.length > 0 && selectedRole !== 'director') {
+                          setSigner('director', 0);
+                        }
+                      }}
+                    >
+                      <div className="flex items-center justify-between">
+                        <Label className={cn(
+                          'text-xs font-medium',
+                          crossOutDirector && 'text-destructive line-through decoration-2'
+                        )}>
+                          董事 Director
+                        </Label>
+                        {selectedRole === 'director' && !crossOutDirector && (
+                          <span className="text-xs bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 px-2 py-0.5 rounded-full">
+                            ✓ 簽署人
+                          </span>
+                        )}
+                      </div>
+
+                      {crossOutDirector ? (
+                        <div className="space-y-1">
+                          <Select defaultValue="dash">
+                            <SelectTrigger className="w-full h-9 text-xs border-destructive/30">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="blank">（空白）</SelectItem>
+                              <SelectItem value="dash">————————————————</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <p className="text-[10px] text-muted-foreground">
+                            ▲ 劃掉「董事」，簽署人為公司秘書
+                          </p>
+                        </div>
+                      ) : selectedRole === 'director' ? (
+                        <div className="space-y-1">
+                          {dirs.length > 1 ? (
+                            <Select
+                              value={String(idx)}
+                              onValueChange={v => setSigner('director', parseInt(v))}
+                            >
+                              <SelectTrigger className="w-full h-9 text-xs">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {dirs.map((d, i) => (
+                                  <SelectItem key={i} value={String(i)}>
+                                    {d.nameEnglish || d.nameChinese}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          ) : (
+                            <div className="text-sm font-medium py-1.5 px-2 bg-background rounded border border-border">
+                              {selectedName?.nameEnglish || selectedName?.nameChinese || '（董事簽署）'}
+                            </div>
+                          )}
+                          {dirs.length > 1 && (
+                            <p className="text-[10px] text-muted-foreground">
+                              ▲ {dirs.length} 位董事，點擊選擇簽署人
+                            </p>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="text-sm text-muted-foreground py-1.5 px-2">
+                          {dirs.length > 0 ? '點擊選為簽署人' : '（無董事資料）'}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 公司秘書 Company Secretary 欄 */}
+                    <div
+                      className={cn(
+                        'border rounded-lg p-3 space-y-2 cursor-pointer transition-colors',
+                        crossOutSecretary
+                          ? 'border-destructive/30 bg-destructive/5'
+                          : selectedRole === 'secretary'
+                          ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                          : 'border-border bg-muted/20 hover:border-primary/50'
+                      )}
+                      onClick={() => {
+                        if (secs.length > 0 && selectedRole !== 'secretary') {
+                          setSigner('secretary', 0);
+                        }
+                      }}
+                    >
+                      <div className="flex items-center justify-between">
+                        <Label className={cn(
+                          'text-xs font-medium',
+                          crossOutSecretary && 'text-destructive line-through decoration-2'
+                        )}>
+                          公司秘書 Company Secretary
+                        </Label>
+                        {selectedRole === 'secretary' && !crossOutSecretary && (
+                          <span className="text-xs bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 px-2 py-0.5 rounded-full">
+                            ✓ 簽署人
+                          </span>
+                        )}
+                      </div>
+
+                      {crossOutSecretary ? (
+                        <div className="space-y-1">
+                          <Select defaultValue="dash">
+                            <SelectTrigger className="w-full h-9 text-xs border-destructive/30">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="blank">（空白）</SelectItem>
+                              <SelectItem value="dash">————————————————</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <p className="text-[10px] text-muted-foreground">
+                            ▲ 劃掉「公司秘書」，簽署人為董事
+                          </p>
+                        </div>
+                      ) : selectedRole === 'secretary' ? (
+                        <div className="space-y-1">
+                          {secs.length > 1 ? (
+                            <Select
+                              value={String(idx)}
+                              onValueChange={v => setSigner('secretary', parseInt(v))}
+                            >
+                              <SelectTrigger className="w-full h-9 text-xs">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {secs.map((s, i) => (
+                                  <SelectItem key={i} value={String(i)}>
+                                    {s.nameEnglish || s.nameChinese}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          ) : (
+                            <div className="text-sm font-medium py-1.5 px-2 bg-background rounded border border-border">
+                              {selectedName?.nameEnglish || selectedName?.nameChinese || '（秘書簽署）'}
+                            </div>
+                          )}
+                          {secs.length > 1 && (
+                            <p className="text-[10px] text-muted-foreground">
+                              ▲ {secs.length} 位秘書，點擊選擇簽署人
+                            </p>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="text-sm text-muted-foreground py-1.5 px-2">
+                          {secs.length > 0 ? '點擊選為簽署人' : '（無秘書資料）'}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* 視覺提示 */}
+                  <div className="flex items-center gap-4 text-xs text-muted-foreground bg-muted/30 rounded p-2">
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-4 h-4 rounded border border-primary bg-primary/5" />
+                      <span>藍框高亮</span>
+                    </div>
+                    <span>→ 簽署人（點擊可切換）</span>
+                    <span className="mx-2">|</span>
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-4 h-4 rounded border border-destructive/30 bg-destructive/5" />
+                      <span className="line-through decoration-destructive decoration-2">劃線</span>
+                    </div>
+                    <span>→ PDF 上以橫線劃掉此職位</span>
+                  </div>
+                </div>
+              );
+            })()}
 
             <div className="grid grid-cols-2 gap-3">
               <Button

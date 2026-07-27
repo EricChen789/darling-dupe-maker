@@ -1,6 +1,13 @@
+import { useState } from 'react';
+import { format } from 'date-fns';
+import { Calendar as CalendarIcon } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Button } from '@/components/ui/button';
+import { Calendar } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { cn } from '@/lib/utils';
 import { NAR1FormData } from './types';
 
 interface Props {
@@ -8,8 +15,46 @@ interface Props {
   onChange: (data: NAR1FormData) => void;
 }
 
+/** Build a Date from separate D/M/Y strings, returning null if invalid. */
+function toDate(day: string, month: string, year: string): Date | null {
+  if (!day || !month || !year) return null;
+  const d = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+  if (isNaN(d.getTime())) return null;
+  return d;
+}
+
 export const Page1Company = ({ data, onChange }: Props) => {
   const set = (key: keyof NAR1FormData, value: string) => onChange({ ...data, [key]: value });
+
+  const [finStartOpen, setFinStartOpen] = useState(false);
+  const [finEndOpen, setFinEndOpen] = useState(false);
+
+  const finStartDate = toDate(data.financialStartDay, data.financialStartMonth, data.financialStartYear);
+  const finEndDate = toDate(data.financialEndDay, data.financialEndMonth, data.financialEndYear);
+
+  const handleFinStartSelect = (date: Date | undefined) => {
+    if (date) {
+      onChange({
+        ...data,
+        financialStartDay: String(date.getDate()).padStart(2, '0'),
+        financialStartMonth: String(date.getMonth() + 1).padStart(2, '0'),
+        financialStartYear: String(date.getFullYear()),
+      });
+    }
+    setFinStartOpen(false);
+  };
+
+  const handleFinEndSelect = (date: Date | undefined) => {
+    if (date) {
+      onChange({
+        ...data,
+        financialEndDay: String(date.getDate()).padStart(2, '0'),
+        financialEndMonth: String(date.getMonth() + 1).padStart(2, '0'),
+        financialEndYear: String(date.getFullYear()),
+      });
+    }
+    setFinEndOpen(false);
+  };
 
   return (
     <div className="space-y-6">
@@ -50,45 +95,77 @@ export const Page1Company = ({ data, onChange }: Props) => {
         <div className="grid grid-cols-3 gap-3">
           <div className="space-y-1">
             <Label className="text-xs">日 DD</Label>
-            <Input value={data.returnDateDay} onChange={e => set('returnDateDay', e.target.value)} maxLength={2} />
+            <Input value={data.returnDateDay} disabled className="bg-muted cursor-not-allowed" />
           </div>
           <div className="space-y-1">
             <Label className="text-xs">月 MM</Label>
-            <Input value={data.returnDateMonth} onChange={e => set('returnDateMonth', e.target.value)} maxLength={2} />
+            <Input value={data.returnDateMonth} disabled className="bg-muted cursor-not-allowed" />
           </div>
           <div className="space-y-1">
             <Label className="text-xs">年 YYYY</Label>
-            <Input value={data.returnDateYear} onChange={e => set('returnDateYear', e.target.value)} maxLength={4} />
+            <Input value={data.returnDateYear} disabled className="bg-muted cursor-not-allowed" />
           </div>
         </div>
+        <p className="text-xs text-muted-foreground">
+          此日期固定為公司成立周年日（{data.returnDateDay}/{data.returnDateMonth}/{data.returnDateYear}），不可更改。
+          如需要更改，請先修改公司的成立日期。
+        </p>
       </div>
 
       <div className="border-t border-border pt-4 space-y-4">
         <h3 className="text-sm font-medium">5. 財務報表期間 Financial Statement Period（公眾公司適用）</h3>
-        <div className="grid grid-cols-6 gap-3">
-          <div className="space-y-1">
-            <Label className="text-xs">開始日</Label>
-            <Input value={data.financialStartDay} onChange={e => set('financialStartDay', e.target.value)} maxLength={2} />
+        <div className="grid grid-cols-2 gap-4">
+          {/* Start date */}
+          <div className="space-y-2">
+            <Label className="text-xs">開始日期 Start Date</Label>
+            <Popover open={finStartOpen} onOpenChange={setFinStartOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  className={cn(
+                    'w-full justify-start text-left font-normal',
+                    !finStartDate && 'text-muted-foreground',
+                  )}
+                >
+                  <CalendarIcon className="mr-2 h-4 w-4" />
+                  {finStartDate ? format(finStartDate, 'yyyy-MM-dd') : <span>點擊選擇日期</span>}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <Calendar
+                  mode="single"
+                  selected={finStartDate || undefined}
+                  onSelect={handleFinStartSelect}
+                  initialFocus
+                />
+              </PopoverContent>
+            </Popover>
           </div>
-          <div className="space-y-1">
-            <Label className="text-xs">開始月</Label>
-            <Input value={data.financialStartMonth} onChange={e => set('financialStartMonth', e.target.value)} maxLength={2} />
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs">開始年</Label>
-            <Input value={data.financialStartYear} onChange={e => set('financialStartYear', e.target.value)} maxLength={4} />
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs">結束日</Label>
-            <Input value={data.financialEndDay} onChange={e => set('financialEndDay', e.target.value)} maxLength={2} />
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs">結束月</Label>
-            <Input value={data.financialEndMonth} onChange={e => set('financialEndMonth', e.target.value)} maxLength={2} />
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs">結束年</Label>
-            <Input value={data.financialEndYear} onChange={e => set('financialEndYear', e.target.value)} maxLength={4} />
+          {/* End date */}
+          <div className="space-y-2">
+            <Label className="text-xs">結束日期 End Date</Label>
+            <Popover open={finEndOpen} onOpenChange={setFinEndOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  className={cn(
+                    'w-full justify-start text-left font-normal',
+                    !finEndDate && 'text-muted-foreground',
+                  )}
+                >
+                  <CalendarIcon className="mr-2 h-4 w-4" />
+                  {finEndDate ? format(finEndDate, 'yyyy-MM-dd') : <span>點擊選擇日期</span>}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <Calendar
+                  mode="single"
+                  selected={finEndDate || undefined}
+                  onSelect={handleFinEndSelect}
+                  initialFocus
+                />
+              </PopoverContent>
+            </Popover>
           </div>
         </div>
       </div>
@@ -113,15 +190,8 @@ export const Page1Company = ({ data, onChange }: Props) => {
             <Input value={data.regDistrict} onChange={e => set('regDistrict', e.target.value)} />
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">地區 Region</Label>
-            <Select value={data.regRegion} onValueChange={v => set('regRegion', v)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="香港 Hong Kong">香港 Hong Kong</SelectItem>
-                <SelectItem value="九龍 Kowloon">九龍 Kowloon</SelectItem>
-                <SelectItem value="新界 New Territories">新界 New Territories</SelectItem>
-              </SelectContent>
-            </Select>
+            <Label className="text-xs">國家／地區 Country／Region</Label>
+            <Input value={data.regRegion} onChange={e => set('regRegion', e.target.value)} placeholder="e.g. 香港" />
           </div>
         </div>
       </div>
@@ -132,8 +202,8 @@ export const Page1Company = ({ data, onChange }: Props) => {
           <Input value={data.email} onChange={e => set('email', e.target.value)} />
         </div>
         <div className="space-y-2">
-          <Label>8. 網址 Website</Label>
-          <Input value={data.website} onChange={e => set('website', e.target.value)} />
+          <Label>8. 電話號碼 Phone Number</Label>
+          <Input value={data.website} onChange={e => set('website', e.target.value)} placeholder="例：+852 1234 5678" />
         </div>
         <div className="space-y-2">
           <Label>9. 業務性質編碼 Business Code</Label>

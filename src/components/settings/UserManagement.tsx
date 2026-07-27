@@ -7,7 +7,7 @@ import { toast } from '@/hooks/use-toast';
 import { Shield, Trash2, UserPlus, Ban, CheckCircle2, Edit, Save, X, Loader2 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 
 type AppRole = 'admin' | 'moderator' | 'user';
 
@@ -195,6 +195,7 @@ export const UserManagement = () => {
           <DialogContent>
             <DialogHeader>
               <DialogTitle>新增使用者</DialogTitle>
+              <DialogDescription>建立新的系統使用者帳號</DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
               <div>
@@ -315,6 +316,7 @@ export const UserManagement = () => {
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2"><Edit className="h-5 w-5" />編輯使用者</DialogTitle>
+            <DialogDescription>修改使用者資料與權限</DialogDescription>
           </DialogHeader>
           {editingUser && (
             <div className="space-y-4">

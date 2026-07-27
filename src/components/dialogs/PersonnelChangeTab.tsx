@@ -28,7 +28,7 @@ function sortableDate(s?: string): number {
 interface ChangeEvent {
   key: string;
   name: string;
-  role: string;          // 董事 / 秘書
+  role: string;          // 董事 / 秘書 / 股東 / 授權代表
   action: 'appoint' | 'cease';
   date: string;
   identity: string;
@@ -66,9 +66,11 @@ export function PersonnelSection({ company }: { company: Company }) {
     };
     push(company.directors, '董事');
     push(company.secretaries, '秘書');
+    push(company.shareholders as any, '股東');
+    push((company.authorizedReps || []) as any, '授權代表');
     // 日期倒序（最近的在上）
     return list.sort((a, b) => sortableDate(b.date) - sortableDate(a.date));
-  }, [company.directors, company.secretaries]);
+  }, [company.directors, company.secretaries, company.shareholders, company.authorizedReps]);
 
   if (events.length === 0) {
     return (
@@ -78,7 +80,7 @@ export function PersonnelSection({ company }: { company: Company }) {
           <Badge variant="secondary" className="text-xs">0</Badge>
         </h3>
         <p className="text-sm text-muted-foreground py-6 text-center">
-          尚無人事變更記錄（董事及秘書的委任與辭任記錄將顯示於此）
+          尚無人事變更記錄（董事、秘書、股東及授權代表的委任與辭任記錄將顯示於此）
         </p>
       </div>
     );

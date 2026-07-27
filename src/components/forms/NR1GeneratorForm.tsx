@@ -8,6 +8,10 @@ import { toast } from '@/hooks/use-toast';
 import { useCompanies } from '@/hooks/useCompanies';
 import { Company } from '@/types';
 import { downloadBase64Pdf } from '@/lib/downloadPdf';
+import { useSaveFormHistory } from '@/hooks/useFormHistory';
+import FormHistorySelector from './FormHistorySelector';
+import PresenterSelector from './PresenterSelector';
+import type { Presenter } from '@/hooks/usePresenters';
 
 interface NR1GeneratorFormProps {
   onBack: () => void;
@@ -18,6 +22,7 @@ export default function NR1GeneratorForm({ onBack, initialCompanyId }: NR1Genera
   const { data: companies = [] } = useCompanies();
   const [selectedCompanyId, setSelectedCompanyId] = useState('');
   const [generating, setGenerating] = useState(false);
+  const { mutate: saveFormHistory } = useSaveFormHistory();
 
   const today = new Date();
   const dd = String(today.getDate()).padStart(2, '0');
@@ -31,7 +36,7 @@ export default function NR1GeneratorForm({ onBack, initialCompanyId }: NR1Genera
     building: '',
     street: '',
     district: '',
-    region: '香港 Hong Kong',
+    region: '',
     addressEffectiveDay: dd,
     addressEffectiveMonth: mm,
     addressEffectiveYear: yyyy,
@@ -56,11 +61,14 @@ export default function NR1GeneratorForm({ onBack, initialCompanyId }: NR1Genera
     setSelectedCompanyId(companyId);
     const company = companies.find(c => c.id === companyId);
     if (company) {
+      const regAddress = [company.regFlat, company.regBuilding, company.regStreet, company.regDistrict, company.regRegion]
+        .filter(Boolean).join(', ');
       setFormData(prev => ({
         ...prev,
         brNumber: company.brNumber,
         companyName: company.name,
         presentorName: company.name,
+        presentorAddress: regAddress,
       }));
     }
   };
@@ -72,6 +80,11 @@ export default function NR1GeneratorForm({ onBack, initialCompanyId }: NR1Genera
 
   const update = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleLoadHistory = (data: any) => {
+    if (data.formData) setFormData((prev: any) => ({ ...prev, ...data.formData }));
+    if (data.selectedCompanyId) setSelectedCompanyId(data.selectedCompanyId);
   };
 
   const handleGenerate = async (debug = false) => {
@@ -92,6 +105,7 @@ export default function NR1GeneratorForm({ onBack, initialCompanyId }: NR1Genera
 
       downloadBase64Pdf(result.pdf, 'NR1-form.pdf');
       toast({ title: '生成成功', description: 'NR1 表格已下載' });
+      saveFormHistory({ formType: 'NR1', formData: { formData, selectedCompanyId } });
     } catch (err: any) {
       toast({ title: '生成失敗', description: err.message, variant: 'destructive' });
     } finally {
@@ -108,6 +122,8 @@ export default function NR1GeneratorForm({ onBack, initialCompanyId }: NR1Genera
           <p className="text-sm text-muted-foreground">Notice of Change of Address of Registered Office</p>
         </div>
       </div>
+
+      <FormHistorySelector formType="NR1" onSelect={handleLoadHistory} />
 
       {/* Company selector */}
       <div className="bg-card border border-border rounded-lg p-4 mb-4">
@@ -144,15 +160,8 @@ export default function NR1GeneratorForm({ onBack, initialCompanyId }: NR1Genera
             <div><Label>街道／屋苑／地段</Label><Input value={formData.street} onChange={e => update('street', e.target.value)} placeholder="e.g. 1 Queensway" className="mt-1" /></div>
             <div><Label>區</Label><Input value={formData.district} onChange={e => update('district', e.target.value)} placeholder="e.g. Admiralty" className="mt-1" /></div>
             <div>
-              <Label>地區</Label>
-              <Select value={formData.region} onValueChange={v => update('region', v)}>
-                <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="香港 Hong Kong">香港 Hong Kong</SelectItem>
-                  <SelectItem value="九龍 Kowloon">九龍 Kowloon</SelectItem>
-                  <SelectItem value="新界 New Territories">新界 New Territories</SelectItem>
-                </SelectContent>
-              </Select>
+              <Label>國家／地區 Country／Region</Label>
+              <Input value={formData.region} onChange={e => update('region', e.target.value)} placeholder="e.g. 香港" className="mt-1" />
             </div>
             <div className="grid grid-cols-3 gap-2">
               <div><Label>生效日 (DD)</Label><Input value={formData.addressEffectiveDay} onChange={e => update('addressEffectiveDay', e.target.value)} className="mt-1" /></div>
@@ -204,6 +213,14 @@ export default function NR1GeneratorForm({ onBack, initialCompanyId }: NR1Genera
         {/* Presentor */}
         <div>
           <h3 className="font-semibold mb-3">提交人資料</h3>
+          <PresenterSelector
+            currentData={{ name: formData.presentorName, address: formData.presentorAddress, contact: formData.presentorContact }}
+            onSelect={(p: Presenter) => {
+              update('presentorName', p.name);
+              update('presentorAddress', p.address);
+              update('presentorContact', [p.phone, p.fax, p.email].filter(Boolean).join(' / '));
+            }}
+          />
           <div className="grid grid-cols-2 gap-4">
             <div><Label>姓名／名稱</Label><Input value={formData.presentorName} onChange={e => update('presentorName', e.target.value)} className="mt-1" /></div>
             <div><Label>地址</Label><Input value={formData.presentorAddress} onChange={e => update('presentorAddress', e.target.value)} className="mt-1" /></div>

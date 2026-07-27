@@ -24,6 +24,7 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogFooter,
@@ -37,6 +38,9 @@ const docTypes = [
   { value: 'all', label: '所有類型' },
   { value: 'ROD', label: 'ROD（董事登記冊）' },
   { value: 'ROM', label: 'ROM（成員登記冊）' },
+  { value: 'PERSONNEL_APPOINT', label: '人事委任' },
+  { value: 'SHARE_TX', label: '股份交易' },
+  { value: 'VERSION_SNAPSHOT', label: '版本快照' },
   { value: 'OTHER', label: '其他' },
 ];
 
@@ -45,6 +49,9 @@ const PAGE_SIZE_OPTIONS = [20, 50, 100, 200];
 const docTypeBadge = (t: string) => {
   if (t === 'ROD') return <Badge variant="default">ROD</Badge>;
   if (t === 'ROM') return <Badge variant="secondary">ROM</Badge>;
+  if (t === 'PERSONNEL_APPOINT') return <Badge variant="default" className="bg-green-600 hover:bg-green-600">人事委任</Badge>;
+  if (t === 'SHARE_TX') return <Badge variant="default" className="bg-blue-600 hover:bg-blue-600">股份交易</Badge>;
+  if (t === 'VERSION_SNAPSHOT') return <Badge variant="default" className="bg-purple-600 hover:bg-purple-600">版本快照</Badge>;
   return <Badge variant="outline">{t}</Badge>;
 };
 
@@ -1149,7 +1156,8 @@ const Logs = () => {
     const parsed = parseLog(openLog.html_content || '');
     setDraftParsed(parsed);
     setDraftPreamble(extractPreamble(openLog.html_content || ''));
-    setEditMode(parsed.kind === 'unknown' ? 'html' : 'table');
+    const isSimpleType = openLog.doc_type === 'PERSONNEL_APPOINT' || openLog.doc_type === 'SHARE_TX' || openLog.doc_type === 'VERSION_SNAPSHOT';
+    setEditMode(isSimpleType || parsed.kind === 'unknown' ? 'html' : 'table');
     setEditing(true);
   };
 
@@ -1324,6 +1332,7 @@ const Logs = () => {
                 </span>
               )}
             </DialogTitle>
+            <DialogDescription className="sr-only">公司記錄詳情</DialogDescription>
           </DialogHeader>
 
           <div className="flex-1 overflow-auto space-y-3">
@@ -1339,6 +1348,7 @@ const Logs = () => {
 
                 {editing ? (
                   <div className="space-y-2">
+                    {openLog.doc_type !== 'PERSONNEL_APPOINT' && openLog.doc_type !== 'SHARE_TX' && openLog.doc_type !== 'VERSION_SNAPSHOT' && (
                     <div className="flex items-center justify-between">
                       <Label className="text-sm text-muted-foreground">
                         編輯模式：{editMode === 'table' ? '結構化表格（直接點擊儲存格修改）' : '原始 HTML'}
@@ -1367,6 +1377,7 @@ const Logs = () => {
                         切換到 {editMode === 'table' ? 'HTML 模式' : '表格模式'}
                       </Button>
                     </div>
+                    )}
                     {editMode === 'table' && draftParsed?.kind === 'rod' && (
                       <EditableRodTable
                         sections={draftParsed.sections}
@@ -1386,6 +1397,11 @@ const Logs = () => {
                         className="min-h-[420px] font-mono text-xs"
                       />
                     )}
+                  </div>
+                ) : openLog.doc_type === 'PERSONNEL_APPOINT' || openLog.doc_type === 'SHARE_TX' || openLog.doc_type === 'VERSION_SNAPSHOT' ? (
+                  <div className="border border-border rounded-lg p-4 bg-muted/20">
+                    <div className="text-sm" dangerouslySetInnerHTML={{ __html: openLog.html_content }} />
+                    {openLog.notes && <div className="mt-2 pt-2 border-t border-border text-xs text-muted-foreground whitespace-pre-wrap">{openLog.notes}</div>}
                   </div>
                 ) : (
                   <LogTableView html={openLog.html_content} />

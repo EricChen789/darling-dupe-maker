@@ -16,7 +16,7 @@ crons = ["* * * * *"]
 
 # ── 環境變數 ──
 [vars]
-SENDER_EMAIL = "noreply@muselabs.org"
+SENDER_EMAIL = "noreply@techforliving.net"
 SENDER_NAME = "Muse Labs 公司秘書"
 
 # ⚠️ 部署前請修改 SENDER_EMAIL 為你擁有 SPF 的域名，

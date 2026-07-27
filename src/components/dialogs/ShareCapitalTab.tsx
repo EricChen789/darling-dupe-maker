@@ -24,7 +24,7 @@ const emptyTx = (companyId: string): EditTx => ({
 });
 
 const TX_TYPE_LABEL: Record<string, string> = {
-  transfer: '轉讓', allotment: '配發', repurchase: '購回',
+  transfer: '轉讓', allotment: '配發', repurchase: '購回', capital_increase: '增資',
 };
 const num = (v: any) => parseFloat(String(v ?? '').replace(/,/g, '')) || 0;
 
@@ -220,6 +220,7 @@ export const ShareCapitalTab = ({ company }: { company: Company }) => {
                   <SelectItem value="transfer">轉讓 Transfer</SelectItem>
                   <SelectItem value="allotment">配發 Allotment</SelectItem>
                   <SelectItem value="repurchase">購回 Repurchase</SelectItem>
+                  <SelectItem value="capital_increase">增資 Capital Increase</SelectItem>
                 </SelectContent>
               </Select></div>
             <div className="space-y-1"><Label className="text-xs">轉讓人 From</Label>

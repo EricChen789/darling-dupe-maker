@@ -11,6 +11,8 @@ import { toast } from '@/hooks/use-toast';
 import { useCompanies } from '@/hooks/useCompanies';
 import { useSaveResolution } from '@/hooks/useResolutions';
 import { downloadGenericFormPdf } from '@/lib/genericFormPdf';
+import { useSaveFormHistory } from '@/hooks/useFormHistory';
+import FormHistorySelector from './FormHistorySelector';
 
 
 interface Props { onBack: () => void; }
@@ -77,10 +79,26 @@ export default function ResolutionGeneratorForm({ onBack }: Props) {
   const [generating, setGenerating] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const { mutate: saveFormHistory } = useSaveFormHistory();
 
   const company = companies.find(c => c.id === companyId);
 
   const updateVar = (k: string, v: string) => setVars(prev => ({ ...prev, [k]: v }));
+
+  const handleLoadHistory = (data: any) => {
+    if (data.formData) {
+      const d = data.formData;
+      if (d.resolutionType !== undefined) setResolutionType(d.resolutionType);
+      if (d.resolutionDate !== undefined) setResolutionDate(d.resolutionDate);
+      if (d.vars !== undefined) setVars(d.vars);
+      if (d.aiContext !== undefined) setAiContext(d.aiContext);
+      if (d.aiLanguage !== undefined) setAiLanguage(d.aiLanguage);
+      if (d.content !== undefined) setContent(d.content);
+      if (d.signers !== undefined) setSigners(d.signers);
+      if (d.mode !== undefined) setMode(d.mode);
+    }
+    if (data.selectedCompanyId) setCompanyId(data.selectedCompanyId);
+  };
 
   const renderFromTemplate = () => {
     const t = TEMPLATES[resolutionType];
@@ -158,6 +176,7 @@ export default function ResolutionGeneratorForm({ onBack }: Props) {
           signers,
           is_ai_generated: mode === 'ai',
         });
+        saveFormHistory({ formType: 'RESOLUTION', formData: { formData: { resolutionType, resolutionDate, vars, aiContext, aiLanguage, content, signers, mode }, selectedCompanyId: companyId } });
       }
     } finally {
       setGenerating(false);
@@ -199,6 +218,8 @@ export default function ResolutionGeneratorForm({ onBack }: Props) {
       </div>
 
       <h2 className="text-xl font-semibold">決議書生成器</h2>
+
+      <FormHistorySelector formType="RESOLUTION" onSelect={handleLoadHistory} />
 
       <div className="grid grid-cols-3 gap-3">
         <div className="space-y-1">

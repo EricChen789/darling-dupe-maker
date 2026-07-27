@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { FileText, FileType, Download, Loader2, FileOutput } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { Company } from '@/types';
@@ -210,6 +210,7 @@ export function DocGenerationTab({ company }: DocGenerationTabProps) {
       {/* CR 表格生成器（全屏 Dialog 承載） */}
       <Dialog open={!!pdfForm} onOpenChange={o => { if (!o) setPdfForm(null); }}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader className="sr-only"><DialogTitle>PDF 表格生成器</DialogTitle><DialogDescription>填寫並生成 PDF 表格</DialogDescription></DialogHeader>
           {renderPdfForm()}
         </DialogContent>
       </Dialog>
@@ -219,6 +220,7 @@ export function DocGenerationTab({ company }: DocGenerationTabProps) {
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>{contentDialog?.label} — {company.name}</DialogTitle>
+            <DialogDescription>輸入必要資訊後生成文件</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3">

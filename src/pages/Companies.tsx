@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { PageHeader } from '@/components/ui/page-header';
 import { StatCard } from '@/components/ui/stat-card';
 import { Button } from '@/components/ui/button';
@@ -9,15 +9,23 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import { Search, RefreshCw, Plus, Edit, Trash2, FileText, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, RefreshCw, Plus, Edit, Trash2, FileText, Loader2, ChevronLeft, ChevronRight, ChevronDown, ArrowRightLeft } from 'lucide-react';
 import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Company } from '@/types';
 import { CompanyDialog, DeleteConfirmDialog } from '@/components/dialogs/CompanyDialogs';
+import { BatchAssignDialog } from '@/components/dialogs/BatchAssignDialog';
 import { CompanyDetailDialog } from '@/components/dialogs/CompanyDetailDialog';
+
 import { NAR1Generator } from '@/components/nar1/NAR1Generator';
 import { toast } from '@/hooks/use-toast';
 import { useCompanies, useDeleteCompany, useAddCompany, useUpdateCompany } from '@/hooks/useCompanies';
-import { usePresenters } from '@/hooks/usePresenters';
+import { usePresenterList } from '@/hooks/usePresenters';
 import { useUserRole } from '@/hooks/useUserRole';
 
 const Companies = () => {
@@ -31,6 +39,8 @@ const Companies = () => {
   const [companyForNar1, setCompanyForNar1] = useState<Company | null>(null);
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const [companyForDetail, setCompanyForDetail] = useState<Company | null>(null);
+  const [companyDialogMode, setCompanyDialogMode] = useState<'create' | 'edit' | 'assign'>('create');
+  const [batchAssignOpen, setBatchAssignOpen] = useState(false);
   const [pageSize, setPageSize] = useState(20);
   const [currentPage, setCurrentPage] = useState(1);
 
@@ -41,12 +51,27 @@ const Companies = () => {
   const [missingFilter, setMissingFilter] = useState<string>('all'); // all | director | secretary | any | none
 
   const { data: companies = [], isLoading, refetch } = useCompanies();
-  const { data: presenters = [] } = usePresenters();
+  const { data: presenters = [] } = usePresenterList();
   const defaultPresenterId = presenters.find(p => p.name === 'Twinsail Consultants Limited')?.id || '';
   const deleteCompany = useDeleteCompany();
   const addCompany = useAddCompany();
   const updateCompany = useUpdateCompany();
   const { canDelete } = useUserRole();
+
+  // Sync dialog company snapshots with latest query data after mutations
+  useEffect(() => {
+    if (companyForDetail) {
+      const updated = companies.find(c => c.id === companyForDetail.id);
+      if (updated) setCompanyForDetail(updated);
+    }
+  }, [companies]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (companyForNar1) {
+      const updated = companies.find(c => c.id === companyForNar1.id);
+      if (updated) setCompanyForNar1(updated);
+    }
+  }, [companies]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleQuickPresenterChange = (company: Company, presenterId: string) => {
     updateCompany.mutate(
@@ -141,6 +166,18 @@ const Companies = () => {
           setDeleteDialogOpen(false);
           setCompanyToDelete(null);
         },
+        onError: (e: any) => {
+          console.error('[DELETE]', e);
+          // Ensure we always show something, even if the error is weirdly shaped
+          let msg = '';
+          try {
+            if (e?.message) msg = e.message;
+            else if (typeof e === 'string') msg = e;
+            else msg = JSON.stringify(e, null, 2);
+          } catch { msg = String(e); }
+          if (!msg || msg === '{}') msg = `HTTP ${e?.status || '?'} — 請打開 F12 Console 查看`;
+          toast({ title: '刪除失敗', description: msg, variant: 'destructive', duration: 8000 });
+        },
       });
     }
   };
@@ -168,10 +205,23 @@ const Companies = () => {
             <Button variant="outline" size="sm" onClick={handleRefresh}>
               <RefreshCw className="h-4 w-4 mr-2" />重新整理
             </Button>
-            <Button size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90"
-              onClick={() => { setSelectedCompany(null); setCompanyDialogOpen(true); }}>
-              <Plus className="h-4 w-4 mr-2" />新增公司
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90">
+                  <Plus className="h-4 w-4 mr-2" />新增 <ChevronDown className="h-3 w-3 ml-1" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem onClick={() => { setSelectedCompany(null); setCompanyDialogMode('create'); setCompanyDialogOpen(true); }}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  新增公司
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => { setBatchAssignOpen(true); }}>
+                  <ArrowRightLeft className="h-4 w-4 mr-2" />
+                  批量關聯 / 管理關聯
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         }
       />
@@ -298,9 +348,6 @@ const Companies = () => {
                           : (company.secretaries[0]?.id || company.directors[0]?.id || '');
                         return company.directors.map((d, i) => (
                           <div key={i} className="truncate flex items-center gap-1">
-                            {d.id === effectiveSignerId && (
-                              <span className="inline-block h-1.5 w-1.5 rounded-full bg-destructive shrink-0" title="NAR1 簽署人" />
-                            )}
                             <span className="truncate">{d.nameEnglish || d.nameChinese}</span>
                           </div>
                         ));
@@ -319,9 +366,6 @@ const Companies = () => {
                           : (company.secretaries[0]?.id || company.directors[0]?.id || '');
                         return company.secretaries.map((s, i) => (
                           <div key={i} className="truncate flex items-center gap-1">
-                            {s.id === effectiveSignerId && (
-                              <span className="inline-block h-1.5 w-1.5 rounded-full bg-destructive shrink-0" title="NAR1 簽署人" />
-                            )}
                             <span className="truncate">{s.nameEnglish || s.nameChinese}</span>
                           </div>
                         ));
@@ -404,7 +448,7 @@ const Companies = () => {
                       <FileText className="h-4 w-4" /><span className="ml-1">NAR1</span>
                     </Button>
                     <Button variant="ghost" size="sm" className="h-8 px-2"
-                      onClick={() => { setSelectedCompany(company); setCompanyDialogOpen(true); }}>
+                      onClick={() => { setSelectedCompany(company); setCompanyDialogMode('edit'); setCompanyDialogOpen(true); }}>
                       <Edit className="h-4 w-4" /><span className="ml-1">編輯</span>
                     </Button>
                     {canDelete && (
@@ -470,12 +514,13 @@ const Companies = () => {
       </div>
 
       <CompanyDialog open={companyDialogOpen} onOpenChange={setCompanyDialogOpen}
-        company={selectedCompany} onSave={handleSaveCompany} />
+        mode={companyDialogMode} company={selectedCompany} onSave={handleSaveCompany} />
       <DeleteConfirmDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}
         title="確認刪除公司" description={`您確定要刪除「${companyToDelete?.name}」嗎？此操作無法復原。`}
-        onConfirm={handleConfirmDelete} />
+        onConfirm={handleConfirmDelete} loading={deleteCompany.isPending} />
       <NAR1Generator open={nar1DialogOpen} onOpenChange={setNar1DialogOpen} company={companyForNar1} />
       <CompanyDetailDialog open={detailDialogOpen} onOpenChange={setDetailDialogOpen} company={companyForDetail} />
+      <BatchAssignDialog open={batchAssignOpen} onOpenChange={setBatchAssignOpen} />
     </div>
   );
 };

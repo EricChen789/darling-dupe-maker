@@ -40,9 +40,20 @@ interface DbPerson {
   alias_chinese: string;
   id_number: string;
   passport_number: string;
+  passport_country: string;
   passport_expiry: string;
   address: string;
   service_address: string;
+  addr_flat: string;
+  addr_building: string;
+  addr_street: string;
+  addr_district: string;
+  addr_region: string;
+  svc_addr_flat: string;
+  svc_addr_building: string;
+  svc_addr_street: string;
+  svc_addr_district: string;
+  svc_addr_region: string;
   email: string;
   whatsapp: string;
   phone: string;
@@ -103,10 +114,22 @@ function buildPersonForRole(p: DbPerson, r: DbRole, role: 'director' | 'secretar
     email: p.email || '',
     identity: (p.identity as 'natural' | 'corporate') || 'natural',
     role,
-    address: p.address || '',
+    address: p.address || [p.addr_flat, p.addr_building, p.addr_street, p.addr_district, p.addr_region].map(s => (s || '').trim()).filter(Boolean).join(', ') || '',
     serviceAddress: r.service_address_override || p.service_address || '',
+    // 分拆地址欄位
+    addrFlat: p.addr_flat || '',
+    addrBuilding: p.addr_building || '',
+    addrStreet: p.addr_street || '',
+    addrDistrict: p.addr_district || '',
+    addrRegion: p.addr_region || '',
+    svcAddrFlat: p.svc_addr_flat || '',
+    svcAddrBuilding: p.svc_addr_building || '',
+    svcAddrStreet: p.svc_addr_street || '',
+    svcAddrDistrict: p.svc_addr_district || '',
+    svcAddrRegion: p.svc_addr_region || '',
     idNumber: p.id_number || '',
     passportNumber: p.passport_number || '',
+    passportCountry: p.passport_country || '',
     passportExpiry: p.passport_expiry || '',
     whatsapp: p.whatsapp || '',
     passportFilePath: p.passport_file_path || '',
@@ -115,7 +138,8 @@ function buildPersonForRole(p: DbPerson, r: DbRole, role: 'director' | 'secretar
     dateAppointed: r.date_appointed || '',
     dateCeased: r.date_ceased || '',
     placeIncorporated: p.place_incorporated || '',
-    companyNumberRef: p.company_number_ref || '',
+    companyNumberRef: p.company_number_ref || (p.identity === 'corporate' ? p.id_number : '') || '',
+    brNumber: p.company_number_ref || (p.identity === 'corporate' ? p.id_number : '') || '',
     tcspNumber: p.tcsp_number || '',
     authScope: r.notes || '',
     previousNameChinese: p.previous_name_chinese || '',
@@ -134,6 +158,7 @@ function buildPersonForRole(p: DbPerson, r: DbRole, role: 'director' | 'secretar
 
 function buildShareholderForRole(p: DbPerson, r: DbRole): Shareholder {
   const displayName = p.name_english || p.name_chinese || '';
+  const addr = p.address || [p.addr_flat, p.addr_building, p.addr_street, p.addr_district, p.addr_region].map(s => (s || '').trim()).filter(Boolean).join(', ') || '';
   return {
     id: r.id,
     name: displayName,
@@ -142,7 +167,7 @@ function buildShareholderForRole(p: DbPerson, r: DbRole): Shareholder {
     shares: r.shares || 0,
     identity: (p.identity as 'natural' | 'corporate') || 'natural',
     idNumber: p.id_number || '',
-    address: p.address || '',
+    address: addr,
     serviceAddress: r.service_address_override || p.service_address || '',
     email: p.email || '',
     shareType: r.share_type || '',
@@ -152,6 +177,7 @@ function buildShareholderForRole(p: DbPerson, r: DbRole): Shareholder {
     unpaid: r.unpaid || '',
     placeIncorporated: p.place_incorporated || '',
     companyNumberRef: p.company_number_ref || '',
+    brNumber: p.company_number_ref || '',
     tcspNumber: p.tcsp_number || '',
     dateAppointed: r.date_appointed || '',
     dateCeased: r.date_ceased || '',
@@ -202,7 +228,7 @@ function mapToCompany(
     regBuilding: c.reg_building || '',
     regStreet: c.reg_street || '',
     regDistrict: c.reg_district || '',
-    regRegion: c.reg_region || '香港 Hong Kong',
+    regRegion: c.reg_region || '',
     incorporationDate: c.incorporation_date || '',
     jurisdiction: c.jurisdiction || 'Hong Kong',
     ciFilePath: c.ci_file_path || '',
@@ -247,12 +273,19 @@ export function useDeleteCompany() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
-      // Flask cascade endpoint handles cleanup of: person_company_roles, reminders,
-      // company_logs, resolutions, significant_controllers, share_transactions,
-      // orphaned persons (those with no remaining roles), officers, shareholders.
-      // See server.py table_delete() for full cascade logic.
-      const { error } = await supabase.from('companies').delete().eq('id', id);
-      if (error) throw error;
+      const { data, error } = await supabase.from('companies').delete().eq('id', id);
+      if (error) {
+        const e = error as any;
+        // Build readable message from any error shape
+        const parts: string[] = [];
+        if (e.status) parts.push(`[${e.status}]`);
+        if (e.error) parts.push(e.error);
+        if (e.message && e.message !== e.error) parts.push(e.message);
+        const msg = parts.join(' ') || JSON.stringify(error);
+        console.error('[useDeleteCompany]', { id, raw: error, msg });
+        throw new Error(msg || '刪除失敗');
+      }
+      return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['companies'] });
@@ -289,7 +322,19 @@ async function findOrCreatePerson(input: {
   if (idNum) {
     const { data } = await supabase
       .from('persons').select('id').eq('id_number', idNum).limit(1);
-    if (data && data.length > 0) return data[0].id;
+    if (data && data.length > 0) {
+      const personId = data[0].id;
+      // Update corporate/passport fields on existing person if provided
+      const corpPatch: Record<string, any> = {};
+      if (input.companyNumberRef) corpPatch.company_number_ref = input.companyNumberRef;
+      if (input.placeIncorporated) corpPatch.place_incorporated = input.placeIncorporated;
+      if (input.passportNumber) corpPatch.passport_number = input.passportNumber;
+      if (input.email) corpPatch.email = input.email;
+      if (Object.keys(corpPatch).length > 0) {
+        await supabase.from('persons').update(corpPatch as any).eq('id', personId);
+      }
+      return personId;
+    }
   }
 
   // 2. Try by normalized name_english (corporate uses english only; natural uses english + chinese)
@@ -357,7 +402,7 @@ export function useAddCompany() {
           reg_building: data.regBuilding || '',
           reg_street: data.regStreet || '',
           reg_district: data.regDistrict || '',
-          reg_region: data.regRegion || '香港 Hong Kong',
+          reg_region: data.regRegion || '',
           preferred_presenter_id: data.preferredPresenterId || null,
           presenter_reference: data.presenterReference || '',
           email: data.email || '',
@@ -370,14 +415,21 @@ export function useAddCompany() {
       const companyId = company.id;
       const roleInserts: any[] = [];
 
+      const today = new Date().toLocaleDateString('en-GB'); // DD/MM/YYYY
       for (const d of data.directors || []) {
         if (!d.nameEnglish && !d.nameChinese) continue;
         const personId = await findOrCreatePerson({
           identity: d.identity, nameEnglish: d.nameEnglish, nameChinese: d.nameChinese,
           idNumber: d.idNumber, address: d.address, email: d.email,
+          passportNumber: d.passportNumber,
+          placeIncorporated: d.placeIncorporated,
+          companyNumberRef: d.companyNumberRef,
         });
         roleInserts.push({
           person_id: personId, company_id: companyId, role: 'director',
+          date_appointed: d.dateAppointed || today,
+          date_ceased: d.dateCeased || '',
+          is_reserve: d.isReserve ? 1 : 0,
         });
       }
       for (const s of data.secretaries || []) {
@@ -385,9 +437,15 @@ export function useAddCompany() {
         const personId = await findOrCreatePerson({
           identity: s.identity, nameEnglish: s.nameEnglish, nameChinese: s.nameChinese,
           idNumber: s.idNumber, address: s.address, email: s.email,
+          passportNumber: s.passportNumber,
+          placeIncorporated: s.placeIncorporated,
+          companyNumberRef: s.companyNumberRef,
         });
         roleInserts.push({
           person_id: personId, company_id: companyId, role: 'secretary',
+          date_appointed: s.dateAppointed || today,
+          date_ceased: s.dateCeased || '',
+          is_reserve: s.isReserve ? 1 : 0,
         });
       }
       for (const sh of data.shareholders || []) {
@@ -397,9 +455,12 @@ export function useAddCompany() {
           nameEnglish: sh.nameEnglish || sh.name || '',
           nameChinese: sh.nameChinese,
           idNumber: sh.idNumber, address: sh.address, email: sh.email,
+          passportNumber: sh.passportNumber,
         });
         roleInserts.push({
           person_id: personId, company_id: companyId, role: 'shareholder',
+          date_appointed: sh.dateAppointed || today,
+          date_ceased: sh.dateCeased || '',
           shares: sh.shares || 0,
           share_type: sh.shareType || '',
           currency: sh.currency || 'HKD',
@@ -409,9 +470,106 @@ export function useAddCompany() {
         });
       }
 
+      // Manual selected people (existing person IDs)
+      const manualPeople = (data as any).manualPeople as { personId: string; role: string; dateAppointed?: string; dateCeased?: string; isReserve?: boolean }[] | undefined;
+      if (manualPeople && manualPeople.length) {
+        for (const mp of manualPeople) {
+          // Check for duplicate before inserting
+          const alreadyAdded = roleInserts.some(
+            (r) => r.person_id === mp.personId && r.role === mp.role
+          );
+          if (!alreadyAdded) {
+            roleInserts.push({
+              person_id: mp.personId,
+              company_id: companyId,
+              role: mp.role,
+              date_appointed: mp.dateAppointed || today,
+              date_ceased: mp.dateCeased || '',
+              is_reserve: mp.isReserve ? 1 : 0,
+              service_address_override: '',
+              shares: 0,
+              share_type: '',
+              currency: 'HKD',
+              issue_price: '',
+              paid_up: '',
+              unpaid: '',
+            });
+          }
+        }
+      }
+
       if (roleInserts.length) {
         const { error: rErr } = await supabase.from('person_company_roles').insert(roleInserts);
-        if (rErr) console.error('Role insert error:', rErr);
+        if (rErr) throw new Error(`角色關聯失敗：${rErr.message || JSON.stringify(rErr)}`);
+      }
+
+      // ── 寫入公司日誌：人員委任記錄 ──
+      const ROLE_LABEL_MAP: Record<string, string> = {
+        director: '董事', secretary: '秘書', shareholder: '股東',
+        reserve_director: '候補董事', authorized_representative: '授權代表',
+      };
+      const logEntries: any[] = [];
+      const addLogEntry = (role: string, nameEn: string, nameZh: string, dateAppointed: string) => {
+        const roleLabel = ROLE_LABEL_MAP[role] || role;
+        const personName = nameZh ? `${nameEn}（${nameZh}）` : nameEn;
+        const date = dateAppointed || today;
+        logEntries.push({
+          company_id: companyId,
+          company_name_hint: data.name || '',
+          source_folder: '新增公司',
+          doc_type: 'PERSONNEL_APPOINT',
+          doc_date: date,
+          notes: `委任${roleLabel}：${personName}`,
+          html_content: `<p>委任${roleLabel}</p><p>${personName}</p><p>日期：${date}</p>`,
+        });
+      };
+      // directors
+      for (const d of data.directors || []) {
+        if (!d.nameEnglish && !d.nameChinese) continue;
+        addLogEntry('director', d.nameEnglish || '', d.nameChinese || '', d.dateAppointed || '');
+      }
+      // secretaries
+      for (const s of data.secretaries || []) {
+        if (!s.nameEnglish && !s.nameChinese) continue;
+        addLogEntry('secretary', s.nameEnglish || '', s.nameChinese || '', s.dateAppointed || '');
+      }
+      // shareholders
+      for (const sh of data.shareholders || []) {
+        const name = sh.nameEnglish || sh.name || '';
+        const cnName = sh.nameChinese || '';
+        if (!name && !cnName) continue;
+        addLogEntry('shareholder', name, cnName, sh.dateAppointed || '');
+      }
+      // manualPeople — look up names from persons table
+      if (manualPeople && manualPeople.length) {
+        const mpIds = manualPeople.map(mp => mp.personId);
+        const { data: mpPersons } = await supabase.from('persons').select('id,name_english,name_chinese').in('id', mpIds);
+        const personMap = new Map<string, { nameEn: string; nameZh: string }>();
+        if (mpPersons) {
+          for (const p of mpPersons as any[]) {
+            personMap.set(p.id, { nameEn: p.name_english || '', nameZh: p.name_chinese || '' });
+          }
+        }
+        for (const mp of manualPeople) {
+          const p = personMap.get(mp.personId);
+          const nameEn = p?.nameEn || mp.personId;
+          const nameZh = p?.nameZh || '';
+          addLogEntry(mp.role, nameEn, nameZh, mp.dateAppointed || '');
+        }
+      }
+      // Batch create log entries via API
+      if (logEntries.length > 0) {
+        try {
+          const token = localStorage.getItem('secretary_jwt') || '';
+          await fetch('/api/company_logs', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify(logEntries),
+          });
+        } catch (e) {
+          console.warn('[useAddCompany] Failed to create company_logs entries:', e);
+          // Don't throw — company creation succeeded, just log the warning
+        }
       }
 
       return company;
@@ -470,6 +628,7 @@ export function useAddOfficer() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (data: { company_id: string; name_english: string; name_chinese?: string; role: string; identity?: string; id_number?: string; email?: string; tcsp_number?: string; address?: string; service_address?: string; date_appointed?: string; date_ceased?: string; place_incorporated?: string; company_number_ref?: string; is_reserve?: boolean; date_of_birth?: string; auth_scope?: string }) => {
+      const today = new Date().toLocaleDateString('en-GB');
       const personId = await findOrCreatePerson({
         identity: data.identity,
         nameEnglish: data.name_english,
@@ -484,6 +643,9 @@ export function useAddOfficer() {
       if (data.date_of_birth) personPatch.date_of_birth = data.date_of_birth;
       if (data.email) personPatch.email = data.email;
       if (data.tcsp_number) personPatch.tcsp_number = data.tcsp_number;
+      if (data.place_incorporated) personPatch.place_incorporated = data.place_incorporated;
+      if (data.company_number_ref) personPatch.company_number_ref = data.company_number_ref;
+      if ((data as any).passport_number) personPatch.passport_number = (data as any).passport_number;
       if (Object.keys(personPatch).length > 0) {
         await supabase.from('persons').update(personPatch as any).eq('id', personId);
       }
@@ -491,7 +653,7 @@ export function useAddOfficer() {
         person_id: personId,
         company_id: data.company_id,
         role: data.role,
-        date_appointed: data.date_appointed || '',
+        date_appointed: data.date_appointed || today,
         date_ceased: data.date_ceased || '',
         service_address_override: '',
         is_reserve: !!data.is_reserve,
@@ -557,12 +719,18 @@ export function useDeleteOfficer() {
   return useMutation({
     mutationFn: async (id: string) => {
       // id = person_company_roles.id; only remove the assignment, keep the person
-      const { error } = await supabase.from('person_company_roles').delete().eq('id', id);
+      console.log('[useDeleteOfficer] deleting id:', id);
+      const { data, error } = await supabase.from('person_company_roles').delete().eq('id', id);
+      console.log('[useDeleteOfficer] result:', { data, error });
       if (error) throw error;
     },
     onSuccess: () => {
+      console.log('[useDeleteOfficer] onSuccess — invalidating queries');
       queryClient.invalidateQueries({ queryKey: ['companies'] });
       queryClient.invalidateQueries({ queryKey: ['persons-list'] });
+    },
+    onError: (err: any) => {
+      console.error('[useDeleteOfficer] onError:', err);
     },
   });
 }
@@ -591,10 +759,12 @@ export function useAddShareholder() {
       if (Object.keys(personPatch).length > 0) {
         await supabase.from('persons').update(personPatch as any).eq('id', personId);
       }
+      const today = new Date().toLocaleDateString('en-GB');
       const { error } = await supabase.from('person_company_roles').insert({
         person_id: personId,
         company_id: data.company_id,
         role: 'shareholder',
+        date_appointed: today,
         shares: data.shares || 0,
         share_type: data.share_type || '',
         currency: data.currency || 'HKD',
@@ -669,6 +839,119 @@ export function useDeleteShareholder() {
   });
 }
 
+// Batch assign: link multiple persons to multiple companies with a given role.
+// personIds = persons.id (the actual person record ids)
+export function useBatchAssign() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      mode,
+      personIds,
+      companyIds,
+      role,
+      companyRoles,
+    }: {
+      mode: 'many-to-one' | 'one-to-many';
+      personIds: string[];
+      companyIds: string[];
+      role: string;
+      companyRoles?: Record<string, string>; // per-company role override (one-to-many)
+    }) => {
+      let count = 0;
+      const inserts: any[] = [];
+
+      for (const personId of personIds) {
+        for (const companyId of companyIds) {
+          const effectiveRole = companyRoles?.[companyId] || role;
+          // Check if the person already has this role in this company
+          const { data: existing } = await supabase
+            .from('person_company_roles')
+            .select('id')
+            .eq('person_id', personId)
+            .eq('company_id', companyId)
+            .eq('role', effectiveRole)
+            .limit(1);
+
+          if (existing && existing.length > 0) continue; // Skip duplicates
+
+          inserts.push({
+            person_id: personId,
+            company_id: companyId,
+            role: effectiveRole,
+            date_appointed: new Date().toLocaleDateString('en-GB'),
+            date_ceased: '',
+            service_address_override: '',
+            shares: 0,
+            share_type: '',
+            currency: 'HKD',
+            issue_price: '',
+            paid_up: '',
+            unpaid: '',
+          });
+          count++;
+        }
+      }
+
+      if (inserts.length > 0) {
+        // Batch insert in chunks of 50 to avoid payload limits
+        for (let i = 0; i < inserts.length; i += 50) {
+          const chunk = inserts.slice(i, i + 50);
+          const { error } = await supabase.from('person_company_roles').insert(chunk as any);
+          if (error) throw error;
+        }
+
+        // ── 寫入公司日誌：人員委任記錄 ──
+        const today = new Date().toLocaleDateString('en-GB');
+        const ROLE_LABEL_MAP: Record<string, string> = {
+          director: '董事', secretary: '秘書', shareholder: '股東',
+          reserve_director: '候補董事', authorized_representative: '授權代表',
+        };
+        const uniquePersonIds = [...new Set(personIds)];
+        const { data: persons } = await supabase.from('persons')
+          .select('id,name_english,name_chinese').in('id', uniquePersonIds);
+        const personMap = new Map<string, { nameEn: string; nameZh: string }>();
+        if (persons) {
+          for (const p of persons as any[]) {
+            personMap.set(p.id, { nameEn: p.name_english || '', nameZh: p.name_chinese || '' });
+          }
+        }
+        const logEntries: any[] = [];
+        for (const ins of inserts) {
+          const p = personMap.get(ins.person_id);
+          const nameEn = p?.nameEn || ins.person_id;
+          const nameZh = p?.nameZh || '';
+          const personName = nameZh ? `${nameEn}（${nameZh}）` : nameEn;
+          const effectiveRole = ins.role;
+          const roleLabel = ROLE_LABEL_MAP[effectiveRole] || effectiveRole;
+          logEntries.push({
+            company_id: ins.company_id,
+            doc_type: 'PERSONNEL_APPOINT',
+            doc_date: today,
+            notes: `委任${roleLabel}：${personName}`,
+            html_content: `<p>委任${roleLabel}</p><p>${personName}</p><p>日期：${today}</p>`,
+          });
+        }
+        try {
+          const token = localStorage.getItem('secretary_jwt') || '';
+          await fetch('/api/company_logs', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify(logEntries),
+          });
+        } catch (logErr) {
+          console.warn('寫入公司日誌失敗', logErr);
+        }
+      }
+
+      return { count, inserted: inserts.length };
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['companies'] });
+      queryClient.invalidateQueries({ queryKey: ['persons-list'] });
+    },
+  });
+}
+
 // Copy officers and/or shareholders from one company to another.
 // In the new model, "copying" simply means reusing the same persons under a new company.
 // ids passed in are person_company_roles.id values.
@@ -680,11 +963,13 @@ export function useCopyFromCompany() {
       targetCompanyId,
       officerIds,
       shareholderIds,
+      roleOverride,
     }: {
       sourceCompanyId: string;
       targetCompanyId: string;
       officerIds: string[];
       shareholderIds: string[];
+      roleOverride?: { role: string; isReserve?: boolean };
     }) => {
       const allIds = [...officerIds, ...shareholderIds];
       if (allIds.length === 0) return;
@@ -695,8 +980,10 @@ export function useCopyFromCompany() {
       const inserts = (srcRoles || []).map((r: any) => ({
         person_id: r.person_id,
         company_id: targetCompanyId,
-        role: r.role,
-        date_appointed: r.date_appointed || '',
+        role: roleOverride?.role || r.role,
+        is_reserve: roleOverride ? (roleOverride.isReserve || false) : (r.is_reserve || false),
+        notes: r.notes || '',
+        date_appointed: r.date_appointed || new Date().toLocaleDateString('en-GB'),
         date_ceased: '',
         service_address_override: r.service_address_override || '',
         shares: r.shares || 0,

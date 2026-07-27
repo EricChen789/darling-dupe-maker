@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS companies (
   reg_building TEXT DEFAULT '',
   reg_street TEXT DEFAULT '',
   reg_district TEXT DEFAULT '',
-  reg_region TEXT DEFAULT '香港 Hong Kong',
+  reg_region TEXT DEFAULT '',
   incorporation_date TEXT DEFAULT '',
   jurisdiction TEXT DEFAULT 'Hong Kong',
   ci_file_path TEXT DEFAULT '',

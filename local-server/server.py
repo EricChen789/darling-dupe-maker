@@ -529,11 +529,17 @@ def create_pdf():
     pdf.set_auto_page_break(auto=True, margin=60)
     return pdf
 
-def pdf_draw(pdf, text, x, y, size=10, gray=0):
-    """Draw text at absolute position (matching pdf-lib drawText API)."""
+def pdf_draw(pdf, text, x, y, size=10, gray=0, color=None, bold=False):
+    """Draw text at absolute position. color=(r,g,b) or None=black; gray=int 0-255 fallback."""
     pdf.set_xy(x, y)
-    pdf.set_font('TC', size=size)
-    pdf.set_text_color(gray, gray, gray)
+    style = 'B' if bold else ''
+    pdf.set_font('TC', style, size=size)
+    if color:
+        pdf.set_text_color(*color)
+    elif gray != 0:
+        pdf.set_text_color(gray, gray, gray)
+    else:
+        pdf.set_text_color(0, 0, 0)
     pdf.cell(0, size + 2, text or '', new_x="LMARGIN", new_y="NEXT")
 
 
@@ -1155,7 +1161,183 @@ def admin_users_delete(uid):
     db.commit()
     return jsonify({'success': True})
 
+# ─── Register PDF helpers (matching Paul Tang RTF samples) ───
+MARGIN = 28  # ~1cm, matching RTF sample margins
+PAGE_H = 842
+PAGE_W = 595
+CONTENT_W = PAGE_W - MARGIN * 2
+BLUE = (0, 0, 255)
+GREY_HDR = (227, 227, 227)
+
+
+def pdf_draw_right(pdf, text, x, y, size=10, color=None):
+    """Draw text right-aligned at given right-edge x position."""
+    pdf.set_font('TC', size=size)
+    if color:
+        pdf.set_text_color(*color)
+    else:
+        pdf.set_text_color(0, 0, 0)
+    tw = pdf.get_string_width(str(text or ''))
+    pdf.set_xy(x - tw, y)
+    pdf.cell(tw, size + 2, str(text or ''))
+
+
+def pdf_line_h(pdf, x1, x2, y, color=(180, 180, 180), width=0.2):
+    """Draw a horizontal line."""
+    pdf.set_draw_color(*color)
+    pdf.set_line_width(width)
+    pdf.line(x1, y, x2, y)
+    pdf.set_line_width(0.2)
+
+
+def pdf_rect_fill(pdf, x, y, w, h, color):
+    """Draw a filled rectangle."""
+    pdf.set_fill_color(*color)
+    pdf.rect(x, y, w, h, style='F')
+
+
+def pdf_wrap_text(pdf, text, width, size=7):
+    """Split text into lines that fit within width. Handles \\n and CJK."""
+    if not text:
+        return ['']
+    pdf.set_font('TC', size=size)
+    result = []
+    for paragraph in str(text).split('\n'):
+        if not paragraph:
+            result.append('')
+            continue
+        current = ''
+        for ch in paragraph:
+            trial = current + ch
+            if pdf.get_string_width(trial) > width and current:
+                result.append(current)
+                current = ch
+            else:
+                current = trial
+        if current:
+            result.append(current)
+    if not result:
+        result.append('')
+    return result
+
+
+def draw_register_header(pdf, company, title_en, quorum=None):
+    """Draw the standard register page header matching RTF sample style.
+    Returns y position after header + separator line."""
+    y = 45
+
+    pdf_draw(pdf, rget(company, 'name') or '', MARGIN, y, size=14, color=BLUE, bold=True)
+    y += 19
+
+    br = rget(company, 'company_number')
+    cn_line = f"Company Number:  {br}" if br else "Company Number:"
+    pdf_draw(pdf, cn_line, MARGIN, y, size=10, color=BLUE, bold=True)
+
+    if quorum is not None:
+        pdf_draw_right(pdf, f"Quorum:  {quorum}", PAGE_W - MARGIN, y, size=9)
+    y += 20
+
+    today = datetime.now().strftime('%d/%m/%Y')
+    title_full = f"{title_en} AT {today}"
+    pdf_draw(pdf, title_full, MARGIN, y, size=12, color=BLUE, bold=True)
+    y += 22
+
+    pdf_line_h(pdf, MARGIN, PAGE_W - MARGIN, y, color=BLUE, width=0.8)
+    return y + 12
+
+
+def draw_form_label(pdf, label, x_label, y, size=9):
+    """Draw a bold form label (like 'Name', 'Address', 'Security')."""
+    pdf_draw(pdf, label, x_label, y, size=size, bold=True)
+
+
+def draw_form_value(pdf, value, x_val, y, size=9):
+    """Draw a form value after a label."""
+    pdf_draw(pdf, value, x_val, y, size=size)
+
+
+def draw_grey_header_row(pdf, cols, y):
+    """Draw a grey-background header row. cols = [(text, x, w), ...].
+    Returns y below row. Text wraps within column width."""
+    hdr_size = 7
+    label_lines = []
+    max_lines = 1
+    for text, x, w in cols:
+        lines = pdf_wrap_text(pdf, text, w - 6, hdr_size)
+        label_lines.append(lines)
+        max_lines = max(max_lines, len(lines))
+    row_h = max(max_lines * 11 + 6, 22)
+
+    pdf_rect_fill(pdf, MARGIN, y, CONTENT_W, row_h, GREY_HDR)
+
+    pdf.set_text_color(40, 40, 40)
+    for i, (text, x, w) in enumerate(cols):
+        for li, line_text in enumerate(label_lines[i]):
+            pdf.set_xy(x, y + 3 + li * 10)
+            pdf.set_font('TC', size=hdr_size)
+            pdf.cell(w, 10, line_text)
+
+    pdf.set_draw_color(140, 140, 140)
+    pdf.line(MARGIN, y, PAGE_W - MARGIN, y)
+    pdf.line(MARGIN, y + row_h, PAGE_W - MARGIN, y + row_h)
+    pdf.set_draw_color(170, 170, 170)
+    for _, x, _ in cols:
+        pdf.line(x - 3, y, x - 3, y + row_h)
+
+    return y + row_h
+
+
+def draw_data_row(pdf, cols, y, alt=False):
+    """Draw a data row. cols = [(text, x, w), ...]. Returns y below row."""
+    size = 7
+    wrapped = []
+    max_lines = 1
+    for text, x, w in cols:
+        lines = pdf_wrap_text(pdf, str(text or ''), w - 6, size)
+        wrapped.append(lines)
+        max_lines = max(max_lines, len(lines))
+    row_h = max(max_lines * 11 + 6, 20)
+
+    if alt:
+        pdf_rect_fill(pdf, MARGIN, y, CONTENT_W, row_h, (248, 248, 252))
+
+    pdf.set_text_color(25, 25, 25)
+    for i, (text, x, w) in enumerate(cols):
+        for li, line_text in enumerate(wrapped[i]):
+            pdf.set_xy(x, y + 3 + li * 10)
+            pdf.set_font('TC', size=size)
+            pdf.cell(w, 10, line_text)
+
+    pdf.set_draw_color(210, 210, 210)
+    pdf.line(MARGIN, y + row_h, PAGE_W - MARGIN, y + row_h)
+    pdf.set_draw_color(220, 220, 220)
+    for _, x, _ in cols:
+        pdf.line(x - 3, y, x - 3, y + row_h)
+
+    return y + row_h
+
+
 # ─── PDF Generation ───
+
+# ROM Share Transaction sub-column layout:
+# This matches the 11 sub-columns in the RTF sample's grey header
+# Positions calculated proportionally from the RTF twip coordinates
+def _rom_txn_cols():
+    """Return [(label, x, w), ...] for the ROM share transaction table."""
+    x0 = MARGIN + 5
+    return [
+        ("Date Entered\n/ Ceased",      x0,        57),
+        ("Transaction\nType",            x0 + 58,   60),
+        ("Units",                        x0 + 119,  75),
+        ("Par Value\nPer Share",         x0 + 195,  75),
+        ("Paid Up Value\nPer Share",    x0 + 271,  75),
+        ("Certificate\nNo",             x0 + 347,  50),
+        ("Distinctive\nNumbers",        x0 + 398,  115),
+        ("Balance",                     x0 + 514,  55),
+        ("Transferred To/From,\nRedeemed, Reissued", x0 + 570, 140),
+    ]
+
+
 @app.route('/api/generate-shareholders-register-pdf', methods=['POST'])
 def generate_shareholders_register_pdf():
     data = request.get_json(silent=True) or {}
@@ -1168,7 +1350,6 @@ def generate_shareholders_register_pdf():
     if not company:
         return jsonify({'error': 'Company not found'}), 404
 
-    # Read shareholders from person_company_roles (same source as frontend)
     roles = db.execute(
         "SELECT * FROM person_company_roles WHERE company_id = ? AND role = 'shareholder'",
         (company_id,)).fetchall()
@@ -1184,97 +1365,159 @@ def generate_shareholders_register_pdf():
             f"SELECT * FROM persons WHERE id IN ({placeholders})", person_ids).fetchall()
         person_map = {p['id']: p for p in persons}
 
+    # Map transactions by person for grouping
+    tx_by_person = {}
+    for t in txs:
+        key = (rget(t, 'from_name') or rget(t, 'to_name') or '').strip().upper()
+        if key:
+            tx_by_person.setdefault(key, []).append(t)
+
     pdf = create_pdf()
     pdf.add_page()
-    pdf.set_auto_page_break(auto=False)  # manual page breaks only
-    y, left = 50, 50
-    GRAY_LABEL = 100
-    GRAY_DIM = 128
+    pdf.set_auto_page_break(auto=False)
 
-    # Title
-    pdf_draw(pdf, "股東登記冊 / Register of Members", left, y, size=16)
-    y += 22
-    pdf_draw(pdf, f"公司名稱: {company['name'] or ''}", left, y, size=11)
-    y += 14
-    if company['chinese_name']:
-        pdf_draw(pdf, f"中文名稱: {company['chinese_name']}", left, y)
-        y += 14
-    pdf_draw(pdf, f"商業登記號碼 BR: {company['company_number'] or '-'}", left, y)
-    y += 14
-    pdf_draw(pdf, f"生成日期: {datetime.now().strftime('%Y-%m-%d')}", left, y)
-    y += 22
+    quorum = len(roles) if roles else None
+    y = draw_register_header(pdf, company, "REGISTER OF MEMBERS", quorum)
 
-    # Current Shareholders
-    pdf_draw(pdf, "現有股東 Current Shareholders", left, y, size=13)
-    y += 18
+    txn_cols = _rom_txn_cols()
+    row_num = 0
 
     if not roles:
-        pdf_draw(pdf, "(無記錄 / None)", left, y, size=10, gray=GRAY_DIM)
-        y += 20
+        pdf_draw(pdf, "(No shareholders / 尚無股東記錄)", MARGIN + 5, y + 15, size=9)
+        y += 25
     else:
-        for idx, r in enumerate(roles):
+        for r in roles:
             p = person_map.get(r['person_id'], {})
-            pdf_draw(pdf, f"{idx+1}. {rget(p, 'name_english') or rget(p, 'name_chinese') or '(unnamed)'}", left, y, size=11)
-            y += 15
-            rows = [
-                ("身份 Identity", "Corporate / 法人" if rget(p, 'identity') == 'corporate' else "Natural / 自然人"),
-                ("中文姓名", rget(p, 'name_chinese') or '-'),
-                ("身份證/護照/編號", rget(p, 'id_number') or '-'),
-                ("出生日期 DOB", rget(p, 'date_of_birth') or '-'),
-                ("地址 Address", rget(p, 'address') or '-'),
-                ("持股數 Shares", str(r['shares'] or 0)),
-                ("股份類別 Class", r['share_type'] or '-'),
-                ("每股價 Issue Price", f"{r['currency'] or 'HKD'} {r['issue_price'] or '-'}"),
-                ("實繳 Paid Up", r['paid_up'] or '-'),
-                ("未繳 Unpaid", r['unpaid'] or '-'),
-            ]
-            for k, v in rows:
-                if y > 740:
-                    pdf.add_page()
-                    y = 50
-                y = pdf_draw_field(pdf, f"  {k}:", v, left, left + 160, y, 280, size=9, label_gray=GRAY_LABEL)
-                y += 4
-            y += 6
-            if y > 740:
+            name_en = rget(p, 'name_english') or rget(p, 'name_chinese') or '(unnamed)'
+            name_ch = rget(p, 'name_chinese') if rget(p, 'name_english') else ''
+            addr = rget(p, 'address') or ''
+            hkid = rget(p, 'id_number') or rget(p, 'passport_number') or ''
+            is_nat = rget(p, 'identity') != 'corporate'
+
+            if y + 120 > PAGE_H - 50:
                 pdf.add_page()
-                y = 50
+                y = draw_register_header(pdf, company, "REGISTER OF MEMBERS (Cont'd)", quorum)
 
-    y += 10
-    if y > 740:
-        pdf.add_page()
-        y = 50
+            if row_num > 0:
+                pdf_line_h(pdf, MARGIN, PAGE_W - MARGIN, y, width=0.6)
+                y += 6
 
-    # Share Transfer History
-    pdf_draw(pdf, "股份轉讓記錄 Share Transfer History", left, y, size=13)
-    y += 18
+            row_num += 1
 
-    if not txs:
-        pdf_draw(pdf, "(無轉讓記錄 / No transfers recorded)", left, y, size=10, gray=GRAY_DIM)
-        y += 20
-    else:
-        for idx, t in enumerate(txs):
-            pdf_draw(pdf, f"{idx+1}. {t['transaction_date'] or '-'}  ({t['transaction_type'] or 'transfer'})", left, y, size=11)
-            y += 14
-            rows = [
-                ("轉讓人 From", rget(t, 'from_name') or '-'),
-                ("受讓人 To", rget(t, 'to_name') or '-'),
-                ("股數 Shares", str(t['shares'] or 0)),
-                ("股份類別 Class", rget(t, 'share_type') or '-'),
-                ("每股價格", f"{rget(t, 'currency') or 'HKD'} {rget(t, 'price_per_share') or '-'}"),
-                ("總代價 Consideration", rget(t, 'total_consideration') or '-'),
-                ("文件編號 Instrument", rget(t, 'instrument_number') or '-'),
-                ("備註 Notes", rget(t, 'notes') or '-'),
-            ]
-            for k, v in rows:
-                if y > 740:
-                    pdf.add_page()
-                    y = 50
-                y = pdf_draw_field(pdf, f"  {k}:", v, left, left + 160, y, 280, size=9, label_gray=GRAY_LABEL)
-                y += 4
+            # ── Name line ──
+            y0 = y
+            label_x = MARGIN + 3
+            val_x = MARGIN + 58
+
+            draw_form_label(pdf, "Name", label_x, y, size=9)
+            name_display = name_en
+            if is_nat and hkid:
+                name_display = f"{name_en} (Hong Kong ID No: {hkid})"
+            elif not is_nat and hkid:
+                name_display = f"{name_en} (Company No: {hkid})"
+            draw_form_value(pdf, name_display, val_x, y, size=9)
+            if name_ch:
+                pdf_draw(pdf, name_ch, val_x + 20, y, size=8)
+            y += 16
+
+            # ── Address line ──
+            draw_form_label(pdf, "Address", label_x, y, size=9)
+            addr_lines = pdf_wrap_text(pdf, addr, CONTENT_W - 90, 9)
+            for ai, al in enumerate(addr_lines):
+                pdf_draw(pdf, al, val_x, y + ai * 11, size=9)
+            y += max(len(addr_lines), 1) * 12 + 4
+
+            pdf_line_h(pdf, MARGIN, PAGE_W - MARGIN, y, color=(200, 200, 200))
             y += 6
-            if y > 740:
+
+            # ── Security + Dates line ──
+            share_type = rget(r, 'share_type') or 'ORD'
+            currency = rget(r, 'currency') or 'HKD'
+            issue_price = rget(r, 'issue_price') or '1.00'
+            paid_up = rget(r, 'paid_up') or issue_price
+            sec_desc = f"{share_type} - {currency}${issue_price} ORDINARY FULLY PAID ({currency}$)"
+
+            draw_form_label(pdf, "Security", label_x, y, size=9)
+            pdf_draw(pdf, sec_desc, val_x, y, size=9, bold=True)
+
+            date_app = rget(r, 'date_appointed') or '-'
+            date_cea = rget(r, 'date_ceased') or '-'
+            date_label_x = PAGE_W - MARGIN - 210
+            pdf_draw(pdf, "Date", date_label_x, y, size=9, bold=True)
+            pdf_draw(pdf, date_app, date_label_x + 40, y, size=9)
+            ceased_label_x = date_label_x + 110
+            pdf_draw(pdf, "Date Ceased", ceased_label_x, y, size=9, bold=True)
+            pdf_draw(pdf, date_cea if date_cea != '-' else '', ceased_label_x + 65, y, size=9)
+            y += 18
+
+            # ── Share Transactions Grey Header + Data Rows ──
+            if y + 60 > PAGE_H - 50:
                 pdf.add_page()
-                y = 50
+                y = draw_register_header(pdf, company, "REGISTER OF MEMBERS (Cont'd)", quorum)
+
+            y = draw_grey_header_row(pdf, txn_cols, y)
+
+            person_name_key = name_en.strip().upper()
+            person_txs = tx_by_person.get(person_name_key, [])
+
+            if not person_txs:
+                shares_count = str(r['shares'] or 0)
+                row_data = [
+                    (date_app,             txn_cols[0][1], txn_cols[0][2]),
+                    ('Allotment',           txn_cols[1][1], txn_cols[1][2]),
+                    (shares_count,          txn_cols[2][1], txn_cols[2][2]),
+                    (f"{currency}${issue_price}", txn_cols[3][1], txn_cols[3][2]),
+                    (f"{currency}${paid_up}", txn_cols[4][1], txn_cols[4][2]),
+                    (rget(r, 'certificate_number') or '-', txn_cols[5][1], txn_cols[5][2]),
+                    ('-',                   txn_cols[6][1], txn_cols[6][2]),
+                    (shares_count,          txn_cols[7][1], txn_cols[7][2]),
+                    ('-',                   txn_cols[8][1], txn_cols[8][2]),
+                ]
+                y = draw_data_row(pdf, row_data, y, alt=(row_num % 2 == 0))
+            else:
+                running_balance = 0
+                for tx in person_txs:
+                    if y + 28 > PAGE_H - 50:
+                        pdf.add_page()
+                        y = draw_register_header(pdf, company, "REGISTER OF MEMBERS (Cont'd)", quorum)
+                        y = draw_grey_header_row(pdf, txn_cols, y)
+
+                    tx_type = rget(tx, 'transaction_type') or 'Transfer'
+                    tx_date = rget(tx, 'transaction_date') or '-'
+                    tx_shares = int(tx['shares'] or 0)
+                    tx_price = rget(tx, 'price_per_share') or issue_price
+                    tx_currency = rget(tx, 'currency') or currency
+                    tx_from = rget(tx, 'from_name') or ''
+                    tx_to = rget(tx, 'to_name') or ''
+                    tx_inst = rget(tx, 'instrument_number') or '-'
+
+                    is_out = tx_from.strip().upper() == person_name_key
+                    is_in = tx_to.strip().upper() == person_name_key
+
+                    if is_in:
+                        running_balance += tx_shares
+                        tfr_info = tx_from
+                    elif is_out:
+                        running_balance -= tx_shares
+                        tfr_info = f"To: {tx_to}"
+                    else:
+                        running_balance += tx_shares
+                        tfr_info = ''
+
+                    row_data = [
+                        (tx_date,                txn_cols[0][1], txn_cols[0][2]),
+                        (tx_type,                txn_cols[1][1], txn_cols[1][2]),
+                        (str(tx_shares),         txn_cols[2][1], txn_cols[2][2]),
+                        (f"{tx_currency}${tx_price}", txn_cols[3][1], txn_cols[3][2]),
+                        (f"{tx_currency}${tx_price}", txn_cols[4][1], txn_cols[4][2]),
+                        (tx_inst,                txn_cols[5][1], txn_cols[5][2]),
+                        ('-',                    txn_cols[6][1], txn_cols[6][2]),
+                        (str(running_balance),   txn_cols[7][1], txn_cols[7][2]),
+                        (tfr_info,               txn_cols[8][1], txn_cols[8][2]),
+                    ]
+                    y = draw_data_row(pdf, row_data, y, alt=(row_num % 2 == 0))
+
+            y += 12
 
     pdf_bytes = bytes(pdf.output())
     import base64 as b64
@@ -1282,6 +1525,7 @@ def generate_shareholders_register_pdf():
 
 @app.route('/api/generate-directors-register-pdf', methods=['POST'])
 def generate_directors_register_pdf():
+    """Register of Directors (ROD) — matching RTF sample layout."""
     data = request.get_json(silent=True) or {}
     company_id = data.get('companyId', '')
     if not company_id:
@@ -1293,7 +1537,7 @@ def generate_directors_register_pdf():
         return jsonify({'error': 'Company not found'}), 404
 
     roles = db.execute(
-        "SELECT * FROM person_company_roles WHERE company_id = ? AND role = 'director'",
+        "SELECT * FROM person_company_roles WHERE company_id = ? AND role IN ('director', 'secretary')",
         (company_id,)).fetchall()
     person_ids = [r['person_id'] for r in roles]
     person_map = {}
@@ -1303,67 +1547,106 @@ def generate_directors_register_pdf():
             f"SELECT * FROM persons WHERE id IN ({placeholders})", person_ids).fetchall()
         person_map = {p['id']: p for p in persons}
 
+    directors = [r for r in roles if r['role'] == 'director']
+    secretaries = [r for r in roles if r['role'] == 'secretary']
+
     pdf = create_pdf()
     pdf.add_page()
-    pdf.set_auto_page_break(auto=False)  # manual page breaks only
-    y, left = 50, 50
-    GRAY_LABEL = 100
-    GRAY_DIM = 128
+    pdf.set_auto_page_break(auto=False)
 
-    pdf_draw(pdf, "董事登記冊 / Register of Directors", left, y, size=16)
-    y += 22
-    pdf_draw(pdf, f"公司名稱: {company['name'] or ''}", left, y, size=11)
-    y += 14
-    if company['chinese_name']:
-        pdf_draw(pdf, f"中文名稱: {company['chinese_name']}", left, y)
-        y += 14
-    pdf_draw(pdf, f"商業登記號碼 BR: {company['company_number'] or '-'}", left, y)
-    y += 14
-    pdf_draw(pdf, f"生成日期: {datetime.now().strftime('%Y-%m-%d')}", left, y)
-    y += 22
+    quorum = len(directors) if directors else None
+    y = draw_register_header(pdf, company, "REGISTER OF OFFICERS", quorum)
 
-    directors = [r for r in roles if r['role'] == 'director']
+    # ROD columns matching RTF sample — 6 columns
+    x0 = MARGIN + 3
+    rod_cols = [
+        ("Name / Service /\nResidential Address",   x0,         130),
+        ("Date / Place Birth /\nPlace Incorporated /\nOccupation /", x0 + 131,  75),
+        ("ID No / Passport\nDetails",               x0 + 207,   67),
+        ("Position",                                x0 + 275,   48),
+        ("Date(s) Appointed\n/Meeting",             x0 + 324,   78),
+        ("Reason / Date(s)\nCeased",                x0 + 403,   78),
+    ]
 
-    def draw_section(title, items):
-        nonlocal y
-        pdf_draw(pdf, title, left, y, size=13)
-        y += 18
-        if not items:
-            pdf_draw(pdf, "(無記錄 / None)", left, y, size=10, gray=GRAY_DIM)
-            y += 20
-            return
-        for idx, r in enumerate(items):
+    y = draw_grey_header_row(pdf, rod_cols, y)
+
+    row_num = 0
+
+    def render_section(items, is_secretary=False):
+        nonlocal y, row_num
+        for r in items:
             p = person_map.get(r['person_id'], {})
-            label = f"{idx+1}. {rget(p, 'name_english') or rget(p, 'name_chinese') or '(unnamed)'}"
-            if rget(r, 'is_reserve'):
-                label += "  [預備董事 Reserve]"
-            pdf_draw(pdf, label, left, y, size=11)
-            y += 15
-            rows = [
-                ("身份 Identity", "Corporate / 法人" if rget(p, 'identity') == 'corporate' else "Natural / 自然人"),
-                ("中文姓名", rget(p, 'name_chinese') or '-'),
-                ("身份證/護照/編號", rget(p, 'id_number') or '-'),
-                ("出生日期 DOB", rget(p, 'date_of_birth') or '-'),
-                ("地址 Address", rget(p, 'address') or '-'),
-                ("服務地址 Service Address", rget(r, 'service_address_override') or rget(p, 'service_address') or '-'),
-                ("委任日期 Date Appointed", rget(r, 'date_appointed') or '-'),
-                ("停止日期 Date Ceased", rget(r, 'date_ceased') or '-'),
-            ]
-            if rget(p, 'identity') == 'corporate':
-                rows.append(("註冊地 Place Incorporated", rget(p, 'place_incorporated') or '-'))
-                rows.append(("公司編號 Company No.", rget(p, 'company_number_ref') or '-'))
-            for k, v in rows:
-                if y > 740:
-                    pdf.add_page()
-                    y = 50
-                y = pdf_draw_field(pdf, f"  {k}:", v, left, left + 160, y, 280, size=9, label_gray=GRAY_LABEL)
-                y += 4
-            y += 6
-            if y > 740:
-                pdf.add_page()
-                y = 50
+            name_en = rget(p, 'name_english') or rget(p, 'name_chinese') or '(unnamed)'
+            name_ch = rget(p, 'name_chinese') if rget(p, 'name_english') else ''
+            is_nat = rget(p, 'identity') != 'corporate'
 
-    draw_section("董事 Directors", directors)
+            # Build Name/Address block
+            addr = (rget(p, 'address') or '') if is_nat else (rget(p, 'registered_office') or rget(p, 'address') or '')
+            name_block = name_en
+            if name_ch:
+                name_block += f"\n{name_ch}"
+            if addr:
+                name_block += f"\n{addr[:120]}"
+
+            # DOB/Place/Nation block
+            if is_nat:
+                dob = rget(p, 'date_of_birth') or '-'
+                pob = rget(p, 'place_of_birth') or '-'
+                nat = rget(p, 'nationality') or '-'
+                dob_block = f"{dob}\n{pob}\n{nat}"
+            else:
+                poi = rget(p, 'place_incorporated') or '-'
+                dob_block = f"{poi}\n-\n-"
+
+            # ID block
+            id_info = (rget(p, 'id_number') or rget(p, 'passport_number') or '-') if is_nat else (rget(p, 'company_number_ref') or '-')
+
+            # Position
+            if is_secretary:
+                position = "Secretary"
+            else:
+                position = "Reserve Director" if rget(r, 'is_reserve') else "Director"
+
+            # Date Appointed
+            date_app = rget(r, 'date_appointed') or '-'
+
+            # Date Ceased / Reason
+            date_cea = rget(r, 'date_ceased')
+            if date_cea:
+                reason_block = f"Resigned\n{date_cea}"
+            else:
+                reason_block = "Current\n現任"
+
+            row_num += 1
+            if y + 50 > PAGE_H - 50:
+                pdf.add_page()
+                y = draw_register_header(pdf, company, "REGISTER OF OFFICERS (Cont'd)", quorum)
+                y = draw_grey_header_row(pdf, rod_cols, y)
+
+            row_data = [
+                (name_block,       rod_cols[0][1], rod_cols[0][2]),
+                (dob_block,        rod_cols[1][1], rod_cols[1][2]),
+                (id_info,          rod_cols[2][1], rod_cols[2][2]),
+                (position,         rod_cols[3][1], rod_cols[3][2]),
+                (date_app,         rod_cols[4][1], rod_cols[4][2]),
+                (reason_block,     rod_cols[5][1], rod_cols[5][2]),
+            ]
+            y = draw_data_row(pdf, row_data, y, alt=(row_num % 2 == 0))
+
+    # Directors first
+    if directors:
+        render_section(directors)
+    else:
+        pdf_draw(pdf, "(No directors / 尚無董事記錄)", MARGIN + 5, y + 12, size=8)
+        y += 22
+
+    # Secretaries below directors with same column layout
+    if secretaries:
+        if y + 40 > PAGE_H - 50:
+            pdf.add_page()
+            y = draw_register_header(pdf, company, "REGISTER OF OFFICERS (Cont'd)", quorum)
+        y += 6
+        render_section(secretaries, is_secretary=True)
 
     pdf_bytes = bytes(pdf.output())
     import base64 as b64
@@ -1372,6 +1655,7 @@ def generate_directors_register_pdf():
 
 @app.route('/api/generate-secretaries-register-pdf', methods=['POST'])
 def generate_secretaries_register_pdf():
+    """Standalone Register of Secretaries — matching ROD style."""
     data = request.get_json(silent=True) or {}
     company_id = data.get('companyId', '')
     if not company_id:
@@ -1395,55 +1679,61 @@ def generate_secretaries_register_pdf():
 
     pdf = create_pdf()
     pdf.add_page()
-    pdf.set_auto_page_break(auto=False)  # manual page breaks only
-    y, left = 50, 50
-    GRAY_LABEL = 100
-    GRAY_DIM = 128
+    pdf.set_auto_page_break(auto=False)
 
-    pdf_draw(pdf, "公司秘書登記冊 / Register of Company Secretaries", left, y, size=16)
-    y += 22
-    pdf_draw(pdf, f"公司名稱: {company['name'] or ''}", left, y, size=11)
-    y += 14
-    if company['chinese_name']:
-        pdf_draw(pdf, f"中文名稱: {company['chinese_name']}", left, y)
-        y += 14
-    pdf_draw(pdf, f"商業登記號碼 BR: {company['company_number'] or '-'}", left, y)
-    y += 14
-    pdf_draw(pdf, f"生成日期: {datetime.now().strftime('%Y-%m-%d')}", left, y)
-    y += 22
+    y = draw_register_header(pdf, company, "REGISTER OF COMPANY SECRETARIES")
+
+    x0 = MARGIN + 3
+    sec_cols = [
+        ("Name / Service /\nResidential Address",   x0,         140),
+        ("ID No / Passport\nDetails",               x0 + 141,   80),
+        ("TCSP Licence\nNo.",                       x0 + 222,   60),
+        ("Position",                                x0 + 283,   55),
+        ("Date(s) Appointed",                       x0 + 339,   75),
+        ("Reason / Date(s)\nCeased",                x0 + 415,   75),
+    ]
+
+    y = draw_grey_header_row(pdf, sec_cols, y)
+    row_num = 0
 
     if not roles:
-        pdf_draw(pdf, "(無記錄 / None)", left, y, size=10, gray=GRAY_DIM)
-        y += 20
+        pdf_draw(pdf, "(No secretaries / 尚無公司秘書記錄)", MARGIN + 5, y + 12, size=8)
     else:
-        for idx, r in enumerate(roles):
+        for r in roles:
             p = person_map.get(r['person_id'], {})
-            label = f"{idx+1}. {rget(p, 'name_english') or rget(p, 'name_chinese') or '(unnamed)'}"
-            pdf_draw(pdf, label, left, y, size=11)
-            y += 15
-            rows = [
-                ("身份 Identity", "Corporate / 法人" if rget(p, 'identity') == 'corporate' else "Natural / 自然人"),
-                ("中文姓名", rget(p, 'name_chinese') or '-'),
-                ("身份證/護照/編號", rget(p, 'id_number') or '-'),
-                ("TCSP 牌照號碼", rget(p, 'tcsp_number') or '-'),
-                ("地址 Address", rget(p, 'address') or '-'),
-                ("服務地址 Service Address", rget(r, 'service_address_override') or rget(p, 'service_address') or '-'),
-                ("委任日期 Date Appointed", rget(r, 'date_appointed') or '-'),
-                ("停止日期 Date Ceased", rget(r, 'date_ceased') or '-'),
-            ]
-            if rget(p, 'identity') == 'corporate':
-                rows.append(("註冊地 Place Incorporated", rget(p, 'place_incorporated') or '-'))
-                rows.append(("公司編號 Company No.", rget(p, 'company_number_ref') or '-'))
-            for k, v in rows:
-                if y > 740:
-                    pdf.add_page()
-                    y = 50
-                y = pdf_draw_field(pdf, f"  {k}:", v, left, left + 160, y, 280, size=9, label_gray=GRAY_LABEL)
-                y += 4
-            y += 6
-            if y > 740:
+            name_en = rget(p, 'name_english') or rget(p, 'name_chinese') or '(unnamed)'
+            name_ch = rget(p, 'name_chinese') if rget(p, 'name_english') else ''
+            is_nat = rget(p, 'identity') != 'corporate'
+
+            addr = (rget(p, 'address') or '') if is_nat else (rget(p, 'registered_office') or rget(p, 'address') or '')
+            name_block = name_en
+            if name_ch:
+                name_block += f"\n{name_ch}"
+            if addr:
+                name_block += f"\n{addr[:100]}"
+
+            id_info = (rget(p, 'id_number') or rget(p, 'passport_number') or '-') if is_nat else (rget(p, 'company_number_ref') or '-')
+            tcsp = rget(p, 'tcsp_number') or '-'
+            position = "Company Secretary"
+            date_app = rget(r, 'date_appointed') or '-'
+            date_cea = rget(r, 'date_ceased')
+            reason_block = f"Resigned\n{date_cea}" if date_cea else "Current\n現任"
+
+            row_num += 1
+            if y + 40 > PAGE_H - 50:
                 pdf.add_page()
-                y = 50
+                y = draw_register_header(pdf, company, "REGISTER OF COMPANY SECRETARIES (Cont'd)")
+                y = draw_grey_header_row(pdf, sec_cols, y)
+
+            row_data = [
+                (name_block,       sec_cols[0][1], sec_cols[0][2]),
+                (id_info,          sec_cols[1][1], sec_cols[1][2]),
+                (tcsp,             sec_cols[2][1], sec_cols[2][2]),
+                (position,         sec_cols[3][1], sec_cols[3][2]),
+                (date_app,         sec_cols[4][1], sec_cols[4][2]),
+                (reason_block,     sec_cols[5][1], sec_cols[5][2]),
+            ]
+            y = draw_data_row(pdf, row_data, y, alt=(row_num % 2 == 0))
 
     pdf_bytes = bytes(pdf.output())
     import base64 as b64
@@ -1452,6 +1742,7 @@ def generate_secretaries_register_pdf():
 
 @app.route('/api/generate-scr-pdf', methods=['POST'])
 def generate_scr_pdf():
+    """Significant Controllers Register — matching ROD table style."""
     data = request.get_json(silent=True) or {}
     company_id = data.get('companyId', '')
     if not company_id:
@@ -1468,59 +1759,68 @@ def generate_scr_pdf():
 
     pdf = create_pdf()
     pdf.add_page()
-    pdf.set_auto_page_break(auto=False)  # manual page breaks only
-    y, left = 50, 50
-    GRAY_LABEL = 100
-    GRAY_DIM = 128
+    pdf.set_auto_page_break(auto=False)
 
-    pdf_draw(pdf, "重要控制人登記冊 / Significant Controllers Register", left, y, size=16)
-    y += 22
-    pdf_draw(pdf, f"公司名稱: {company['name'] or ''}", left, y, size=11)
-    y += 14
-    if company['chinese_name']:
-        pdf_draw(pdf, f"中文名稱: {company['chinese_name']}", left, y)
-        y += 14
-    pdf_draw(pdf, f"商業登記號碼 BR: {company['company_number'] or '-'}", left, y)
-    y += 14
-    pdf_draw(pdf, f"生成日期: {datetime.now().strftime('%Y-%m-%d')}", left, y)
-    y += 22
+    y = draw_register_header(pdf, company, "SIGNIFICANT CONTROLLERS REGISTER")
+
+    x0 = MARGIN + 3
+    scr_cols = [
+        ("Name",              x0,         100),
+        ("Identity /\nID No / Passport /\nCompany Reg No", x0 + 101,  82),
+        ("Address",           x0 + 184,   105),
+        ("Nature of\nControl", x0 + 290,  82),
+        ("Date Became\nController", x0 + 373,  58),
+        ("Date Ceased /\nDesignated Rep", x0 + 432,  58),
+    ]
+
+    y = draw_grey_header_row(pdf, scr_cols, y)
+    row_num = 0
 
     if not scrs:
-        pdf_draw(pdf, "(無記錄 / None)", left, y, size=10, gray=GRAY_DIM)
-        y += 20
+        pdf_draw(pdf, "(No SCR records / 尚無重要控制人記錄)", MARGIN + 5, y + 12, size=8)
     else:
-        for idx, s in enumerate(scrs):
-            pdf_draw(pdf, f"{idx+1}. {rget(s, 'name_english') or rget(s, 'name_chinese') or '(unnamed)'}", left, y, size=12)
-            y += 16
+        for s in scrs:
             natures = []
-            if rget(s, 'nature_shares'): natures.append('持股 >25%')
-            if rget(s, 'nature_voting'): natures.append('表決權 >25%')
-            if rget(s, 'nature_appoint'): natures.append('任命董事權')
-            if rget(s, 'nature_influence'): natures.append('重大影響')
-            if rget(s, 'nature_trust'): natures.append('信託控制')
+            if rget(s, 'nature_shares'): natures.append('Holds >25% shares')
+            if rget(s, 'nature_voting'): natures.append('>25% voting rights')
+            if rget(s, 'nature_appoint'): natures.append('Appoint/remove directors')
+            if rget(s, 'nature_influence'): natures.append('Significant influence')
+            if rget(s, 'nature_trust'): natures.append('Trust control')
             if rget(s, 'nature_other'): natures.append(s['nature_other'])
-            rows = [
-                ("身份 Identity", "法人 Corporate" if rget(s, 'identity') == 'corporate' else "自然人 Natural"),
-                ("身份證/編號", rget(s, 'id_number') or '-'),
-                ("中文名稱", rget(s, 'name_chinese') or '-'),
-                ("居住/註冊地址", rget(s, 'address') or '-'),
-                ("服務地址 Service Address", rget(s, 'service_address') or '-'),
-                ("成為控制人日期", rget(s, 'date_became') or '-'),
-                ("停止日期 Date Ceased", rget(s, 'date_ceased') or '-'),
-                ("控制性質 Nature of Control", '、'.join(natures) or '-'),
-            ]
-            if rget(s, 'is_designated_rep'):
-                rows.append(("指定代表 Designated Rep", f"{rget(s, 'designated_rep_name') or '-'} ({rget(s, 'designated_rep_contact') or '-'})"))
-            for k, v in rows:
-                if y > 740:
-                    pdf.add_page()
-                    y = 50
-                y = pdf_draw_field(pdf, f"  {k}:", v, left, left + 160, y, 280, size=9, label_gray=GRAY_LABEL)
-                y += 4
-            y += 8
-            if y > 740:
+
+            is_nat = rget(s, 'identity') != 'corporate'
+            name = f"{rget(s, 'name_english') or ''}\n{rget(s, 'name_chinese') or ''}".strip() or '(unnamed)'
+            id_info = rget(s, 'id_number') or rget(s, 'passport_number') or '-' if is_nat else rget(s, 'company_number_ref') or '-'
+            identity = 'Natural Person\n自然人' if is_nat else 'Body Corporate\n法人'
+
+            addr = (rget(s, 'address') or '')[:100]
+            nature_text = '\n'.join(natures) or '-'
+            date_became = rget(s, 'date_became') or '-'
+            date_cea = rget(s, 'date_ceased') or ''
+
+            ceased_block = date_cea if date_cea else 'Current\n現任'
+            if rget(s, 'is_designated_rep') and rget(s, 'designated_rep_name'):
+                rep_name = rget(s, 'designated_rep_name')
+                rep_contact = rget(s, 'designated_rep_contact') or ''
+                ceased_block += f"\nRep: {rep_name}"
+                if rep_contact:
+                    ceased_block += f"\nContact: {rep_contact}"
+
+            row_num += 1
+            if y + 50 > PAGE_H - 50:
                 pdf.add_page()
-                y = 50
+                y = draw_register_header(pdf, company, "SIGNIFICANT CONTROLLERS REGISTER (Cont'd)")
+                y = draw_grey_header_row(pdf, scr_cols, y)
+
+            row_data = [
+                (name,             scr_cols[0][1], scr_cols[0][2]),
+                (f"{identity}\n{id_info}", scr_cols[1][1], scr_cols[1][2]),
+                (addr,             scr_cols[2][1], scr_cols[2][2]),
+                (nature_text,      scr_cols[3][1], scr_cols[3][2]),
+                (date_became,      scr_cols[4][1], scr_cols[4][2]),
+                (ceased_block,     scr_cols[5][1], scr_cols[5][2]),
+            ]
+            y = draw_data_row(pdf, row_data, y, alt=(row_num % 2 == 0))
 
     pdf_bytes = bytes(pdf.output())
     import base64 as b64
@@ -1583,6 +1883,239 @@ def storage_delete(bucket, filepath):
     if os.path.isfile(target):
         os.remove(target)
     return jsonify({'success': True})
+
+
+# ─── Share Transfer PDFs (Instrument / Bought&Sold Note / Share Certificate) ───
+@app.route('/api/generate-share-transfer-pdf', methods=['POST'])
+def generate_share_transfer_pdf():
+    data = request.get_json(silent=True) or {}
+    company_id = data.get('companyId', '')
+    if not company_id:
+        return jsonify({'error': 'companyId required'}), 400
+
+    doc_type = data.get('documentType', 'instrument_of_transfer')
+
+    db = get_db()
+    company = db.execute("SELECT * FROM companies WHERE id = ?", (company_id,)).fetchone()
+    if not company:
+        return jsonify({'error': 'Company not found'}), 404
+
+    txs = db.execute(
+        "SELECT * FROM share_transactions WHERE company_id = ? ORDER BY transaction_date DESC",
+        (company_id,)).fetchall()
+
+    tx = txs[0] if txs else {}
+    company_dict = dict(company)
+    tx_dict = dict(tx) if tx else {}
+    all_tx_dicts = [dict(t) for t in txs]
+
+    pdf = create_pdf()
+    if doc_type == 'share_certificate':
+        _build_share_certificate(pdf, company_dict, tx_dict)
+    elif doc_type == 'bought_sold_note':
+        _build_bought_sold_note(pdf, company_dict, tx_dict)
+    else:
+        _build_instrument_of_transfer(pdf, company_dict, tx_dict, all_tx_dicts)
+
+    pdf_bytes = pdf.output()
+    return jsonify({'pdf': base64.b64encode(pdf_bytes).decode('utf-8')})
+
+
+def _build_instrument_of_transfer(pdf, company, tx, all_txs):
+    pdf.add_page()
+    pdf.set_auto_page_break(auto=False)
+    y, left = 45, 45
+    page_w = 595
+
+    pdf_draw(pdf, "股份轉讓文書 / Instrument of Transfer", left, y, size=15)
+    y += 20
+    pdf.line(left, y, page_w - left, y)
+    y += 14
+
+    def draw_line(label, value):
+        nonlocal y
+        pdf_draw(pdf, label, left, y, size=10, gray=80)
+        pdf_draw(pdf, value or "__________________________", left + 140, y, size=10)
+        y += 22
+
+    draw_line("公司名稱 Company:", company.get('name', ''))
+    draw_line("BR 號碼:", company.get('company_number', ''))
+    if company.get('chinese_name'):
+        draw_line("中文名稱:", company.get('chinese_name', ''))
+
+    y += 10
+    pdf_draw(pdf, "轉讓詳情 / Transfer Details", left, y, size=12)
+    y += 6
+    pdf.line(left, y, page_w - left, y)
+    y += 16
+
+    itx_shares = tx.get('shares', 0) or 0
+    itx_par_val = float(tx.get('price_per_share') or 1.00)
+    itx_cons = tx.get('total_consideration') or (itx_shares * itx_par_val)
+
+    draw_line("轉讓人 Transferor:", tx.get('from_name', ''))
+    draw_line("受讓人 Transferee:", tx.get('to_name', ''))
+    draw_line("股份數目 No. of Shares:",
+              f"{itx_shares:,}  of  HK${itx_par_val:,.2f}  each" if tx.get('shares') else "________________")
+    draw_line("股份類別 Share Class:", tx.get('share_type', 'Ordinary'))
+    draw_line("每股代價 Price per Share:",
+              f"{tx.get('currency', '')} {tx.get('price_per_share', '')}" if tx.get('price_per_share') else "________________")
+    draw_line("總代價 Total Consideration:",
+              f"HK${itx_cons:,.2f}" if (tx.get('total_consideration') or tx.get('shares')) else "________________")
+    draw_line("轉讓日期 Transfer Date:", tx.get('transaction_date', ''))
+    draw_line("文書編號 Instrument No:", tx.get('instrument_number', ''))
+
+    y += 20
+    pdf_draw(pdf, "轉讓人簽署 / Signed by Transferor:", left, y, size=10)
+    pdf_draw(pdf, "____________________________", left + 200, y, size=10)
+    y += 25
+    pdf_draw(pdf, "受讓人簽署 / Signed by Transferee:", left, y, size=10)
+    pdf_draw(pdf, "____________________________", left + 200, y, size=10)
+    y += 25
+    pdf_draw(pdf, "日期 Date: ____/____/________", left, y, size=10)
+
+    pdf_draw(pdf, f"由 Muse Labs Engineering Limited 秘書系統生成 | {datetime.now().strftime('%Y-%m-%d')}",
+             left, 30, size=7, gray=150)
+
+
+def _build_bought_sold_note(pdf, company, tx):
+    pdf.add_page()
+    pdf.set_auto_page_break(auto=False)
+    y, left, page_w = 45, 45, 595
+    half_h = 842 / 2
+    label_x = left + 8
+    value_x = left + 180
+
+    from_name = tx.get('from_name', '')
+    to_name = tx.get('to_name', '')
+    shares = tx.get('shares', 0) or 0
+    par_val = tx.get('price_per_share', '1.00')
+    consideration = tx.get('total_consideration') or (shares * float(par_val))
+    tx_date = tx.get('transaction_date', '')
+    co_name = company.get('name', '')
+
+    def draw_row(label, value, y_pos, size=9):
+        pdf_draw(pdf, label, label_x, y_pos, size=size, gray=0)
+        pdf_draw(pdf, value, value_x, y_pos, size=size, gray=0)
+
+    # ═══ Sold Note — TOP half ═══
+    y = 842 - 42
+    pdf_draw(pdf, "Sold Note 賣出票據", page_w / 2 - 50, y, size=14)
+    y -= 22
+    pdf.line(left, y, page_w - left, y)
+    y -= 16
+
+    draw_row("Name of Purchaser (Transferee):", to_name, y); y -= 18
+    draw_row("Address:", "", y); y -= 18
+    draw_row("Occupation:", "", y); y -= 18
+    draw_row("Name of Company:", co_name, y); y -= 18
+    draw_row("Number of Shares:", f"{shares:,}    of    HK${par_val}    each", y); y -= 18
+    draw_row("Consideration Received:", f"HK${consideration:,.2f}" if consideration else "", y); y -= 18
+
+    y -= 8
+    transferor_text = f"(Transferor)  {from_name}"
+    pdf_draw(pdf, transferor_text, page_w / 2 - 40, y, size=9)
+    y -= 14
+    pdf_draw(pdf, co_name, page_w / 2 + 60, y, size=7)
+    y -= 14
+
+    y = half_h + 14
+    pdf_draw(pdf, f"Hong Kong, Dated  {tx_date}", label_x, y, size=9)
+
+    # Divider
+    pdf.line(left, half_h, page_w - left, half_h)
+
+    # ═══ Bought Note — BOTTOM half ═══
+    y = half_h - 14
+    pdf_draw(pdf, "Bought Note 買入票據", page_w / 2 - 50, y, size=14)
+    y -= 22
+    pdf.line(left, y, page_w - left, y)
+    y -= 16
+
+    draw_row("Name of Seller (Transferor):", from_name, y); y -= 18
+    draw_row("Address:", "", y); y -= 18
+    draw_row("Occupation:", "", y); y -= 18
+    draw_row("Name of Company:", co_name, y); y -= 18
+    draw_row("Number of Shares:", f"{shares:,}    of    HK${par_val}    each", y); y -= 18
+    draw_row("Consideration Received:", f"HK${consideration:,.2f}" if consideration else "", y); y -= 18
+
+    y -= 8
+    pdf_draw(pdf, f"(Transferee)  {to_name}", label_x, y, size=9)
+    y -= 18
+    pdf_draw(pdf, f"Hong Kong, Dated  {tx_date}", label_x, y, size=9)
+
+    pdf_draw(pdf, f"Generated by Muse Labs | {datetime.now().strftime('%Y-%m-%d')}",
+             left, 20, size=6, gray=150)
+
+
+def _build_share_certificate(pdf, company, tx):
+    pdf.add_page()
+    pdf.set_auto_page_break(auto=False)
+    y, left, page_w = 45, 45, 595
+    page_h = 842
+
+    # Ornate border
+    pdf.set_draw_color(25, 76, 25)
+    pdf.set_line_width(3)
+    pdf.rect(15, 15, page_w - 30, page_h - 30)
+    pdf.set_draw_color(51, 127, 51)
+    pdf.set_line_width(0.5)
+    pdf.rect(22, 22, page_w - 44, page_h - 44)
+    pdf.set_draw_color(0, 0, 0)
+    pdf.set_line_width(0.2)
+
+    y = page_h - 70
+    pdf_draw(pdf, "股票證書 / SHARE CERTIFICATE", page_w / 2 - 90, y, size=16)
+    y -= 28
+    pdf.line(80, y, page_w - 80, y)
+    y -= 24
+
+    pdf_draw(pdf, f"公司名稱: {company.get('name', '________________________________')}", 50, y, size=10)
+    y -= 18
+    if company.get('chinese_name'):
+        pdf_draw(pdf, f"中文名稱: {company.get('chinese_name', '')}", 50, y, size=10)
+        y -= 18
+    pdf_draw(pdf, f"商業登記號碼: {company.get('company_number', '________________')}", 50, y, size=10)
+    y -= 18
+    reg_office = company.get('address') or company.get('registered_office', '')
+    pdf_draw(pdf, f"註冊辦事處地址: {reg_office or '________________________________'}", 50, y, size=10)
+
+    y -= 30
+    pdf_draw(pdf, "茲證明 / THIS IS TO CERTIFY that", 50, y, size=10, gray=80)
+    y -= 24
+
+    holder_name = tx.get('to_name', '________________________________')
+    share_class = tx.get('share_type', 'Ordinary')
+    shares_val = tx.get('shares', '________')
+    price = tx.get('price_per_share', '____')
+
+    pdf_draw(pdf, holder_name, page_w / 2 - 40, y, size=13)
+    y -= 22
+    pdf_draw(pdf, "is/are the registered holder(s) of", 50, y, size=10, gray=80)
+    y -= 22
+    pdf_draw(pdf, f"{shares_val} {share_class} Share(s)", page_w / 2 - 40, y, size=13)
+    y -= 22
+    pdf_draw(pdf, f"of HK$ {price} each fully paid", 50, y, size=10, gray=80)
+    y -= 22
+    pdf_draw(pdf, "in the above-named Company", 50, y, size=10, gray=80)
+
+    y -= 30
+    pdf_draw(pdf, f"證書編號 Certificate No: {tx.get('instrument_number', '______________')}",
+             50, y, size=9, gray=100)
+
+    y -= 50
+    pdf.line(50, y, 200, y)
+    pdf.line(page_w - 200, y, page_w - 50, y)
+    y -= 14
+    pdf_draw(pdf, "董事 Director", 50, y, size=8, gray=100)
+    pdf_draw(pdf, "公司秘書 Secretary", page_w - 200, y, size=8, gray=100)
+
+    y -= 24
+    pdf_draw(pdf, f"簽發日期 Issue Date: {tx.get('transaction_date', '________________')}",
+             50, y, size=9)
+
+    pdf_draw(pdf, "由 Muse Labs Engineering Limited 秘書系統生成",
+             page_w / 2 - 80, 30, size=7, gray=150)
 
 
 # ─── Generic CRUD ───
@@ -1945,11 +2478,28 @@ import fitz  # PyMuPDF
 _CJK_RE = re.compile(r'[㐀-鿿豈-﫿]')
 _PURE_NUMBER_RE = re.compile(r'^[\d,.\s]+$')
 _ADDR_FLAT_RE = re.compile(
-    r'^(?:flat|room|rm|unit|shop|suite|ste|workshop|portion|floor|fl|\d+/f|g/f|gf|lg/f|ug/f|m/f|b\d*/f)',
+    r'^(?:flat|room|rm|unit|shop|suite|ste|workshop|portion|floor|fl|level|lvl|\d+/f|g/f|gf|lg/f|ug/f|m/f|b\d*/f)'
+    r'|\b(?:tower|twr|block|blk)\b'
+    r'|\ball\s+(?:that|those)\b',
+    re.IGNORECASE
+)
+_ADDR_BUILDING_RE = re.compile(
+    r'\b(?:building|bldg|mansion|centre|center|tower|house|plaza|estate|court|gardens|industrial|commercial|factory|hotel|complex|arcade|heights|square|place|lane|exchange|finance|financial|plaza|villa)\b',
+    re.IGNORECASE
+)
+_ADDR_STREET_RE = re.compile(
+    r'\b(?:road|street|avenue|drive|lane|path|way|boulevard|terrace|row|close|crescent|highway|bridge|pier|ferry|circus|central|plaza)\b|^\d',
+    re.IGNORECASE
+)
+# Broad HK regions that should always merge into country (too large to be a district).
+# "Kowloon" is intentionally excluded — it can be a valid district when no more-specific
+# area is present (e.g. "22 Nathan Road, Kowloon, Hong Kong").
+_ADDR_REGION_RE = re.compile(
+    r'^(?:new\s+territories|n\.?\s*t\.?|新界)$',
     re.IGNORECASE
 )
 _ADDR_COUNTRY_RE = re.compile(
-    r'(hong\s*kong|hk\b|china|prc|macau|macao|singapore|taiwan|united\s+\w+|\busa\b|\buk\b|canada|australia|japan|korea|h\.?k\.?\s*sar|香港|中國|澳門|台灣|新加坡|日本|韓國|英國|美國|加拿大|澳洲)',
+    r'(hong\s*kong|hk\b|china|prc|macau|macao|singapore|taiwan|united\s+\w+|\busa\b|\buk\b|canada|australia|japan|korea|h\.?k\.?\s*sar|kowloon|kln\b|new\s+territories|n\.?\s*t\.?\b|british\s+virgin\s+islands|bvi\b|香港|中國|澳門|台灣|新加坡|日本|韓國|英國|美國|加拿大|澳洲|九龍|新界)',
     re.IGNORECASE
 )
 
@@ -1979,25 +2529,71 @@ def _parse_english_name(full_name):
     return surname, other
 
 def _parse_address(addr):
+    """Parse a free-text address (typically comma-separated HK address) into
+    {flat, building, street, district, country} for NAR1/ND2A/ND2B form fields.
+
+    HK address convention: Flat → Floor → Building → Street No + Name → District → Region/Country
+    """
     if not addr:
         return {'flat': '', 'building': '', 'street': '', 'district': '', 'country': ''}
     parts = [s.strip() for s in addr.split(',') if s.strip() and not _PURE_NUMBER_RE.match(s.strip())]
     if not parts:
         return {'flat': '', 'building': '', 'street': '', 'district': '', 'country': ''}
+
+    # Single-part address: if it's a country/region → country, else → street
     if len(parts) == 1:
+        if _ADDR_COUNTRY_RE.search(parts[0]):
+            return {'flat': '', 'building': '', 'street': '', 'district': '', 'country': parts[0]}
         return {'flat': '', 'building': '', 'street': parts[0], 'district': '', 'country': ''}
+
+    # ── Extract country (last part) ──
     country = ''
     if _ADDR_COUNTRY_RE.search(parts[-1]):
         country = parts.pop()
+
+    # ── Extract district from the end ──
     district = ''
-    if len(parts) > 1 and len(parts) >= 3:
-        district = parts.pop()
+    if len(parts) >= 2:
+        candidate = parts[-1]
+        is_postal = len(candidate) <= 10 and re.match(r'^[A-Za-z]{0,3}\d[\dA-Za-z]*$', candidate)
+        is_street = bool(_ADDR_STREET_RE.search(candidate))
+        is_region = bool(_ADDR_REGION_RE.search(candidate))
+
+        if is_region:
+            # Broad region (New Territories / NT / 新界) → always merge into country
+            region = parts.pop()
+            country = region + ', ' + country
+            # Re-extract: is there a real district before the region?
+            if len(parts) >= 2:
+                c2 = parts[-1]
+                is_postal2 = len(c2) <= 10 and re.match(r'^[A-Za-z]{0,3}\d[\dA-Za-z]*$', c2)
+                if not _ADDR_STREET_RE.search(c2) and not is_postal2 and not _ADDR_REGION_RE.search(c2) and not _ADDR_BUILDING_RE.search(c2) and not _ADDR_FLAT_RE.search(c2):
+                    district = parts.pop()
+        elif not is_street and not is_postal and not _ADDR_BUILDING_RE.search(candidate) and not _ADDR_FLAT_RE.search(candidate):
+            district = parts.pop()
+
+    # ── Extract flat/floor/unit/tower from the front ──
     flat_parts = []
-    while len(parts) > 1 and _ADDR_FLAT_RE.match(parts[0]):
+    while len(parts) > 1 and _ADDR_FLAT_RE.search(parts[0]):
         flat_parts.append(parts.pop(0))
     flat = ', '.join(flat_parts)
-    building = parts.pop(0) if parts else ''
-    street = ', '.join(parts)
+
+    # ── Assign building and street ──
+    if len(parts) == 1:
+        part = parts[0]
+        if _ADDR_BUILDING_RE.search(part) and not _ADDR_STREET_RE.search(part):
+            building, street = part, ''
+        elif _ADDR_FLAT_RE.search(part):
+            flat = (flat + ', ' + part).strip(', ')
+            building, street = '', ''
+        else:
+            building, street = '', part
+    elif len(parts) >= 2:
+        building = parts.pop(0)
+        street = ', '.join(parts)
+    else:
+        building, street = '', ''
+
     return {'flat': flat, 'building': building, 'street': street, 'district': district, 'country': country}
 
 def _parse_hkid_partial(id_number):
@@ -2043,6 +2639,23 @@ def _set_text(doc, fmap, name, value):
             break
     return False
 
+def _set_text_size(doc, fmap, name, value, font_size):
+    """在指定頁面上查找 widget，設定值並縮小字號"""
+    if name not in fmap or not value:
+        return False
+    pi = fmap[name]
+    for w in doc[pi].widgets():
+        if w.field_name == name:
+            try:
+                w.text_fontsize = float(font_size)
+                w.field_value = str(value)
+                w.update()
+                return True
+            except Exception:
+                pass
+            break
+    return False
+
 def _check(doc, fmap, name, should_check):
     """在指定頁面上查找 checkbox 並勾選"""
     if not should_check or name not in fmap:
@@ -2051,21 +2664,27 @@ def _check(doc, fmap, name, should_check):
     for w in doc[pi].widgets():
         if w.field_name == name:
             try:
-                # Discover the checkbox "On" state name from /AP/N dictionary
-                on_state = 'Yes'
-                try:
-                    ap = w._annot.get('AP')
-                    if ap:
-                        ap_n = ap.get('N')
-                        if ap_n and hasattr(ap_n, 'keys'):
-                            for k in ap_n.keys():
-                                kname = str(k).lstrip('/')
-                                if kname and kname != 'Off':
-                                    on_state = kname
-                                    break
-                except Exception:
-                    pass
-                w.field_value = on_state
+                # PyMuPDF 1.28+: w._annot is an Annot object (not dict),
+                # so .get('AP') raises AttributeError. Use w.field_value = True
+                # which automatically selects the "On" appearance state.
+                w.field_value = True
+                w.update()
+                return True
+            except Exception:
+                pass
+            break
+    return False
+
+
+def _select_dropdown(doc, fmap, name, value):
+    """在指定頁面上查找 dropdown 並設置選中值"""
+    if name not in fmap:
+        return False
+    pi = fmap[name]
+    for w in doc[pi].widgets():
+        if w.field_name == name:
+            try:
+                w.field_value = value
                 w.update()
                 return True
             except Exception:
@@ -2090,6 +2709,13 @@ def _fill_nar1_pdf(data):
         year, month, day = str(today.year), f'{today.month:02d}', f'{today.day:02d}'
 
     office = data.get('registeredOffice') or {}
+    # NAR1 is a HK Companies Registry form — if registered office has
+    # address fields but no country/region, default to 'Hong Kong'
+    if not office.get('region') and not office.get('country'):
+        has_addr = any(office.get(k) for k in ['flat', 'building', 'street', 'district'])
+        if has_addr:
+            office = dict(office)
+            office['region'] = 'Hong Kong'
     br8 = (data.get('brNumber') or '').replace(r'[^0-9A-Za-z]', '')[:8]
     company_type = data.get('companyType') or ''
     ct_lower = company_type.lower()
@@ -2112,14 +2738,15 @@ def _fill_nar1_pdf(data):
     _set_text(doc, fmap, 'fill_17_P.1', office.get('street', ''))
     _set_text(doc, fmap, 'fill_18_P.1', office.get('district', ''))
     # 區域下拉
-    if office.get('region'):
+    p1_region = office.get('region') or office.get('country', '')
+    if p1_region:
         for name in ['Dropdown1_P.1', 'Dropdown_1_P.1']:
             if name in fmap:
                 pi = fmap[name]
                 for w in doc[pi].widgets():
                     if w.field_name == name:
                         try:
-                            w.field_value = office['region']
+                            w.field_value = p1_region
                             w.update()
                         except Exception:
                             pass
@@ -2132,13 +2759,13 @@ def _fill_nar1_pdf(data):
     if presenter.get('address'):
         _set_text(doc, fmap, 'fill_20_P.1', presenter['address'])
     if presenter.get('phone'):
-        _set_text(doc, fmap, 'fill_21_P.1', presenter['phone'])
+        _set_text_size(doc, fmap, 'fill_21_P.1', presenter['phone'], 10)
     if presenter.get('fax'):
-        _set_text(doc, fmap, 'fill_22_P.1', presenter['fax'])
+        _set_text_size(doc, fmap, 'fill_22_P.1', presenter['fax'], 10)
     if presenter.get('email'):
-        _set_text(doc, fmap, 'fill_23_P.1', presenter['email'])
+        _set_text_size(doc, fmap, 'fill_23_P.1', presenter['email'], 10)
     if presenter.get('reference'):
-        _set_text(doc, fmap, 'fill_24_P.1', presenter['reference'])
+        _set_text_size(doc, fmap, 'fill_24_P.1', presenter['reference'], 10)
 
     # ── P.2 股本 ──
     _set_text(doc, fmap, 'fill_1_P.2', br8)
@@ -2173,12 +2800,11 @@ def _fill_nar1_pdf(data):
     total_shares, total_amount, total_paid, first_currency = 0, 0.0, 0.0, ''
     for i, info in enumerate(share_infos[:4]):
         base = 6 + i * 5
-        issued = (info['paidUp'] + info['unpaid']) or (info['issuePrice'] * info['shares'])
+        issued = (info['paidUp'] + info['unpaid']) or (info['issuePrice'] * info['shares']) or (info['shares'] * 1.0)
         _set_text(doc, fmap, f'fill_{base}_P.2', info['className'])
         _set_text(doc, fmap, f'fill_{base+1}_P.2', info['currency'])
         _set_text(doc, fmap, f'fill_{base+2}_P.2', _fmt_int(info['shares']))
-        if issued:
-            _set_text(doc, fmap, f'fill_{base+3}_P.2', _fmt_amount(issued))
+        _set_text(doc, fmap, f'fill_{base+3}_P.2', _fmt_amount(issued))
         _set_text(doc, fmap, f'fill_{base+4}_P.2', _fmt_amount(info['paidUp'] or issued))
         total_shares += info['shares']
         total_amount += issued
@@ -2189,10 +2815,8 @@ def _fill_nar1_pdf(data):
     if share_infos:
         _set_text(doc, fmap, 'fill_26_P.2', first_currency)
         _set_text(doc, fmap, 'fill_27_P.2', _fmt_int(total_shares))
-        if total_amount:
-            _set_text(doc, fmap, 'fill_28_P.2', _fmt_amount(total_amount))
-        if total_paid:
-            _set_text(doc, fmap, 'fill_29_P.2', _fmt_amount(total_paid))
+        _set_text(doc, fmap, 'fill_28_P.2', _fmt_amount(total_amount))
+        _set_text(doc, fmap, 'fill_29_P.2', _fmt_amount(total_paid))
 
     secretaries = data.get('secretaries') or []
     directors = data.get('directors') or []
@@ -2218,6 +2842,10 @@ def _fill_nar1_pdf(data):
         hkid = _parse_hkid_partial(s.get('idNumber', ''))
         if hkid:
             _set_text(doc, fmap, 'fill_14_P.3', hkid)
+        if s.get('passportCountry'):
+            _set_text(doc, fmap, 'fill_15_P.3', s.get('passportCountry', ''))
+        if s.get('passportNumber'):
+            _set_text(doc, fmap, 'fill_16_P.3', _parse_passport_partial(s['passportNumber']))
 
     # ── P.4 法人秘書 ──
     _set_text(doc, fmap, 'fill_1_P.4', br8)
@@ -2231,7 +2859,7 @@ def _fill_nar1_pdf(data):
         _set_text(doc, fmap, 'fill_6_P.4', addr['street'])
         _set_text(doc, fmap, 'fill_7_P.4', addr['district'])
         _set_text(doc, fmap, 'fill_8_P.4', s.get('email', ''))
-        _set_text(doc, fmap, 'fill_9_P.4', s.get('companyNumberRef') or s.get('brNumber', ''))
+        _set_text(doc, fmap, 'fill_9_P.4', s.get('companyNumberRef') or s.get('brNumber', '') or s.get('idNumber', ''))
         tcsp = s.get('tcspNumber', '') or s.get('licenceNumber', '')
         if tcsp:
             _set_text(doc, fmap, 'fill_10_P.4', tcsp)
@@ -2250,13 +2878,14 @@ def _fill_nar1_pdf(data):
         _set_text(doc, fmap, 'fill_11_P.5', office.get('building', ''))
         _set_text(doc, fmap, 'fill_12_P.5', office.get('street', ''))
         _set_text(doc, fmap, 'fill_13_P.5', office.get('district', ''))
-        _set_text(doc, fmap, 'fill_14_P.5', office.get('region', ''))
+        _set_text(doc, fmap, 'fill_14_P.5', office.get('region') or office.get('country', ''))
         _set_text(doc, fmap, 'fill_15_P.5', d.get('email', ''))
         hkid = _parse_hkid_partial(d.get('idNumber', ''))
         if hkid:
             _set_text(doc, fmap, 'fill_16_P.5', hkid)
-        elif d.get('passportNumber'):
-            _set_text(doc, fmap, 'fill_17_P.5', d.get('nationality', '') or d.get('placeIncorporated', ''))
+        if d.get('passportCountry'):
+            _set_text(doc, fmap, 'fill_17_P.5', d.get('passportCountry', ''))
+        if d.get('passportNumber'):
             _set_text(doc, fmap, 'fill_18_P.5', _parse_passport_partial(d['passportNumber']))
 
     # ── P.6 法人董事 ──
@@ -2270,9 +2899,9 @@ def _fill_nar1_pdf(data):
         _set_text(doc, fmap, 'fill_6_P.6', office.get('building', ''))
         _set_text(doc, fmap, 'fill_7_P.6', office.get('street', ''))
         _set_text(doc, fmap, 'fill_8_P.6', office.get('district', ''))
-        _set_text(doc, fmap, 'fill_9_P.6', office.get('region', ''))
+        _set_text(doc, fmap, 'fill_9_P.6', office.get('region') or office.get('country', ''))
         _set_text(doc, fmap, 'fill_10_P.6', d.get('email', ''))
-        _set_text(doc, fmap, 'fill_11_P.6', d.get('companyNumberRef') or d.get('brNumber', ''))
+        _set_text(doc, fmap, 'fill_11_P.6', d.get('companyNumberRef') or d.get('brNumber', '') or d.get('idNumber', ''))
 
     # ── P.7 ──
     _set_text(doc, fmap, 'fill_1_P.7', br8)
@@ -2307,10 +2936,51 @@ def _fill_nar1_pdf(data):
     # 簽署人
     signer = data.get('signer')
     signer_name = (signer or {}).get('name') or presenter.get('name', '')
+    signer_role = (signer or {}).get('role', '')
     if signer_name:
         _set_text(doc, fmap, 'fill_11_P.8', signer_name)
     if day and month and year:
         _set_text(doc, fmap, 'fill_12_P.8', f'{day}/{month}/{year}')
+
+    # Handle Director / Company Secretary cross-out dropdowns on P.8
+    # Dropdown_1_P.8 → strikethrough "Director"  (widget at x=143-205, y=745-756)
+    # Dropdown_2_P.8 → strikethrough "Company Secretary" (widget at x=209-343, y=745-756)
+    # Each dropdown has two options in /Opt: ' ' (blank) and hex bytes <8484...>
+    # that render as a horizontal line with the original font.  We set /V to the
+    # hex option + /I index, then draw a PDF line to guarantee visible rendering.
+    if signer_role in ('director', 'secretary'):
+        # signer_role='secretary' → cross out "Director"     → Dropdown_1_P.8
+        # signer_role='director'  → cross out "Company Secretary" → Dropdown_2_P.8
+        cross_out_widget = 'Dropdown_1_P.8' if signer_role == 'secretary' else 'Dropdown_2_P.8'
+
+        for widget_name in ('Dropdown_1_P.8', 'Dropdown_2_P.8'):
+            if widget_name in fmap:
+                pi = fmap[widget_name]
+                for w in doc[pi].widgets():
+                    if w.field_name == widget_name:
+                        try:
+                            use_dashes = (widget_name == cross_out_widget)
+                            # Set the dropdown to the correct option via its /Opt index
+                            opt_idx = 1 if use_dashes else 0
+                            doc.xref_set_key(w._annot.xref, 'I', f'[{opt_idx}]')
+                            # Set /V to the chosen option value
+                            val = w.choice_values[opt_idx]
+                            doc.xref_set_key(w._annot.xref, 'V', fitz.get_pdf_str(val))
+                            # Visible + printable
+                            doc.xref_set_key(w._annot.xref, 'F', '4')
+
+                            # Draw a visible line through the text area
+                            # (the font-based AP from the original template is
+                            # hard to replicate without its exact subset font)
+                            if use_dashes:
+                                doc[pi].draw_line(
+                                    fitz.Point(w.rect.x0 + 2, w.rect.y0 + w.rect.height / 2),
+                                    fitz.Point(w.rect.x1 - 2, w.rect.y0 + w.rect.height / 2),
+                                    color=(0, 0, 0), width=1.0
+                                )
+                        except Exception:
+                            pass
+                        break
 
     # ── P.9 附表一（股東，前2人） ──
     if valid_members and not is_listed:
@@ -2322,15 +2992,13 @@ def _fill_nar1_pdf(data):
             _set_text(doc, fmap, 'fill_5_P.9', share_infos[0]['className'])
             _set_text(doc, fmap, 'fill_6_P.9', _fmt_int(share_infos[0]['shares']))
 
-        slots = [
-            {'name': 7, 'surname': 8, 'other': 9, 'shares': 10, 'flat': 13, 'building': 14, 'street': 15, 'district': 16, 'country': 17},
-            {'name': 18, 'surname': 19, 'other': 20, 'shares': 27, 'flat': 22, 'building': 23, 'street': 24, 'district': 25, 'country': 26},
-            # 實際上 P.9 slots 的字段映射需要確認。使用原始 TS 代碼中的映射。
-        ]
-        # 使用與 TS 代碼一致的字段映射
+        # P.9 slot layout (verified against template field positions 2026-07-24):
+        #   pos0=name(7/18)  pos1=shares(16/27)  pos2=surname(8/19)
+        #   pos3=other(9/20)  pos4=joint(10/21)
+        #   pos5-9=address(11-15/22-26)  pos10=full_addr(17/28)
         slots_ts = [
-            {'name': 7, 'surname': 8, 'other': 9, 'shares': 10, 'flat': 13, 'building': 14, 'street': 15, 'district': 16, 'country': 17},
-            {'name': 19, 'surname': 20, 'other': 21, 'shares': 22, 'flat': 25, 'building': 26, 'street': 27, 'district': 28, 'country': 29},
+            {'name': 7, 'surname': 8, 'other': 9, 'shares': 16, 'flat': 11, 'building': 12, 'street': 13, 'district': 14, 'country': 15},
+            {'name': 18, 'surname': 19, 'other': 20, 'shares': 27, 'flat': 22, 'building': 23, 'street': 24, 'district': 25, 'country': 26},
         ]
         for idx, sh in enumerate(valid_members[:2]):
             F = slots_ts[idx]
@@ -2340,7 +3008,7 @@ def _fill_nar1_pdf(data):
             addr = _parse_address(sh.get('address', ''))
             def _safe(v):
                 return '' if (v and _PURE_NUMBER_RE.match(v)) else v
-            country = _safe(addr['country']) or '香港 Hong Kong'
+            country = _safe(addr['country']) or 'Hong Kong'
 
             _set_text(doc, fmap, f'fill_{F["name"]}_P.9', sh.get('nameChinese', ''))
             if is_corp:
@@ -2357,8 +3025,8 @@ def _fill_nar1_pdf(data):
             _set_text(doc, fmap, f'fill_{F["country"]}_P.9', country)
 
         total_sch1 = (len(valid_members) + 1) // 2
-        _set_text(doc, fmap, 'fill_31_P.9', '1')  # current page
-        _set_text(doc, fmap, 'fill_32_P.9', str(total_sch1))
+        _set_text(doc, fmap, 'fill_29_P.9', '1')  # current page
+        _set_text(doc, fmap, 'fill_30_P.9', str(total_sch1))
 
     # ── P.10 附表一續（股東 #3+#4）──
     if len(valid_members) > 2 and not is_listed:
@@ -2369,10 +3037,14 @@ def _fill_nar1_pdf(data):
         if share_infos:
             _set_text(doc, fmap, 'fill_5_P.10', share_infos[0]['className'])
             _set_text(doc, fmap, 'fill_6_P.10', _fmt_int(share_infos[0]['shares']))
-        # P.10 uses same slot layout as P.9 (32 fields + 2 cbs)
+        # P.10 uses same field structure as P.9 (same x positions, different y)
+        #   Slot1: name(7), shares(16), surname(8), other(9), joint(10)
+        #          addr: flat(11), building(12), street(13), district(14), country(15)
+        #   Slot2: name(19), shares(28), surname(20), other(21), joint(22)
+        #          addr: flat(23), building(24), street(25), district(26), country(27)
         slots_p10 = [
-            {'name': 7, 'surname': 8, 'other': 9, 'shares': 10, 'flat': 13, 'building': 14, 'street': 15, 'district': 16, 'country': 17},
-            {'name': 18, 'surname': 19, 'other': 20, 'shares': 27, 'flat': 22, 'building': 23, 'street': 24, 'district': 25, 'country': 26},
+            {'name': 7, 'surname': 8, 'other': 9, 'shares': 16, 'flat': 11, 'building': 12, 'street': 13, 'district': 14, 'country': 15},
+            {'name': 19, 'surname': 20, 'other': 21, 'shares': 28, 'flat': 23, 'building': 24, 'street': 25, 'district': 26, 'country': 27},
         ]
         for idx, sh in enumerate(valid_members[2:4]):
             F = slots_p10[idx]
@@ -2382,7 +3054,7 @@ def _fill_nar1_pdf(data):
             addr = _parse_address(sh.get('address', ''))
             def _safe(v):
                 return '' if (v and _PURE_NUMBER_RE.match(v)) else v
-            country = _safe(addr['country']) or '香港 Hong Kong'
+            country = _safe(addr['country']) or 'Hong Kong'
             _set_text(doc, fmap, f'fill_{F["name"]}_P.10', sh.get('nameChinese', ''))
             if is_corp:
                 _set_text(doc, fmap, f'fill_{F["surname"]}_P.10', full)
@@ -2425,15 +3097,16 @@ def _fill_nar1_pdf(data):
         _set_text(doc, fmap, 'fill_9_P.11', addr['building'])  # P.11 has split flat/building row
         _set_text(doc, fmap, 'fill_10_P.11', addr['street'])
         _set_text(doc, fmap, 'fill_11_P.11', addr['district'])
-        _set_text(doc, fmap, 'fill_12_P.11', addr.get('region', '香港 Hong Kong'))
+        _set_text(doc, fmap, 'fill_12_P.11', addr.get('country') or addr.get('region', '香港 Hong Kong'))
         _set_text(doc, fmap, 'fill_13_P.11', addr['country'] or '香港 Hong Kong')
         _set_text(doc, fmap, 'fill_15_P.11', s.get('serviceAddress', '') or s.get('address', ''))
         _set_text(doc, fmap, 'fill_16_P.11', s.get('email', ''))
         hkid = _parse_hkid_partial(s.get('idNumber', ''))
         if hkid:
             _set_text(doc, fmap, 'fill_17_P.11', hkid)
-        elif s.get('passportNumber'):
-            _set_text(doc, fmap, 'fill_18_P.11', s.get('nationality', '') or s.get('placeIncorporated', ''))
+        if s.get('passportCountry'):
+            _set_text(doc, fmap, 'fill_18_P.11', s.get('passportCountry', ''))
+        if s.get('passportNumber'):
             _set_text(doc, fmap, 'fill_19_P.11', _parse_passport_partial(s['passportNumber']))
         tcsp = s.get('tcspNumber', '')
         if tcsp:
@@ -2454,7 +3127,7 @@ def _fill_nar1_pdf(data):
         _set_text(doc, fmap, 'fill_9_P.12', addr['street'])
         _set_text(doc, fmap, 'fill_10_P.12', addr['district'])
         _set_text(doc, fmap, 'fill_11_P.12', s.get('email', ''))
-        _set_text(doc, fmap, 'fill_12_P.12', s.get('companyNumberRef') or s.get('brNumber', ''))
+        _set_text(doc, fmap, 'fill_12_P.12', s.get('companyNumberRef') or s.get('brNumber', '') or s.get('idNumber', ''))
         tcsp = s.get('tcspNumber', '')
         if tcsp:
             _set_text(doc, fmap, 'fill_13_P.12', tcsp)
@@ -2475,14 +3148,15 @@ def _fill_nar1_pdf(data):
         _set_text(doc, fmap, 'fill_9_P.13', office.get('building', ''))
         _set_text(doc, fmap, 'fill_10_P.13', office.get('street', ''))
         _set_text(doc, fmap, 'fill_11_P.13', office.get('district', ''))
-        _set_text(doc, fmap, 'fill_12_P.13', office.get('region', ''))
-        _set_text(doc, fmap, 'fill_15_P.13', office.get('region', '香港 Hong Kong'))
+        _set_text(doc, fmap, 'fill_12_P.13', office.get('region') or office.get('country', ''))
+        _set_text(doc, fmap, 'fill_15_P.13', office.get('region') or office.get('country', '香港 Hong Kong'))
         _set_text(doc, fmap, 'fill_16_P.13', d.get('email', ''))
         hkid = _parse_hkid_partial(d.get('idNumber', ''))
         if hkid:
             _set_text(doc, fmap, 'fill_17_P.13', hkid)
-        elif d.get('passportNumber'):
-            _set_text(doc, fmap, 'fill_18_P.13', d.get('nationality', '') or d.get('placeIncorporated', ''))
+        if d.get('passportCountry'):
+            _set_text(doc, fmap, 'fill_18_P.13', d.get('passportCountry', ''))
+        if d.get('passportNumber'):
             _set_text(doc, fmap, 'fill_19_P.13', _parse_passport_partial(d['passportNumber']))
 
     # ── P.14 續頁D：法人董事 #2+#3 ──
@@ -2511,8 +3185,8 @@ def _fill_nar1_pdf(data):
             _set_text(doc, fmap, f'fill_{F["building"]}_P.14', office.get('building', ''))
             _set_text(doc, fmap, f'fill_{F["street"]}_P.14', office.get('street', ''))
             _set_text(doc, fmap, f'fill_{F["district"]}_P.14', office.get('district', ''))
-            _set_text(doc, fmap, f'fill_{F["region"]}_P.14', office.get('region', ''))
-            _set_text(doc, fmap, f'fill_{F["country"]}_P.14', office.get('region', '香港 Hong Kong'))
+            _set_text(doc, fmap, f'fill_{F["region"]}_P.14', office.get('region') or office.get('country', ''))
+            _set_text(doc, fmap, f'fill_{F["country"]}_P.14', office.get('region') or office.get('country', '香港 Hong Kong'))
             _set_text(doc, fmap, f'fill_{F["email"]}_P.14', d.get('email', ''))
 
     # ── P.15 續頁E：公司紀錄保存地點 ──
@@ -2528,9 +3202,46 @@ def _fill_nar1_pdf(data):
         _set_text(doc, fmap, 'fill_5_P.15', records_text)
         _set_text(doc, fmap, 'fill_6_P.15', address_text)
 
-    # ── 刪除空白頁（P.16-P.27 無 widget）──
+    # ── 刪除無數據的附頁（P.9-P.15）──
+    pages_to_delete = []
+
+    # P.9 (idx 8): 附表一 page 1 — 股東 #1+#2
+    if not (valid_members and not is_listed):
+        pages_to_delete.append(8)
+
+    # P.10 (idx 9): 附表一 page 2 OR 附表二
+    has_sch1_p2 = len(valid_members) > 2 and not is_listed
+    has_sch2 = is_listed
+    if not (has_sch1_p2 or has_sch2):
+        pages_to_delete.append(9)
+
+    # P.11 (idx 10): 續頁A — 第2位自然人秘書
+    if len(nat_secs) <= 1:
+        pages_to_delete.append(10)
+
+    # P.12 (idx 11): 續頁B — 第2位法人秘書
+    if len(corp_secs) <= 1:
+        pages_to_delete.append(11)
+
+    # P.13 (idx 12): 續頁C — 第2位自然人董事
+    if len(nat_dirs) <= 1:
+        pages_to_delete.append(12)
+
+    # P.14 (idx 13): 續頁D — 法人董事 #2+#3
+    if len(corp_dirs) <= 1:
+        pages_to_delete.append(13)
+
+    # P.15 (idx 14): 續頁E — 公司紀錄保存地點
+    if not valid_records:
+        pages_to_delete.append(14)
+
+    for pi in reversed(pages_to_delete):
+        doc.delete_page(pi)
+
+    # ── 刪除空白頁（原 P.16-P.27，索引因附頁刪除已位移）──
     blank_pages = []
-    for pi in range(15, doc.page_count):  # 0-indexed: pages 16-27
+    scan_start = 15 - len(pages_to_delete)  # 原 P.16 的新索引
+    for pi in range(scan_start, doc.page_count):
         if not list(doc[pi].widgets()):
             blank_pages.append(pi)
     for pi in reversed(blank_pages):
@@ -2675,17 +3386,10 @@ def _fill_nd2a_pdf(data, template='ND2A-template.pdf'):
         for w in doc[pi].widgets():
             if w.field_name == name:
                 try:
-                    on_state = 'Yes'
-                    ap = w._annot.get('AP')
-                    if ap:
-                        ap_n = ap.get('N')
-                        if ap_n and hasattr(ap_n, 'keys'):
-                            for k in ap_n.keys():
-                                kname = str(k).lstrip('/')
-                                if kname and kname != 'Off':
-                                    on_state = kname
-                                    break
-                    w.field_value = on_state
+                    # PyMuPDF 1.28+: w._annot is an Annot object (not dict),
+                    # so .get('AP') raises AttributeError. Use w.field_value = True
+                    # which automatically selects the "On" appearance state.
+                    w.field_value = True
                     w.update()
                 except Exception:
                     pass
@@ -2697,85 +3401,358 @@ def _fill_nd2a_pdf(data, template='ND2A-template.pdf'):
     _set('fill_1_P.1', br8)
     _set('fill_2_P.1', data.get('companyName', ''))
 
+    # 每页右上角都填商业登记号码
+    for pi in range(2, doc.page_count + 1):
+        _set(f'fill_1_P.{pi}', br8)
+
     officers = data.get('officers') or []
+    nat_appt_idx = 0   # 自然人委任計數
+    nat_cess_idx = 0   # 自然人停任計數
+    corp_idx = 0       # 法人計數
     for i, officer in enumerate(officers[:3]):
         is_natural = officer.get('identity') == 'natural'
-        page = (i * 2) + 2  # natural: P.2, P.4, P.6; corporate: P.3, P.5, P.7
-        if not is_natural:
-            page = (i * 2) + 3
+        is_cessation = officer.get('type') == 'cessation'
+
+        if is_natural:
+            if is_cessation:
+                # 自然人停任 → P.4（續頁A）
+                page = 4
+                nat_cess_idx += 1
+            else:
+                # 自然人委任：P.2（第1個詳細）→ P.6（PI-ND2A 續頁C，第2個）→ P.7（PI-ND2A 續頁，第3個）
+                page = [2, 6, 7][nat_appt_idx] if nat_appt_idx < 3 else 7
+                nat_appt_idx += 1
+        else:
+            # 法人：依序 P.3, P.5, P.7
+            page = (corp_idx * 2) + 3
+            corp_idx += 1
         p = page
 
         if is_natural:
-            _set(f'fill_3_P.{p}', officer.get('nameEnglish', ''))
-            _set(f'fill_4_P.{p}', officer.get('nameChinese', ''))
-            _set(f'fill_7_P.{p}', officer.get('idNumber', ''))
-            _set(f'fill_8_P.{p}', officer.get('address', ''))
-            if officer.get('dateAppointed'):
-                parts = officer['dateAppointed'].split('-')
-                if len(parts) >= 3:
-                    _set(f'fill_9_P.{p}', parts[2])
-                    _set(f'fill_10_P.{p}', parts[1])
-                    _set(f'fill_11_P.{p}', parts[0])
-            elif officer.get('dateCeased'):
-                parts = officer['dateCeased'].split('-')
-                if len(parts) >= 3:
-                    _set(f'fill_9_P.{p}', parts[2])
-                    _set(f'fill_10_P.{p}', parts[1])
-                    _set(f'fill_11_P.{p}', parts[0])
+            # Split English name: prefer explicit surname/otherNames, fallback to parse
+            eng = officer.get('nameEnglish', '') or ''
+            surname = officer.get('nameSurname', '') or ''
+            other = officer.get('nameOtherNames', '') or officer.get('nameOther', '') or ''
+            if not surname and eng:
+                parts = eng.strip().split()
+                surname = parts[-1] if len(parts) > 1 else (parts[0] if parts else '')
+                other = ' '.join(parts[:-1]) if len(parts) > 1 else ''
+            chinese = officer.get('nameChinese', '')
 
-            if officer.get('role') == 'secretary':
-                _check(f'cb_1_P.{p}')
+            # ── Page-specific field mapping (each ND2A page has different widget layout) ──
+            if p == 2:
+                # P.2: Natural person appointment — detailed info
+                # fill_2 = 代替 Alternate to (only for alternate director)
+                if officer.get('role') == 'alternate':
+                    _set(f'fill_2_P.2', officer.get('alternateTo', ''))
+                # Names
+                _set('fill_3_P.2', chinese)
+                _set('fill_4_P.2', surname)
+                _set('fill_5_P.2', other)
+                # Structured address: fill_10~14
+                addr_fb = officer.get('addrFlatBlock', '')
+                addr_bld = officer.get('addrBuilding', '')
+                addr_se = officer.get('addrStreetEstate', '')
+                addr_dist = officer.get('addrDistrict', '')
+                addr_reg = officer.get('addrRegion', '')
+                if any([addr_fb, addr_bld, addr_se, addr_dist, addr_reg]):
+                    _set('fill_10_P.2', addr_fb)
+                    _set('fill_11_P.2', addr_bld)
+                    _set('fill_12_P.2', addr_se)
+                    _set('fill_13_P.2', addr_dist)
+                    _set('fill_14_P.2', addr_reg)
+                else:
+                    # Fallback: flat address → fill_10
+                    _set('fill_10_P.2', officer.get('address', ''))
+                # HKID + Passport
+                _set('fill_16_P.2', (officer.get('idNumber', '') or '')[:4])
+                if officer.get('passportCountry'):
+                    _set('fill_17_P.2', officer.get('passportCountry', ''))
+                if officer.get('passportNumber'):
+                    _set('fill_18_P.2', _parse_passport_partial(officer['passportNumber']))
+                # Date: fill_21/22/23 = D/M/Y（底部三窄栏）
+                date_str = officer.get('dateAppointed') if officer.get('type') == 'appointment' else officer.get('dateCeased')
+                if date_str:
+                    parts = date_str.split('-')
+                    if len(parts) >= 3:
+                        _set('fill_21_P.2', parts[2])
+                        _set('fill_22_P.2', parts[1])
+                        _set('fill_23_P.2', parts[0])
+                # Role checkboxes on P.2: cb_1=秘書, cb_2=董事, cb_3=候補
+                # 每個角色只勾一個 checkbox（互斥）
+                role = officer.get('role', 'director')
+                if role == 'secretary':
+                    _check('cb_1_P.2')
+                elif role == 'alternate':
+                    _check('cb_3_P.2')
+                else:
+                    _check('cb_2_P.2')
+
+                # P.2 底部聲明：cross out "董事" or "候補董事" in consent statement
+                # Dropdown_1_P.2 → "董事" (director), Dropdown_2_P.2 → "候補董事*" (alternate director)
+                # role='director'  → cross out "候補董事" (Dropdown_2)
+                # role='alternate' → cross out "董事" (Dropdown_1)
+                # NOTE: ND2A has duplicate widget instances (Chinese + English rows), so no break
+                if role in ('director', 'alternate'):
+                    cross_widget = f'Dropdown_{2 if role == "director" else 1}_P.2'
+                    for wn in (f'Dropdown_1_P.2', f'Dropdown_2_P.2'):
+                        if wn not in fmap:
+                            continue
+                        pi = fmap[wn]
+                        for w in doc[pi].widgets():
+                            if w.field_name == wn:
+                                try:
+                                    use_dashes = (wn == cross_widget)
+                                    opt_idx = 1 if use_dashes else 0
+                                    doc.xref_set_key(w._annot.xref, 'I', f'[{opt_idx}]')
+                                    val = w.choice_values[opt_idx]
+                                    doc.xref_set_key(w._annot.xref, 'V', fitz.get_pdf_str(val))
+                                    doc.xref_set_key(w._annot.xref, 'F', '4')
+                                    if use_dashes:
+                                        doc[pi].draw_line(
+                                            fitz.Point(w.rect.x0 + 2, w.rect.y0 + w.rect.height / 2),
+                                            fitz.Point(w.rect.x1 - 2, w.rect.y0 + w.rect.height / 2),
+                                            color=(0, 0, 0), width=1.0
+                                        )
+                                except Exception:
+                                    pass
+
+                # Already director? cb_5=是, cb_6=否
+                if officer.get('alreadyDirector') == 'yes':
+                    _check('cb_5_P.2')
+                elif officer.get('alreadyDirector') == 'no':
+                    _check('cb_6_P.2')
+            elif p == 4:
+                # P.4: Natural person cessation continuation (續頁A 停任)
+                _set('fill_3_P.4', chinese)
+                _set('fill_4_P.4', surname)
+                _set('fill_5_P.4', other)
+                _set('fill_6_P.4', officer.get('idNumber', ''))
+                _set('fill_7_P.4', officer.get('passportNumber', ''))
+                # Address: two tall fields
+                addr_parts = [officer.get('addrFlatBlock', ''), officer.get('addrBuilding', ''),
+                              officer.get('addrStreetEstate', ''), officer.get('addrDistrict', ''),
+                              officer.get('addrRegion', '')]
+                addr_has = [x for x in addr_parts if x]
+                if addr_has:
+                    _set('fill_8_P.4', ', '.join(addr_has[:3]))
+                    _set('fill_9_P.4', ', '.join(addr_has[3:]))
+                else:
+                    _set('fill_8_P.4', officer.get('address', ''))
+                # Cessation date: fill_10/11/12 = D/M/Y
+                date_str = officer.get('dateCeased') or officer.get('dateAppointed')
+                if date_str:
+                    parts = date_str.split('-')
+                    if len(parts) >= 3:
+                        _set('fill_10_P.4', parts[2])
+                        _set('fill_11_P.4', parts[1])
+                        _set('fill_12_P.4', parts[0])
+                # Role
+                role = officer.get('role', 'director')
+                if role == 'secretary':
+                    _check('cb_1_P.4')
+                elif role == 'alternate':
+                    _check('cb_3_P.4')
+                else:
+                    _check('cb_2_P.4')
+                _check('cb_4_P.4')  # cessation
+            elif p == 6:
+                # P.6 (PI-ND2A 續頁C) — different layout from P.2
+                # fill_2 = 代替 Alternate to (僅候補董事填)
+                if officer.get('role') == 'alternate':
+                    _set(f'fill_2_P.{p}', officer.get('alternateTo', ''))
+                # fill_3 = 中文姓名, fill_4 = 姓氏, fill_5 = 名字
+                _set(f'fill_3_P.{p}', chinese)
+                _set(f'fill_4_P.{p}', surname)
+                _set(f'fill_5_P.{p}', other)
+                # fill_8 = 住址, fill_9 = 國家／地區 (護照簽發國), fill_10 = 通訊地址
+                _set(f'fill_8_P.{p}', officer.get('address', ''))
+                if officer.get('passportCountry'):
+                    _set(f'fill_9_P.{p}', officer.get('passportCountry', ''))
+                # fill_11 = 身份證號碼（完整號碼，不截斷）
+                if officer.get('idNumber'):
+                    _set(f'fill_11_P.{p}', officer['idNumber'])
+                # 護照號碼：P.6 無獨立欄位，與身份證號碼共用 fill_11
+                if officer.get('passportNumber'):
+                    existing = officer.get('idNumber', '')
+                    if existing:
+                        _set(f'fill_11_P.{p}', f'{existing} / {officer["passportNumber"]}')
+                    else:
+                        _set(f'fill_11_P.{p}', officer['passportNumber'])
+                # Dates: fill_14/15/16 = D/M/Y
+                date_str = officer.get('dateAppointed') if officer.get('type') == 'appointment' else officer.get('dateCeased')
+                if date_str:
+                    parts = date_str.split('-')
+                    if len(parts) >= 3:
+                        _set(f'fill_14_P.{p}', parts[2])
+                        _set(f'fill_15_P.{p}', parts[1])
+                        _set(f'fill_16_P.{p}', parts[0])
+                role = officer.get('role', 'director')
+                if role == 'secretary':
+                    _check(f'cb_1_P.{p}')
+                elif role == 'alternate':
+                    _check(f'cb_3_P.{p}')
+                else:
+                    _check(f'cb_2_P.{p}')
+                if officer.get('type') == 'cessation':
+                    _check(f'cb_4_P.{p}')
+
+                # P.6 底部聲明：cross out "董事" or "候補董事" in consent statement
+                # (same pattern as P.2 — only pages that have the dropdowns)
+                if f'Dropdown_1_P.{p}' in fmap:
+                    if role in ('director', 'alternate'):
+                        cross_widget = f'Dropdown_{2 if role == "director" else 1}_P.{p}'
+                        for wn in (f'Dropdown_1_P.{p}', f'Dropdown_2_P.{p}'):
+                            if wn not in fmap:
+                                continue
+                            pi2 = fmap[wn]
+                            for w in doc[pi2].widgets():
+                                if w.field_name == wn:
+                                    try:
+                                        use_dashes = (wn == cross_widget)
+                                        opt_idx = 1 if use_dashes else 0
+                                        doc.xref_set_key(w._annot.xref, 'I', f'[{opt_idx}]')
+                                        val = w.choice_values[opt_idx]
+                                        doc.xref_set_key(w._annot.xref, 'V', fitz.get_pdf_str(val))
+                                        doc.xref_set_key(w._annot.xref, 'F', '4')
+                                        if use_dashes:
+                                            doc[pi2].draw_line(
+                                                fitz.Point(w.rect.x0 + 2, w.rect.y0 + w.rect.height / 2),
+                                                fitz.Point(w.rect.x1 - 2, w.rect.y0 + w.rect.height / 2),
+                                                color=(0, 0, 0), width=1.0
+                                            )
+                                    except Exception:
+                                        pass
+            elif p == 7:
+                # P.7 (PI-ND2A 續頁) — different layout from P.6
+                # No D/M/Y narrow fields (fill_14/15/16 don't exist), no Dropdowns
+                # Available: fill_1(BR) fill_2(代替) fill_3(name) fill_4(name) fill_5(ID wide)
+                #            fill_6(ID narrow) fill_7(addr1) fill_8(addr2) fill_9~13(wide text)
+                #            cb_1/2/3(role)
+                if officer.get('role') == 'alternate':
+                    _set(f'fill_2_P.{p}', officer.get('alternateTo', ''))
+                # fill_3 = 中文姓名, fill_4 = 英文姓名（姓+名）
+                _set(f'fill_3_P.{p}', chinese)
+                eng_full = f'{surname} {other}'.strip() if (surname or other) else officer.get('nameEnglish', '')
+                _set(f'fill_4_P.{p}', eng_full)
+                # fill_5 = 證件號碼（完整）, fill_6 = 校驗位／後綴
+                id_full = officer.get('idNumber', '')
+                passport = officer.get('passportNumber', '')
+                if id_full and passport:
+                    _set(f'fill_5_P.{p}', f'{id_full} / {passport}')
+                elif id_full:
+                    _set(f'fill_5_P.{p}', id_full)
+                elif passport:
+                    _set(f'fill_5_P.{p}', passport)
+                # fill_7 = 住址第1行, fill_8 = 住址第2行
+                addr_parts = [officer.get('addrFlatBlock', ''), officer.get('addrBuilding', ''),
+                              officer.get('addrStreetEstate', '')]
+                addr_dist_parts = [officer.get('addrDistrict', ''), officer.get('addrRegion', '')]
+                addr1 = ', '.join([x for x in addr_parts if x])
+                addr2 = ', '.join([x for x in addr_dist_parts if x])
+                if addr1 or addr2:
+                    _set(f'fill_7_P.{p}', addr1)
+                    _set(f'fill_8_P.{p}', addr2)
+                else:
+                    _set(f'fill_7_P.{p}', officer.get('address', ''))
+                # fill_9 = 護照簽發國家／地區
+                if officer.get('passportCountry'):
+                    _set(f'fill_9_P.{p}', officer.get('passportCountry', ''))
+                # fill_10 = 護照號碼（若未合併到 fill_5）
+                # (already handled in fill_5 above; use fill_10 for additional info)
+                # fill_11 = 委任／停任日期（完整日期字串，P.7 無 D/M/Y 分欄）
+                date_str = officer.get('dateAppointed') if officer.get('type') == 'appointment' else officer.get('dateCeased')
+                if date_str:
+                    _set(f'fill_11_P.{p}', date_str)
+                # Role checkboxes
+                role = officer.get('role', 'director')
+                if role == 'secretary':
+                    _check(f'cb_1_P.{p}')
+                elif role == 'alternate':
+                    _check(f'cb_3_P.{p}')
+                else:
+                    _check(f'cb_2_P.{p}')
+                # Note: P.7 has no cb_4 (cessation) and no Dropdown fields
             else:
-                _check(f'cb_2_P.{p}')
-            if officer.get('type') == 'appointment':
-                _check(f'cb_3_P.{p}')
-            else:
-                _check(f'cb_4_P.{p}')
+                # Should not reach here for natural persons; fallback to P.6-style
+                pass
         else:
             _set(f'fill_3_P.{p}', officer.get('companyName', officer.get('nameEnglish', '')))
             _set(f'fill_5_P.{p}', officer.get('companyNumber', ''))
             _set(f'fill_6_P.{p}', officer.get('placeIncorporated', ''))
             _set(f'fill_7_P.{p}', officer.get('address', ''))
-            if officer.get('role') == 'secretary':
-                _check(f'cb_1_P.{p}')
-            else:
-                _check(f'cb_2_P.{p}')
+            # Appointment/cessation date for corporate officers
+            date_str = None
             if officer.get('type') == 'appointment':
+                date_str = officer.get('dateAppointed')
+            elif officer.get('type') == 'cessation':
+                date_str = officer.get('dateCeased')
+            if date_str:
+                parts = date_str.split('-')
+                if len(parts) >= 3:
+                    _set(f'fill_9_P.{p}', parts[2])
+                    _set(f'fill_10_P.{p}', parts[1])
+                    _set(f'fill_11_P.{p}', parts[0])
+            # Role: cb_1=秘書, cb_2=董事, cb_3=候補董事
+            role = officer.get('role', 'director')
+            if role == 'secretary':
+                _check(f'cb_1_P.{p}')
+            elif role == 'alternate':
                 _check(f'cb_3_P.{p}')
             else:
+                _check(f'cb_2_P.{p}')
+            # Type: only cessation needs checkbox (appointment is implicit)
+            if officer.get('type') == 'cessation':
                 _check(f'cb_4_P.{p}')
 
-    # Signer date
-    if data.get('signDate'):
-        parts = data['signDate'].split('/')
-        if len(parts) >= 3:
-            _set('fill_11_P.1', f"{parts[2]}/{parts[1]}/{parts[0]}")
-    _set('fill_12_P.1', data.get('signerName', ''))
-    _set('fill_13_P.1', data.get('presentorName', ''))
-    _set('fill_14_P.1', data.get('presentorAddress', ''))
-    _set('fill_15_P.1', data.get('presentorContact', ''))
+    # ── P.1 日期（僅停任，取自第一個 officer） ──
+    # fill_11/12/13 = D/M/Y（三個並排窄框），委任不填 P.1 日期
+    if officers and officers[0].get('type') == 'cessation':
+        date_str = officers[0].get('dateCeased')
+        if date_str:
+            if '-' in date_str:
+                parts = date_str.split('-')
+                if len(parts) >= 3:
+                    _set('fill_11_P.1', parts[2])  # day
+                    _set('fill_12_P.1', parts[1])  # month
+                    _set('fill_13_P.1', parts[0])  # year
+            elif '/' in date_str:
+                parts = date_str.split('/')
+                if len(parts) >= 3:
+                    _set('fill_11_P.1', parts[0])  # day
+                    _set('fill_12_P.1', parts[1])  # month
+                    _set('fill_13_P.1', parts[2])  # year
 
-    # Only keep pages P.1 + any pages with widgets
-    filled_pages = {0}
-    for pi in range(doc.page_count):
-        if pi == 0:
-            continue
-        widgets = list(doc[pi].widgets())
-        has_filled = False
-        for w in widgets:
-            try:
-                if w.field_value:
-                    has_filled = True
+    # ── P.1 提交人信息 ──
+
+    # 缩小提交人字段字号（12pt → 9pt），避免长文本溢出
+    for field_name in ('fill_14_P.1', 'fill_16_P.1', 'fill_17_P.1', 'fill_18_P.1', 'fill_19_P.1'):
+        if field_name in fmap:
+            pi = fmap[field_name]
+            for w in doc[pi].widgets():
+                if w.field_name == field_name:
+                    try:
+                        xref = w._annot.xref
+                        da = doc.xref_get_key(xref, 'DA')
+                        if da[0] == 'string':
+                            import re
+                            new_da = re.sub(r'\d+(?:\.\d+)?\s+Tf', '9 Tf', da[1])
+                            doc.xref_set_key(xref, 'DA', fitz.get_pdf_str(new_da))
+                    except Exception:
+                        pass
                     break
-            except Exception:
-                pass
-        if has_filled:
-            filled_pages.add(pi)
 
-    blank = [pi for pi in reversed(range(doc.page_count)) if pi not in filled_pages]
-    for pi in blank:
-        doc.delete_page(pi)
+    # fill_14 = 提交人名稱, fill_15 = 提交人地址
+    _set('fill_14_P.1', data.get('presentorName', ''))
+    _set('fill_15_P.1', data.get('presentorAddress', ''))
 
+    # fill_16-19 = 電話 / 傳真 / 電郵 / 檔號
+    _set('fill_16_P.1', data.get('presentorPhone', data.get('presentorContact', '')))
+    _set('fill_17_P.1', data.get('presentorFax', ''))
+    _set('fill_18_P.1', data.get('presentorEmail', ''))
+    _set('fill_19_P.1', data.get('presentorReference', ''))
+
+    # ⚠️ 不删页：保留模板全部页面（仅 NAR1 可以删空页）
     pdf_bytes = doc.write(deflate=True)
     doc.close()
     return pdf_bytes
@@ -2845,17 +3822,10 @@ def _fill_nd2b_pdf(data, template='ND2B-template.pdf'):
         for w in doc[pi].widgets():
             if w.field_name == name:
                 try:
-                    on_state = 'Yes'
-                    ap = w._annot.get('AP')
-                    if ap:
-                        ap_n = ap.get('N')
-                        if ap_n and hasattr(ap_n, 'keys'):
-                            for k in ap_n.keys():
-                                kname = str(k).lstrip('/')
-                                if kname and kname != 'Off':
-                                    on_state = kname
-                                    break
-                    w.field_value = on_state
+                    # PyMuPDF 1.28+: w._annot is an Annot object (not dict),
+                    # so .get('AP') raises AttributeError. Use w.field_value = True
+                    # which automatically selects the "On" appearance state.
+                    w.field_value = True
                     w.update()
                 except Exception:
                     pass
@@ -2882,6 +3852,10 @@ def _fill_nd2b_pdf(data, template='ND2B-template.pdf'):
         _set('fill_4_P.1', surname)
         _set('fill_5_P.1', other)
         _set('fill_7_P.1', data.get('idNumber', ''))
+        if data.get('passportCountry') or data.get('passportPlaceOfIssue'):
+            _set('fill_7b_P.1', data.get('passportCountry') or data.get('passportPlaceOfIssue', ''))
+        if data.get('passportNumber'):
+            _set('fill_7c_P.1', _parse_passport_partial(data['passportNumber']))
 
         # P.2: Change details
         if data.get('changeType') == 'address' and data.get('newAddress'):
@@ -2897,32 +3871,21 @@ def _fill_nd2b_pdf(data, template='ND2B-template.pdf'):
         _set('fill_4_P.6', other)
         _set('fill_9_P.6', data.get('newAddress', ''))
 
-    # Presentor (P.1 bottom)
+    # ── P.1 提交人信息 ──
+    # fill_8 = 提交人名稱, fill_9 = 提交人地址
     _set('fill_8_P.1', data.get('presentorName', ''))
     _set('fill_9_P.1', data.get('presentorAddress', ''))
-    _set('fill_10_P.1', data.get('presentorContact', ''))
+    # fill_10-13 = 電話 / 傳真 / 電郵 / 檔號
+    _set('fill_10_P.1', data.get('presentorPhone', data.get('presentorContact', '')))
+    _set('fill_11_P.1', data.get('presentorFax', ''))
+    _set('fill_12_P.1', data.get('presentorEmail', ''))
+    _set('fill_13_P.1', data.get('presentorReference', ''))
 
     # P.3: Signature
     _set('fill_30_P.3', data.get('signerName', ''))
     _set('fill_31_P.3', data.get('signDate', ''))
 
-    # Remove blank pages (pages with no filled widgets, except P.1)
-    filled_pages = {0}
-    for pi in range(doc.page_count):
-        if pi == 0:
-            continue
-        for w in doc[pi].widgets():
-            try:
-                if w.field_value:
-                    filled_pages.add(pi)
-                    break
-            except Exception:
-                pass
-
-    blank = [pi for pi in reversed(range(doc.page_count)) if pi not in filled_pages]
-    for pi in blank:
-        doc.delete_page(pi)
-
+    # ⚠️ 不删页：保留模板全部页面（仅 NAR1 可以删空页）
     pdf_bytes = doc.write(deflate=True)
     doc.close()
     return pdf_bytes
@@ -3891,16 +4854,8 @@ def nar1_debug_pdf():
                 try:
                     if w.field_name.startswith('cb_'):
                         # Check all checkboxes
-                        ap = w._annot.get('AP')
-                        if ap:
-                            ap_n = ap.get('N')
-                            if ap_n and hasattr(ap_n, 'keys'):
-                                for k in ap_n.keys():
-                                    kname = str(k).lstrip('/')
-                                    if kname and kname != 'Off':
-                                        w.field_value = kname
-                                        w.update()
-                                        break
+                        w.field_value = True
+                        w.update()
                     else:
                         w.field_value = w.field_name
                         w.update()
@@ -3941,6 +4896,104 @@ def export_all():
 @app.route('/api/<path:path>', methods=['OPTIONS'])
 def handle_options(path=''):
     return '', 204
+
+# ─── Form History endpoints (mirrors Cloudflare Functions /api/form-history/*) ───
+
+@app.route('/api/form-history/list', methods=['GET'])
+def form_history_list():
+    u = get_user()
+    if not u:
+        return jsonify({'error': 'Not authenticated'}), 401
+    form_type = request.args.get('formType', '')
+    if not form_type:
+        return jsonify({'entries': []})
+    db = get_db()
+    rows = db.execute(
+        'SELECT id, label, form_type, submission_index, created_at FROM form_history WHERE user_id = ? AND form_type = ? ORDER BY submission_index DESC',
+        (u['id'], form_type)
+    ).fetchall()
+    entries = [{'id': r['id'], 'label': r['label'], 'form_type': r['form_type'],
+                'submission_index': r['submission_index'], 'created_at': r['created_at']} for r in rows]
+    return jsonify({'entries': entries})
+
+
+@app.route('/api/form-history/load', methods=['GET'])
+def form_history_load():
+    u = get_user()
+    if not u:
+        return jsonify({'error': 'Not authenticated'}), 401
+    entry_id = request.args.get('id', '')
+    if not entry_id:
+        return jsonify({'error': 'Missing id'}), 400
+    db = get_db()
+    row = db.execute(
+        'SELECT id, form_data FROM form_history WHERE id = ? AND user_id = ?',
+        (entry_id, u['id'])
+    ).fetchone()
+    if not row:
+        return jsonify({'error': 'Not found'}), 404
+    form_data = json.loads(row['form_data']) if row['form_data'] else {}
+    return jsonify({'entry': {'id': row['id'], 'form_data': form_data}})
+
+
+@app.route('/api/form-history/save', methods=['POST'])
+def form_history_save():
+    u = get_user()
+    if not u:
+        return jsonify({'error': 'Not authenticated'}), 401
+    data = request.get_json(force=True, silent=True) or {}
+    form_type = data.get('formType', '')
+    form_data = data.get('formData')
+    if not form_type or form_data is None:
+        return jsonify({'error': 'formType and formData required'}), 400
+    db = get_db()
+    max_row = db.execute(
+        'SELECT COALESCE(MAX(submission_index), 0) as max_idx FROM form_history WHERE user_id = ? AND form_type = ?',
+        (u['id'], form_type)
+    ).fetchone()
+    next_idx = (max_row['max_idx'] or 0) + 1
+    today = datetime.now().date().isoformat()
+    label = f'{today}_{form_type}_{next_idx}'
+    cursor = db.execute(
+        'INSERT INTO form_history (user_id, user_email, form_type, submission_index, label, form_data) VALUES (?, ?, ?, ?, ?, ?)',
+        (u['id'], u.get('email', ''), form_type, next_idx, label, json.dumps(form_data, ensure_ascii=False))
+    )
+    db.commit()
+    return jsonify({'id': cursor.lastrowid, 'label': label, 'submission_index': next_idx}), 201
+
+
+@app.route('/api/form-history/<entry_id>', methods=['DELETE'])
+def form_history_delete(entry_id):
+    u = get_user()
+    if not u:
+        return jsonify({'error': 'Not authenticated'}), 401
+    if not entry_id:
+        return jsonify({'error': 'Missing id'}), 400
+    db = get_db()
+    row = db.execute(
+        'SELECT form_type, submission_index FROM form_history WHERE id = ? AND user_id = ?',
+        (entry_id, u['id'])
+    ).fetchone()
+    if not row:
+        return jsonify({'error': 'Not found'}), 404
+    form_type = row['form_type']
+    deleted_idx = row['submission_index']
+    db.execute('DELETE FROM form_history WHERE id = ? AND user_id = ?', (entry_id, u['id']))
+    db.execute(
+        'UPDATE form_history SET submission_index = submission_index - 1 WHERE user_id = ? AND form_type = ? AND submission_index > ?',
+        (u['id'], form_type, deleted_idx)
+    )
+    rows = db.execute(
+        'SELECT id, created_at, submission_index FROM form_history WHERE user_id = ? AND form_type = ? AND submission_index >= ? ORDER BY submission_index',
+        (u['id'], form_type, deleted_idx)
+    ).fetchall()
+    for r in rows:
+        date_part = (r['created_at'] or '')[:10]
+        new_label = f'{date_part}_{form_type}_{r["submission_index"]}'
+        db.execute('UPDATE form_history SET label = ? WHERE id = ?', (new_label, r['id']))
+    db.commit()
+    return jsonify({'ok': True})
+
 
 if __name__ == '__main__':
     init_db()

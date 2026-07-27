@@ -44,6 +44,10 @@ export interface NAR1FormData {
   presenterAddress?: string;
   presenterContact?: string;
   presenterReference?: string;
+
+  // P.8 簽署人
+  signerRole?: 'director' | 'secretary';
+  signerIndex?: number;  // index within signerRole's array
 }
 
 export interface ShareCapitalRow {
@@ -60,11 +64,15 @@ export interface NAR1Officer {
   formerNameChinese: string;
   formerNameEnglish: string;
   idNumber: string;
+  passportNumber?: string;
+  passportCountry?: string;
   address: string;
   dateAppointed: string;
   dateCeased: string;
   placeIncorporated: string;
   companyNumberRef: string;
+  brNumber?: string;
+  tcspNumber?: string;
 }
 
 export interface NAR1Shareholder {
@@ -112,7 +120,7 @@ export function createEmptyFormData(incorporationDate?: string): NAR1FormData {
     regBuilding: '',
     regStreet: '',
     regDistrict: '',
-    regRegion: '香港 Hong Kong',
+    regRegion: '',
     email: '',
     website: '',
     brNumber: '',
@@ -133,11 +141,15 @@ export function createEmptyOfficer(): NAR1Officer {
     formerNameChinese: '',
     formerNameEnglish: '',
     idNumber: '',
+    passportNumber: '',
+    passportCountry: '',
     address: '',
     dateAppointed: '',
     dateCeased: '',
     placeIncorporated: '',
     companyNumberRef: '',
+    brNumber: '',
+    tcspNumber: '',
   };
 }
 

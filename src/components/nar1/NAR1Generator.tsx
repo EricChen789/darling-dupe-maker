@@ -19,9 +19,10 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { FileText, Download, Loader2 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { Company } from '@/types';
 import { toast } from '@/hooks/use-toast';
-import { usePresenters } from '@/hooks/usePresenters';
+import { usePresenterList } from '@/hooks/usePresenters';
 import { downloadBase64Pdf } from '@/lib/downloadPdf';
 
 interface NAR1GeneratorProps {
@@ -59,14 +60,18 @@ const composePresenterContact = (
 
 export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProps) => {
   const [isGenerating, setIsGenerating] = useState(false);
-  const { data: presenters = [] } = usePresenters();
+  const { data: presenters = [] } = usePresenterList();
+
+  // P.8 簽署人選擇（'' = 自動選擇）
+  const [signerId, setSignerId] = useState('');
+
   const [formData, setFormData] = useState({
     returnDate: computeReturnDate(company?.incorporationDate),
     flat: '',
     building: '',
     street: '',
     district: '',
-    region: '香港 Hong Kong',
+    region: '',
     presenterId: '',
     presenterName: '',
     presenterAddress: '',
@@ -98,8 +103,8 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
         flat: company.regFlat || prev.flat,
         building: company.regBuilding || prev.building,
         street: company.regStreet || prev.street,
-        district: company.regDistrict || prev.district,
-        region: company.regRegion || prev.region,
+        district: company.regDistrict || '',
+        region: company.regRegion || '',
         presenterId: preferred?.id || '',
         presenterName: preferred?.name || '',
         presenterAddress: preferred?.address || '',
@@ -117,6 +122,7 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
             })
           : '',
       }));
+      setSignerId(company.signerRoleId || '');
     }
   }, [company, presenters]);
 
@@ -167,7 +173,7 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
 
     try {
       // 解析簽署人：明確選擇 → 第一個秘書 → 第一個董事
-      const explicitId = company.signerRoleId || '';
+      const explicitId = signerId || '';
       const allOfficers = [...company.secretaries, ...company.directors];
       const explicitOfficer = explicitId ? allOfficers.find(o => o.id === explicitId) : null;
       const fallback = company.secretaries[0] || company.directors[0] || null;
@@ -193,6 +199,7 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
           street: formData.street,
           district: formData.district,
           region: formData.region,
+          country: formData.region,
         },
         directors: company.directors.map(d => ({
           nameChinese: d.nameChinese,
@@ -206,7 +213,8 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
           placeIncorporated: d.placeIncorporated || '',
           companyNumberRef: d.companyNumberRef || '',
           passportNumber: d.passportNumber || '',
-          nationality: (d as any).nationality || d.placeIncorporated || '',
+          passportCountry: d.passportCountry || '',
+          nationality: (d as any).nationality || d.passportCountry || d.placeIncorporated || '',
         })),
         secretaries: company.secretaries.map(s => ({
           nameChinese: s.nameChinese,
@@ -221,6 +229,8 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
           placeIncorporated: s.placeIncorporated || '',
           companyNumberRef: s.companyNumberRef || '',
           tcspNumber: s.tcspNumber || '',
+          passportNumber: s.passportNumber || '',
+          passportCountry: s.passportCountry || '',
         })),
         shareholders: company.shareholders.map(sh => ({
           name: sh.name,
@@ -340,11 +350,20 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
                       </span>
                     </div>
                     <div className="ml-8 text-xs text-muted-foreground space-y-0.5">
-                      {dir.idNumber && <div>證件號碼：{dir.idNumber}</div>}
+                      {dir.identity === 'corporate' ? (
+                        <>
+                          {(dir.brNumber || dir.companyNumberRef) && <div>商業登記號碼：{dir.brNumber || dir.companyNumberRef}</div>}
+                          {dir.placeIncorporated && <div>成立地點：{dir.placeIncorporated}</div>}
+                          {dir.companyNumberRef && <div>公司編號：{dir.companyNumberRef}</div>}
+                        </>
+                      ) : (
+                        <>
+                          {dir.idNumber && <div>證件號碼：{dir.idNumber}</div>}
+                          {dir.passportNumber && <div>護照號碼：{dir.passportNumber}</div>}
+                        </>
+                      )}
                       {dir.address && <div>地址：{dir.address}</div>}
                       {dir.dateAppointed && <div>委任日期：{dir.dateAppointed}</div>}
-                      {dir.identity === 'corporate' && dir.placeIncorporated && <div>成立地點：{dir.placeIncorporated}</div>}
-                      {dir.identity === 'corporate' && dir.companyNumberRef && <div>公司編號：{dir.companyNumberRef}</div>}
                     </div>
                   </div>
                 ))}
@@ -368,9 +387,21 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
                       </span>
                     </div>
                     <div className="ml-8 text-xs text-muted-foreground space-y-0.5">
-                      {sec.idNumber && <div>證件號碼：{sec.idNumber}</div>}
-                      {sec.address && <div>地址：{sec.address}</div>}
-                      {sec.identity === 'corporate' && sec.companyNumberRef && <div>公司編號：{sec.companyNumberRef}</div>}
+                      {sec.identity === 'corporate' ? (
+                        <>
+                          {(sec.brNumber || sec.companyNumberRef) && <div>商業登記號碼：{sec.brNumber || sec.companyNumberRef}</div>}
+                          {sec.tcspNumber && <div>TCSP 牌照號碼：{sec.tcspNumber}</div>}
+                          {(sec.serviceAddress || sec.address) && <div>服務地址：{sec.serviceAddress || sec.address}</div>}
+                        </>
+                      ) : (
+                        <>
+                          {sec.idNumber && <div>證件號碼：{sec.idNumber}</div>}
+                          {sec.address && <div>地址：{sec.address}</div>}
+                        </>
+                      )}
+                      {sec.email && <div>電郵：{sec.email}</div>}
+                      {sec.dateAppointed && <div>委任日期：{sec.dateAppointed}</div>}
+                      {sec.identity === 'corporate' && sec.placeIncorporated && <div>成立地點：{sec.placeIncorporated}</div>}
                     </div>
                   </div>
                 ))}
@@ -471,13 +502,18 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
             
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="returnDate">申報表結算日期</Label>
+                <Label htmlFor="returnDate">申報表結算日期（Date of Return）</Label>
                 <Input
                   id="returnDate"
                   type="date"
                   value={formData.returnDate}
-                  onChange={(e) => setFormData({ ...formData, returnDate: e.target.value })}
+                  disabled
+                  className="bg-muted cursor-not-allowed"
                 />
+                <p className="text-xs text-muted-foreground">
+                  此日期固定為公司成立日期（{company?.incorporationDate || '無'}），不可更改。
+                  結算日期必須為公司成立周年日。
+                </p>
               </div>
             </div>
 
@@ -505,19 +541,11 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
                   value={formData.district}
                   onChange={(e) => setFormData({ ...formData, district: e.target.value })}
                 />
-                <Select
+                <Input
                   value={formData.region}
-                  onValueChange={(value) => setFormData({ ...formData, region: value })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="地區" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="香港 Hong Kong">香港 Hong Kong</SelectItem>
-                    <SelectItem value="九龍 Kowloon">九龍 Kowloon</SelectItem>
-                    <SelectItem value="新界 New Territories">新界 New Territories</SelectItem>
-                  </SelectContent>
-                </Select>
+                  onChange={(e) => setFormData({ ...formData, region: e.target.value })}
+                  placeholder="e.g. 香港"
+                />
               </div>
             </div>
 
@@ -566,6 +594,169 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
                 </div>
               </div>
             </div>
+
+            {/* P.8 簽署人 — 董事 / 公司秘書劃線 */}
+            {(() => {
+              const allOfficers = [...company.secretaries, ...company.directors];
+              const explicitSigner = signerId ? allOfficers.find(o => o.id === signerId) : null;
+              const fallbackSigner = company.secretaries[0] || company.directors[0] || null;
+              const signer = explicitSigner || fallbackSigner;
+              const signerRole: 'director' | 'secretary' | null = signer
+                ? (company.secretaries.some(s => s.id === signer.id) ? 'secretary' : 'director')
+                : null;
+              const signerName = signer ? (signer.nameEnglish || signer.nameChinese || '') : '';
+
+              // 哪個角色被劃線刪除
+              const crossOutDirector = signerRole === 'secretary';
+              const crossOutSecretary = signerRole === 'director';
+
+              return (
+                <div className="space-y-3 border border-border rounded-lg p-3">
+                  <h4 className="font-medium text-sm">簽署人（P.8）</h4>
+                  <p className="text-xs text-muted-foreground">
+                    P.8 簽署欄位有「董事 Director」和「公司秘書 Company Secretary」兩個選項，
+                    簽署人需劃掉不適用的職位。下方下拉框對應 PDF 上的選項。
+                  </p>
+
+                  {/* 簽署人選擇 */}
+                  <div className="space-y-1">
+                    <Label className="text-xs">選擇簽署人</Label>
+                    <Select
+                      value={signerId || '__auto__'}
+                      onValueChange={v => setSignerId(v === '__auto__' ? '' : v)}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="自動選擇（首個秘書 → 首個董事）" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__auto__">
+                          自動選擇（首個秘書 → 首個董事）
+                        </SelectItem>
+                        {company.directors.map(d => (
+                          <SelectItem key={d.id} value={d.id}>
+                            🧑‍💼 董事：{d.nameEnglish || d.nameChinese}
+                          </SelectItem>
+                        ))}
+                        {company.secretaries.map(s => (
+                          <SelectItem key={s.id} value={s.id}>
+                            📋 秘書：{s.nameEnglish || s.nameChinese}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {signer && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        當前簽署人：<span className="font-medium text-foreground">{signerName}</span>
+                        <span className="ml-2 text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">
+                          {signerRole === 'secretary' ? '公司秘書' : '董事'}
+                        </span>
+                      </p>
+                    )}
+                  </div>
+
+                  {/* P.8 雙欄：董事 vs 公司秘書 */}
+                  <div className="grid grid-cols-2 gap-4 mt-2">
+                    {/* 董事 Director */}
+                    <div className={cn(
+                      'border rounded-lg p-3 space-y-2',
+                      crossOutDirector
+                        ? 'border-destructive/30 bg-destructive/5'
+                        : 'border-border bg-muted/20'
+                    )}>
+                      <div className="flex items-center justify-between">
+                        <Label className={cn(
+                          'text-xs font-medium',
+                          crossOutDirector && 'text-destructive line-through decoration-2'
+                        )}>
+                          董事 Director
+                        </Label>
+                        {!crossOutDirector && signerRole === 'director' && (
+                          <span className="text-xs bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 px-2 py-0.5 rounded-full">
+                            ✓ 簽署人
+                          </span>
+                        )}
+                      </div>
+                      {crossOutDirector ? (
+                        <div className="space-y-1">
+                          <Select defaultValue="dash">
+                            <SelectTrigger className="w-full h-9 text-xs border-destructive/30">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="blank">（空白）</SelectItem>
+                              <SelectItem value="dash">
+                                ————————————————
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <p className="text-[10px] text-muted-foreground">
+                            ▲ 選擇橫線以劃掉「董事」，表示簽署人為公司秘書
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="text-sm font-medium py-1.5 px-2 bg-background rounded border border-border min-h-[2.25rem] flex items-center">
+                          {signerRole === 'director' ? signerName || '（董事簽署）' : '（不適用）'}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 公司秘書 Company Secretary */}
+                    <div className={cn(
+                      'border rounded-lg p-3 space-y-2',
+                      crossOutSecretary
+                        ? 'border-destructive/30 bg-destructive/5'
+                        : 'border-border bg-muted/20'
+                    )}>
+                      <div className="flex items-center justify-between">
+                        <Label className={cn(
+                          'text-xs font-medium',
+                          crossOutSecretary && 'text-destructive line-through decoration-2'
+                        )}>
+                          公司秘書 Company Secretary
+                        </Label>
+                        {!crossOutSecretary && signerRole === 'secretary' && (
+                          <span className="text-xs bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 px-2 py-0.5 rounded-full">
+                            ✓ 簽署人
+                          </span>
+                        )}
+                      </div>
+                      {crossOutSecretary ? (
+                        <div className="space-y-1">
+                          <Select defaultValue="dash">
+                            <SelectTrigger className="w-full h-9 text-xs border-destructive/30">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="blank">（空白）</SelectItem>
+                              <SelectItem value="dash">
+                                ————————————————
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <p className="text-[10px] text-muted-foreground">
+                            ▲ 選擇橫線以劃掉「公司秘書」，表示簽署人為董事
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="text-sm font-medium py-1.5 px-2 bg-background rounded border border-border min-h-[2.25rem] flex items-center">
+                          {signerRole === 'secretary' ? signerName || '（秘書簽署）' : '（不適用）'}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* 視覺提示 */}
+                  <div className="flex items-center gap-4 text-xs text-muted-foreground bg-muted/30 rounded p-2">
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-4 h-4 rounded border border-destructive/30 bg-destructive/5" />
+                      <span className="line-through decoration-destructive decoration-2">劃線刪除</span>
+                    </div>
+                    <span>→</span>
+                    <span>該職位不適用，PDF 上以橫線劃掉</span>
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* 附表 E (P.15) — 公司紀錄保存地點 */}
             <div className="space-y-3 border border-border rounded-lg p-3">

@@ -46,11 +46,14 @@ function buildFetch(method: string, body?: any): RequestInit {
 async function apiFetch(path: string, options?: RequestInit): Promise<any> {
   const resp = await fetch(`${API_BASE}${path}`, options);
   if (!resp.ok) {
-    const err = await resp.json().catch(() => ({ error: resp.statusText }));
-    return { data: null, error: err };
+    const text = await resp.text().catch(() => resp.statusText);
+    let err: any;
+    try { err = JSON.parse(text); } catch { err = { error: text || resp.statusText }; }
+    console.error(`[API] ${options?.method || 'GET'} ${path} → ${resp.status}:`, err);
+    return { data: null, error: { status: resp.status, ...err } };
   }
-  const data = await resp.json();
-  return { data, error: null };
+  const text = await resp.text();
+  try { return { data: JSON.parse(text), error: null }; } catch { return { data: text, error: null }; }
 }
 
 class D1QueryBuilder implements QueryBuilder {
@@ -98,8 +101,12 @@ class D1QueryBuilder implements QueryBuilder {
   }
 
   eq(column: string, value: any): QueryBuilder {
-    if (column === "id") this.tableId = value;
-    else this.filters[column] = value;
+    if (column === "id") {
+      this.tableId = value;
+      if (!value) console.warn('[D1QueryBuilder] .eq("id", <falsy>) — tableId will be empty!', { value, table: this.table, stack: new Error().stack });
+    } else {
+      this.filters[column] = value;
+    }
     return this;
   }
 
@@ -176,6 +183,7 @@ class D1QueryBuilder implements QueryBuilder {
         }
       } else if (this.operation === "delete") {
         const id = this.tableId;
+        console.log('[D1QueryBuilder] delete:', { table: this.table, tableId: id, filters: this.filters });
         if (id) {
           result = await apiFetch(`/${this.table}/${id}`, buildFetch("DELETE"));
         } else if (Object.keys(this.filters).length > 0) {
@@ -185,6 +193,7 @@ class D1QueryBuilder implements QueryBuilder {
           }
           result = await apiFetch(`/${this.table}?${params.toString()}`, buildFetch("DELETE"));
         } else {
+          console.error('[D1QueryBuilder] delete failed: no id and no filters');
           resolve({ data: null, error: { message: "Missing id for delete" } }); return;
         }
       } else {

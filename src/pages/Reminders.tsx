@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Plus, Trash2, CheckCircle2, Bell, Loader2, Wand2, List, CalendarDays, AlertTriangle } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { useReminders, useUpsertReminder, useDeleteReminder, useUpdateReminderStatus, type Reminder } from '@/hooks/useReminders';
@@ -259,7 +259,7 @@ export default function Reminders() {
 
       <Dialog open={!!editing} onOpenChange={(open) => { if (!open) setEditing(null); }}>
         <DialogContent>
-          <DialogHeader><DialogTitle>{editing?.id ? '編輯任務' : '新增任務'}</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{editing?.id ? '編輯任務' : '新增任務'}</DialogTitle><DialogDescription>{editing?.id ? '修改提醒任務的設定' : '建立新的申報提醒任務'}</DialogDescription></DialogHeader>
           {editing && (
             <div className="space-y-3">
               <div className="space-y-1">

@@ -18,11 +18,23 @@ interface Officer {
   nameEnglish?: string;
   idNumber?: string;
   address?: string;
+  addrFlatBlock?: string;
+  email?: string;
   dateAppointed?: string;
   dateCeased?: string;
   companyName?: string;
   companyNumber?: string;
-  placeIncorporated?: string;
+  hasCessation?: boolean;
+  cessationIdentity?: "natural" | "corporate";
+  cessationRole?: "director" | "secretary" | "alternate";
+  cessationAlternateTo?: string;
+  cessationNameChinese?: string;
+  cessationNameSurname?: string;
+  cessationNameOtherNames?: string;
+  cessationNameEnglish?: string;
+  cessationIdNumber?: string;
+  cessationPassportNumber?: string;
+  cessationAlreadyDirector?: "yes" | "no" | "";
 }
 
 const corsHeaders = {
@@ -31,7 +43,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const CHINESE_FONT_URL = "https://fonts.gstatic.com/ea/notosanstc/v1/NotoSansTC-Regular.otf";
+const CHINESE_FONT_URL = "https://cdn.jsdelivr.net/fontsource/fonts/noto-sans-tc@latest/chinese-traditional-400-normal.woff2";
 
 function uint8ToBase64(bytes: Uint8Array): string {
   let binary = "";
@@ -109,23 +121,74 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
         setF(`fill_4_P.${p}`, officer.nameChinese);
         setF(`fill_7_P.${p}`, officer.idNumber);
         setF(`fill_8_P.${p}`, officer.address);
-        const dateStr = officer.dateAppointed || officer.dateCeased || "";
-        const parts = dateStr.split(/[-/]/);
-        if (parts.length >= 3) {
-          setF(`fill_9_P.${p}`, parts[2]);  // 日
-          setF(`fill_10_P.${p}`, parts[1]); // 月
-          setF(`fill_11_P.${p}`, parts[0]); // 年
+        // fill_9/10/11 = 委任日期，只填委任，停任不写
+        if (officer.type !== 'cessation' && officer.dateAppointed) {
+          const parts = officer.dateAppointed.split(/[-/]/);
+          if (parts.length >= 3) {
+            setF(`fill_9_P.${p}`, parts[2]);  // 日
+            setF(`fill_10_P.${p}`, parts[1]); // 月
+            setF(`fill_11_P.${p}`, parts[0]); // 年
+          }
         }
       } else {
-        setF(`fill_3_P.${p}`, officer.companyName || officer.nameEnglish);
-        setF(`fill_5_P.${p}`, officer.companyNumber);
-        setF(`fill_6_P.${p}`, officer.placeIncorporated);
-        setF(`fill_7_P.${p}`, officer.address);
+        // 法人：中文名、英文名、商業登記號碼、電郵、地址
+        setF(`fill_3_P.${p}`, officer.nameChinese || "");
+        setF(`fill_4_P.${p}`, officer.companyName || officer.nameEnglish || "");
+        setF(`fill_11_P.${p}`, officer.companyNumber || "");
+        setF(`fill_10_P.${p}`, officer.email || "");
+        setF(`fill_5_P.${p}`, (officer as any).addrFlatBlock || officer.address || "");
+        // 委任日期（法人）：只填委任，停任不写
+        if (officer.type !== 'cessation' && officer.dateAppointed) {
+          const corpParts = officer.dateAppointed.split(/[-/]/);
+          if (corpParts.length >= 3) {
+            setF(`fill_12_P.${p}`, corpParts[2]);  // 日
+            setF(`fill_13_P.${p}`, corpParts[1]);  // 月
+            setF(`fill_14_P.${p}`, corpParts[0]);  // 年
+          }
+        }
+        // 簽署人姓名 + 簽署日期（P.3 底部）
+        setF(`fill_19_P.${p}`, (officer as any).corpSignerName || "");
+        const signDate = (officer as any).corpSignDate || "";
+        if (signDate) {
+          setF(`fill_20_P.${p}`, signDate);
+        }
+        // 續頁頁數
+        if ((officer as any).hasCessation && officer.dateCeased) {
+          setF(`fill_15_P.${p}`, "1");  // 續頁A
+        }
       }
 
       // checkbox：角色 & 委任/停任
       checkF(officer.role === "secretary" ? `cb_1_P.${p}` : `cb_2_P.${p}`);
       checkF(officer.type === "appointment" ? `cb_3_P.${p}` : `cb_4_P.${p}`);
+
+      // 停任操作
+      if ((officer as any).hasCessation && officer.dateCeased) {
+        const cessId = (officer as any).cessationIdentity || 'natural';
+        if (cessId === 'natural') {
+          // P.4 自然人停任
+          usedPages.add(4);
+          setF('fill_3_P.4', (officer as any).cessationNameChinese || '');
+          setF('fill_4_P.4', (officer as any).cessationNameSurname || '');
+          setF('fill_5_P.4', (officer as any).cessationNameOtherNames || '');
+          setF('fill_6_P.4', (officer as any).cessationIdNumber || '');
+          setF('fill_7_P.4', (officer as any).cessationPassportNumber || '');
+          const d = officer.dateCeased.split(/[-/]/);
+          if (d.length >= 3) { setF('fill_10_P.4', d[2]); setF('fill_11_P.4', d[1]); setF('fill_12_P.4', d[0]); }
+          const cr = (officer as any).cessationRole || officer.role || 'director';
+          checkF(cr === 'secretary' ? 'cb_1_P.4' : 'cb_2_P.4');
+        } else {
+          // P.5 法人停任
+          usedPages.add(5);
+          setF('fill_3_P.5', (officer as any).cessationNameEnglish || officer.companyName || officer.nameEnglish || '');
+          setF('fill_4_P.5', (officer as any).cessationNameChinese || officer.nameChinese || '');
+          setF('fill_5_P.5', officer.companyNumber || '');
+          const d = officer.dateCeased.split(/[-/]/);
+          if (d.length >= 3) { setF('fill_11_P.5', d[2]); setF('fill_12_P.5', d[1]); setF('fill_13_P.5', d[0]); }
+          const cr = (officer as any).cessationRole || officer.role || 'director';
+          checkF(cr === 'secretary' ? 'cb_1_P.5' : 'cb_2_P.5');
+        }
+      }
     });
 
     // 簽署人 + 提交人（P.1 底部）
@@ -133,16 +196,13 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
     if (sd.length >= 3) setF("fill_11_P.1", `${sd[2]}/${sd[1]}/${sd[0]}`); // 反轉成 D/M/Y
     setF("fill_12_P.1", data.signerName);
     setF("fill_13_P.1", data.presentorName);
-    setF("fill_14_P.1", data.presentorAddress);
-    setF("fill_15_P.1", data.presentorContact);
+    // fill_15 is tall multi-line (44px) → address; fill_14 is short (14px) → contact
+    setF("fill_14_P.1", data.presentorContact);
+    setF("fill_15_P.1", data.presentorAddress);
 
     form.flatten();
 
-    // 刪空白頁：保留 P.1 + 有值的頁，其餘倒序刪除
-    for (let pi = pdfDoc.getPageCount() - 1; pi >= 1; pi--) {
-      if (!usedPages.has(pi + 1)) pdfDoc.removePage(pi);
-    }
-
+    // ⚠️ 不删页：保留模板全部页面（仅 NAR1 可以删空页）
     const pdfBytes = await pdfDoc.save();
     return jsonResp({ pdf: uint8ToBase64(new Uint8Array(pdfBytes)) });
   } catch (err: any) {

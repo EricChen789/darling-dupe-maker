@@ -18,7 +18,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const CHINESE_FONT_URL = "https://fonts.gstatic.com/ea/notosanstc/v1/NotoSansTC-Regular.otf";
+const CHINESE_FONT_URL = "https://cdn.jsdelivr.net/fontsource/fonts/noto-sans-tc@latest/chinese-traditional-400-normal.woff2";
 
 function uint8ToBase64(bytes: Uint8Array): string {
   let binary = "";
@@ -129,10 +129,7 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
 
     form.flatten();
 
-    for (let pi = pdfDoc.getPageCount() - 1; pi >= 1; pi--) {
-      if (!usedPages.has(pi + 1)) pdfDoc.removePage(pi);
-    }
-
+    // ⚠️ 不删页：保留模板全部页面（仅 NAR1 可以删空页）
     const pdfBytes = await pdfDoc.save();
     return jsonResp({ pdf: uint8ToBase64(new Uint8Array(pdfBytes)) });
   } catch (err: any) {

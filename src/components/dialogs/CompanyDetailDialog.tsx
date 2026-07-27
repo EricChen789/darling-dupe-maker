@@ -4,6 +4,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -21,7 +22,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Company, Person, Shareholder } from '@/types';
 import {
   Building2, Users, UserCheck, Briefcase, ArrowLeft, User, ShieldCheck, Copy,
-  Edit, Save, X, Plus, Trash2, Upload, FileText, Download, Loader2, ArrowUpDown, Coins, Paperclip, UsersRound, UserCog, UserPlus, FileClock, History, FileOutput,
+  Edit, Save, X, Plus, Trash2, Upload, FileText, Download, Loader2, Paperclip, UsersRound, UserCog, UserPlus, FileClock, History, FileOutput,
 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
@@ -32,9 +33,8 @@ import {
 } from '@/hooks/useCompanies';
 import { SCRTab } from './SCRTab';
 import { RegistersTab } from './RegistersTab';
-import { ShareCapitalTab } from './ShareCapitalTab';
-import { CompanyVersionsTab } from './CompanyVersionsTab';
-import { ChangeRecordsTab, PersonnelSection } from './PersonnelChangeTab';
+import { CompanyChronicleTab } from './CompanyChronicleTab';
+import { PersonnelSection } from './PersonnelChangeTab';
 import { DocGenerationTab } from './DocGenerationTab';
 import { CopyFromCompanyDialog } from './CopyFromCompanyDialog';
 import { useSecretaryTemplates } from '@/hooks/useSecretaryTemplates';
@@ -47,6 +47,20 @@ interface CompanyDetailDialogProps {
 
 const emptyOfficerForm = () => ({ nameEnglish: '', nameChinese: '', identity: 'natural', idNumber: '', email: '', tcspNumber: '', authScope: '', address: '', serviceAddress: '', dateAppointed: '', dateCeased: '', placeIncorporated: '', companyNumberRef: '', dateOfBirth: '' });
 const emptyShForm = () => ({ name: '', nameEnglish: '', nameChinese: '', shares: 0, identity: 'natural', idNumber: '', address: '', serviceAddress: '', email: '', shareType: '', issuePrice: '', currency: 'HKD', paidUp: '', unpaid: '', placeIncorporated: '', companyNumberRef: '', tcspNumber: '' });
+
+// 股東表單金額輔助：自動格式化 + 計算未繳股本
+const fmtMoney2 = (v: string) => { const n = parseFloat(v); return isNaN(n) ? v : n.toFixed(2); };
+const calcUnpaid = (shares: number, issuePrice: string, paidUp: string) => {
+  const price = parseFloat(issuePrice) || 0;
+  const paid = parseFloat(paidUp) || 0;
+  const unpaid = price * shares - paid;
+  return unpaid > 0 ? unpaid.toFixed(2) : '0.00';
+};
+// 工具：根據現有表單值，返回更新後的 issuePrice (格式化) + unpaid (自動計算)
+const computeShMoney = <T extends { shares: number; issuePrice: string; paidUp: string; unpaid: string }>(f: T) => ({
+  issuePrice: f.issuePrice ? fmtMoney2(f.issuePrice) : f.issuePrice,
+  unpaid: calcUnpaid(f.shares, f.issuePrice, f.paidUp),
+});
 
 // 從 Shareholder 建立完整 shForm（避免各處重複的物件字面量遺漏欄位，含法人專屬欄位 ME-08）
 const shFormFromSh = (sh: Shareholder) => ({
@@ -67,6 +81,114 @@ function fmtDate(s?: string) {
 }
 const isCeased = (x: { dateCeased?: string }) => !!(x.dateCeased && x.dateCeased.trim());
 
+// ── 同人合併：相同 _personId 的多條記錄合併為一條（預備董事+董事 或 多角色）──
+function dedupePersons(persons: Person[]): Person[] {
+  const map = new Map<string, Person>();
+  for (const p of persons) {
+    const pid = (p as any)._personId || p.id;
+    const existing = map.get(pid);
+    if (existing) {
+      // Preserve isReserve flag from either record so badge always shows
+      const hasReserve = existing.isReserve || p.isReserve;
+      // Both non-reserve plain duplicates → skip
+      if (!hasReserve) continue;
+      // Merge into a NEW object so originals are not mutated
+      const base = !p.isReserve ? p : existing;
+      map.set(pid, { ...base, isReserve: true } as Person);
+    } else {
+      map.set(pid, p);
+    }
+  }
+  return Array.from(map.values());
+}
+
+// ── 成員合併：同一人（相同 _personId）持有多個角色時合併為一條 ──
+interface MergedMember {
+  key: string;
+  name: string;
+  nameChinese: string;
+  identity: 'natural' | 'corporate';
+  roles: string[];
+  extras: string[];
+  primaryPerson: Person | null;
+  primaryShareholder: Shareholder | null;
+}
+
+function buildMergedMembers(
+  directors: Person[],
+  secretaries: Person[],
+  authorizedReps: Person[],
+  shareholders: Shareholder[],
+): MergedMember[] {
+  const map = new Map<string, MergedMember>();
+
+  const addPerson = (p: Person, roleLabel: string, extra?: string) => {
+    const pid = (p as any)._personId || p.id;
+    if (!pid) return;
+    let entry = map.get(pid);
+    if (!entry) {
+      entry = {
+        key: pid,
+        name: p.nameEnglish || p.nameChinese || '',
+        nameChinese: p.nameChinese || '',
+        identity: p.identity || 'natural',
+        roles: [],
+        extras: [],
+        primaryPerson: null,
+        primaryShareholder: null,
+      };
+      map.set(pid, entry);
+    }
+    if (!entry.roles.includes(roleLabel)) entry.roles.push(roleLabel);
+    if (extra && !entry.extras.includes(extra)) entry.extras.push(extra);
+    if (!entry.primaryPerson) entry.primaryPerson = p;
+    if (p.nameEnglish || p.nameChinese) {
+      entry.name = p.nameEnglish || p.nameChinese || '';
+      if (p.nameChinese) entry.nameChinese = p.nameChinese;
+    }
+  };
+
+  const addShareholder = (sh: Shareholder) => {
+    const pid = (sh as any)._personId || sh.id;
+    if (!pid) return;
+    let entry = map.get(pid);
+    if (!entry) {
+      entry = {
+        key: pid,
+        name: sh.nameEnglish || sh.nameChinese || sh.name || '',
+        nameChinese: sh.nameChinese || '',
+        identity: sh.identity || 'natural',
+        roles: [],
+        extras: [],
+        primaryPerson: null,
+        primaryShareholder: null,
+      };
+      map.set(pid, entry);
+    }
+    if (!entry.roles.includes('股東')) entry.roles.push('股東');
+    const shareExtra = `${(sh.shares || 0).toLocaleString()} 股`;
+    if (!entry.extras.includes(shareExtra)) entry.extras.push(shareExtra);
+    if (!entry.primaryShareholder) entry.primaryShareholder = sh;
+    if (!entry.name) entry.name = sh.nameEnglish || sh.nameChinese || sh.name || '';
+    if (!entry.nameChinese && sh.nameChinese) entry.nameChinese = sh.nameChinese;
+  };
+
+  for (const d of directors.filter(d => !isCeased(d))) {
+    addPerson(d, '董事', d.isReserve ? '備選' : undefined);
+  }
+  for (const s of secretaries) {
+    addPerson(s, '秘書', s.tcspNumber ? `TCSP ${s.tcspNumber}` : undefined);
+  }
+  for (const a of (authorizedReps || [])) {
+    addPerson(a, '授權代表');
+  }
+  for (const sh of shareholders.filter(sh => !isCeased(sh))) {
+    addShareholder(sh);
+  }
+
+  return Array.from(map.values());
+}
+
 export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDetailDialogProps) => {
   const [selectedPerson, setSelectedPerson] = useState<(Person & { roleLabel: string }) | null>(null);
   const [selectedSh, setSelectedSh] = useState<Shareholder | null>(null);
@@ -79,6 +201,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
   const [addingReserve, setAddingReserve] = useState(false);
   const [memberAddRole, setMemberAddRole] = useState<'director' | 'secretary' | 'shareholder' | 'authorized_representative' | null>(null);
   const [copyDialogOpen, setCopyDialogOpen] = useState(false);
+  const [copyContext, setCopyContext] = useState<{ role: string; isReserve?: boolean } | null>(null);
   // 檢索服務 SE-04~SE-07：董事／股東 tab 的「當前／歷史」子視圖
   const [dirView, setDirView] = useState<'current' | 'historical'>('current');
   const [shView, setShView] = useState<'current' | 'historical'>('current');
@@ -161,7 +284,15 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
   const ceasedDirectors = company.directors.filter(d => isCeased(d));
   const activeShareholders = company.shareholders.filter(sh => !isCeased(sh));
   const ceasedShareholders = company.shareholders.filter(sh => isCeased(sh));
-  const memberCount = activeDirectors.length + company.secretaries.length + activeShareholders.length + (company.authorizedReps || []).length;
+  const memberCount = (() => {
+    const seen = new Set<string>();
+    const add = (arr: any[]) => arr.forEach(x => { const pid = x?._personId || x?.id; if (pid) seen.add(pid); });
+    add(activeDirectors);
+    add(company.secretaries);
+    add(activeShareholders);
+    add(company.authorizedReps || []);
+    return seen.size;
+  })();
 
   // 計算實際生效的簽署人 ID（明確選擇 → 第一秘書 → 第一董事）
   const explicitSignerId = company.signerRoleId || '';
@@ -285,18 +416,42 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
   };
 
   const handleDeleteOfficer = (person: Person, label: string) => {
+    console.log('[handleDeleteOfficer]', { id: person.id, _personId: (person as any)._personId, label, name: person.nameEnglish, isReserve: person.isReserve });
+    if (!person.id) {
+      toast({ title: '無法刪除：缺少記錄 ID', description: '請嘗試刷新頁面後再試', variant: 'destructive' });
+      return;
+    }
     deleteOfficer.mutate(person.id, {
       onSuccess: () => {
         toast({ title: `${label}已刪除`, description: person.nameEnglish || person.nameChinese });
         if (selectedPerson?.id === person.id) setSelectedPerson(null);
       },
-      onError: () => toast({ title: '刪除失敗', variant: 'destructive' }),
+      onError: (err: any) => {
+        console.error('[handleDeleteOfficer] error:', err);
+        const msg = err?.message || err?.error || String(err);
+        toast({ title: '刪除失敗', description: msg, variant: 'destructive' });
+      },
     });
   };
 
   const handleAddOfficer = () => {
     if (!addingOfficer || !newOfficerForm.nameEnglish) {
       toast({ title: '請填寫英文名稱', variant: 'destructive' }); return;
+    }
+    if (!newOfficerForm.idNumber.trim()) {
+      toast({ title: newOfficerForm.identity === 'corporate' ? '請填寫商業登記號碼' : '請填寫證件號碼', variant: 'destructive' }); return;
+    }
+    if (!newOfficerForm.email.trim()) {
+      toast({ title: '請填寫電郵', variant: 'destructive' }); return;
+    }
+    if (!newOfficerForm.dateAppointed.trim()) {
+      toast({ title: '請填寫委任日期', variant: 'destructive' }); return;
+    }
+    if (!newOfficerForm.dateOfBirth.trim()) {
+      toast({ title: newOfficerForm.identity === 'corporate' ? '請填寫成立日期' : '請填寫出生日期', variant: 'destructive' }); return;
+    }
+    if (!newOfficerForm.address.trim()) {
+      toast({ title: '請填寫居住地址', variant: 'destructive' }); return;
     }
     addOfficer.mutate({
       company_id: company.id, name_english: newOfficerForm.nameEnglish,
@@ -322,6 +477,11 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
   // 備選董事新增（ME-16/17）：角色 director + is_reserve
   const handleAddReserve = () => {
     if (!newOfficerForm.nameEnglish) { toast({ title: '請填寫英文名稱', variant: 'destructive' }); return; }
+    if (!newOfficerForm.idNumber.trim()) { toast({ title: newOfficerForm.identity === 'corporate' ? '請填寫商業登記號碼' : '請填寫證件號碼', variant: 'destructive' }); return; }
+    if (!newOfficerForm.email.trim()) { toast({ title: '請填寫電郵', variant: 'destructive' }); return; }
+    if (!newOfficerForm.dateAppointed.trim()) { toast({ title: '請填寫委任日期', variant: 'destructive' }); return; }
+    if (!newOfficerForm.dateOfBirth.trim()) { toast({ title: newOfficerForm.identity === 'corporate' ? '請填寫成立日期' : '請填寫出生日期', variant: 'destructive' }); return; }
+    if (!newOfficerForm.address.trim()) { toast({ title: '請填寫居住地址', variant: 'destructive' }); return; }
     addOfficer.mutate({
       company_id: company.id, name_english: newOfficerForm.nameEnglish,
       name_chinese: newOfficerForm.nameChinese, role: 'director', is_reserve: true,
@@ -342,6 +502,11 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
   // 成員 tab 統一新增（ME-02）：officer 角色走 addOfficer，股東走 addShareholder
   const handleAddMemberOfficer = (role: 'director' | 'secretary' | 'authorized_representative') => {
     if (!newOfficerForm.nameEnglish) { toast({ title: '請填寫英文名稱', variant: 'destructive' }); return; }
+    if (!newOfficerForm.idNumber.trim()) { toast({ title: newOfficerForm.identity === 'corporate' ? '請填寫商業登記號碼' : '請填寫證件號碼', variant: 'destructive' }); return; }
+    if (!newOfficerForm.email.trim()) { toast({ title: '請填寫電郵', variant: 'destructive' }); return; }
+    if (!newOfficerForm.dateAppointed.trim()) { toast({ title: '請填寫委任日期', variant: 'destructive' }); return; }
+    if (!newOfficerForm.dateOfBirth.trim()) { toast({ title: newOfficerForm.identity === 'corporate' ? '請填寫成立日期' : '請填寫出生日期', variant: 'destructive' }); return; }
+    if (!newOfficerForm.address.trim()) { toast({ title: '請填寫居住地址', variant: 'destructive' }); return; }
     addOfficer.mutate({
       company_id: company.id, name_english: newOfficerForm.nameEnglish,
       name_chinese: newOfficerForm.nameChinese, role,
@@ -455,6 +620,9 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
             <Building2 className="h-5 w-5 text-primary" />
             {company.name}
           </DialogTitle>
+          <DialogDescription className="sr-only">
+            {company.chineseName || company.name} 的詳細資料，包含公司資料、成員、股本、公司誌等
+          </DialogDescription>
         </DialogHeader>
 
         <div className="flex-1 overflow-hidden flex">
@@ -476,7 +644,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                 </TabsTrigger>
                 <TabsTrigger value="directors" className="gap-1.5">
                   <Users className="h-3.5 w-3.5" /> 董事
-                  <Badge variant="secondary" className="text-xs ml-1">{activeDirectors.length}</Badge>
+                  <Badge variant="secondary" className="text-xs ml-1">{dedupePersons(activeDirectors).length}</Badge>
                 </TabsTrigger>
                 <TabsTrigger value="secretaries" className="gap-1.5">
                   <UserCheck className="h-3.5 w-3.5" /> 秘書
@@ -492,10 +660,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                 </TabsTrigger>
                 <TabsTrigger value="reserve" className="gap-1.5">
                   <UserPlus className="h-3.5 w-3.5" /> 備選董事
-                  <Badge variant="secondary" className="text-xs ml-1">{company.directors.filter(d => d.isReserve).length}</Badge>
-                </TabsTrigger>
-                <TabsTrigger value="shares" className="gap-1.5">
-                  <Coins className="h-3.5 w-3.5" /> 股份管理
+                  <Badge variant="secondary" className="text-xs ml-1">{dedupePersons(company.directors.filter(d => d.isReserve)).length}</Badge>
                 </TabsTrigger>
                 <TabsTrigger value="scr" className="gap-1.5">
                   <ShieldCheck className="h-3.5 w-3.5" /> 重要控制人
@@ -506,11 +671,8 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                 <TabsTrigger value="docgen" className="gap-1.5">
                   <FileOutput className="h-3.5 w-3.5" /> 文件生成
                 </TabsTrigger>
-                <TabsTrigger value="versions" className="gap-1.5">
-                  <FileClock className="h-3.5 w-3.5" /> 版本記錄
-                </TabsTrigger>
-                <TabsTrigger value="personnel" className="gap-1.5">
-                  <ArrowUpDown className="h-3.5 w-3.5" /> 變更記錄
+                <TabsTrigger value="chronicle" className="gap-1.5">
+                  <FileClock className="h-3.5 w-3.5" /> 公司誌
                 </TabsTrigger>
               </TabsList>
 
@@ -535,11 +697,6 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                 ) : (
                   <p className="text-muted-foreground text-sm mt-4">尚未上傳任何附件（可拖放或點擊上傳 CI／BR）</p>
                 )}
-              </TabsContent>
-
-              {/* Tab: 股份管理 */}
-              <TabsContent value="shares">
-                <ShareCapitalTab company={company} />
               </TabsContent>
 
               {/* Tab: 基本資料 */}
@@ -642,14 +799,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                         <div className="space-y-1"><Label className="text-xs">區</Label><Input value={companyForm.regDistrict} onChange={e => setCompanyForm({ ...companyForm, regDistrict: e.target.value })} /></div>
                         <div className="space-y-1">
                           <Label className="text-xs">地區</Label>
-                          <Select value={companyForm.regRegion} onValueChange={v => setCompanyForm({ ...companyForm, regRegion: v })}>
-                            <SelectTrigger><SelectValue /></SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="香港 Hong Kong">香港 Hong Kong</SelectItem>
-                              <SelectItem value="九龍 Kowloon">九龍 Kowloon</SelectItem>
-                              <SelectItem value="新界 New Territories">新界 New Territories</SelectItem>
-                            </SelectContent>
-                          </Select>
+                          <Input value={companyForm.regRegion} onChange={e => setCompanyForm({ ...companyForm, regRegion: e.target.value })} placeholder="香港" />
                         </div>
                       </div>
                     </div>
@@ -662,8 +812,8 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                 <div className="flex items-center justify-between mb-3">
                   <SectionHeader icon={<UsersRound className="h-4 w-4 text-primary" />} title="公司成員總覽" count={memberCount} />
                   <div className="flex gap-2">
-                    <Button variant="outline" size="sm" onClick={() => setCopyDialogOpen(true)}>
-                      <Copy className="h-3.5 w-3.5 mr-1" /> 從其他公司複製
+                    <Button variant="outline" size="sm" onClick={() => { setCopyContext(null); setCopyDialogOpen(true); }}>
+                      <Copy className="h-3.5 w-3.5 mr-1" /> 從所有公司複製
                     </Button>
                     {memberAddRole === null && (
                       <Button variant="ghost" size="sm" onClick={() => { setMemberAddRole('director'); setNewOfficerForm({ ...emptyOfficerForm(), serviceAddress: regAddrFull }); setShForm({ ...emptyShForm(), serviceAddress: regAddrFull }); }}>
@@ -676,7 +826,12 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                 {memberAddRole !== null && (
                   <div className="mb-3 space-y-2">
                     <div className="rounded-md border border-primary/50 bg-primary/5 p-3">
-                      <Label className="text-xs">指派角色（ME-02）</Label>
+                      <div className="flex items-center justify-between mb-1">
+                        <Label className="text-xs">指派角色（ME-02）</Label>
+                        <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => setMemberAddRole(null)}>
+                          <X className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
                       <Select value={memberAddRole} onValueChange={(v: 'director' | 'secretary' | 'shareholder' | 'authorized_representative') => setMemberAddRole(v)}>
                         <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
                         <SelectContent>
@@ -698,30 +853,43 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                   </div>
                 )}
 
-                {(memberCount) > 0 ? (
-                  <div className="grid gap-2">
-                    {activeDirectors.map((d, i) => (
-                      <MemberRow key={`d${i}`} name={d.nameEnglish || d.nameChinese} sub={d.nameChinese} role="董事"
-                        identity={d.identity} extra={d.isReserve ? '備選' : ''} selected={selectedPerson?.id === d.id}
-                        onClick={() => selectPerson(d, '董事')} />
-                    ))}
-                    {company.secretaries.map((s, i) => (
-                      <MemberRow key={`s${i}`} name={s.nameEnglish || s.nameChinese} sub={s.nameChinese} role="秘書"
-                        identity={s.identity} extra={s.tcspNumber ? `TCSP ${s.tcspNumber}` : ''} selected={selectedPerson?.id === s.id}
-                        onClick={() => selectPerson(s, '秘書')} />
-                    ))}
-                    {(company.authorizedReps || []).map((a, i) => (
-                      <MemberRow key={`a${i}`} name={a.nameEnglish || a.nameChinese} sub={a.nameChinese} role="授權代表"
-                        identity={a.identity} selected={selectedPerson?.id === a.id}
-                        onClick={() => selectPerson(a, '授權代表')} />
-                    ))}
-                    {activeShareholders.map((sh, i) => (
-                      <MemberRow key={`h${i}`} name={sh.nameEnglish || sh.nameChinese || sh.name} sub={sh.nameChinese} role="股東"
-                        identity={sh.identity} extra={`${sh.shares.toLocaleString()} 股`} selected={selectedSh?.id === sh.id}
-                        onClick={() => selectShareholder(sh)} />
-                    ))}
-                  </div>
-                ) : memberAddRole === null && <p className="text-muted-foreground text-sm">尚無成員記錄</p>}
+                {(() => {
+                  const merged = buildMergedMembers(activeDirectors, company.secretaries, company.authorizedReps || [], activeShareholders);
+                  return merged.length > 0 ? (
+                    <div className="grid gap-2">
+                      {merged.map((mm) => {
+                        const pid = mm.key;
+                        const isOfficerSelected =
+                          selectedPerson?.id === mm.primaryPerson?.id ||
+                          (mm.primaryPerson && (selectedPerson as any)?._personId === pid);
+                        const isShSelected = selectedSh?.id === mm.primaryShareholder?.id;
+
+                        const handleClick = () => {
+                          if (mm.primaryPerson) {
+                            selectPerson(mm.primaryPerson, mm.roles[0] || '成員');
+                          } else if (mm.primaryShareholder) {
+                            selectShareholder(mm.primaryShareholder);
+                          }
+                        };
+
+                        return (
+                          <MemberRow
+                            key={mm.key}
+                            name={mm.name}
+                            sub={mm.nameChinese || undefined}
+                            roles={mm.roles}
+                            identity={mm.identity}
+                            extras={mm.extras.length > 0 ? mm.extras : undefined}
+                            selected={isOfficerSelected || isShSelected}
+                            onClick={handleClick}
+                          />
+                        );
+                      })}
+                    </div>
+                  ) : memberAddRole === null ? (
+                    <p className="text-muted-foreground text-sm">尚無成員記錄</p>
+                  ) : null;
+                })()}
 
                 {/* 委任／辭任日期歷史 (VE-06) */}
                 <div className="mt-6 border-t border-border pt-4">
@@ -734,47 +902,53 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                 <div className="flex items-center justify-between mb-3">
                   <HistoryToggle
                     view={dirView} onChange={setDirView}
-                    currentLabel="當前董事" currentCount={activeDirectors.length}
-                    historicalLabel="歷史董事" historicalCount={ceasedDirectors.length}
+                    currentLabel="當前董事" currentCount={dedupePersons(activeDirectors).length}
+                    historicalLabel="歷史董事" historicalCount={dedupePersons(ceasedDirectors).length}
                   />
-                  <Button variant="outline" size="sm" onClick={() => setCopyDialogOpen(true)}>
-                    <Copy className="h-3.5 w-3.5 mr-1" /> 從其他公司複製
+                  <Button variant="outline" size="sm" onClick={() => { setCopyContext(null); setCopyDialogOpen(true); }}>
+                    <Copy className="h-3.5 w-3.5 mr-1" /> 從所有公司複製
                   </Button>
                 </div>
 
                 {dirView === 'current' ? (
                   <>
                     <div className="flex items-center justify-between mb-2">
-                      <SectionHeader icon={<Users className="h-4 w-4 text-primary" />} title="當前董事" count={activeDirectors.length} />
+                      <SectionHeader icon={<Users className="h-4 w-4 text-primary" />} title="當前董事" count={dedupePersons(activeDirectors).length} />
                       <Button variant="ghost" size="sm" onClick={() => { setAddingOfficer('director'); setNewOfficerForm({ ...emptyOfficerForm(), serviceAddress: regAddrFull }); }}>
                         <Plus className="h-3.5 w-3.5 mr-1" /> 新增
                       </Button>
                     </div>
                     {addingOfficer === 'director' && <NewOfficerForm form={newOfficerForm} setForm={setNewOfficerForm} onSave={handleAddOfficer} onCancel={() => setAddingOfficer(null)} />}
-                    {activeDirectors.length > 0 ? (
-                      <div className="grid gap-2">
-                        {activeDirectors.map((d, i) => (
-                          <PersonRow key={i} person={d} isSelected={selectedPerson?.id === d.id}
-                            isSigner={effectiveSignerId === d.id}
-                            onClick={() => selectPerson(d, '董事')}
-                            onToggleReserve={() => handleToggleReserve(d)}
-                            onDelete={() => handleDeleteOfficer(d, '董事')} />
-                        ))}
-                      </div>
-                    ) : !addingOfficer && <p className="text-muted-foreground text-sm">無當前董事記錄</p>}
+                    {(() => {
+                      const deduped = dedupePersons(activeDirectors);
+                      return deduped.length > 0 ? (
+                        <div className="grid gap-2">
+                          {deduped.map((d, i) => (
+                            <PersonRow key={i} person={d} isSelected={selectedPerson?.id === d.id}
+                              isSigner={effectiveSignerId === d.id}
+                              onClick={() => selectPerson(d, '董事')}
+                              onToggleReserve={() => handleToggleReserve(d)}
+                              onDelete={() => handleDeleteOfficer(d, '董事')} />
+                          ))}
+                        </div>
+                      ) : (!addingOfficer && <p className="text-muted-foreground text-sm">無當前董事記錄</p>);
+                    })()}
                   </>
                 ) : (
                   <>
                     <SectionHeader icon={<Users className="h-4 w-4 text-muted-foreground" />} title="歷史董事（已辭任）" count={ceasedDirectors.length} />
-                    {ceasedDirectors.length > 0 ? (
-                      <div className="grid gap-2 mt-2">
-                        {ceasedDirectors.map((d, i) => (
-                          <PersonRow key={i} person={d} historical isSelected={selectedPerson?.id === d.id}
-                            onClick={() => selectPerson(d, '董事')}
-                            onDelete={() => handleDeleteOfficer(d, '董事')} />
-                        ))}
-                      </div>
-                    ) : <p className="text-muted-foreground text-sm mt-2">無已辭任董事記錄</p>}
+                    {(() => {
+                      const deduped = dedupePersons(ceasedDirectors);
+                      return deduped.length > 0 ? (
+                        <div className="grid gap-2 mt-2">
+                          {deduped.map((d, i) => (
+                            <PersonRow key={i} person={d} historical isSelected={selectedPerson?.id === d.id}
+                              onClick={() => selectPerson(d, '董事')}
+                              onDelete={() => handleDeleteOfficer(d, '董事')} />
+                          ))}
+                        </div>
+                      ) : (<p className="text-muted-foreground text-sm mt-2">無已辭任董事記錄</p>);
+                    })()}
                   </>
                 )}
               </TabsContent>
@@ -783,9 +957,14 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
               <TabsContent value="secretaries">
                 <div className="flex items-center justify-between mb-2">
                   <SectionHeader icon={<UserCheck className="h-4 w-4 text-primary" />} title="秘書" count={company.secretaries.length} />
-                  <Button variant="ghost" size="sm" onClick={() => { setAddingOfficer('secretary'); setNewOfficerForm({ ...emptyOfficerForm(), serviceAddress: regAddrFull }); }}>
-                    <Plus className="h-3.5 w-3.5 mr-1" /> 新增
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={() => { setCopyContext(null); setCopyDialogOpen(true); }}>
+                      <Copy className="h-3.5 w-3.5 mr-1" /> 從所有公司複製
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => { setAddingOfficer('secretary'); setNewOfficerForm({ ...emptyOfficerForm(), serviceAddress: regAddrFull }); }}>
+                      <Plus className="h-3.5 w-3.5 mr-1" /> 新增
+                    </Button>
+                  </div>
                 </div>
                 {addingOfficer === 'secretary' && <NewOfficerForm form={newOfficerForm} setForm={setNewOfficerForm} onSave={handleAddOfficer} onCancel={() => setAddingOfficer(null)} isSecretary templates={secretaryTemplates} />}
                 {company.secretaries.length > 0 ? (
@@ -804,9 +983,14 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
               <TabsContent value="authreps">
                 <div className="flex items-center justify-between mb-2">
                   <SectionHeader icon={<UserCog className="h-4 w-4 text-primary" />} title="授權代表" count={(company.authorizedReps || []).length} />
-                  <Button variant="ghost" size="sm" onClick={() => { setAddingOfficer('authorized_representative'); setNewOfficerForm({ ...emptyOfficerForm(), serviceAddress: regAddrFull }); }}>
-                    <Plus className="h-3.5 w-3.5 mr-1" /> 新增
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={() => { setCopyContext({ role: 'authorized_representative' }); setCopyDialogOpen(true); }}>
+                      <Copy className="h-3.5 w-3.5 mr-1" /> 從所有公司複製
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => { setAddingOfficer('authorized_representative'); setNewOfficerForm({ ...emptyOfficerForm(), serviceAddress: regAddrFull }); }}>
+                      <Plus className="h-3.5 w-3.5 mr-1" /> 新增
+                    </Button>
+                  </div>
                 </div>
                 {addingOfficer === 'authorized_representative' && <NewOfficerForm form={newOfficerForm} setForm={setNewOfficerForm} onSave={handleAddOfficer} onCancel={() => setAddingOfficer(null)} showAuthScope />}
                 {(company.authorizedReps || []).length > 0 ? (
@@ -823,22 +1007,30 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
               {/* Tab: 備選董事 (ME-16 / ME-17) */}
               <TabsContent value="reserve">
                 <div className="flex items-center justify-between mb-2">
-                  <SectionHeader icon={<UserPlus className="h-4 w-4 text-primary" />} title="備選董事" count={company.directors.filter(d => d.isReserve).length} />
-                  <Button variant="ghost" size="sm" onClick={() => { setAddingReserve(true); setNewOfficerForm({ ...emptyOfficerForm(), serviceAddress: regAddrFull }); }}>
-                    <Plus className="h-3.5 w-3.5 mr-1" /> 新增
-                  </Button>
+                  <SectionHeader icon={<UserPlus className="h-4 w-4 text-primary" />} title="備選董事" count={(() => { const reserved = company.directors.filter(d => d.isReserve); const deduped = dedupePersons(reserved); return deduped.length; })()} />
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={() => { setCopyContext({ role: 'director', isReserve: true }); setCopyDialogOpen(true); }}>
+                      <Copy className="h-3.5 w-3.5 mr-1" /> 從所有公司複製
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => { setAddingReserve(true); setNewOfficerForm({ ...emptyOfficerForm(), serviceAddress: regAddrFull }); }}>
+                      <Plus className="h-3.5 w-3.5 mr-1" /> 新增
+                    </Button>
+                  </div>
                 </div>
                 {addingReserve && <NewOfficerForm form={newOfficerForm} setForm={setNewOfficerForm} onSave={handleAddReserve} onCancel={() => setAddingReserve(false)} />}
-                {company.directors.filter(d => d.isReserve).length > 0 ? (
-                  <div className="grid gap-2">
-                    {company.directors.filter(d => d.isReserve).map((d, i) => (
-                      <PersonRow key={i} person={d} isSelected={selectedPerson?.id === d.id}
-                        onClick={() => selectPerson(d, '備選董事')}
-                        onToggleReserve={() => handleToggleReserve(d)}
-                        onDelete={() => handleDeleteOfficer(d, '備選董事')} />
-                    ))}
-                  </div>
-                ) : !addingReserve && <p className="text-muted-foreground text-sm">無備選董事記錄</p>}
+                {(() => {
+                  const deduped = dedupePersons(company.directors.filter(d => d.isReserve));
+                  return deduped.length > 0 ? (
+                    <div className="grid gap-2">
+                      {deduped.map((d, i) => (
+                        <PersonRow key={i} person={d} isSelected={selectedPerson?.id === d.id}
+                          onClick={() => selectPerson(d, '備選董事')}
+                          onToggleReserve={() => handleToggleReserve(d)}
+                          onDelete={() => handleDeleteOfficer(d, '備選董事')} />
+                      ))}
+                    </div>
+                  ) : (!addingReserve && <p className="text-muted-foreground text-sm">無備選董事記錄</p>);
+                })()}
                 <p className="text-xs text-muted-foreground mt-3">備選董事為唯一董事身故時的後備人選。亦可在「董事」分頁用盾牌圖示切換是否備選。</p>
               </TabsContent>
 
@@ -850,8 +1042,8 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                     currentLabel="當前股東" currentCount={activeShareholders.length}
                     historicalLabel="歷史股東" historicalCount={ceasedShareholders.length}
                   />
-                  <Button variant="outline" size="sm" onClick={() => setCopyDialogOpen(true)}>
-                    <Copy className="h-3.5 w-3.5 mr-1" /> 從其他公司複製
+                  <Button variant="outline" size="sm" onClick={() => { setCopyContext(null); setCopyDialogOpen(true); }}>
+                    <Copy className="h-3.5 w-3.5 mr-1" /> 從所有公司複製
                   </Button>
                 </div>
                 <div className="flex items-center justify-between mb-2">
@@ -916,7 +1108,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                 })()}
               </TabsContent>
 
-              {/* Tab: SCR */}
+              {/* Tab: SCR (重要控制人) */}
               <TabsContent value="scr">
                 <SCRTab company={company} />
               </TabsContent>
@@ -929,17 +1121,13 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                 <DocGenerationTab company={company} />
               </TabsContent>
 
-              <TabsContent value="versions">
-                <CompanyVersionsTab company={company} />
-              </TabsContent>
-
-              <TabsContent value="personnel">
-                <ChangeRecordsTab company={company} />
+              <TabsContent value="chronicle">
+                <CompanyChronicleTab company={company} />
               </TabsContent>
             </Tabs>
           </div>
 
-          <CopyFromCompanyDialog open={copyDialogOpen} onOpenChange={setCopyDialogOpen} targetCompany={company} />
+          <CopyFromCompanyDialog open={copyDialogOpen} onOpenChange={setCopyDialogOpen} targetCompany={company} roleOverride={copyContext} />
 
           {/* Right: Person detail panel */}
           {selectedPerson && (
@@ -978,7 +1166,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                   <InfoItem label="身份類型" value={selectedPerson.identity === 'natural' ? '自然人' : '法人'} />
                   <InfoItem label="英文名稱" value={selectedPerson.nameEnglish} />
                   <InfoItem label="中文名稱" value={selectedPerson.nameChinese} />
-                  <InfoItem label="證件號碼" value={selectedPerson.idNumber || ''} />
+                  <InfoItem label={selectedPerson.identity === 'corporate' ? '商業登記號碼' : '證件號碼'} value={selectedPerson.idNumber || ''} />
                   <InfoItem label="委任日期" value={selectedPerson.dateAppointed || ''} />
                   <InfoItem label="辭任日期" value={selectedPerson.dateCeased || ''} />
                   <InfoItem label="地址" value={selectedPerson.address || ''} />
@@ -1010,11 +1198,17 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="space-y-1"><Label className="text-xs">證件號碼</Label><Input value={personForm.idNumber} onChange={e => setPersonForm({ ...personForm, idNumber: e.target.value })} /></div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">{personForm.identity === 'corporate' ? '商業登記號碼' : '證件號碼'}</Label>
+                    <Input value={personForm.idNumber} onChange={e => setPersonForm({ ...personForm, idNumber: e.target.value })} placeholder={personForm.identity === 'corporate' ? 'Business Registration No.' : 'ID / Passport No.'} />
+                  </div>
                   <div className="space-y-1"><Label className="text-xs">電郵</Label><Input type="email" value={personForm.email} onChange={e => setPersonForm({ ...personForm, email: e.target.value })} placeholder="email@example.com" /></div>
                   <div className="space-y-1"><Label className="text-xs">委任日期</Label><Input value={personForm.dateAppointed} onChange={e => setPersonForm({ ...personForm, dateAppointed: e.target.value })} placeholder="DD/MM/YYYY" /></div>
                   <div className="space-y-1"><Label className="text-xs">辭任日期</Label><Input value={personForm.dateCeased} onChange={e => setPersonForm({ ...personForm, dateCeased: e.target.value })} placeholder="DD/MM/YYYY" /></div>
-                  <div className="space-y-1"><Label className="text-xs">出生日期 DOB</Label><Input value={personForm.dateOfBirth} onChange={e => setPersonForm({ ...personForm, dateOfBirth: e.target.value })} placeholder="DD/MM/YYYY" /></div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">{personForm.identity === 'corporate' ? '成立日期' : '出生日期 DOB'}</Label>
+                    <Input value={personForm.dateOfBirth} onChange={e => setPersonForm({ ...personForm, dateOfBirth: e.target.value })} placeholder={personForm.identity === 'corporate' ? 'Date of Incorporation (DD/MM/YYYY)' : 'DD/MM/YYYY'} />
+                  </div>
                   {selectedPerson.roleLabel === '授權代表' && (
                     <div className="col-span-2 space-y-1"><Label className="text-xs">授權範圍 (Scope of Authority)</Label><Textarea value={personForm.authScope} onChange={e => setPersonForm({ ...personForm, authScope: e.target.value })} rows={2} placeholder="例如：代表公司簽署及提交法定文件" /></div>
                   )}
@@ -1115,12 +1309,12 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                       <div className="col-span-2 space-y-1"><Label className="text-xs">TCSP 牌照號碼</Label><Input value={shForm.tcspNumber} onChange={e => setShForm({ ...shForm, tcspNumber: e.target.value })} placeholder="TC No.（如適用）" /></div>
                     </>
                   )}
-                  <div className="space-y-1"><Label className="text-xs">持股數量</Label><Input type="number" value={shForm.shares} onChange={e => setShForm({ ...shForm, shares: parseInt(e.target.value) || 0 })} /></div>
+                  <div className="space-y-1"><Label className="text-xs">持股數量</Label><Input type="number" value={shForm.shares} onChange={e => { const s = parseInt(e.target.value) || 0; setShForm({ ...shForm, shares: s, unpaid: calcUnpaid(s, shForm.issuePrice, shForm.paidUp) }); }} /></div>
                   <div className="space-y-1"><Label className="text-xs">股份類別</Label><Input value={shForm.shareType} onChange={e => setShForm({ ...shForm, shareType: e.target.value })} placeholder="e.g. Ordinary 普通股" /></div>
                   <div className="space-y-1"><Label className="text-xs">貨幣</Label><Input value={shForm.currency} onChange={e => setShForm({ ...shForm, currency: e.target.value })} placeholder="HKD" /></div>
-                  <div className="space-y-1"><Label className="text-xs">每股發行價</Label><Input value={shForm.issuePrice} onChange={e => setShForm({ ...shForm, issuePrice: e.target.value })} placeholder="e.g. 1.00" /></div>
-                  <div className="space-y-1"><Label className="text-xs">已繳付股本</Label><Input value={shForm.paidUp} onChange={e => setShForm({ ...shForm, paidUp: e.target.value })} placeholder="Amount paid up" /></div>
-                  <div className="space-y-1"><Label className="text-xs">未繳付股本</Label><Input value={shForm.unpaid} onChange={e => setShForm({ ...shForm, unpaid: e.target.value })} placeholder="Amount unpaid" /></div>
+                  <div className="space-y-1"><Label className="text-xs">每股發行價</Label><Input value={shForm.issuePrice} onChange={e => setShForm({ ...shForm, issuePrice: e.target.value })} onBlur={() => { if (shForm.issuePrice) setShForm({ ...shForm, ...computeShMoney(shForm) }); }} placeholder="e.g. 1.00" /></div>
+                  <div className="space-y-1"><Label className="text-xs">已繳付股本</Label><Input value={shForm.paidUp} onChange={e => setShForm({ ...shForm, paidUp: e.target.value })} onBlur={() => { if (shForm.paidUp) setShForm({ ...shForm, ...computeShMoney(shForm) }); }} placeholder="Amount paid up" /></div>
+                  <div className="space-y-1"><Label className="text-xs">未繳付股本</Label><Input value={shForm.unpaid} onChange={e => setShForm({ ...shForm, unpaid: e.target.value })} placeholder="自動計算" /></div>
                   <div className="col-span-2 space-y-1"><Label className="text-xs">居住地址</Label><Textarea value={shForm.address} onChange={e => setShForm({ ...shForm, address: e.target.value })} rows={2} /></div>
                   <div className="col-span-2 space-y-1">
                     <div className="flex items-center justify-between">
@@ -1150,13 +1344,6 @@ function PersonRow({ person, isSelected, isSigner, historical, onClick, onDelete
       onClick={onClick}
     >
       <div className="flex items-center gap-2">
-        {isSigner && (
-          <span
-            className="inline-block h-2 w-2 rounded-full bg-destructive shrink-0"
-            title="NAR1 簽署人"
-            aria-label="NAR1 簽署人"
-          />
-        )}
         <div>
           <span className="font-medium">{person.nameEnglish || person.nameChinese}</span>
           {person.nameEnglish && person.nameChinese && (
@@ -1178,6 +1365,10 @@ function PersonRow({ person, isSelected, isSigner, historical, onClick, onDelete
         <Badge variant="outline" className="text-xs">
           {person.identity === 'natural' ? '自然人' : '法人'}
         </Badge>
+        {person.role === 'director' && <Badge variant="outline" className="text-xs">董事</Badge>}
+        {person.role === 'secretary' && <Badge variant="outline" className="text-xs">秘書</Badge>}
+        {person.role === 'shareholder' && <Badge variant="outline" className="text-xs">股東</Badge>}
+        {person.role === 'authorized_representative' && <Badge variant="outline" className="text-xs">授權代表</Badge>}
         {person.identity === 'corporate' && person.tcspNumber && (
           <Badge variant="secondary" className="text-xs">
             TCSP: {person.tcspNumber}
@@ -1230,8 +1421,8 @@ function HistoryToggle({ view, onChange, currentLabel, currentCount, historicalL
   );
 }
 
-function MemberRow({ name, sub, role, identity, extra, selected, onClick }: {
-  name: string; sub?: string; role: string; identity: 'natural' | 'corporate'; extra?: string; selected: boolean; onClick: () => void;
+function MemberRow({ name, sub, roles, identity, extras, selected, onClick }: {
+  name: string; sub?: string; roles: string[]; identity: 'natural' | 'corporate'; extras?: string[]; selected: boolean; onClick: () => void;
 }) {
   return (
     <div
@@ -1245,9 +1436,13 @@ function MemberRow({ name, sub, role, identity, extra, selected, onClick }: {
         {sub && name !== sub && <span className="ml-2 text-muted-foreground">{sub}</span>}
       </div>
       <div className="flex items-center gap-1.5 shrink-0">
-        <Badge variant="default" className="text-xs">{role}</Badge>
+        {roles.map((r) => (
+          <Badge key={r} variant="default" className="text-xs">{r}</Badge>
+        ))}
         <Badge variant="outline" className="text-xs">{identity === 'natural' ? '自然人' : '法人'}</Badge>
-        {extra && <Badge variant="secondary" className="text-xs">{extra}</Badge>}
+        {extras?.map((e, i) => (
+          <Badge key={i} variant="secondary" className="text-xs">{e}</Badge>
+        ))}
       </div>
     </div>
   );
@@ -1308,15 +1503,25 @@ function NewOfficerForm({ form, setForm, onSave, onCancel, isSecretary, template
             </SelectContent>
           </Select>
         </div>
-        <div className="space-y-1"><Label className="text-xs">證件號碼</Label><Input value={form.idNumber} onChange={e => setForm({ ...form, idNumber: e.target.value })} placeholder="ID / Passport No." /></div>
-        <div className="space-y-1"><Label className="text-xs">電郵</Label><Input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} placeholder="email@example.com" /></div>
-        <div className="space-y-1"><Label className="text-xs">委任日期</Label><Input value={form.dateAppointed} onChange={e => setForm({ ...form, dateAppointed: e.target.value })} placeholder="DD/MM/YYYY" /></div>
+        <div className="space-y-1">
+          <Label className="text-xs">
+            {form.identity === 'corporate' ? '商業登記號碼' : '證件號碼'} <span className="text-destructive">*</span>
+          </Label>
+          <Input value={form.idNumber} onChange={e => setForm({ ...form, idNumber: e.target.value })} placeholder={form.identity === 'corporate' ? 'Business Registration No.' : 'ID / Passport No.'} />
+        </div>
+        <div className="space-y-1"><Label className="text-xs">電郵 <span className="text-destructive">*</span></Label><Input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} placeholder="email@example.com" /></div>
+        <div className="space-y-1"><Label className="text-xs">委任日期 <span className="text-destructive">*</span></Label><Input value={form.dateAppointed} onChange={e => setForm({ ...form, dateAppointed: e.target.value })} placeholder="DD/MM/YYYY" /></div>
         <div className="space-y-1"><Label className="text-xs">辭任日期</Label><Input value={form.dateCeased} onChange={e => setForm({ ...form, dateCeased: e.target.value })} placeholder="DD/MM/YYYY" /></div>
-        <div className="space-y-1"><Label className="text-xs">出生日期 DOB</Label><Input value={form.dateOfBirth} onChange={e => setForm({ ...form, dateOfBirth: e.target.value })} placeholder="DD/MM/YYYY" /></div>
+        <div className="space-y-1">
+          <Label className="text-xs">
+            {form.identity === 'corporate' ? '成立日期' : '出生日期 DOB'} <span className="text-destructive">*</span>
+          </Label>
+          <Input value={form.dateOfBirth} onChange={e => setForm({ ...form, dateOfBirth: e.target.value })} placeholder={form.identity === 'corporate' ? 'Date of Incorporation (DD/MM/YYYY)' : 'DD/MM/YYYY'} />
+        </div>
         {showAuthScope && (
           <div className="col-span-2 space-y-1"><Label className="text-xs">授權範圍 (Scope of Authority)</Label><Textarea value={form.authScope} onChange={e => setForm({ ...form, authScope: e.target.value })} rows={2} placeholder="例如：代表公司簽署及提交法定文件" /></div>
         )}
-        <div className="col-span-2 space-y-1"><Label className="text-xs">居住地址</Label><Textarea value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} rows={2} placeholder="地址 Address" /></div>
+        <div className="col-span-2 space-y-1"><Label className="text-xs">居住地址 <span className="text-destructive">*</span></Label><Textarea value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} rows={2} placeholder="地址 Address" /></div>
         <div className="col-span-2 space-y-1"><Label className="text-xs">服務地址 (預設同註冊辦事處)</Label><Textarea value={form.serviceAddress} onChange={e => setForm({ ...form, serviceAddress: e.target.value })} rows={2} placeholder="留空則自動使用註冊辦事處地址" /></div>
         {form.identity === 'corporate' && (
           <>
@@ -1363,12 +1568,12 @@ function NewShareholderForm({ form, setForm, onSave, onCancel }: {
             <div className="space-y-1"><Label className="text-xs">TCSP 牌照號碼</Label><Input value={form.tcspNumber} onChange={e => setForm({ ...form, tcspNumber: e.target.value })} placeholder="TC No.（如適用）" /></div>
           </>
         )}
-        <div className="space-y-1"><Label className="text-xs">股數</Label><Input type="number" value={form.shares} onChange={e => setForm({ ...form, shares: parseInt(e.target.value) || 0 })} /></div>
+        <div className="space-y-1"><Label className="text-xs">股數</Label><Input type="number" value={form.shares} onChange={e => { const s = parseInt(e.target.value) || 0; setForm({ ...form, shares: s, unpaid: calcUnpaid(s, form.issuePrice, form.paidUp) }); }} /></div>
         <div className="space-y-1"><Label className="text-xs">股份類別</Label><Input value={form.shareType} onChange={e => setForm({ ...form, shareType: e.target.value })} placeholder="e.g. Ordinary 普通股" /></div>
         <div className="space-y-1"><Label className="text-xs">貨幣</Label><Input value={form.currency} onChange={e => setForm({ ...form, currency: e.target.value })} placeholder="HKD" /></div>
-        <div className="space-y-1"><Label className="text-xs">每股發行價</Label><Input value={form.issuePrice} onChange={e => setForm({ ...form, issuePrice: e.target.value })} placeholder="e.g. 1.00" /></div>
-        <div className="space-y-1"><Label className="text-xs">已繳付股本</Label><Input value={form.paidUp} onChange={e => setForm({ ...form, paidUp: e.target.value })} placeholder="Amount paid up" /></div>
-        <div className="space-y-1"><Label className="text-xs">未繳付股本</Label><Input value={form.unpaid} onChange={e => setForm({ ...form, unpaid: e.target.value })} placeholder="Amount unpaid" /></div>
+        <div className="space-y-1"><Label className="text-xs">每股發行價</Label><Input value={form.issuePrice} onChange={e => setForm({ ...form, issuePrice: e.target.value })} onBlur={() => { if (form.issuePrice) setForm({ ...form, ...computeShMoney(form) }); }} placeholder="e.g. 1.00" /></div>
+        <div className="space-y-1"><Label className="text-xs">已繳付股本</Label><Input value={form.paidUp} onChange={e => setForm({ ...form, paidUp: e.target.value })} onBlur={() => { if (form.paidUp) setForm({ ...form, ...computeShMoney(form) }); }} placeholder="Amount paid up" /></div>
+        <div className="space-y-1"><Label className="text-xs">未繳付股本</Label><Input value={form.unpaid} onChange={e => setForm({ ...form, unpaid: e.target.value })} placeholder="自動計算" /></div>
         <div className="space-y-1"><Label className="text-xs">電郵</Label><Input value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></div>
         <div className="col-span-2 space-y-1"><Label className="text-xs">居住地址</Label><Textarea value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} rows={2} placeholder="地址 Address" /></div>
         <div className="col-span-2 space-y-1"><Label className="text-xs">服務地址 (預設同註冊辦事處)</Label><Textarea value={form.serviceAddress} onChange={e => setForm({ ...form, serviceAddress: e.target.value })} rows={2} placeholder="留空則自動使用註冊辦事處地址" /></div>
@@ -1390,7 +1595,7 @@ function InlineShEdit({ shForm, setShForm, onSave, onCancel }: {
         <div className="space-y-1"><Label className="text-xs">英文名稱</Label><Input value={shForm.nameEnglish} onChange={e => setShForm({ ...shForm, nameEnglish: e.target.value })} /></div>
         <div className="space-y-1"><Label className="text-xs">中文名稱</Label><Input value={shForm.nameChinese} onChange={e => setShForm({ ...shForm, nameChinese: e.target.value })} /></div>
         <div className="space-y-1"><Label className="text-xs">身份證號碼</Label><Input value={shForm.idNumber} onChange={e => setShForm({ ...shForm, idNumber: e.target.value })} /></div>
-        <div className="space-y-1"><Label className="text-xs">股數</Label><Input type="number" value={shForm.shares} onChange={e => setShForm({ ...shForm, shares: parseInt(e.target.value) || 0 })} /></div>
+        <div className="space-y-1"><Label className="text-xs">股數</Label><Input type="number" value={shForm.shares} onChange={e => { const s = parseInt(e.target.value) || 0; setShForm({ ...shForm, shares: s, unpaid: calcUnpaid(s, shForm.issuePrice, shForm.paidUp) }); }} /></div>
         {shForm.identity === 'corporate' && (
           <>
             <div className="space-y-1"><Label className="text-xs">成立地點</Label><Input value={shForm.placeIncorporated} onChange={e => setShForm({ ...shForm, placeIncorporated: e.target.value })} placeholder="e.g. Hong Kong / BVI" /></div>
@@ -1400,9 +1605,9 @@ function InlineShEdit({ shForm, setShForm, onSave, onCancel }: {
         )}
         <div className="col-span-2 space-y-1"><Label className="text-xs">股份類別</Label><Input value={shForm.shareType} onChange={e => setShForm({ ...shForm, shareType: e.target.value })} /></div>
         <div className="space-y-1"><Label className="text-xs">貨幣</Label><Input value={shForm.currency} onChange={e => setShForm({ ...shForm, currency: e.target.value })} placeholder="HKD" /></div>
-        <div className="space-y-1"><Label className="text-xs">每股發行價</Label><Input value={shForm.issuePrice} onChange={e => setShForm({ ...shForm, issuePrice: e.target.value })} /></div>
-        <div className="space-y-1"><Label className="text-xs">已繳付股本</Label><Input value={shForm.paidUp} onChange={e => setShForm({ ...shForm, paidUp: e.target.value })} /></div>
-        <div className="space-y-1"><Label className="text-xs">未繳付股本</Label><Input value={shForm.unpaid} onChange={e => setShForm({ ...shForm, unpaid: e.target.value })} /></div>
+        <div className="space-y-1"><Label className="text-xs">每股發行價</Label><Input value={shForm.issuePrice} onChange={e => setShForm({ ...shForm, issuePrice: e.target.value })} onBlur={() => { if (shForm.issuePrice) setShForm({ ...shForm, ...computeShMoney(shForm) }); }} /></div>
+        <div className="space-y-1"><Label className="text-xs">已繳付股本</Label><Input value={shForm.paidUp} onChange={e => setShForm({ ...shForm, paidUp: e.target.value })} onBlur={() => { if (shForm.paidUp) setShForm({ ...shForm, ...computeShMoney(shForm) }); }} /></div>
+        <div className="space-y-1"><Label className="text-xs">未繳付股本</Label><Input value={shForm.unpaid} onChange={e => setShForm({ ...shForm, unpaid: e.target.value })} placeholder="自動計算" /></div>
         <div className="col-span-2 space-y-1"><Label className="text-xs">地址</Label><Input value={shForm.address} onChange={e => setShForm({ ...shForm, address: e.target.value })} /></div>
       </div>
       <div className="flex gap-1 justify-end">

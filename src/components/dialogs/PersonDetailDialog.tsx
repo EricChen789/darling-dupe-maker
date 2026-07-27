@@ -1,5 +1,5 @@
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle,
+  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/ui/status-badge';
@@ -68,6 +68,7 @@ export function PersonDetailDialog({ open, onOpenChange, person, onEdit }: Perso
             <StatusBadge variant={p.identity}>{identityLabel(p.identity)}</StatusBadge>
             {p.role && <Badge variant="secondary">{roleLabel(p.role)}</Badge>}
           </DialogTitle>
+          <DialogDescription className="sr-only">人員詳細資料</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-5 pt-1">

@@ -8,7 +8,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
 import { FileText, Download, Loader2, Building2 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
@@ -134,6 +134,7 @@ const WordDocs = () => {
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>{contentDialog?.label} — {companyLabel}</DialogTitle>
+            <DialogDescription>輸入必要資訊後生成文件</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3">

@@ -11,6 +11,8 @@ import { useCompanies } from '@/hooks/useCompanies';
 import { useSaveResolution } from '@/hooks/useResolutions';
 import { downloadGenericFormPdf } from '@/lib/genericFormPdf';
 import { downloadBase64Pdf } from '@/lib/downloadPdf';
+import { useSaveFormHistory } from '@/hooks/useFormHistory';
+import FormHistorySelector from './FormHistorySelector';
 
 interface Props { onBack: () => void; }
 
@@ -25,10 +27,19 @@ export default function RenameCompanyForm({ onBack }: Props) {
   const [resolutionDate, setResolutionDate] = useState(new Date().toISOString().slice(0, 10));
   const [effectiveDate, setEffectiveDate] = useState(new Date().toISOString().slice(0, 10));
   const [signers, setSigners] = useState('');
+  // 提交人資料
+  const [presNameCn, setPresNameCn] = useState('');
+  const [presNameEn, setPresNameEn] = useState('');
+  const [presAddress, setPresAddress] = useState('');
+  const [presPhone, setPresPhone] = useState('');
+  const [presFax, setPresFax] = useState('');
+  const [presEmail, setPresEmail] = useState('');
+  const [presRef, setPresRef] = useState('');
   const [step, setStep] = useState<1 | 2>(1);
   const [resolutionDone, setResolutionDone] = useState(false);
   const [resolutionId, setResolutionId] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
+  const { mutate: saveFormHistory } = useSaveFormHistory();
 
   const company = companies.find(c => c.id === companyId);
 
@@ -36,6 +47,12 @@ export default function RenameCompanyForm({ onBack }: Props) {
     if (company) {
       setOldName(company.name);
       setOldChineseName(company.chineseName || '');
+      // Auto-fill presenter from company
+      setPresNameCn(company.chineseName || '');
+      setPresNameEn(company.name || '');
+      const addr = [company.regFlat, company.regBuilding, company.regStreet, company.regDistrict, company.regRegion]
+        .filter(Boolean).join(', ');
+      setPresAddress(addr);
     }
   }, [company]);
 
@@ -57,6 +74,28 @@ with effect from the date of issue of the Certificate of Change of Name by the R
 
 於公司註冊處長簽發更改公司名稱證書當日起生效，並依《公司條例》（第622章）第108條於 15 日內提交 NNC2 表格。`;
 
+  const handleLoadHistory = (data: any) => {
+    if (data.formData) {
+      const d = data.formData;
+      if (d.oldName !== undefined) setOldName(d.oldName);
+      if (d.newName !== undefined) setNewName(d.newName);
+      if (d.oldChineseName !== undefined) setOldChineseName(d.oldChineseName);
+      if (d.newChineseName !== undefined) setNewChineseName(d.newChineseName);
+      if (d.resolutionDate !== undefined) setResolutionDate(d.resolutionDate);
+      if (d.effectiveDate !== undefined) setEffectiveDate(d.effectiveDate);
+      if (d.signers !== undefined) setSigners(d.signers);
+      if (d.presNameCn !== undefined) setPresNameCn(d.presNameCn);
+      if (d.presNameEn !== undefined) setPresNameEn(d.presNameEn);
+      if (d.presAddress !== undefined) setPresAddress(d.presAddress);
+      if (d.presPhone !== undefined) setPresPhone(d.presPhone);
+      if (d.presFax !== undefined) setPresFax(d.presFax);
+      if (d.presEmail !== undefined) setPresEmail(d.presEmail);
+      if (d.presRef !== undefined) setPresRef(d.presRef);
+      if (d.step !== undefined) setStep(d.step);
+    }
+    if (data.selectedCompanyId) setCompanyId(data.selectedCompanyId);
+  };
+
   const handleGenerateResolution = async () => {
     if (!company || !newName.trim()) {
       toast({ title: '請選擇公司並填寫新公司名稱', variant: 'destructive' });
@@ -74,10 +113,7 @@ with effect from the date of issue of the Certificate of Change of Name by the R
           { rows: [['Resolution Date 決議日期', resolutionDate], ['Effective 生效日期', effectiveDate]] },
           { heading: 'Resolution / 決議內容', paragraph: resolutionContent },
         ],
-        signatureLines: signers
-          ? signers.split(',').map(s => `${s.trim()}: ____________________   Date: __________`)
-          : ['Member / 股東 (1): ____________________   Date: __________',
-             'Member / 股東 (2): ____________________   Date: __________'],
+        signatureLines: ['簽署人：____________________   Date: __________'],
       }, 'Resolution_Rename');
       if (ok) {
         save.mutate({
@@ -114,29 +150,44 @@ with effect from the date of issue of the Certificate of Change of Name by the R
         'fill_1_P.1': company.brNumber || '',
         'fill_2_P.1': oldName || company.name || '',
         'fill_3_P.1': newName || '',
-        'fill_4_P.1': newChineseName || '',
-        'fill_5_P.1': ed.length >= 3 ? ed[2] : '',
-        'fill_6_P.1': ed.length >= 2 ? ed[1] : '',
-        'fill_7_P.1': ed.length >= 1 ? ed[0] : '',
-        'fill_8_P.1': rd.length >= 3 ? rd[2] : '',
-        'fill_9_P.1': rd.length >= 2 ? rd[1] : '',
-        'fill_10_P.1': rd.length >= 1 ? rd[0] : '',
-        'fill_16_P.1': company.name || '',
+        // fill_4-6: effective date D/M/Y (narrow fields at x=393-571, y=329)
+        'fill_4_P.1': ed.length >= 3 ? ed[2] : '',
+        'fill_5_P.1': ed.length >= 2 ? ed[1] : '',
+        'fill_6_P.1': ed.length >= 1 ? ed[0] : '',
+        // fill_7-8: Chinese names (wide fields at x=74)
+        'fill_7_P.1': oldChineseName || '',
+        'fill_8_P.1': newChineseName || '',
+        // fill_9-10: signer + resolution date (y=554)
+        'fill_9_P.1': signers ? signers.split(',')[0].trim() : '',
+        'fill_10_P.1': rd.length >= 3 ? `${rd[2]}/${rd[1]}/${rd[0]}` : resolutionDate,
+        // ── Presentor (提交人) fields ──
+        'fill_11_P.1': presNameCn,
+        'fill_12_P.1': presNameEn,
+        'fill_13_P.1': presAddress,
+        'fill_14_P.1': presPhone,
+        'fill_15_P.1': presFax,
+        'fill_16_P.1': presEmail,
+        'fill_17_P.1': presRef,
       };
-      if (signers) {
-        const firstSigner = signers.split(',')[0].trim();
-        fields['fill_11_P.1'] = firstSigner;
-        fields['fill_12_P.1'] = 'Director';
-      }
       const resp = await fetch(`/api/generate-template-pdf`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ template: 'NNC2-template.pdf', fields }),
+        body: JSON.stringify({
+          template: 'NNC2-template.pdf',
+          fields,
+          brNumber: company?.brNumber || '',
+          keepWidgets: true,
+          alignCenterFields: ['fill_2_P.1', 'fill_3_P.1', 'fill_7_P.1', 'fill_8_P.1'],
+          alignVCenterFields: ['fill_2_P.1', 'fill_3_P.1', 'fill_7_P.1', 'fill_8_P.1'],
+          forceWidgetAp: ['fill_2_P.1', 'fill_3_P.1'],
+          fieldMinFontSize: { 'fill_13_P.1': 10 },
+        }),
       });
       const result = await resp.json();
       if (!resp.ok) throw new Error(result.error || 'Unknown error');
       downloadBase64Pdf(result.pdf, 'NNC2-form.pdf');
       toast({ title: 'NNC2 表格已生成', description: '使用官方模板填寫' });
+      saveFormHistory({ formType: 'NNC2', formData: { formData: { oldName, newName, oldChineseName, newChineseName, resolutionDate, effectiveDate, signers, presNameCn, presNameEn, presAddress, presPhone, presFax, presEmail, presRef, step }, selectedCompanyId: companyId } });
     } catch (err: any) {
       toast({ title: '生成失敗', description: err.message, variant: 'destructive' });
     } finally {
@@ -151,6 +202,8 @@ with effect from the date of issue of the Certificate of Change of Name by the R
       <p className="text-sm text-muted-foreground">
         建議流程：先生成股東特別決議書 → 簽署 → 再生成 NNC2 並於 15 日內提交公司註冊處。
       </p>
+
+      <FormHistorySelector formType="NNC2" onSelect={handleLoadHistory} />
 
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1">
@@ -174,6 +227,19 @@ with effect from the date of issue of the Certificate of Change of Name by the R
       <div className="space-y-1">
         <Label className="text-xs">簽署人（逗號分隔）</Label>
         <Input value={signers} onChange={e => setSigners(e.target.value)} placeholder="例如：Mr. Chan, Ms. Wong" />
+      </div>
+
+      <Separator />
+
+      <h3 className="font-semibold text-sm">提交人資料 Presentor</h3>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1"><Label className="text-xs">中文姓名／名稱</Label><Input className="h-8 text-xs" value={presNameCn} onChange={e => setPresNameCn(e.target.value)} /></div>
+        <div className="space-y-1"><Label className="text-xs">英文姓名／名稱</Label><Input className="h-8 text-xs" value={presNameEn} onChange={e => setPresNameEn(e.target.value)} /></div>
+        <div className="col-span-2 space-y-1"><Label className="text-xs">地址 Address</Label><Input className="h-8 text-xs" value={presAddress} onChange={e => setPresAddress(e.target.value)} /></div>
+        <div className="space-y-1"><Label className="text-xs">電話 Tel</Label><Input className="h-8 text-xs" value={presPhone} onChange={e => setPresPhone(e.target.value)} /></div>
+        <div className="space-y-1"><Label className="text-xs">傳真 Fax</Label><Input className="h-8 text-xs" value={presFax} onChange={e => setPresFax(e.target.value)} /></div>
+        <div className="space-y-1"><Label className="text-xs">電郵 Email</Label><Input className="h-8 text-xs" value={presEmail} onChange={e => setPresEmail(e.target.value)} /></div>
+        <div className="space-y-1"><Label className="text-xs">檔號 Reference</Label><Input className="h-8 text-xs" value={presRef} onChange={e => setPresRef(e.target.value)} /></div>
       </div>
 
       <Separator />

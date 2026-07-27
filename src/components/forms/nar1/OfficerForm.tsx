@@ -68,12 +68,27 @@ export const OfficerForm = ({ title, pageLabel, officers, onChange }: Props) => 
               <Label className="text-xs">前用英文姓名 Former English Name</Label>
               <Input value={o.formerNameEnglish} onChange={e => update(i, 'formerNameEnglish', e.target.value)} />
             </div>
-            <div className="space-y-1">
-              <Label className="text-xs">
-                {o.identity === 'natural' ? '身份證/護照號碼 ID/Passport No.' : '公司編號 Company No.'}
-              </Label>
-              <Input value={o.idNumber} onChange={e => update(i, 'idNumber', e.target.value)} />
-            </div>
+            {o.identity === 'natural' ? (
+              <>
+                <div className="space-y-1">
+                  <Label className="text-xs">香港身份證號碼 HKID No.</Label>
+                  <Input value={o.idNumber} onChange={e => update(i, 'idNumber', e.target.value)} placeholder="A123456(7)" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">護照簽發國家/地區 Passport Issuing Country</Label>
+                  <Input value={o.passportCountry || ''} onChange={e => update(i, 'passportCountry', e.target.value)} placeholder="e.g. China / UK / USA" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">護照號碼 Passport No.</Label>
+                  <Input value={o.passportNumber || ''} onChange={e => update(i, 'passportNumber', e.target.value)} placeholder="Passport Number" />
+                </div>
+              </>
+            ) : (
+              <div className="space-y-1">
+                <Label className="text-xs">商業登記號碼 BR No.</Label>
+                <Input value={o.idNumber} onChange={e => update(i, 'idNumber', e.target.value)} placeholder="Business Registration No." />
+              </div>
+            )}
             <div className="space-y-1">
               <Label className="text-xs">委任日期 Date Appointed</Label>
               <Input value={o.dateAppointed} onChange={e => update(i, 'dateAppointed', e.target.value)} placeholder="DD/MM/YYYY" />
@@ -87,6 +102,14 @@ export const OfficerForm = ({ title, pageLabel, officers, onChange }: Props) => 
                 <div className="space-y-1">
                   <Label className="text-xs">公司編號 Company Number Ref</Label>
                   <Input value={o.companyNumberRef} onChange={e => update(i, 'companyNumberRef', e.target.value)} />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">商業登記號碼 BR No.</Label>
+                  <Input value={o.brNumber || ''} onChange={e => update(i, 'brNumber', e.target.value)} placeholder="Business Registration No." />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">TCSP 牌照號碼</Label>
+                  <Input value={o.tcspNumber || ''} onChange={e => update(i, 'tcspNumber', e.target.value)} placeholder="TC No.（如適用）" />
                 </div>
               </>
             )}

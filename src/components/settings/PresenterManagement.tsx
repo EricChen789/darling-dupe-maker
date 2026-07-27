@@ -6,7 +6,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Plus, Pencil, Trash2, Save, X } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
-import { usePresenters, useUpsertPresenter, useDeletePresenter, Presenter } from '@/hooks/usePresenters';
+import { usePresenterList, useCreatePresenter, useDeletePresenter, Presenter } from '@/hooks/usePresenters';
 
 const empty = (): Partial<Presenter> => ({
   name: '', address: '', contact: '',
@@ -15,8 +15,8 @@ const empty = (): Partial<Presenter> => ({
 });
 
 export const PresenterManagement = () => {
-  const { data: presenters = [], isLoading } = usePresenters();
-  const upsert = useUpsertPresenter();
+  const { data: presenters = [], isLoading } = usePresenterList();
+  const upsert = useCreatePresenter();
   const del = useDeletePresenter();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);

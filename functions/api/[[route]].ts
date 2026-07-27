@@ -98,19 +98,22 @@ async function verifyAuth(req: Request, env: Env): Promise<User | null> {
   if (!token) return null;
   const payload = await verifyJWT(token, env.JWT_SECRET);
   if (!payload) return null;
-  const roleResult = await env.DB.prepare(
-    "SELECT role FROM user_roles WHERE user_id = ? AND role = 'admin'"
-  ).bind(payload.sub as string).first();
+  const roleRows = await env.DB.prepare(
+    "SELECT role FROM user_roles WHERE user_id = ?"
+  ).bind(payload.sub as string).all();
+  const roleSet = new Set((roleRows.results || []).map((r: any) => r.role));
+  const role = roleSet.has("admin") ? "admin" : roleSet.has("moderator") ? "moderator" : "user";
   return {
     id: payload.sub as string,
     email: payload.email as string,
     display_name: (payload.display_name as string) || "",
-    role: roleResult ? "admin" : "user",
+    role,
   };
 }
 
 function requireAdmin(user: User | null) {
-  if (!user || user.role !== "admin") throw new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders });
+  if (!user || (user.role !== "admin" && user.role !== "moderator"))
+    throw new Response(JSON.stringify({ error: "Unauthorized — admin or moderator required" }), { status: 401, headers: corsHeaders });
 }
 
 function generateUUID(): string {
@@ -143,21 +146,79 @@ function matchRoute(method: string, path: string): { handler: Handler; params: R
 
 // ─── CRUD helpers ───
 
+// Simple identifier safety check (matches Flask _safe_ident)
+function _safeIdent(name: string): boolean {
+  return /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name);
+}
+
 function buildSelect(table: string, query: URLSearchParams): { sql: string; bindings: any[] } {
   let sql = `SELECT * FROM ${table} WHERE 1=1`;
   const bindings: any[] = [];
-  const allowedFilters = ["company_id", "person_id", "role", "status", "company_group", "company_number", "identity"];
-  for (const key of allowedFilters) {
-    if (query.has(key)) { bindings.push(query.get(key)); sql += ` AND ${key} = ?`; }
+  const reserved = new Set(["search", "limit", "offset", "_order", "_order_dir"]);
+
+  for (const key of query.keys()) {
+    if (reserved.has(key)) continue;
+    const val = query.get(key);
+    if (val === null || val === "") continue;
+
+    if (key.includes("__")) {
+      const lastIdx = key.lastIndexOf("__");
+      const col = key.slice(0, lastIdx);
+      const op = key.slice(lastIdx + 2);
+      if (!_safeIdent(col)) continue;
+
+      switch (op) {
+        case "neq":
+          bindings.push(val); sql += ` AND "${col}" != ?`; break;
+        case "gt":
+          bindings.push(val); sql += ` AND "${col}" > ?`; break;
+        case "lt":
+          bindings.push(val); sql += ` AND "${col}" < ?`; break;
+        case "gte":
+          bindings.push(val); sql += ` AND "${col}" >= ?`; break;
+        case "lte":
+          bindings.push(val); sql += ` AND "${col}" <= ?`; break;
+        case "like":
+        case "ilike":
+          bindings.push(val); sql += ` AND "${col}" LIKE ?`; break;
+        case "in": {
+          const vals = val.split(",").map(v => v.trim()).filter(Boolean);
+          if (vals.length > 0) {
+            const ph = vals.map(() => "?").join(",");
+            bindings.push(...vals); sql += ` AND "${col}" IN (${ph})`;
+          }
+          break;
+        }
+        case "is":
+          sql += ` AND "${col}" IS ${val}`; break;
+        default:
+          // fallback: treat as plain eq
+          bindings.push(val); sql += ` AND "${key}" = ?`;
+      }
+    } else {
+      if (!_safeIdent(key)) continue;
+      bindings.push(val); sql += ` AND "${key}" = ?`;
+    }
   }
+
   if (query.has("search")) {
     const s = `%${query.get("search")}%`;
     bindings.push(s, s, s);
     sql += ` AND (name LIKE ? OR name_english LIKE ? OR name_chinese LIKE ?)`;
   }
+
+  // Order support
+  const orderCol = query.get("_order");
+  const orderDir = query.get("_order_dir") === "asc" ? "ASC" : "DESC";
+  if (orderCol && _safeIdent(orderCol)) {
+    sql += ` ORDER BY "${orderCol}" ${orderDir}`;
+  } else {
+    sql += ` ORDER BY created_at DESC`;
+  }
+
   const limit = Math.min(parseInt(query.get("limit") || "100"), 1000);
   const offset = parseInt(query.get("offset") || "0");
-  sql += ` ORDER BY created_at DESC LIMIT ${limit} OFFSET ${offset}`;
+  sql += ` LIMIT ${limit} OFFSET ${offset}`;
   return { sql, bindings };
 }
 
@@ -344,7 +405,7 @@ addRoute("DELETE", "/api/storage/:bucket/:file*", async (_req, env, user, params
 
 // ─── Table CRUD routes ───
 
-const TABLES = ["companies", "officers", "shareholders", "persons", "person_company_roles", "presenters", "significant_controllers", "company_logs", "reminders", "resolutions", "secretary_templates", "share_transactions", "user_roles", "email_templates", "email_logs", "invoices"];
+const TABLES = ["companies", "officers", "shareholders", "persons", "person_company_roles", "presenters", "significant_controllers", "company_logs", "reminders", "resolutions", "secretary_templates", "share_transactions", "user_roles", "email_templates", "email_logs", "invoices", "whatsapp_logs", "company_versions"];
 
 for (const table of TABLES) {
   addRoute("GET", `/api/${table}`, async (req, env, _user) => {
@@ -360,12 +421,35 @@ for (const table of TABLES) {
 
   addRoute("POST", `/api/${table}`, async (req, env, user) => {
     requireAdmin(user);
-    const data = await req.json() as Record<string, unknown>;
-    const keys = Object.keys(data);
-    const values = Object.values(data);
-    const placeholders = keys.map(() => "?").join(", ");
-    await env.DB.prepare(`INSERT INTO ${table} (${keys.join(", ")}) VALUES (${placeholders})`).bind(...values).run();
-    return json({ success: true }, 201);
+    const body = await req.json() as any;
+    // Support both single object and array (batch) inserts — matches Flask behavior
+    const rows: Record<string, unknown>[] = Array.isArray(body) ? body : [body];
+    if (rows.length === 0) return error("Empty data", 400);
+
+    // D1 batch: execute all inserts in one call
+    const statements: D1PreparedStatement[] = rows.map(row => {
+      // Auto-generate UUID when id is missing (matches Flask behavior)
+      if (row.id === undefined || row.id === null || row.id === '') {
+        row.id = generateUUID();
+      }
+      const keys = Object.keys(row);
+      const values = Object.values(row);
+      const placeholders = keys.map(() => "?").join(", ");
+      return env.DB.prepare(
+        `INSERT INTO ${table} (${keys.join(", ")}) VALUES (${placeholders})`
+      ).bind(...values);
+    });
+
+    const results = await env.DB.batch(statements);
+    const ids: string[] = [];
+    for (const r of results) {
+      if (r.meta?.last_row_id) ids.push(String(r.meta.last_row_id));
+    }
+
+    if (Array.isArray(body)) {
+      return json({ success: true, ids, count: ids.length }, 201);
+    }
+    return json({ success: true, id: ids[0] }, 201);
   });
 
   addRoute("PUT", `/api/${table}/:id`, async (req, env, user, params) => {
@@ -381,7 +465,56 @@ for (const table of TABLES) {
 
   addRoute("DELETE", `/api/${table}/:id`, async (_req, env, user, params) => {
     requireAdmin(user);
-    await env.DB.prepare(`DELETE FROM ${table} WHERE id = ?`).bind(params.id).run();
+
+    if (table === "companies") {
+      // ─── Cascade delete: clean up all related records (mirrors Flask server.py) ───
+      const companyId = params.id;
+
+      // 1. Find persons that will become orphaned (only in this company)
+      const rolesResult = await env.DB.prepare(
+        "SELECT person_id FROM person_company_roles WHERE company_id = ?"
+      ).bind(companyId).all();
+      const orphanPersonIds = (rolesResult.results || []).map((r: any) => r.person_id);
+
+      // 2. Delete all related records across child tables (some don't have ON DELETE CASCADE)
+      const childTables = [
+        "person_company_roles", "reminders", "company_logs",
+        "resolutions", "significant_controllers", "share_transactions",
+        "invoices", "email_logs",
+      ];
+      for (const tbl of childTables) {
+        try {
+          await env.DB.prepare(`DELETE FROM ${tbl} WHERE company_id = ?`).bind(companyId).run();
+        } catch (e: any) {
+          console.error(`[DELETE cascade] ${tbl}:`, e.message);
+        }
+      }
+
+      // 3. Delete orphaned persons (no remaining roles in any company)
+      for (const pid of orphanPersonIds) {
+        try {
+          const remaining = await env.DB.prepare(
+            "SELECT COUNT(*) as cnt FROM person_company_roles WHERE person_id = ?"
+          ).bind(pid).first() as any;
+          if (remaining && remaining.cnt === 0) {
+            await env.DB.prepare("DELETE FROM persons WHERE id = ?").bind(pid).run();
+          }
+        } catch (e: any) {
+          console.error(`[DELETE cascade] orphan person ${pid}:`, e.message);
+        }
+      }
+
+      // 4. officers & shareholders have ON DELETE CASCADE, auto-cleaned by D1
+      try {
+        await env.DB.prepare("DELETE FROM companies WHERE id = ?").bind(companyId).run();
+      } catch (e: any) {
+        console.error(`[DELETE cascade] companies:`, e.message);
+        return error(`刪除失敗：${e.message}`, 500);
+      }
+    } else {
+      await env.DB.prepare(`DELETE FROM ${table} WHERE id = ?`).bind(params.id).run();
+    }
+
     return json({ success: true });
   });
 }
@@ -439,6 +572,202 @@ addRoute("POST", "/api/backup", async (_req, env, user) => {
   return json({ success: true, message: "Backup saved to R2" });
 });
 
+// ─── Company Versions ───
+
+addRoute("GET", "/api/companies/:id/versions", async (_req, env, _user, params) => {
+  const { results } = await env.DB.prepare(
+    "SELECT * FROM company_versions WHERE company_id = ? ORDER BY version_no DESC"
+  ).bind(params.id).all();
+  const out = (results || []).map((r: any) => {
+    let snapshot: any = {};
+    let changed_fields: any = [];
+    try { snapshot = JSON.parse(r.snapshot || "{}"); } catch { /* keep default */ }
+    try { changed_fields = JSON.parse(r.changed_fields || "[]"); } catch { /* keep default */ }
+    return { ...r, snapshot, changed_fields };
+  });
+  return json(out);
+});
+
+addRoute("POST", "/api/companies/:id/versions/snapshot", async (req, env, user, params) => {
+  requireAdmin(user);
+  const companyId = params.id;
+
+  // Get current company data
+  const company = await env.DB.prepare("SELECT * FROM companies WHERE id = ?").bind(companyId).first() as any;
+  if (!company) return error("Company not found", 404);
+
+  // Build snapshot with VERSION_FIELDS
+  const versionFields = [
+    "name", "chinese_name", "company_number", "ci_number", "trading_name",
+    "business_nature", "company_type", "business_code", "status",
+    "incorporation_date", "jurisdiction", "reg_flat", "reg_building",
+    "reg_street", "reg_district", "reg_region", "email", "phone", "signer_role_id",
+  ];
+  const snap: Record<string, string> = {};
+  for (const k of versionFields) {
+    snap[k] = company[k] !== null && company[k] !== undefined ? String(company[k]) : "";
+  }
+
+  // Compare with latest version
+  const latest = await env.DB.prepare(
+    "SELECT * FROM company_versions WHERE company_id = ? ORDER BY version_no DESC LIMIT 1"
+  ).bind(companyId).first() as any;
+
+  let changed: string[] = [];
+  let versionNo = 1;
+  if (latest) {
+    let prevSnap: Record<string, string> = {};
+    try { prevSnap = JSON.parse(latest.snapshot || "{}"); } catch { /* keep default */ }
+    for (const k of versionFields) {
+      if ((prevSnap[k] || "") !== (snap[k] || "")) changed.push(k);
+    }
+    if (changed.length === 0) {
+      return json({ success: true, version_no: null, created: false, message: "No changes since last version" });
+    }
+    versionNo = (latest.version_no || 0) + 1;
+  }
+
+  const fieldLabels: Record<string, string> = {
+    name: "英文名稱", chinese_name: "中文名稱", company_number: "商業登記號碼",
+    ci_number: "公司註冊編號", trading_name: "商業名稱", business_nature: "業務性質",
+    company_type: "公司類型", business_code: "業務代碼", status: "狀態",
+    incorporation_date: "成立日期", jurisdiction: "司法管轄區",
+    reg_flat: "註冊地址-室/樓/座", reg_building: "註冊地址-大廈", reg_street: "註冊地址-街道",
+    reg_district: "註冊地址-區", reg_region: "註冊地址-地區", email: "電郵地址",
+    phone: "電話", signer_role_id: "簽署人",
+  };
+  const labels = changed.map(k => fieldLabels[k] || k);
+  const summary = versionNo === 1 ? "建立初始版本" : `更新：${labels.join("、")}`;
+
+  const body = await req.json().catch(() => ({})) as Record<string, any>;
+  const changedBy = body.changed_by || "";
+
+  await env.DB.prepare(
+    "INSERT INTO company_versions (id, company_id, version_no, snapshot, changed_fields, change_summary, changed_by) VALUES (?, ?, ?, ?, ?, ?, ?)"
+  ).bind(
+    generateUUID(), companyId, versionNo,
+    JSON.stringify(snap), JSON.stringify(changed), summary, changedBy
+  ).run();
+
+  return json({ success: true, version_no: versionNo, created: true });
+});
+
+// ─── Form History ───
+
+addRoute("GET", "/api/form-history/list", async (req, env, user) => {
+  if (!user) return error("Not authenticated", 401);
+  const url = new URL(req.url);
+  const formType = url.searchParams.get("formType") || "";
+  if (!formType) return error("formType required", 400);
+  const { results } = await env.DB.prepare(
+    "SELECT id, label, form_type, submission_index, created_at FROM form_history WHERE user_id = ? AND form_type = ? ORDER BY submission_index DESC"
+  ).bind(user.id, formType).all();
+  return json({ entries: results || [] });
+});
+
+addRoute("GET", "/api/form-history/load", async (req, env, user) => {
+  if (!user) return error("Not authenticated", 401);
+  const url = new URL(req.url);
+  const entryId = url.searchParams.get("id") || "";
+  if (!entryId) return error("id required", 400);
+  const row = await env.DB.prepare(
+    "SELECT id, form_data FROM form_history WHERE id = ? AND user_id = ?"
+  ).bind(entryId, user.id).first() as any;
+  if (!row) return error("Not found", 404);
+  let formData: any = {};
+  try { formData = JSON.parse(row.form_data || "{}"); } catch { /* keep default */ }
+  return json({ entry: { id: row.id, form_data: formData } });
+});
+
+addRoute("POST", "/api/form-history/save", async (req, env, user) => {
+  if (!user) return error("Not authenticated", 401);
+  const data = await req.json() as { formType?: string; formData?: any };
+  if (!data.formType || data.formData === undefined) return error("formType and formData required", 400);
+
+  // Get next submission index
+  const maxRow = await env.DB.prepare(
+    "SELECT COALESCE(MAX(submission_index), 0) as max_idx FROM form_history WHERE user_id = ? AND form_type = ?"
+  ).bind(user.id, data.formType).first() as any;
+  const nextIdx = (maxRow?.max_idx || 0) + 1;
+
+  // Generate label: YYYY-MM-DD_FORM_N
+  const today = new Date().toISOString().slice(0, 10);
+  const label = `${today}_${data.formType}_${nextIdx}`;
+
+  const result = await env.DB.prepare(
+    "INSERT INTO form_history (user_id, user_email, form_type, submission_index, label, form_data) VALUES (?, ?, ?, ?, ?, ?)"
+  ).bind(user.id, user.email, data.formType, nextIdx, label, JSON.stringify(data.formData)).run();
+
+  return json({ id: result.meta?.last_row_id, label, submission_index: nextIdx }, 201);
+});
+
+addRoute("DELETE", "/api/form-history/:id", async (_req, env, user, params) => {
+  if (!user) return error("Not authenticated", 401);
+  const entryId = params.id;
+
+  // Get the record being deleted
+  const row = await env.DB.prepare(
+    "SELECT form_type, submission_index FROM form_history WHERE id = ? AND user_id = ?"
+  ).bind(entryId, user.id).first() as any;
+  if (!row) return error("Not found", 404);
+
+  const formType = row.form_type;
+  const deletedIdx = row.submission_index;
+
+  // Delete
+  await env.DB.prepare("DELETE FROM form_history WHERE id = ? AND user_id = ?").bind(entryId, user.id).run();
+
+  // Renumber later submissions
+  await env.DB.prepare(
+    "UPDATE form_history SET submission_index = submission_index - 1 WHERE user_id = ? AND form_type = ? AND submission_index > ?"
+  ).bind(user.id, formType, deletedIdx).run();
+
+  // Update labels
+  const rows = await env.DB.prepare(
+    "SELECT id, created_at, submission_index FROM form_history WHERE user_id = ? AND form_type = ? AND submission_index >= ? ORDER BY submission_index"
+  ).bind(user.id, formType, deletedIdx).all();
+  for (const r of (rows.results || []) as any[]) {
+    const datePart = (r.created_at || "").slice(0, 10);
+    const newLabel = `${datePart}_${formType}_${r.submission_index}`;
+    await env.DB.prepare("UPDATE form_history SET label = ? WHERE id = ?").bind(newLabel, r.id).run();
+  }
+
+  return json({ success: true });
+});
+
+// ─── Export All ───
+
+addRoute("POST", "/api/export-all", async (_req, env, user) => {
+  requireAdmin(user);
+  const exportData: Record<string, any[]> = {};
+  for (const table of TABLES) {
+    try {
+      const { results } = await env.DB.prepare(`SELECT * FROM ${table}`).all();
+      exportData[table] = results || [];
+    } catch { exportData[table] = []; }
+  }
+  return json({ success: true, data: exportData, exported_at: new Date().toISOString() });
+});
+
+// ─── Send WhatsApp ───
+
+addRoute("POST", "/api/send-whatsapp", async (req, env, user) => {
+  requireAdmin(user);
+  const data = await req.json() as { phone?: string; message?: string; task_title?: string; company_id?: string };
+  if (!data.phone || !data.message) return error("phone and message required", 400);
+
+  // In Cloudflare, we can't call Wuzapi directly (it's local).
+  // Log the message and return simulated success.
+  const id = generateUUID();
+  await env.DB.prepare(
+    "INSERT INTO whatsapp_logs (id, company_id, phone, message, task_title, status) VALUES (?, ?, ?, ?, ?, 'sent')"
+  ).bind(id, data.company_id || null, data.phone, data.message, data.task_title || "").run();
+
+  console.log(`[WHATSAPP:SIMULATED] to=${data.phone} msg=${data.message.slice(0, 80)}`);
+
+  return json({ success: true, id, simulated: true, message: "WhatsApp message logged (Wuzapi not available in Cloud)" });
+});
+
 // ─── Main handler ───
 
 export async function onRequest(context: { request: Request; env: Env }): Promise<Response> {
@@ -446,13 +775,22 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
   if (request.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   const path = new URL(request.url).pathname;
   const user = await verifyAuth(request, env);
+  console.log(`[API] ${request.method} ${path} user=${user?.email || 'none'} role=${user?.role || 'none'}`);
   const match = matchRoute(request.method, path);
-  if (!match) return error("Not found", 404);
+  if (!match) {
+    console.log(`[API] ${request.method} ${path} → 404 (no route)`);
+    return error("Not found", 404);
+  }
   try {
-    return await match.handler(request, env, user, match.params);
+    const res = await match.handler(request, env, user, match.params);
+    console.log(`[API] ${request.method} ${path} → ${res.status}`);
+    return res;
   } catch (e: any) {
-    if (e instanceof Response) return e;
-    console.error("API Error:", e);
+    if (e instanceof Response) {
+      console.log(`[API] ${request.method} ${path} → ${e.status} (thrown Response)`);
+      return e;
+    }
+    console.error(`[API] ${request.method} ${path} → 500:`, e.message);
     return error(e.message || "Internal server error", 500);
   }
 }

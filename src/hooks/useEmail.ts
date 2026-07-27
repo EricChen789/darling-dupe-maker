@@ -77,7 +77,7 @@ export const EMAIL_VARIABLES: { key: string; label: string }[] = [
 
 // 以 {key} 佔位符替換；未知變數保留原樣
 export function substituteVariables(text: string, vars: Record<string, string>): string {
-  if (!text) return '';
+  if (!text || !vars) return text || '';
   return text.replace(/\{([a-zA-Z_][a-zA-Z0-9_]*)\}/g, (m, key) =>
     vars[key] !== undefined && vars[key] !== '' ? vars[key] : m
   );
@@ -177,7 +177,7 @@ export function useSendEmail() {
         body: JSON.stringify(input),
       });
       const result = await resp.json().catch(() => ({}));
-      if (!resp.ok || result.success === false) {
+      if (!resp.ok || !result.success) {
         throw new Error(result.error || `HTTP ${resp.status}`);
       }
       return result as { success: boolean; id: string; status: string; simulated?: boolean };

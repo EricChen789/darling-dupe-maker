@@ -18,7 +18,7 @@ import NN9GeneratorForm from '@/components/forms/NN9GeneratorForm';
 import NewCompanyGeneratorForm from '@/components/forms/NewCompanyGeneratorForm';
 import ResolutionGeneratorForm from '@/components/forms/ResolutionGeneratorForm';
 import RenameCompanyForm from '@/components/forms/RenameCompanyForm';
-import { Dialog, DialogContent } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from '@/hooks/use-toast';
 import ErrorBoundary from '@/components/ErrorBoundary';
 
@@ -239,6 +239,7 @@ const Forms = () => {
       {/* NAR1 Modal */}
       <Dialog open={selectedForm === 'nar1'} onOpenChange={(open) => { if (!open) setSelectedForm(null); }}>
         <DialogContent className="max-w-none w-[95vw] h-[95vh] p-0 flex flex-col">
+          <DialogHeader className="sr-only"><DialogTitle>NAR1 周年申報表</DialogTitle><DialogDescription>填寫及生成 NAR1 表格</DialogDescription></DialogHeader>
           <div className="flex-1 overflow-y-auto p-6">
             <ErrorBoundary>
               <FormWizard formId="nar1" onBack={() => setSelectedForm(null)} />

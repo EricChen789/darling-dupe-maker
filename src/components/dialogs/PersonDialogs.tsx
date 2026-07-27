@@ -211,6 +211,7 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave, onGenerateND2
     idNumber: '',
     passportNumber: '',
     passportExpiry: '',
+    dateOfBirth: '',
     whatsapp: '',
     passportFilePath: '',
     idCardFilePath: '',
@@ -248,6 +249,7 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave, onGenerateND2
         idNumber: person.idNumber || '',
         passportNumber: person.passportNumber || '',
         passportExpiry: person.passportExpiry || '',
+        dateOfBirth: (person as any).dateOfBirth || '',
         whatsapp: person.whatsapp || '',
         passportFilePath: person.passportFilePath || '',
         idCardFilePath: person.idCardFilePath || '',
@@ -281,6 +283,7 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave, onGenerateND2
         idNumber: '',
         passportNumber: '',
         passportExpiry: '',
+        dateOfBirth: '',
         whatsapp: '',
         passportFilePath: '',
         idCardFilePath: '',
@@ -324,6 +327,25 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave, onGenerateND2
     if (!formData.nameChinese && !formData.nameEnglish) {
       toast({ title: '錯誤', description: '請填寫姓名', variant: 'destructive' });
       return;
+    }
+    // 新建人員時必填欄位驗證
+    if (!person) {
+      if (!formData.nameEnglish.trim()) {
+        toast({ title: '錯誤', description: '請填寫英文姓名', variant: 'destructive' });
+        return;
+      }
+      if (!formData.idNumber.trim()) {
+        toast({ title: '錯誤', description: '請填寫香港身份證號碼', variant: 'destructive' });
+        return;
+      }
+      if (!formData.dateOfBirth?.trim()) {
+        toast({ title: '錯誤', description: '請填寫出生日期', variant: 'destructive' });
+        return;
+      }
+      if (!formData.address.trim()) {
+        toast({ title: '錯誤', description: '請填寫居住地址', variant: 'destructive' });
+        return;
+      }
     }
     onSave(formData);
     onOpenChange(false);
@@ -386,7 +408,7 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave, onGenerateND2
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="nameEnglish">英文姓名</Label>
+                  <Label htmlFor="nameEnglish">英文姓名 <span className="text-destructive">*</span></Label>
                   <Input
                     id="nameEnglish"
                     value={formData.nameEnglish}
@@ -469,12 +491,21 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave, onGenerateND2
 
                 {/* === 身份證件 === */}
                 <div className="space-y-2">
-                  <Label htmlFor="idNumber">香港身份證號碼</Label>
+                  <Label htmlFor="idNumber">香港身份證號碼 <span className="text-destructive">*</span></Label>
                   <Input
                     id="idNumber"
                     value={formData.idNumber}
                     onChange={(e) => setFormData({ ...formData, idNumber: e.target.value })}
                     placeholder="例如 A123456(7)"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="dateOfBirth">出生日期 <span className="text-destructive">*</span></Label>
+                  <Input
+                    id="dateOfBirth"
+                    value={formData.dateOfBirth || ''}
+                    onChange={(e) => setFormData({ ...formData, dateOfBirth: e.target.value })}
+                    placeholder="DD/MM/YYYY"
                   />
                 </div>
                 {formData.identity === 'corporate' && (
@@ -551,7 +582,7 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave, onGenerateND2
                 {/* 通訊地址（住址） */}
                 <div className="rounded-lg border border-border p-4 space-y-3">
                   <h4 className="font-semibold text-sm flex items-center gap-2">
-                    <MapPin className="h-4 w-4 text-primary" /> 通訊地址（住址）
+                    <MapPin className="h-4 w-4 text-primary" /> 通訊地址（住址） <span className="text-destructive">*</span>
                   </h4>
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1"><Label className="text-xs">室／樓／座</Label><Input value={formData.addrFlat} onChange={(e) => setAddrPart('addrFlat', e.target.value)} placeholder="例如 3樓A室" /></div>

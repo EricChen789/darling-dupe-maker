@@ -14,7 +14,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
 import {
   Send, Clock, FileText, Plus, Edit, Trash2, Save, X, Loader2, RefreshCw, Eye, Calendar,
@@ -51,8 +51,8 @@ const statusBadge = (s: string) => {
 
 const Email = () => {
   const { data: companies = [] } = useCompanies();
-  const { data: templates = [], isLoading: tplLoading } = useEmailTemplates();
-  const { data: logs = [], isLoading: logsLoading, refetch: refetchLogs } = useEmailLogs();
+  const { data: templates = [], isLoading: tplLoading, isError: tplError, error: tplErr } = useEmailTemplates();
+  const { data: logs = [], isLoading: logsLoading, isError: logsError, error: logsErr, refetch: refetchLogs } = useEmailLogs();
   const saveTemplate = useSaveEmailTemplate();
   const deleteTemplate = useDeleteEmailTemplate();
   const sendEmail = useSendEmail();
@@ -85,7 +85,7 @@ const Email = () => {
   // Keep manually-entered vars (not derived from company) when switching company
   const pickManual = (v: Record<string, string>) => {
     const manual: Record<string, string> = {};
-    ['due_date', 'invoice_number', 'amount'].forEach(k => { if (v[k]) manual[k] = v[k]; });
+    ['due_date', 'invoice_number', 'amount'].forEach(k => { if (k in v) manual[k] = v[k]; });
     return manual;
   };
 
@@ -102,13 +102,19 @@ const Email = () => {
   const handleSend = async () => {
     if (!to.trim()) { toast({ title: '請填寫收件人', variant: 'destructive' }); return; }
     if (!previewSubject.trim()) { toast({ title: '請填寫主旨', variant: 'destructive' }); return; }
-    if (sendMode === 'scheduled' && !scheduledAt) {
-      toast({ title: '請選擇排程時間', variant: 'destructive' }); return;
+    if (!previewBody.trim()) { toast({ title: '請填寫內文', variant: 'destructive' }); return; }
+    if (sendMode === 'scheduled') {
+      if (!scheduledAt) {
+        toast({ title: '請選擇排程時間', variant: 'destructive' }); return;
+      }
+      if (isNaN(new Date(scheduledAt).getTime())) {
+        toast({ title: '排程時間格式無效', variant: 'destructive' }); return;
+      }
     }
     try {
       const res = await sendEmail.mutateAsync({
         to: to.trim(),
-        cc: cc.trim(),
+        cc: cc.trim() || undefined,
         subject: previewSubject,   // 已套用變數
         body: previewBody,
         company_id: companyId || undefined,
@@ -309,6 +315,8 @@ const Email = () => {
           </div>
           {tplLoading ? (
             <p className="text-muted-foreground text-sm"><Loader2 className="h-4 w-4 inline animate-spin mr-1" />載入中...</p>
+          ) : tplError ? (
+            <p className="text-destructive text-sm">載入失敗：{tplErr instanceof Error ? tplErr.message : '未知錯誤'}</p>
           ) : templates.length === 0 ? (
             <p className="text-muted-foreground text-sm">尚無郵件模板</p>
           ) : (
@@ -375,6 +383,8 @@ const Email = () => {
               <TableBody>
                 {logsLoading ? (
                   <TableRow><TableCell colSpan={5} className="text-center py-10"><Loader2 className="h-5 w-5 animate-spin inline mr-2" />載入中...</TableCell></TableRow>
+                ) : logsError ? (
+                  <TableRow><TableCell colSpan={5} className="text-center py-10 text-destructive">載入失敗：{logsErr instanceof Error ? logsErr.message : '未知錯誤'}</TableCell></TableRow>
                 ) : filteredLogs.length === 0 ? (
                   <TableRow><TableCell colSpan={5} className="text-center py-10 text-muted-foreground">尚無發送記錄</TableCell></TableRow>
                 ) : (
@@ -419,6 +429,8 @@ const Email = () => {
               <TableBody>
                 {logsLoading ? (
                   <TableRow><TableCell colSpan={5} className="text-center py-10"><Loader2 className="h-5 w-5 animate-spin inline mr-2" />載入中...</TableCell></TableRow>
+                ) : logsError ? (
+                  <TableRow><TableCell colSpan={5} className="text-center py-10 text-destructive">載入失敗：{logsErr instanceof Error ? logsErr.message : '未知錯誤'}</TableCell></TableRow>
                 ) : logs.filter(l => l.status === 'scheduled').length === 0 ? (
                   <TableRow><TableCell colSpan={5} className="text-center py-10 text-muted-foreground">尚無定時任務</TableCell></TableRow>
                 ) : (
@@ -448,6 +460,7 @@ const Email = () => {
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>{editing?.id ? '編輯郵件模板' : '新增郵件模板'}</DialogTitle>
+            <DialogDescription>{editing?.id ? '修改現有郵件模板的內容與設定' : '建立新的郵件模板，支援變數替換'}</DialogDescription>
           </DialogHeader>
           {editing && (
             <div className="space-y-3">
@@ -495,6 +508,7 @@ const Email = () => {
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2"><Calendar className="h-5 w-5" />新增定時任務</DialogTitle>
+            <DialogDescription>設定定時發送郵件的排程任務</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3">

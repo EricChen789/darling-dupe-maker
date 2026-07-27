@@ -20,7 +20,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const CHINESE_FONT_URL = "https://fonts.gstatic.com/ea/notosanstc/v1/NotoSansTC-Regular.otf";
+const CHINESE_FONT_URL = "https://cdn.jsdelivr.net/fontsource/fonts/noto-sans-tc@latest/chinese-traditional-400-normal.woff2";
 
 interface OfficerChange {
   type: 'appointment' | 'cessation';
@@ -28,7 +28,9 @@ interface OfficerChange {
   identity: 'natural' | 'corporate';
   // Natural person
   nameChinese: string;
-  nameEnglish: string;
+  nameSurname?: string;
+  nameOtherNames?: string;
+  nameEnglish?: string;
   formerNameChinese?: string;
   formerNameEnglish?: string;
   idNumber: string;
@@ -114,15 +116,27 @@ export async function onRequest(context: { request: Request; env: Env }) {
 
         if (officer.identity === 'natural') {
           const p = `.${pageIdx}`;
+          // Split English name: prefer explicit surname/otherNames, fallback to parse
+          const eng = officer.nameEnglish || '';
+          let surname = officer.nameSurname || '';
+          let other = officer.nameOtherNames || '';
+          if (!surname && eng) {
+            const parts = eng.trim().split(/\s+/);
+            surname = parts.length > 1 ? parts[parts.length - 1] : (parts[0] || '');
+            other = parts.length > 1 ? parts.slice(0, -1).join(' ') : '';
+          }
           try {
-            const nameField = form.getTextField(`fill_3_P${p}`);
-            nameField.setText(officer.nameEnglish);
-            if (customFont) nameField.updateAppearances(customFont);
+            const chField = form.getTextField(`fill_2_P${p}`);
+            chField.setText(officer.nameChinese);
+            if (customFont) chField.updateAppearances(customFont);
           } catch {}
           try {
-            const nameField = form.getTextField(`fill_4_P${p}`);
-            nameField.setText(officer.nameChinese);
-            if (customFont) nameField.updateAppearances(customFont);
+            const surnameField = form.getTextField(`fill_3_P${p}`);
+            surnameField.setText(surname);
+          } catch {}
+          try {
+            const otherField = form.getTextField(`fill_4_P${p}`);
+            otherField.setText(other);
           } catch {}
           try {
             form.getTextField(`fill_7_P${p}`).setText(officer.idNumber);
@@ -132,7 +146,8 @@ export async function onRequest(context: { request: Request; env: Env }) {
             addrField.setText(officer.address);
             if (customFont) addrField.updateAppearances(customFont);
           } catch {}
-          if (officer.dateAppointed) {
+          // Date: fill_9/10/11 = 委任日期，只填委任，停任不写
+          if (officer.type === 'appointment' && officer.dateAppointed) {
             const parts = officer.dateAppointed.split(/[-/]/);
             if (parts.length >= 3) {
               try { form.getTextField(`fill_9_P${p}`).setText(parts[2]); } catch {}
@@ -153,14 +168,35 @@ export async function onRequest(context: { request: Request; env: Env }) {
         }
       }
 
-      // Presentor info (last page)
+      // P.1: Signer & presentor info
+      // Signer date (fill_11/12/13 are D/M/Y triplet at y=612)
+      if (data.signDate) {
+        const parts = data.signDate.split(/[\/\-]/);
+        if (parts.length >= 3) {
+          try { form.getTextField("fill_11_P.1").setText(parts[0]); } catch {}
+          try { form.getTextField("fill_12_P.1").setText(parts[1]); } catch {}
+          try { form.getTextField("fill_13_P.1").setText(parts[2]); } catch {}
+        }
+      }
+      // Signer & presenter names → wide fields at y=492,531
       try {
-        const pf = form.getTextField("fill_1_P.7");
+        const sf = form.getTextField("fill_9_P.1");
+        sf.setText(data.signerName);
+        if (customFont) sf.updateAppearances(customFont);
+      } catch {}
+      try {
+        const pf = form.getTextField("fill_10_P.1");
         pf.setText(data.presentorName);
         if (customFont) pf.updateAppearances(customFont);
       } catch {}
+      // Presentor address & contact
+      // NOTE: fill_15_P.1 is the tall multi-line address field (44px),
+      // fill_14_P.1 is the short single-line contact field (14px)
       try {
-        const af = form.getTextField("fill_2_P.7");
+        form.getTextField("fill_14_P.1").setText(data.presentorContact);
+      } catch {}
+      try {
+        const af = form.getTextField("fill_15_P.1");
         af.setText(data.presentorAddress);
         if (customFont) af.updateAppearances(customFont);
       } catch {}

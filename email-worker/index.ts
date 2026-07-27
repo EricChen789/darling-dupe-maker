@@ -1,12 +1,11 @@
-// Email Worker — 處理兩件事：
-//   1. 定時發送排程郵件（cron trigger 每 60 秒觸發一次）
-//   2. 接收郵件（Cloudflare Email Routing 轉發至此 Worker）
+// Email Worker — Cloudflare Workers + MailChannels (free, unlimited sending)
+//   - MailChannels API: free via Cloudflare Workers partnership
+//   - Resend API: fallback if RESEND_API_KEY is configured
+//   - Email Routing: receive incoming emails from Cloudflare Email Routing
+//
+// Required DNS SPF record: v=spf1 include:relay.mailchannels.net ~all
 //
 // 部署：npx wrangler deploy --config email-worker/wrangler.toml
-//
-// 發送：使用 Resend API（免費 100 封/天）
-//   - 在 resend.com 註冊取得 API Key
-//   - 設定環境變數 RESEND_API_KEY
 
 interface Env {
   DB: D1Database;
@@ -15,17 +14,67 @@ interface Env {
   RESEND_API_KEY?: string;
 }
 
-async function sendAndUpdate(env: Env, log: any) {
-  const apiKey = env.RESEND_API_KEY;
-  if (!apiKey) {
-    console.error("[email-worker] RESEND_API_KEY not set");
-    await env.DB.prepare(
-      `UPDATE email_logs SET status = 'failed', error = 'RESEND_API_KEY not configured', updated_at = datetime('now') WHERE id = ?`
-    ).bind(log.id).run();
-    return;
-  }
+// ── MailChannels (primary, free via Cloudflare) ──
+async function sendViaMailChannels(
+  env: Env,
+  log: any
+): Promise<boolean> {
+  const senderEmail = env.SENDER_EMAIL || "noreply@techforliving.net";
+  const senderName = env.SENDER_NAME || "Muse Labs 公司秘書";
 
   try {
+    const resp = await fetch("https://api.mailchannels.net/tx/v1/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        personalizations: [
+          {
+            to: [{ email: log.to_email }],
+            ...(log.cc_email ? { cc: [{ email: log.cc_email }] } : {}),
+          },
+        ],
+        from: {
+          email: senderEmail,
+          name: senderName,
+        },
+        subject: log.subject,
+        content: [
+          {
+            type: "text/plain",
+            value: (log.body || "").replace(/<br>/g, "\n").replace(/<[^>]+>/g, ""),
+          },
+          {
+            type: "text/html",
+            value: (log.body || "").replace(/\n/g, "<br>"),
+          },
+        ],
+      }),
+    });
+
+    if (resp.ok || resp.status === 202) {
+      console.log(`[email-worker:MAILCHANNELS] Sent: ${log.id} -> ${log.to_email}`);
+      return true;
+    }
+    const errBody = await resp.text().catch(() => "");
+    console.error(`[email-worker:MAILCHANNELS] Failed ${resp.status}: ${errBody.slice(0, 300)}`);
+    return false;
+  } catch (e: any) {
+    console.error(`[email-worker:MAILCHANNELS] Error: ${e.message}`);
+    return false;
+  }
+}
+
+// ── Resend (fallback) ──
+async function sendViaResend(
+  env: Env,
+  log: any
+): Promise<boolean> {
+  const apiKey = env.RESEND_API_KEY;
+  if (!apiKey) return false;
+
+  try {
+    const senderName = env.SENDER_NAME || "Muse Labs 公司秘書";
+    const senderEmail = env.SENDER_EMAIL || "noreply@techforliving.net";
     const resp = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
@@ -33,9 +82,7 @@ async function sendAndUpdate(env: Env, log: any) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        from: env.SENDER_NAME
-          ? `${env.SENDER_NAME} <onboarding@resend.dev>`
-          : "Muse Labs <onboarding@resend.dev>",
+        from: `${senderName} <${senderEmail}>`,
         to: [log.to_email],
         ...(log.cc_email ? { cc: [log.cc_email] } : {}),
         subject: log.subject,
@@ -43,27 +90,41 @@ async function sendAndUpdate(env: Env, log: any) {
       }),
     });
 
-    const respBody = await resp.text().catch(() => "");
-    const sent = resp.ok;
-
-    if (sent) {
-      await env.DB.prepare(
-        `UPDATE email_logs SET status = 'sent', sent_at = ?, updated_at = datetime('now') WHERE id = ?`
-      ).bind(new Date().toISOString(), log.id).run();
-      console.log(`[email-worker] Sent: ${log.id} -> ${log.to_email}`);
-    } else {
-      const err = `Resend HTTP ${resp.status}: ${respBody}`.slice(0, 500);
-      await env.DB.prepare(
-        `UPDATE email_logs SET status = 'failed', error = ?, updated_at = datetime('now') WHERE id = ?`
-      ).bind(err, log.id).run();
-      console.error(`[email-worker] Failed: ${log.id} - ${err}`);
+    if (resp.ok) {
+      console.log(`[email-worker:RESEND] Sent: ${log.id} -> ${log.to_email}`);
+      return true;
     }
+    const errBody = await resp.text().catch(() => "");
+    console.error(`[email-worker:RESEND] Failed ${resp.status}: ${errBody.slice(0, 300)}`);
+    return false;
   } catch (e: any) {
-    const err = (e.message || "Unknown").slice(0, 500);
+    console.error(`[email-worker:RESEND] Error: ${e.message}`);
+    return false;
+  }
+}
+
+// ── Main send logic ──
+async function sendAndUpdate(env: Env, log: any) {
+  let sent = false;
+  let errorMsg = "";
+
+  // Try MailChannels first (free via Cloudflare)
+  sent = await sendViaMailChannels(env, log);
+
+  // Fallback to Resend if MailChannels fails
+  if (!sent && env.RESEND_API_KEY) {
+    sent = await sendViaResend(env, log);
+  }
+
+  if (sent) {
+    await env.DB.prepare(
+      `UPDATE email_logs SET status = 'sent', sent_at = ?, updated_at = datetime('now') WHERE id = ?`
+    ).bind(new Date().toISOString(), log.id).run();
+  } else {
+    errorMsg = errorMsg || "All sending methods failed";
     await env.DB.prepare(
       `UPDATE email_logs SET status = 'failed', error = ?, updated_at = datetime('now') WHERE id = ?`
-    ).bind(err, log.id).run();
-    console.error(`[email-worker] Error: ${log.id} - ${err}`);
+    ).bind(errorMsg, log.id).run();
   }
 }
 
@@ -128,7 +189,7 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname === "/health") {
-      return new Response("OK - Email Worker", { status: 200 });
+      return new Response("OK - Email Worker (MailChannels + Resend)", { status: 200 });
     }
 
     // 手動觸發排程處理
@@ -154,14 +215,8 @@ export default {
       });
     }
 
-    // 立即發送郵件（經 Resend API）
+    // 立即發送郵件
     if (url.pathname === "/send" && request.method === "POST") {
-      const apiKey = env.RESEND_API_KEY;
-      if (!apiKey) {
-        return new Response(JSON.stringify({ success: false, error: "RESEND_API_KEY not configured" }), {
-          status: 500, headers: { "Content-Type": "application/json" },
-        });
-      }
       try {
         const data = await request.json() as any;
         const { to, cc, subject, body } = data;
@@ -170,23 +225,18 @@ export default {
             status: 400, headers: { "Content-Type": "application/json" },
           });
         }
-        const senderName = env.SENDER_NAME || "Muse Labs";
-        const resp = await fetch("https://api.resend.com/emails", {
-          method: "POST",
-          headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
-          body: JSON.stringify({
-            from: `${senderName} <onboarding@resend.dev>`,
-            to: [to],
-            ...(cc ? { cc: [cc] } : {}),
-            subject,
-            html: (body || "").replace(/\n/g, "<br>"),
-          }),
-        });
-        const respBody = await resp.text().catch(() => "");
-        const sent = resp.ok;
+
+        // Try MailChannels first
+        let sent = await sendViaMailChannels(env, { to_email: to, cc_email: cc || "", subject, body });
+
+        // Fallback to Resend
+        if (!sent && env.RESEND_API_KEY) {
+          sent = await sendViaResend(env, { to_email: to, cc_email: cc || "", subject, body });
+        }
+
         return new Response(JSON.stringify({
           success: sent,
-          ...(sent ? {} : { error: `Resend HTTP ${resp.status}: ${respBody}`.slice(0, 500) }),
+          ...(sent ? {} : { error: "All sending methods failed" }),
         }), {
           status: sent ? 200 : 502,
           headers: { "Content-Type": "application/json" },

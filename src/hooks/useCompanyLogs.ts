@@ -70,6 +70,31 @@ export const useCompanyLogContent = (id: string | null) => {
   });
 };
 
+// ── Create log ──
+export const useCreateCompanyLog = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (log: Partial<CompanyLog>) => {
+      const resp = await fetch('/api/company_logs', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token()}`,
+        },
+        body: JSON.stringify(log),
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(err.error || `HTTP ${resp.status}`);
+      }
+      return resp.json() as Promise<{ id: string }>;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['company_logs'] });
+    },
+  });
+};
+
 // ── Update log ──
 export const useUpdateCompanyLog = () => {
   const qc = useQueryClient();

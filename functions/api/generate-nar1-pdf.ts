@@ -52,6 +52,7 @@ interface OfficerData {
   companyNumberRef?: string;
   tcspNumber?: string;
   passportNumber?: string;
+  passportCountry?: string;
   nationality?: string;
 }
 
@@ -536,6 +537,8 @@ function fillMainDocument(pdfDoc: PDFDocument, ctx: CommonCtx) {
     setText("fill_13_P.3", sec.email || "");
     const hkid = parseHkidPartial(sec.idNumber || '');
     if (hkid) setText("fill_14_P.3", hkid);
+    if ((sec as any).passportCountry) setText("fill_15_P.3", (sec as any).passportCountry);
+    if (sec.passportNumber) setText("fill_16_P.3", parsePassportPartial(sec.passportNumber));
   }
 
   // ===== Page 4 - Secretary (Corporate) - 第一位 =====
@@ -552,7 +555,7 @@ function fillMainDocument(pdfDoc: PDFDocument, ctx: CommonCtx) {
     setText("fill_6_P.4", addr.street);
     setText("fill_7_P.4", addr.district);
     setText("fill_8_P.4", sec.email || "");
-    setText("fill_9_P.4", sec.companyNumberRef || sec.brNumber || "");
+    setText("fill_9_P.4", sec.companyNumberRef || sec.brNumber || sec.idNumber || "");
     const tcsp = sec.tcspNumber || (sec as any).licenceNumber || "";
     if (tcsp) setText("fill_10_P.4", tcsp);
   }
@@ -577,8 +580,11 @@ function fillMainDocument(pdfDoc: PDFDocument, ctx: CommonCtx) {
     const hkid = parseHkidPartial(dir.idNumber || '');
     if (hkid) {
       setText("fill_16_P.5", hkid);
-    } else if (dir.passportNumber) {
-      setText("fill_17_P.5", dir.nationality || dir.placeIncorporated || "");
+    }
+    if ((dir as any).passportCountry || dir.nationality) {
+      setText("fill_17_P.5", (dir as any).passportCountry || dir.nationality || '');
+    }
+    if (dir.passportNumber) {
       setText("fill_18_P.5", parsePassportPartial(dir.passportNumber));
     }
   }
@@ -597,7 +603,7 @@ function fillMainDocument(pdfDoc: PDFDocument, ctx: CommonCtx) {
     setText("fill_8_P.6", office.district || "");
     setText("fill_9_P.6", office.region || "");
     setText("fill_10_P.6", dir.email || "");
-    setText("fill_11_P.6", dir.companyNumberRef || dir.brNumber || "");
+    setText("fill_11_P.6", dir.companyNumberRef || dir.brNumber || dir.idNumber || "");
   }
 
   // ===== Page 7 =====
@@ -775,6 +781,8 @@ function fillSheetA(pdfDoc: PDFDocument, ctx: CommonCtx, sec: OfficerData) {
   setText("fill_16_P11", sec.email || "");
   const hkid = parseHkidPartial(sec.idNumber || '');
   if (hkid) setText("fill_17_P11", hkid);
+  if ((sec as any).passportCountry) setText("fill_18_P11", (sec as any).passportCountry);
+  if (sec.passportNumber) setText("fill_19_P11", parsePassportPartial(sec.passportNumber));
   if (sec.tcspNumber) setText("fill_20_P11", sec.tcspNumber);
 }
 
@@ -795,7 +803,7 @@ function fillSheetB(pdfDoc: PDFDocument, ctx: CommonCtx, sec: OfficerData) {
   setText("fill_9_P12", addr.street);
   setText("fill_10_P12", addr.district);
   setText("fill_11_P12", sec.email || "");
-  setText("fill_12_P12", sec.companyNumberRef || sec.brNumber || "");
+  setText("fill_12_P12", sec.companyNumberRef || sec.brNumber || sec.idNumber || "");
   if (sec.tcspNumber) setText("fill_13_P12", sec.tcspNumber);
 }
 
@@ -828,8 +836,11 @@ function fillSheetC(pdfDoc: PDFDocument, ctx: CommonCtx, dir: OfficerData) {
   const hkid = parseHkidPartial(dir.idNumber || '');
   if (hkid) {
     setText("fill_21_P.13", hkid);
-  } else if (dir.passportNumber) {
-    setText("fill_22_P.13", dir.nationality || dir.placeIncorporated || "");
+  }
+  if ((dir as any).passportCountry || dir.nationality) {
+    setText("fill_22_P.13", (dir as any).passportCountry || dir.nationality || '');
+  }
+  if (dir.passportNumber) {
     setText("fill_23_P.13", parsePassportPartial(dir.passportNumber));
   }
 }
@@ -855,7 +866,7 @@ function fillSheetD(pdfDoc: PDFDocument, ctx: CommonCtx, dirs: OfficerData[]) {
     setText(f(13), office.district || "");
     setText(f(14), office.region || "");
     setText(f(15), dir.email || "");
-    setText(f(16), dir.companyNumberRef || dir.brNumber || "");
+    setText(f(16), dir.companyNumberRef || dir.brNumber || dir.idNumber || "");
   };
   if (dirs[0]) fillSlot(dirs[0], 1);
   if (dirs[1]) fillSlot(dirs[1], 2);

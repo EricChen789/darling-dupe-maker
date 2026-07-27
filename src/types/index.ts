@@ -57,6 +57,7 @@ export interface Person {
   svcAddrRegion?: string;
   idNumber?: string;
   passportNumber?: string;
+  passportCountry?: string;
   passportExpiry?: string;
   whatsapp?: string;
   passportFilePath?: string;

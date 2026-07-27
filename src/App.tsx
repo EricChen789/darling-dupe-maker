@@ -23,6 +23,7 @@ import Repair from "./pages/Repair";
 import MissingOfficers from "./pages/MissingOfficers";
 import Presenters from "./pages/Presenters";
 import Reminders from "./pages/Reminders";
+import WhatsAppReminder from "./pages/WhatsAppReminder";
 import Documents from "./pages/Documents";
 import Auth from "./pages/Auth";
 import ResetPassword from "./pages/ResetPassword";
@@ -77,6 +78,7 @@ const App = () => (
                 <Route path="forms" element={<Forms />} />
                 <Route path="word-docs" element={<WordDocs />} />
                 <Route path="reminders" element={<Reminders />} />
+                <Route path="whatsapp-reminders" element={<WhatsAppReminder />} />
                 <Route path="invoices" element={<Invoices />} />
                 <Route path="email" element={<Email />} />
                 <Route path="logs" element={<Logs />} />

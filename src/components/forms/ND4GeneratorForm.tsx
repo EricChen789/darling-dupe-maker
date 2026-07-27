@@ -7,6 +7,10 @@ import { ArrowLeft, Download, Loader2, Building2 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { useCompanies } from '@/hooks/useCompanies';
 import { downloadBase64Pdf } from '@/lib/downloadPdf';
+import { useSaveFormHistory } from '@/hooks/useFormHistory';
+import FormHistorySelector from './FormHistorySelector';
+import PresenterSelector from './PresenterSelector';
+import type { Presenter } from '@/hooks/usePresenters';
 
 interface ND4GeneratorFormProps { onBack: () => void; initialCompanyId?: string; }
 
@@ -14,6 +18,7 @@ export default function ND4GeneratorForm({ onBack, initialCompanyId }: ND4Genera
   const { data: companies = [] } = useCompanies();
   const [selectedCompanyId, setSelectedCompanyId] = useState('');
   const [generating, setGenerating] = useState(false);
+  const { mutate: saveFormHistory } = useSaveFormHistory();
 
   const today = new Date();
   const dd = String(today.getDate()).padStart(2, '0');
@@ -22,13 +27,14 @@ export default function ND4GeneratorForm({ onBack, initialCompanyId }: ND4Genera
 
   const [formData, setFormData] = useState({
     brNumber: '', companyName: '',
-    officerType: 'director' as 'director' | 'secretary',
+    officerType: 'director' as 'director' | 'secretary' | 'alternate',
     officerNameChinese: '', officerNameEnglish: '',
     identity: 'natural' as 'natural' | 'corporate',
+    hkidPartial: '', passportCountry: '', passportPartial: '',
     resignationDay: dd, resignationMonth: mm, resignationYear: yyyy,
-    signerName: '', signerCapacity: 'Director',
+    signerName: '', signerCapacity: '',
     signDateDay: dd, signDateMonth: mm, signDateYear: yyyy,
-    presentorName: '', presentorContact: '',
+    presentorName: '', presentorAddress: '', presentorPhone: '', presentorFax: '', presentorEmail: '', presentorReference: '',
   });
 
   const selectedCompany = companies.find(c => c.id === selectedCompanyId);
@@ -37,8 +43,14 @@ export default function ND4GeneratorForm({ onBack, initialCompanyId }: ND4Genera
     setSelectedCompanyId(companyId);
     const company = companies.find(c => c.id === companyId);
     if (company) {
+      const regAddress = [company.regFlat, company.regBuilding, company.regStreet, company.regDistrict, company.regRegion]
+        .filter(Boolean).join(', ');
       setFormData(prev => ({
-        ...prev, brNumber: company.brNumber, companyName: company.name, presentorName: company.name,
+        ...prev,
+        brNumber: company.brNumber,
+        companyName: company.name,
+        presentorName: company.name,
+        presentorAddress: regAddress,
       }));
     }
   };
@@ -48,7 +60,7 @@ export default function ND4GeneratorForm({ onBack, initialCompanyId }: ND4Genera
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialCompanyId, companies.length]);
 
-  const handleOfficerSelect = (type: 'director' | 'secretary', index: number) => {
+  const handleOfficerSelect = (type: 'director' | 'secretary' | 'alternate', index: number) => {
     const officers = type === 'director' ? selectedCompany?.directors : selectedCompany?.secretaries;
     const officer = officers?.[index];
     if (officer) {
@@ -57,11 +69,19 @@ export default function ND4GeneratorForm({ onBack, initialCompanyId }: ND4Genera
         officerNameChinese: officer.nameChinese || '',
         officerNameEnglish: officer.nameEnglish || '',
         identity: officer.identity || 'natural',
+        hkidPartial: officer.hkidPartial || '',
+        passportCountry: officer.passportCountry || '',
+        passportPartial: officer.passportPartial || '',
       }));
     }
   };
 
   const update = (field: string, value: string) => setFormData(prev => ({ ...prev, [field]: value }));
+
+  const handleLoadHistory = (data: any) => {
+    if (data.formData) setFormData((prev: any) => ({ ...prev, ...data.formData }));
+    if (data.selectedCompanyId) setSelectedCompanyId(data.selectedCompanyId);
+  };
 
   const handleGenerate = async () => {
     if (!formData.brNumber || !formData.companyName) { toast({ title: '錯誤', description: '請選擇公司', variant: 'destructive' }); return; }
@@ -69,26 +89,65 @@ export default function ND4GeneratorForm({ onBack, initialCompanyId }: ND4Genera
     setGenerating(true);
     try {
       const token = localStorage.getItem("secretary_jwt") || "";
-      // Map form data to official ND4 template AcroForm fields
+      // Parse English name into surname + other names (matching _parse_english_name logic)
+      const engName = (formData.officerNameEnglish || '').replace(/\s+/g, ' ').trim();
+      let surname = '', otherNames = '';
+      if (engName) {
+        if (engName.includes(',')) {
+          const segs = engName.split(',').map(s => s.trim()).filter(Boolean);
+          surname = segs[0] || '';
+          otherNames = segs.slice(1).join(' ');
+        } else {
+          const parts = engName.split(' ');
+          surname = parts[0] || '';
+          otherNames = parts.slice(1).join(' ');
+        }
+      }
+
+      // ND4 template AcroForm field mapping (verified against template 2026-07-14):
+      //   cb_1=秘書 cb_2=董事 cb_3=候補董事
+      //   fill_3="代替 Alternate to"  fill_4=中文姓名  fill_5=英文姓氏  fill_6=英文名字
+      //   fill_7=HKID號碼  fill_8=護照號碼
+      //   fill_9=簽署人  fill_10=身份  fill_11/12/13=辭職日期D/M/Y
+      //   fill_14=提交人姓名  fill_15=提交人地址  fill_16=電話  fill_17=傳真  fill_18=電郵  fill_19=參考編號
       const fields: Record<string, string> = {
         'fill_1_P.1': formData.brNumber,
         'fill_2_P.1': formData.companyName,
-        'fill_3_P.1': formData.officerNameChinese || '',
-        'fill_4_P.1': formData.officerNameEnglish || '',
+        // Officer details: fill_4=中文姓名, fill_5=英文姓氏, fill_6=英文名字
+        'fill_4_P.1': formData.officerNameChinese || '',
+        'fill_5_P.1': surname,
+        'fill_6_P.1': otherNames,
+        // Identity documents
+        'fill_7_P.1': formData.hkidPartial || '',
+        'fill_8_P.1': formData.passportCountry || '',
+        'fill_8b_P.1': formData.passportPartial || '',
+        // Resignation effective date
         'fill_11_P.1': formData.resignationDay,
         'fill_12_P.1': formData.resignationMonth,
         'fill_13_P.1': formData.resignationYear,
-        'fill_14_P.1': formData.signerName || '',
-        'fill_15_P.1': formData.signerCapacity || '',
-        'fill_16_P.1': formData.signDateDay,
-        'fill_17_P.1': formData.signDateMonth,
-        'fill_18_P.1': formData.signDateYear,
-        'fill_19_P.1': formData.presentorName || '',
-        'fill_1_P.2': formData.presentorName || '',
+        // Signer
+        'fill_9_P.1': formData.signerName || '',
+        'fill_10_P.1': formData.signerCapacity || '',
+        // Presentor section
+        'fill_14_P.1': formData.presentorName || '',
+        'fill_15_P.1': formData.presentorAddress || '',
+        'fill_16_P.1': formData.presentorPhone || '',
+        'fill_17_P.1': formData.presentorFax || '',
+        'fill_18_P.1': formData.presentorEmail || '',
+        'fill_19_P.1': formData.presentorReference || '',
+        // P.2: BR + Signing section (fill_2=Name, fill_3=Date DD/MM/YYYY)
+        'fill_1_P.2': formData.brNumber || '',
+        'fill_2_P.2': formData.signerName || formData.presentorName || '',
+        'fill_3_P.2': `${formData.signDateDay}/${formData.signDateMonth}/${formData.signDateYear}`,
       };
+      // fill_3 = "代替 Alternate to" — only fill when alternate director selected
+      if (formData.officerType === 'alternate') {
+        fields['fill_3_P.1'] = formData.officerNameEnglish || '';
+      }
       const checkboxes: string[] = [];
-      // Officer type checkbox
+      // Officer type checkbox: cb_1=秘書 cb_2=董事 cb_3=候補董事
       if (formData.officerType === 'secretary') checkboxes.push('cb_1_P.1');
+      else if (formData.officerType === 'alternate') checkboxes.push('cb_3_P.1');
       else checkboxes.push('cb_2_P.1');
       // Identity toggle
       if (formData.identity === 'natural') checkboxes.push('toggle_4_P.1');
@@ -99,12 +158,13 @@ export default function ND4GeneratorForm({ onBack, initialCompanyId }: ND4Genera
       const resp = await fetch(`/api/generate-template-pdf`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ template: 'ND4-template.pdf', fields, checkboxes }),
+        body: JSON.stringify({ template: 'ND4-template.pdf', fields, checkboxes, brNumber: formData.brNumber, keepWidgets: true, alignCenterFields: ['fill_4_P.1'], fieldMinFontSize: { 'fill_15_P.1': 10 } }),
       });
       const result = await resp.json();
       if (!resp.ok) throw new Error(result.error || 'Unknown error');
       downloadBase64Pdf(result.pdf, 'ND4-form.pdf');
       toast({ title: '生成成功', description: 'ND4 表格已下載' });
+      saveFormHistory({ formType: 'ND4', formData: { formData, selectedCompanyId } });
     } catch (err: any) { toast({ title: '生成失敗', description: err.message, variant: 'destructive' }); }
     finally { setGenerating(false); }
   };
@@ -118,6 +178,8 @@ export default function ND4GeneratorForm({ onBack, initialCompanyId }: ND4Genera
         <Button variant="ghost" size="sm" onClick={onBack}><ArrowLeft className="h-4 w-4 mr-1" />返回</Button>
         <div><h1 className="text-2xl font-bold">ND4 — 公司秘書及董事辭任通知書</h1><p className="text-sm text-muted-foreground">Notice of Change in Particulars of Company Secretary and Director</p></div>
       </div>
+
+      <FormHistorySelector formType="ND4" onSelect={handleLoadHistory} />
 
       <div className="bg-card border border-border rounded-lg p-4 mb-4">
         <div className="flex items-center gap-2 mb-2"><Building2 className="h-4 w-4 text-primary" /><Label className="font-medium">選擇公司自動填入</Label></div>
@@ -140,7 +202,11 @@ export default function ND4GeneratorForm({ onBack, initialCompanyId }: ND4Genera
             <div><Label>身份類別</Label>
               <Select value={formData.officerType} onValueChange={v => update('officerType', v)}>
                 <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
-                <SelectContent><SelectItem value="director">董事 Director</SelectItem><SelectItem value="secretary">公司秘書 Company Secretary</SelectItem></SelectContent>
+                <SelectContent>
+                  <SelectItem value="director">董事 Director</SelectItem>
+                  <SelectItem value="secretary">公司秘書 Company Secretary</SelectItem>
+                  <SelectItem value="alternate">候補董事 Alternate Director</SelectItem>
+                </SelectContent>
               </Select>
             </div>
             <div><Label>自然人/法人</Label>
@@ -172,7 +238,12 @@ export default function ND4GeneratorForm({ onBack, initialCompanyId }: ND4Genera
           )}
           <div className="grid grid-cols-2 gap-4 mt-3">
             <div><Label>中文名稱</Label><Input value={formData.officerNameChinese} onChange={e => update('officerNameChinese', e.target.value)} className="mt-1" /></div>
-            <div><Label>英文名稱 *</Label><Input value={formData.officerNameEnglish} onChange={e => update('officerNameEnglish', e.target.value)} className="mt-1" /></div>
+            <div><Label>英文名稱 *（姓氏, 名字）</Label><Input value={formData.officerNameEnglish} onChange={e => update('officerNameEnglish', e.target.value)} className="mt-1" placeholder="CHAN, Tai Man" /></div>
+          </div>
+          <div className="grid grid-cols-2 gap-4 mt-3">
+            <div><Label>香港身份證部分號碼</Label><Input value={formData.hkidPartial} onChange={e => update('hkidPartial', e.target.value)} className="mt-1" placeholder="A123" /></div>
+            <div><Label>護照簽發國家/地區</Label><Input value={formData.passportCountry} onChange={e => update('passportCountry', e.target.value)} className="mt-1" placeholder="e.g. China" /></div>
+            <div><Label>護照部分號碼</Label><Input value={formData.passportPartial} onChange={e => update('passportPartial', e.target.value)} className="mt-1" /></div>
           </div>
         </div>
 
@@ -197,9 +268,24 @@ export default function ND4GeneratorForm({ onBack, initialCompanyId }: ND4Genera
         </div>
 
         <div><h3 className="font-semibold mb-3">提交人資料</h3>
+          <PresenterSelector
+            currentData={{ name: formData.presentorName, address: formData.presentorAddress, phone: formData.presentorPhone, fax: formData.presentorFax, email: formData.presentorEmail, reference: formData.presentorReference }}
+            onSelect={(p: Presenter) => {
+              update('presentorName', p.name);
+              update('presentorAddress', p.address);
+              update('presentorPhone', p.phone);
+              update('presentorFax', p.fax);
+              update('presentorEmail', p.email);
+              update('presentorReference', p.reference);
+            }}
+          />
           <div className="grid grid-cols-2 gap-4">
             <div><Label>姓名／名稱</Label><Input value={formData.presentorName} onChange={e => update('presentorName', e.target.value)} className="mt-1" /></div>
-            <div><Label>電話 / 傳真 / 電郵</Label><Input value={formData.presentorContact} onChange={e => update('presentorContact', e.target.value)} className="mt-1" /></div>
+            <div className="col-span-2"><Label>地址</Label><Input value={formData.presentorAddress} onChange={e => update('presentorAddress', e.target.value)} className="mt-1" /></div>
+            <div><Label>電話 Tel</Label><Input value={formData.presentorPhone} onChange={e => update('presentorPhone', e.target.value)} className="mt-1" /></div>
+            <div><Label>傳真 Fax</Label><Input value={formData.presentorFax} onChange={e => update('presentorFax', e.target.value)} className="mt-1" /></div>
+            <div><Label>電郵 Email</Label><Input value={formData.presentorEmail} onChange={e => update('presentorEmail', e.target.value)} className="mt-1" /></div>
+            <div><Label>參考編號 Ref</Label><Input value={formData.presentorReference} onChange={e => update('presentorReference', e.target.value)} className="mt-1" /></div>
           </div>
         </div>
 

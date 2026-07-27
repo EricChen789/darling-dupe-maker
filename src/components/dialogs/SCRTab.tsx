@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -7,7 +7,8 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Separator } from '@/components/ui/separator';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, Edit, Trash2, Save, X, Download, Loader2, ShieldCheck, UserCheck } from 'lucide-react';
+import { SearchableSelect, type MultiSelectOption } from '@/components/ui/searchable-multiselect';
+import { Plus, Edit, Trash2, Save, X, Download, Loader2, ShieldCheck, UserCheck, UserPlus } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 
 import { Company, SignificantController } from '@/types';
@@ -37,6 +38,66 @@ export function SCRTab({ company }: { company: Company }) {
 
   const regAddr = [company.regFlat, company.regBuilding, company.regStreet, company.regDistrict, company.regRegion]
     .filter(Boolean).join(', ');
+
+  // 從公司現有成員構建下拉選項（去重，合併多角色）
+  const memberOptions: MultiSelectOption[] = useMemo(() => {
+    const all = [
+      ...company.directors.map(p => ({ ...p, _role: '董事' as const })),
+      ...company.secretaries.map(p => ({ ...p, _role: '秘書' as const })),
+      ...company.shareholders.map((s: any) => ({ ...s, _role: '股東' as const })),
+    ];
+    // Group by _personId, collecting all roles
+    const grouped = new Map<string, { member: any; roles: Set<string> }>();
+    for (const m of all) {
+      const pid = (m as any)._personId || m.id;
+      if (!pid) continue;
+      const entry = grouped.get(pid);
+      if (entry) {
+        entry.roles.add((m as any)._role);
+      } else {
+        grouped.set(pid, { member: m, roles: new Set([(m as any)._role]) });
+      }
+    }
+    return Array.from(grouped.values()).map(({ member, roles }) => ({
+      id: member.id,
+      label: member.nameEnglish || member.nameChinese || (member as any).name || '(無名稱)',
+      sub: member.nameChinese && member.nameEnglish ? member.nameChinese : undefined,
+      meta: Array.from(roles).join('、'),
+    }));
+  }, [company.directors, company.secretaries, company.shareholders]);
+
+  // 從成員列表中找到完整數據並預填 SCR 表單
+  const handlePickMember = (roleId: string) => {
+    const allPeople = [
+      ...company.directors,
+      ...company.secretaries,
+      ...(company.shareholders as any[]),
+    ];
+    const person = allPeople.find(p => p.id === roleId);
+    if (!person) return;
+
+    const today = new Date().toLocaleDateString('en-GB');
+    setEditing({
+      companyId: company.id,
+      identity: person.identity || 'natural',
+      nameEnglish: person.nameEnglish || '',
+      nameChinese: person.nameChinese || '',
+      idNumber: person.idNumber || (person as any).passportNumber || '',
+      address: person.address || '',
+      serviceAddress: person.serviceAddress || regAddr,
+      dateBecame: today,
+      dateCeased: '',
+      natureShares: false,
+      natureVoting: false,
+      natureAppoint: false,
+      natureInfluence: false,
+      natureTrust: false,
+      natureOther: '',
+      isDesignatedRep: false,
+      designatedRepName: '',
+      designatedRepContact: '',
+    });
+  };
 
   const handleSave = () => {
     if (!editing) return;
@@ -79,6 +140,21 @@ export function SCRTab({ company }: { company: Company }) {
 
   return (
     <div>
+      {/* 從公司現有成員快速新增為重要控制人 */}
+      {view === 'scr' && !editing && (
+        <div className="mb-3 rounded-md border border-border bg-muted/30 p-3">
+          <Label className="text-xs mb-2 block">從公司成員快速新增為重要控制人</Label>
+          <SearchableSelect
+            options={memberOptions}
+            selected=""
+            onSelect={handlePickMember}
+            placeholder="搜尋並選擇一位現有成員..."
+            searchPlaceholder="搜尋姓名..."
+            emptyText={memberOptions.length === 0 ? '公司尚無成員' : '找不到匹配的成員'}
+          />
+        </div>
+      )}
+
       <div className="flex items-center justify-between mb-3">
         <div className="inline-flex rounded-md border border-border overflow-hidden">
           <button type="button" onClick={() => setView('scr')}

@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import {
   Plus, Edit, Trash2, Save, X, Download, Loader2, FileText, ArrowRight,
   Users, UserCheck, Briefcase, Clock, MapPin, Hash, Mail, Phone,
+  Shield, FileDigit, FileCheck, Stamp,
 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { downloadAndOpenBase64Pdf } from '@/lib/downloadPdf';
@@ -36,22 +37,42 @@ const emptyTx = (companyId: string): EditTx => ({
   notes: '',
 });
 
-async function downloadRegister(fnName: string, companyId: string, brNumber: string, companyName: string, label: string) {
+async function downloadRegister(fnName: string, companyId: string, brNumber: string, companyName: string, label: string, extraBody?: Record<string, any>) {
   try {
     const token = localStorage.getItem("secretary_jwt") || "";
     const url = `/api/${fnName}`;
+    const body = extraBody ? { companyId, ...extraBody } : { companyId };
     const res = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({ companyId }),
+      body: JSON.stringify(body),
     });
     if (!res.ok) throw new Error(await res.text());
-    const result = await res.json();
     const filename = `${label}_${brNumber || ''}_${companyName}.pdf`;
-    downloadAndOpenBase64Pdf(result.pdf, filename);
+    const ct = res.headers.get("Content-Type") || "";
+    if (ct.includes("application/pdf")) {
+      // Binary PDF response (Cloud Functions) — direct download
+      const blob = await res.blob();
+      const url_ = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url_; a.download = filename;
+      document.body.appendChild(a); a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url_);
+    } else {
+      // JSON response (Flask) — { pdf: "<base64>" }
+      const result = await res.json();
+      if (result.pdf) {
+        downloadAndOpenBase64Pdf(result.pdf, filename);
+      } else if (result.error) {
+        throw new Error(result.error);
+      } else {
+        throw new Error("Unexpected response");
+      }
+    }
   } catch (e: any) {
     toast({ title: 'PDF 生成失敗', description: e.message, variant: 'destructive' });
   }
@@ -105,10 +126,10 @@ export function RegistersTab({ company }: { company: Company }) {
   const delTx = useDeleteShareTransaction();
   const [editingTx, setEditingTx] = useState<EditTx | null>(null);
 
-  const handleDownload = async (fn: string, label: string) => {
+  const handleDownload = async (fn: string, label: string, extraBody?: Record<string, any>) => {
     setDownloading(fn);
     try {
-      await downloadRegister(fn, company.id, company.brNumber, company.name, label);
+      await downloadRegister(fn, company.id, company.brNumber, company.name, label, extraBody);
     } finally {
       setDownloading(null);
     }
@@ -348,12 +369,12 @@ export function RegistersTab({ company }: { company: Company }) {
 
       <Separator />
 
-      {/* ── PDF download buttons ── */}
+      {/* ── PDF download buttons: 法定登記冊 ── */}
       <div>
         <h3 className="font-semibold text-sm mb-3 flex items-center gap-2">
           <FileText className="h-4 w-4 text-primary" /> 匯出法定登記冊 PDF
         </h3>
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-4 gap-2">
           <Button variant="outline" size="sm"
             onClick={() => handleDownload('generate-directors-register-pdf', 'DirectorsRegister')}
             disabled={downloading !== null}>
@@ -377,6 +398,49 @@ export function RegistersTab({ company }: { company: Company }) {
               ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
               : <Download className="h-3.5 w-3.5 mr-1" />}
             股東登記冊
+          </Button>
+          <Button variant="outline" size="sm"
+            onClick={() => handleDownload('generate-scr-pdf', 'SCR')}
+            disabled={downloading !== null}>
+            {downloading === 'generate-scr-pdf'
+              ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+              : <Shield className="h-3.5 w-3.5 mr-1" />}
+            重要控制人 SCR
+          </Button>
+        </div>
+      </div>
+
+      <Separator />
+
+      {/* ── PDF download buttons: 股權轉讓文件 ── */}
+      <div>
+        <h3 className="font-semibold text-sm mb-3 flex items-center gap-2">
+          <Stamp className="h-4 w-4 text-primary" /> 匯出股權轉讓文件
+        </h3>
+        <div className="grid grid-cols-3 gap-2">
+          <Button variant="outline" size="sm"
+            onClick={() => handleDownload('generate-share-transfer-pdf', 'InstrumentOfTransfer', { documentType: 'instrument_of_transfer' })}
+            disabled={downloading !== null}>
+            {downloading === 'generate-share-transfer-pdf'
+              ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+              : <FileCheck className="h-3.5 w-3.5 mr-1" />}
+            轉讓文書 Instrument
+          </Button>
+          <Button variant="outline" size="sm"
+            onClick={() => handleDownload('generate-share-transfer-pdf', 'BoughtSoldNote', { documentType: 'bought_sold_note' })}
+            disabled={downloading !== null}>
+            {downloading === 'generate-share-transfer-pdf'
+              ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+              : <FileDigit className="h-3.5 w-3.5 mr-1" />}
+            買賣票據 B/S Note
+          </Button>
+          <Button variant="outline" size="sm"
+            onClick={() => handleDownload('generate-share-transfer-pdf', 'ShareCertificate', { documentType: 'share_certificate' })}
+            disabled={downloading !== null}>
+            {downloading === 'generate-share-transfer-pdf'
+              ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+              : <Stamp className="h-3.5 w-3.5 mr-1" />}
+            股票證書 Certificate
           </Button>
         </div>
       </div>

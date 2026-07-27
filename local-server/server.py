@@ -2002,59 +2002,58 @@ def generate_scr_pdf():
     co_name_ch = rget(company, 'chinese_name') or ''
     br = rget(company, 'company_number') or ''
 
-    # Line 1: NAME OF COMPANY: <value> — with underline under value
-    label1 = "NAME OF COMPANY:  "
-    tnr(label1, M, y, size=8, bold=True)
-    lw1 = pdf.get_string_width(label1)
-    tnr(co_name, M + lw1, y, size=8)
-    vw1 = pdf.get_string_width(co_name)
-    if co_name:
-        pdf.line(M + lw1, y + 11, M + lw1 + vw1, y + 11)  # underline
-    y += 16
+    hdr_size = 8
+    row_h = 14
 
-    # Line 2: 公司名稱: <Chinese name> — with underline
-    if co_name_ch:
-        label2 = "公司名稱:  "
-        tc(label2, M, y, size=8)
-        lw2 = pdf.get_string_width(label2)
-        tc(co_name_ch, M + lw2, y, size=8)
-        vw2 = pdf.get_string_width(co_name_ch)
-        if co_name_ch:
-            pdf.line(M + lw2, y + 11, M + lw2 + vw2, y + 11)
-        y += 16
+    # ── Block 1: Company Name (English on top, Chinese below, underline at bottom) ──
+    label_en = "NAME OF COMPANY:  "
+    label_cn = "公司名稱:  "
+    tnr(label_en, M, y, size=hdr_size, bold=True)
+    tc(label_cn, M, y + row_h, size=hdr_size)
+    # Measure wider label for value offset
+    lw_en = pdf.get_string_width(label_en)
+    lw_cn = pdf.get_string_width(label_cn)
+    val_x = M + max(lw_en, lw_cn) + 2
+    # Values
+    tnr(co_name, val_x, y, size=hdr_size)
+    tc(co_name_ch, val_x, y + row_h, size=hdr_size) if co_name_ch else None
+    # Underline — from bottom of Chinese row
+    val_end = val_x + max(pdf.get_string_width(co_name), pdf.get_string_width(co_name_ch or ''))
+    pdf.line(val_x, y + row_h + 12, max(val_end, val_x + 100), y + row_h + 12)
+    y += row_h * 2 + 6
 
     y += 4
 
-    # Line 3: COMPANY NUMBER: <BR> (left)  +  JURISDICTION: HONG KONG (right)
-    if br:
-        label3 = "COMPANY NUMBER:  "
-        tnr(label3, M, y, size=8, bold=True)
-        lw3 = pdf.get_string_width(label3)
-        tnr(br, M + lw3, y, size=8)
-        vw3 = pdf.get_string_width(br)
-        if br:
-            pdf.line(M + lw3, y + 11, M + lw3 + vw3, y + 11)
+    # ── Block 2: COMPANY NUMBER (left) + JURISDICTION (right) ──
+    cn_label_en = "COMPANY NUMBER:  "
+    cn_label_cn = ""
+    jur_label_en = "JURISDICTION:  "
+    jur_label_cn = "司法管轄區:  "
+    jur_text_en = "HONG KONG"
+    jur_text_cn = "香港"
 
-    # JURISDICTION on the right
-    jur_label = "JURISDICTION:  "
-    jur_text = "HONG KONG"
-    jur_x = PW / 2 + 20
-    tnr(jur_label, jur_x, y, size=8, bold=True)
-    jlw = pdf.get_string_width(jur_label)
-    tnr(jur_text, jur_x + jlw, y, size=8)
-    jvw = pdf.get_string_width(jur_text)
-    pdf.line(jur_x + jlw, y + 11, jur_x + jlw + jvw, y + 11)
-    y += 16
+    # Left: COMPANY NUMBER
+    tnr(cn_label_en, M, y, size=hdr_size, bold=True)
+    cn_lw = pdf.get_string_width(cn_label_en)
+    cn_val_x = M + cn_lw
+    tnr(br, cn_val_x, y, size=hdr_size) if br else None
+    cn_end = cn_val_x + pdf.get_string_width(br) if br else cn_val_x + 100
+    # Underline
+    pdf.line(cn_val_x, y + 12, max(cn_end, cn_val_x + 60), y + 12)
 
-    # Line 4: 司法管轄區: 香港 — right side, below JURISDICTION
-    jcn_label = "司法管轄區:  "
-    jcn_text = "香港"
-    tc(jcn_label, jur_x, y, size=8)
-    jcn_lw = pdf.get_string_width(jcn_label)
-    tc(jcn_text, jur_x + jcn_lw, y, size=8)
-    jcn_vw = pdf.get_string_width(jcn_text)
-    pdf.line(jur_x + jcn_lw, y + 11, jur_x + jcn_lw + jcn_vw, y + 11)
-    y += 20
+    # Right: JURISDICTION (English on top, Chinese below)
+    jur_x = PW / 2 + 30
+    tnr(jur_label_en, jur_x, y, size=hdr_size, bold=True)
+    tc(jur_label_cn, jur_x, y + row_h, size=hdr_size)
+    jlw_en = pdf.get_string_width(jur_label_en)
+    jlw_cn = pdf.get_string_width(jur_label_cn)
+    jur_val_x = jur_x + max(jlw_en, jlw_cn) + 2
+    tnr(jur_text_en, jur_val_x, y, size=hdr_size)
+    tc(jur_text_cn, jur_val_x, y + row_h, size=hdr_size)
+    jur_end = jur_val_x + max(pdf.get_string_width(jur_text_en), pdf.get_string_width(jur_text_cn))
+    # Underline — from bottom of Chinese row
+    pdf.line(jur_val_x, y + row_h + 12, max(jur_end, jur_val_x + 40), y + row_h + 12)
+    y += row_h * 2 + 6
 
     # Title — bilingual centered
     y += 4

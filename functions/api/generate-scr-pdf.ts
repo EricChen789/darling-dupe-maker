@@ -11,7 +11,6 @@ const corsHeaders = {
 };
 
 const CHINESE_FONT_URL = 'https://cdn.jsdelivr.net/fontsource/fonts/noto-sans-tc@latest/chinese-traditional-400-normal.woff2';
-const CHINESE_FONT_BOLD_URL = 'https://cdn.jsdelivr.net/fontsource/fonts/noto-sans-tc@latest/chinese-traditional-700-normal.woff2';
 
 // Landscape A4 — Paul Tang reference format
 const PAGE_W = 842;
@@ -47,62 +46,60 @@ function segmentText(text: string): { text: string; useCjk: boolean }[] {
   return segments;
 }
 
-function drawMixed(page: any, text: string, opts: { x: number; y: number; size: number; cjk: any; ascii: any; cjkBold?: any; asciiBold?: any; bold?: boolean; color?: any }) {
+function drawMixed(page: any, text: string, opts: { x: number; y: number; size: number; cjk: any; ascii: any; bold?: boolean; color?: any }) {
   const clean = (text || "").replace(/[\n\r\t]/g, ' ');
   const segs = segmentText(clean);
   let x = opts.x;
   const useBold = !!(opts.bold);
   for (const s of segs) {
-    let font;
-    if (s.useCjk) font = useBold && opts.cjkBold ? opts.cjkBold : opts.cjk;
-    else font = useBold && opts.asciiBold ? opts.asciiBold : opts.ascii;
-    page.drawText(s.text, { x, y: opts.y, size: opts.size, font, ...(opts.color ? { color: opts.color } : {}) });
+    const font = s.useCjk ? opts.cjk : opts.ascii;
+    const drawOpts = { x, y: opts.y, size: opts.size, font, ...(opts.color ? { color: opts.color } : {}) };
+    page.drawText(s.text, drawOpts);
+    if (useBold) { page.drawText(s.text, { ...drawOpts, x: x + 0.5 }); }  // faux-bold
     x += font.widthOfTextAtSize(s.text, opts.size);
   }
 }
 
-function drawMixedRight(page: any, text: string, opts: { x: number; y: number; size: number; cjk: any; ascii: any; cjkBold?: any; asciiBold?: any; bold?: boolean; color?: any }) {
+function drawMixedRight(page: any, text: string, opts: { x: number; y: number; size: number; cjk: any; ascii: any; bold?: boolean; color?: any }) {
   const clean = (text || "").replace(/[\n\r\t]/g, ' ');
   const segs = segmentText(clean);
   const useBold = !!(opts.bold);
   let totalW = 0;
   for (const s of segs) {
-    const font = s.useCjk ? (useBold && opts.cjkBold ? opts.cjkBold : opts.cjk) : (useBold && opts.asciiBold ? opts.asciiBold : opts.ascii);
-    totalW += font.widthOfTextAtSize(s.text, opts.size);
+    totalW += (s.useCjk ? opts.cjk : opts.ascii).widthOfTextAtSize(s.text, opts.size);
   }
   let x = opts.x - totalW;
   for (const s of segs) {
-    const font = s.useCjk ? (useBold && opts.cjkBold ? opts.cjkBold : opts.cjk) : (useBold && opts.asciiBold ? opts.asciiBold : opts.ascii);
-    page.drawText(s.text, { x, y: opts.y, size: opts.size, font, ...(opts.color ? { color: opts.color } : {}) });
+    const font = s.useCjk ? opts.cjk : opts.ascii;
+    const drawOpts = { x, y: opts.y, size: opts.size, font, ...(opts.color ? { color: opts.color } : {}) };
+    page.drawText(s.text, drawOpts);
+    if (useBold) { page.drawText(s.text, { ...drawOpts, x: x + 0.5 }); }
     x += font.widthOfTextAtSize(s.text, opts.size);
   }
 }
 
-function drawMixedCenter(page: any, text: string, opts: { x: number; y: number; size: number; cjk: any; ascii: any; cjkBold?: any; asciiBold?: any; bold?: boolean; color?: any }) {
+function drawMixedCenter(page: any, text: string, opts: { x: number; y: number; size: number; cjk: any; ascii: any; bold?: boolean; color?: any }) {
   const clean = (text || "").replace(/[\n\r\t]/g, ' ');
   const segs = segmentText(clean);
   const useBold = !!(opts.bold);
   let totalW = 0;
   for (const s of segs) {
-    const font = s.useCjk ? (useBold && opts.cjkBold ? opts.cjkBold : opts.cjk) : (useBold && opts.asciiBold ? opts.asciiBold : opts.ascii);
-    totalW += font.widthOfTextAtSize(s.text, opts.size);
+    totalW += (s.useCjk ? opts.cjk : opts.ascii).widthOfTextAtSize(s.text, opts.size);
   }
   let x = opts.x - totalW / 2;
   for (const s of segs) {
-    const font = s.useCjk ? (useBold && opts.cjkBold ? opts.cjkBold : opts.cjk) : (useBold && opts.asciiBold ? opts.asciiBold : opts.ascii);
-    page.drawText(s.text, { x, y: opts.y, size: opts.size, font, ...(opts.color ? { color: opts.color } : {}) });
+    const font = s.useCjk ? opts.cjk : opts.ascii;
+    const drawOpts = { x, y: opts.y, size: opts.size, font, ...(opts.color ? { color: opts.color } : {}) };
+    page.drawText(s.text, drawOpts);
+    if (useBold) { page.drawText(s.text, { ...drawOpts, x: x + 0.5 }); }
     x += font.widthOfTextAtSize(s.text, opts.size);
   }
 }
 
-function widthOfText(text: string, cjk: any, ascii: any, size: number, cjkBold?: any, asciiBold?: any, bold?: boolean): number {
+function widthOfText(text: string, cjk: any, ascii: any, size: number): number {
   let w = 0;
-  const useBold = !!(bold);
   for (const s of segmentText(text || "")) {
-    const font = s.useCjk
-      ? (useBold && cjkBold ? cjkBold : cjk)
-      : (useBold && asciiBold ? asciiBold : ascii);
-    w += font.widthOfTextAtSize(s.text, size);
+    w += (s.useCjk ? cjk : ascii).widthOfTextAtSize(s.text, size);
   }
   return w;
 }
@@ -155,29 +152,22 @@ export async function onRequest(context: { request: Request; env: Env }) {
       });
     }
 
-    const [company, scrResult, fontResp, fontBoldResp] = await Promise.all([
+    const [company, scrResult, fontResp] = await Promise.all([
       env.DB.prepare("SELECT * FROM companies WHERE id = ?").bind(companyId).first(),
       env.DB.prepare("SELECT * FROM significant_controllers WHERE company_id = ? ORDER BY created_at").bind(companyId).all(),
       fetch(CHINESE_FONT_URL, { headers: { Accept: '*/*' } }),
-      fetch(CHINESE_FONT_BOLD_URL, { headers: { Accept: '*/*' } }),
     ]);
 
     if (!company) throw new Error("Company not found");
     if (!fontResp.ok) throw new Error('Failed to load Chinese font');
     const scrs = (scrResult.results || []) as any[];
 
-    const [fontBytes, fontBoldBytes] = await Promise.all([
-      fontResp.arrayBuffer(),
-      fontBoldResp.ok ? fontBoldResp.arrayBuffer() : null,
-    ]);
+    const fontBytes = await fontResp.arrayBuffer();
     const pdf = await PDFDocument.create();
     pdf.registerFontkit(fontkit);
     const cjkFont = await pdf.embedFont(fontBytes);
     const asciiFont = await pdf.embedFont(StandardFonts.Helvetica);
-    const asciiBoldFont = await pdf.embedFont(StandardFonts.HelveticaBold);
-    // Bold CJK: use dedicated bold font if available, otherwise fallback to regular
-    const cjkBoldFont = fontBoldBytes ? await pdf.embedFont(fontBoldBytes) : cjkFont;
-    const f = { cjk: cjkFont, ascii: asciiFont, cjkBold: cjkBoldFont, asciiBold: asciiBoldFont };
+    const f = { cjk: cjkFont, ascii: asciiFont };
 
     const coName = rget(company, 'name') || '';
     const coNameCh = rget(company, 'chinese_name') || '';
@@ -192,20 +182,20 @@ export async function onRequest(context: { request: Request; env: Env }) {
     // ═══════════════════════════════════════════════
 
     // Title — right side (bold matching local)
-    drawMixedRight(page, "SIGNIFICANT CONTROLLERS REGISTER", { x: PAGE_W - M, y, size: 13, cjk: f.cjk, ascii: f.ascii, cjkBold: f.cjkBold, asciiBold: f.asciiBold, bold: true });
-    drawMixedRight(page, "重要控制人登記冊", { x: PAGE_W - M, y: y - 18, size: 11, cjk: f.cjk, ascii: f.ascii, cjkBold: f.cjkBold, asciiBold: f.asciiBold, bold: true });
+    drawMixedRight(page, "SIGNIFICANT CONTROLLERS REGISTER", { x: PAGE_W - M, y, size: 13, cjk: f.cjk, ascii: f.ascii, bold: true });
+    drawMixedRight(page, "重要控制人登記冊", { x: PAGE_W - M, y: y - 18, size: 11, cjk: f.cjk, ascii: f.ascii, bold: true });
 
     // Company info — left side: NAME || NUMBER side by side
     const colA = M;
     const colB = M + 380;
 
     // Row 1 (English) — labels bold, values regular (matching local)
-    drawMixed(page, "NAME OF COMPANY:  ", { x: colA, y, size: hdrSize, cjk: f.cjk, ascii: f.ascii, cjkBold: f.cjkBold, asciiBold: f.asciiBold, bold: true });
-    const ncLabelW = widthOfText("NAME OF COMPANY:  ", f.cjk, f.ascii, hdrSize, f.cjkBold, f.asciiBold, true);
+    drawMixed(page, "NAME OF COMPANY:  ", { x: colA, y, size: hdrSize, cjk: f.cjk, ascii: f.ascii, bold: true });
+    const ncLabelW = widthOfText("NAME OF COMPANY:  ", f.cjk, f.ascii, hdrSize);
     drawMixed(page, coName, { x: colA + ncLabelW, y, size: hdrSize, cjk: f.cjk, ascii: f.ascii });
 
-    drawMixed(page, "COMPANY NUMBER:  ", { x: colB, y, size: hdrSize, cjk: f.cjk, ascii: f.ascii, cjkBold: f.cjkBold, asciiBold: f.asciiBold, bold: true });
-    const numLabelW = widthOfText("COMPANY NUMBER:  ", f.cjk, f.ascii, hdrSize, f.cjkBold, f.asciiBold, true);
+    drawMixed(page, "COMPANY NUMBER:  ", { x: colB, y, size: hdrSize, cjk: f.cjk, ascii: f.ascii, bold: true });
+    const numLabelW = widthOfText("COMPANY NUMBER:  ", f.cjk, f.ascii, hdrSize);
     drawMixed(page, br, { x: colB + numLabelW, y, size: hdrSize, cjk: f.cjk, ascii: f.ascii });
 
     // Underlines below English row — match local spacing (11pt below text top)
@@ -233,8 +223,8 @@ export async function onRequest(context: { request: Request; env: Env }) {
     y -= 20;
 
     // ── JURISDICTION (below header, per docx order) — label bold (matching local) ──
-    drawMixed(page, "JURISDICTION:  ", { x: M, y, size: hdrSize, cjk: f.cjk, ascii: f.ascii, cjkBold: f.cjkBold, asciiBold: f.asciiBold, bold: true });
-    const jlw = widthOfText("JURISDICTION:  ", f.cjk, f.ascii, hdrSize, f.cjkBold, f.asciiBold, true);
+    drawMixed(page, "JURISDICTION:  ", { x: M, y, size: hdrSize, cjk: f.cjk, ascii: f.ascii, bold: true });
+    const jlw = widthOfText("JURISDICTION:  ", f.cjk, f.ascii, hdrSize);
     drawMixed(page, "HONG KONG", { x: M + jlw, y, size: hdrSize, cjk: f.cjk, ascii: f.ascii });
     y -= 11;
     drawMixed(page, "司法管轄區:  HONG KONG", { x: M, y, size: hdrSize, cjk: f.cjk, ascii: f.ascii });
@@ -284,7 +274,7 @@ export async function onRequest(context: { request: Request; env: Env }) {
       for (let li = 0; li < lines.length; li++) {
         const lineText = lines[li];
         const hasCjk = /[一-鿿　-〿＀-￯]/.test(lineText);
-        const font = hasCjk ? f.cjkBold : f.asciiBold;
+        const font = hasCjk ? f.cjk : f.ascii;
         const lw = font.widthOfTextAtSize(lineText, 7);
         const lx = x0 + (cwVal - lw) / 2;
         page.drawText(lineText, { x: lx, y: textStartY - li * hdrLineH, size: 7, font });
@@ -301,9 +291,9 @@ export async function onRequest(context: { request: Request; env: Env }) {
     // Continuation header helper (bold matching local)
     const drawContHdr = (): number => {
       let cy = PAGE_H - 22;
-      drawMixedCenter(page, "SIGNIFICANT CONTROLLERS REGISTER (Cont'd)", { x: PAGE_W / 2, y: cy, size: 13, cjk: f.cjk, ascii: f.ascii, cjkBold: f.cjkBold, asciiBold: f.asciiBold, bold: true });
+      drawMixedCenter(page, "SIGNIFICANT CONTROLLERS REGISTER (Cont'd)", { x: PAGE_W / 2, y: cy, size: 13, cjk: f.cjk, ascii: f.ascii, bold: true });
       cy -= 16;
-      drawMixedCenter(page, "重要控制人登記冊（續）", { x: PAGE_W / 2, y: cy, size: 11, cjk: f.cjk, ascii: f.ascii, cjkBold: f.cjkBold, asciiBold: f.asciiBold, bold: true });
+      drawMixedCenter(page, "重要控制人登記冊（續）", { x: PAGE_W / 2, y: cy, size: 11, cjk: f.cjk, ascii: f.ascii, bold: true });
       cy -= 14;
       hline(page, M, PAGE_W - M, cy, 0.5);
       cy -= 8;
@@ -449,9 +439,9 @@ export async function onRequest(context: { request: Request; env: Env }) {
     // Row 0: Headers
     drawRect(page, M, y, addW, addHdrH);
     drawRect(page, M + addW, y, addW, addHdrH);
-    drawMixed(page, "Additional Matters", { x: M + 3, y: y - 3, size: 7, cjk: f.cjk, ascii: f.ascii, cjkBold: f.cjkBold, asciiBold: f.asciiBold, bold: true });
+    drawMixed(page, "Additional Matters", { x: M + 3, y: y - 3, size: 7, cjk: f.cjk, ascii: f.ascii, bold: true });
     drawMixed(page, "附加事項", { x: M + 3, y: y - 12, size: 7, cjk: f.cjk, ascii: f.ascii });
-    drawMixed(page, "Remarks", { x: M + addW + 3, y: y - 3, size: 7, cjk: f.cjk, ascii: f.ascii, cjkBold: f.cjkBold, asciiBold: f.asciiBold, bold: true });
+    drawMixed(page, "Remarks", { x: M + addW + 3, y: y - 3, size: 7, cjk: f.cjk, ascii: f.ascii, bold: true });
     drawMixed(page, "備註", { x: M + addW + 3, y: y - 12, size: 7, cjk: f.cjk, ascii: f.ascii });
     y -= addHdrH;
 

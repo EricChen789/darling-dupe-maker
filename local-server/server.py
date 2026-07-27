@@ -1997,13 +1997,18 @@ def generate_scr_pdf():
         pdf.line(x, y1, x, y2)
 
     # ── Page Header (matching Paul Tang reference) ──
-    y = 30
+    y = 22
     co_name = rget(company, 'name') or ''
     co_name_ch = rget(company, 'chinese_name') or ''
     br = rget(company, 'company_number') or ''
 
     hdr_size = 8
     row_h = 14
+    top_y = y  # remember starting y for title alignment
+
+    # ── Title: right-aligned at same height as NAME OF COMPANY ──
+    title_y = y
+    tnr("SIGNIFICANT CONTROLLERS REGISTER", PW - M, title_y, size=13, bold=True, align='R')
 
     # ── Block 1: NAME OF COMPANY (top) + 公司名稱 (bottom), stacked labels ──
     label_en = "NAME OF COMPANY:  "
@@ -2020,8 +2025,11 @@ def generate_scr_pdf():
     # Underline at bottom of Chinese row
     val_w = pdf.get_string_width(co_name) + (pdf.get_string_width(co_name_ch) + 10 if co_name_ch else 0)
     pdf.line(val_x, y + row_h + 12, val_x + max(val_w, 120), y + row_h + 12)
-    y += row_h * 2 + 4
 
+    # Chinese title — below English title
+    tc("重要控制人登記冊", PW - M, title_y + 16, size=11, bold=True, align='R')
+
+    y += row_h * 2 + 4
     y += 4
 
     # ── Block 2: COMPANY NUMBER (top) + 公司編號 (bottom), stacked labels ──
@@ -2055,12 +2063,8 @@ def generate_scr_pdf():
     pdf.line(jur_val_x, y + row_h + 12, max(jur_end, jur_val_x + 40), y + row_h + 12)
     y += row_h * 2 + 6
 
-    # Title — right-aligned, next to company name underline
+    # Separator line after header
     y += 4
-    tnr("SIGNIFICANT CONTROLLERS REGISTER", PW - M, y, size=13, bold=True, align='R')
-    y += 16
-    tc("重要控制人登記冊", PW - M, y, size=11, bold=True, align='R')
-    y += 18
     line_h(M, PW - M, y, w=0.5)
     y += 10
 

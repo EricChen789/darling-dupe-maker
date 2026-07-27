@@ -2062,51 +2062,56 @@ def generate_scr_pdf():
     tnr("SIGNIFICANT CONTROLLERS REGISTER", title_x, y, size=13, bold=True, align='R')
     tc("重要控制人登記冊", title_x, y + 18, size=11, bold=True, align='R')
 
-    # ── Company info on left: NAME OF COMPANY || COMPANY NUMBER side by side ──
-    left_w = CW * 0.72  # ~566pt for company info
-    col_a_x = M         # left column: name
-    col_b_x = M + 380   # right column: number
+    # ── Header: NAME OF COMPANY full width, then COMPANY NUMBER || JURISDICTION side by side ──
+    col_a_x = M
 
-    # Row 1 (English): NAME OF COMPANY  |  COMPANY NUMBER
+    # Row 1 (English): NAME OF COMPANY
     tnr("NAME OF COMPANY:  ", col_a_x, y, size=hdr_size, bold=True)
     nc_label_w = pdf.get_string_width("NAME OF COMPANY:  ")
     tnr(co_name, col_a_x + nc_label_w, y, size=hdr_size)
-
-    tnr("COMPANY NUMBER:  ", col_b_x, y, size=hdr_size, bold=True)
-    num_label_w = pdf.get_string_width("COMPANY NUMBER:  ")
-    tnr(br, col_b_x + num_label_w, y, size=hdr_size)
-
-    # Underlines
     name_val_w = pdf.get_string_width(co_name)
     line_h(col_a_x + nc_label_w, col_a_x + nc_label_w + max(name_val_w, 150), y + 11)
-    br_val_w = pdf.get_string_width(br)
-    line_h(col_b_x + num_label_w, col_b_x + num_label_w + max(br_val_w, 100), y + 11)
 
     y += 14
 
-    # Row 2 (Chinese): 公司名稱  |  公司編號
+    # Row 2 (Chinese): 公司名稱
     tc("公司名稱:  ", col_a_x, y, size=hdr_size)
     cn_label_w = pdf.get_string_width("公司名稱:  ")
     tc(co_name_ch if co_name_ch else co_name, col_a_x + cn_label_w, y, size=hdr_size)
-
-    tc("公司編號:  ", col_b_x, y, size=hdr_size)
-    num2_label_w = pdf.get_string_width("公司編號:  ")
-    tc(br, col_b_x + num2_label_w, y, size=hdr_size)
-
-    # Underlines
     cn_val_w = pdf.get_string_width(co_name_ch or co_name)
     line_h(col_a_x + cn_label_w, col_a_x + cn_label_w + max(cn_val_w, 150), y + 11)
-    br2_val_w = pdf.get_string_width(br)
-    line_h(col_b_x + num2_label_w, col_b_x + num2_label_w + max(br2_val_w, 100), y + 11)
 
-    y += 20
+    y += 16
 
-    # ── JURISDICTION line (below header, per docx order) ──
-    tnr("JURISDICTION:  ", M, y, size=hdr_size, bold=True)
+    # Row 3 (English): COMPANY NUMBER _______  JURISDICTION: HONG KONG
+    tnr("COMPANY NUMBER:  ", col_a_x, y, size=hdr_size, bold=True)
+    num_label_w = pdf.get_string_width("COMPANY NUMBER:  ")
+    tnr(br, col_a_x + num_label_w, y, size=hdr_size)
+    br_val_w = pdf.get_string_width(br)
+    br_underline_end = col_a_x + num_label_w + max(br_val_w, 100)
+    line_h(col_a_x + num_label_w, br_underline_end, y + 11)
+
+    # JURISDICTION right after COMPANY NUMBER underline
+    jur_x = br_underline_end + 24
+    tnr("JURISDICTION:  ", jur_x, y, size=hdr_size, bold=True)
     jlw = pdf.get_string_width("JURISDICTION:  ")
-    tnr("HONG KONG", M + jlw, y, size=hdr_size)
-    y += 11
-    tc("司法管轄區:  HONG KONG", M, y, size=hdr_size)
+    tnr("HONG KONG", jur_x + jlw, y, size=hdr_size)
+    jur_val_w = pdf.get_string_width("HONG KONG")
+    line_h(jur_x + jlw, jur_x + jlw + max(jur_val_w, 80), y + 11)
+
+    y += 14
+
+    # Row 4 (Chinese): 公司編號 _______  司法管轄區: HONG KONG
+    tc("公司編號:  ", col_a_x, y, size=hdr_size)
+    num2_label_w = pdf.get_string_width("公司編號:  ")
+    tc(br, col_a_x + num2_label_w, y, size=hdr_size)
+    br2_val_w = pdf.get_string_width(br)
+    br2_underline_end = col_a_x + num2_label_w + max(br2_val_w, 100)
+    line_h(col_a_x + num2_label_w, br2_underline_end, y + 11)
+
+    tc("司法管轄區:  HONG KONG", jur_x, y, size=hdr_size)
+    line_h(jur_x, jur_x + 120, y + 11)
+
     y += 16
 
     # Separator
@@ -2134,12 +2139,12 @@ def generate_scr_pdf():
 
     # ── Bilingual Multi-line Table Headers ──
     hdr_labels = [
-        ("Entry Date\n錄入日期", 0),
-        ("Name\n姓名／名稱", 1),
-        ("Correspondence Address\n(for Registrable Person)\n通訊地址（自然人）\nRegistered Office Address\n(for Legal Entity)\n註冊／主要營業地址（法人）", 2),
-        ("ID / PPT No. (Issuing Country)\n(for Registrable Person)\n身份證／護照號碼\n（簽發國家）（自然人）\nCompany No. (Place of Incorp.)\n/ Legal Form\n公司編號（成立地方）\n／法律形式（法人）", 3),
+        ("Entry Date", 0),
+        ("Name", 1),
+        ("Correspondence Address\n (for Registrable Person)\n通訊地址（自然人）\nRegistered Office Address (for Legal Entity)\n註冊／主要營業地址\n（法律實體）", 2),
+        ("ID / PPT No. (Issuing Country)\n(for Registrable Person)\n身份證／護照號碼\n（簽發國家）（自然人）\nCompany No. (Place of Incorp.)\nLegal Form (for Legal Entity)\n公司編號（成立地方）\n法律形式（法律實體）", 3),
         ("Nature of Control\n控制性質", 4),
-        ("Becoming Date\n(Cessation Date)\n開始日期\n（終止日期）", 5),
+        ("Becoming Date\n(Cessation Date)\n起始日期\n（終止日期）", 5),
         ("Remarks\n備註", 6),
     ]
 
@@ -2219,17 +2224,23 @@ def generate_scr_pdf():
             nature_text = ', '.join(natures) if natures else '-'
             date_became = rget(s, 'date_became') or '-'
             date_cea = rget(s, 'date_ceased') or ''
-            date_display = f"{date_became}  /  {date_cea}" if date_cea else f"{date_became}  /  Current"
-
-            if rget(s, 'is_designated_rep') and rget(s, 'designated_rep_name'):
-                rep_name = rget(s, 'designated_rep_name')
-                date_display += f"\nRep: {rep_name}"
+            # Paul Tang format: date column has "YYYY-MM-DD  /" (current) or "YYYY-MM-DD  /  YYYY-MM-DD" (ceased)
+            date_display = f"{date_became}  /  {date_cea}" if date_cea else f"{date_became}  /"
 
             entry_date = rget(s, 'created_at') or ''
             if entry_date and len(entry_date) > 10:
                 entry_date = entry_date[:10]
 
-            remarks = rget(s, 'remarks') or ''
+            # Remarks: "Current / 現任" goes here per Paul Tang format, + designated rep + user remarks
+            remarks_parts = []
+            if not date_cea:
+                remarks_parts.append("Current / 現任")
+            if rget(s, 'is_designated_rep') and rget(s, 'designated_rep_name'):
+                remarks_parts.append(f"Rep: {rget(s, 'designated_rep_name')}")
+            user_remarks = rget(s, 'remarks') or ''
+            if user_remarks:
+                remarks_parts.append(user_remarks)
+            remarks = '\n'.join(remarks_parts) if remarks_parts else ''
             row_data = [entry_date, name_display, addr, id_block, nature_text, date_display, remarks]
 
             # Calculate row height from longest wrapped cell
@@ -2293,8 +2304,14 @@ def generate_scr_pdf():
                     if cw_avail < 20:
                         cw_avail = 20
                     lines = wrap_text_to_lines(str(txt), font_name, '', data_size, cw_avail)
+                    is_remarks_col = (ci == 6)  # Remarks column — center per Paul Tang format
                     for li, line_text in enumerate(lines):
-                        pdf.set_xy(x0 + cell_pad, y + 2 + li * (data_size + 4))
+                        if is_remarks_col:
+                            lw = pdf.get_string_width(line_text)
+                            lx = x0 + (cw_val - lw) / 2
+                        else:
+                            lx = x0 + cell_pad
+                        pdf.set_xy(lx, y + 2 + li * (data_size + 4))
                         pdf.cell(cw_avail, data_size + 4, line_text)
             y += row_h
 
@@ -2305,18 +2322,25 @@ def generate_scr_pdf():
     # ═══════════════════════════════════════════════════════
     # ADDITIONAL MATTERS — 2×2 table (header row + content row)
     # ═══════════════════════════════════════════════════════
-    add_h_hdr = 20  # header row height
+    add_h_hdr = 26  # header row height
     add_h_content = 48  # content row height
     add_w = CW * 0.5
 
-    # Row 0: Headers
+    # Row 0: Headers — vertically centered with more bottom padding
     add_y0 = y
     draw_cell_border(M, y, add_w, add_h_hdr)
     draw_cell_border(M + add_w, y, add_w, add_h_hdr)
-    tnr("Additional Matters", M + 3, y + 3, size=7, bold=True)
-    tc("附加事項", M + 3, y + 12, size=7)
-    tnr("Remarks", M + add_w + 3, y + 3, size=7, bold=True)
-    tc("備註", M + add_w + 3, y + 12, size=7)
+    tnr("Additional Matterse", M + 3, y + 4, size=7, bold=True)
+    tc("额外事項", M + 3, y + 14, size=7)
+    # Remarks — centered horizontally in right cell
+    rmk_text = "Remarks"
+    pdf.set_font('TNR', 'B', 7)
+    rmk_w = pdf.get_string_width(rmk_text)
+    tnr(rmk_text, M + add_w + (add_w - rmk_w) / 2, y + 4, size=7, bold=True)
+    rmk_ch = "備註"
+    pdf.set_font('TC', '', 7)
+    rmk_ch_w = pdf.get_string_width(rmk_ch)
+    tc(rmk_ch, M + add_w + (add_w - rmk_ch_w) / 2, y + 14, size=7)
     y += add_h_hdr
 
     # Row 1: Empty content cells

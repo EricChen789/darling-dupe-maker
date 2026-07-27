@@ -2085,18 +2085,18 @@ def generate_scr_pdf():
 
     # ── Table Header ──
     hdr_y0 = y
-    hdr_size = 7
+    hdr_size = 8
     hdr_labels = [
-        ("Entry\nDate", 0), ("Name", 1),
-        ("Correspondence Address /\nRegistered Office Address", 2),
-        ("ID/PPT No. (Issuing Country) /\nCompany No. (Place of Incorp.) /\nLegal Form", 3),
-        ("Nature of\nControl", 4),
-        ("Becoming Date /\nCessation Date", 5),
+        ("Entry Date", 0), ("Name", 1),
+        ("Correspondence Address / Registered Office Address", 2),
+        ("ID/PPT No. (Issuing Country) / Company No. (Place of Incorp.) / Legal Form", 3),
+        ("Nature of Control", 4),
+        ("Becoming Date / Cessation Date", 5),
         ("Remarks", 6),
     ]
-    hdr_h = 32
+    hdr_h = 18
     for label, ci in hdr_labels:
-        tnr(label, col_x[ci] + 2, y + 1, size=hdr_size, bold=True)
+        tnr(label, col_x[ci] + 2, y + 2, size=hdr_size, bold=True)
     y += hdr_h
     line_h(M, end_x, y, w=0.4)
     # Vertical lines for header
@@ -2106,12 +2106,13 @@ def generate_scr_pdf():
     table_top_y = hdr_y0
 
     # ── Data Rows ──
-    data_size = 7.5
+    data_size = 9
+    data_row_h = 22
     row_num = 0
 
     if not scrs:
-        tc("(No SCR records / 尚無重要控制人記錄)", M + 3, y + 10, size=8)
-        y += 24
+        tc("(No SCR records / 尚無重要控制人記錄)", M + 3, y + 8, size=9)
+        y += data_row_h
     else:
         for s in scrs:
             # Build nature of control text
@@ -2126,40 +2127,40 @@ def generate_scr_pdf():
             is_nat = rget(s, 'identity') != 'corporate'
             name_en = rget(s, 'name_english') or ''
             name_ch = rget(s, 'name_chinese') or ''
-            name_display = f"{name_en}\n{name_ch}".strip() or '(unnamed)'
+            name_display = f"{name_en}  {name_ch}".strip() or '(unnamed)'
 
-            # Build ID info block
+            # Build ID info block — horizontal single line
             if is_nat:
                 id_no = rget(s, 'id_number') or rget(s, 'passport_number') or '-'
                 passport_country = rget(s, 'passport_country') or ''
-                id_block = f"ID/PPT No: {id_no}"
+                id_block = f"ID/PPT: {id_no}"
                 if passport_country:
-                    id_block += f"\n(Issuing Country: {passport_country})"
-                id_block += "\n(Natural Person / 自然人)"
+                    id_block += f" ({passport_country})"
+                id_block += " | Natural Person / 自然人"
             else:
                 comp_no = rget(s, 'company_number_ref') or '-'
                 place_incorp = rget(s, 'place_of_incorporation') or ''
                 legal_form = rget(s, 'legal_form') or ''
-                id_block = f"Company No: {comp_no}"
+                id_block = f"Co No: {comp_no}"
                 if place_incorp:
-                    id_block += f"\n(Place of Incorp.: {place_incorp})"
+                    id_block += f" ({place_incorp})"
                 if legal_form:
-                    id_block += f"\n{legal_form}"
-                id_block += "\n(Body Corporate / 法人)"
+                    id_block += f" | {legal_form}"
+                id_block += " | Body Corporate / 法人"
 
-            addr = (rget(s, 'address') or '')[:120]
-            nature_text = '\n'.join(natures) or '-'
+            addr = (rget(s, 'address') or '')[:150]
+            nature_text = ', '.join(natures) if natures else '-'
             date_became = rget(s, 'date_became') or '-'
             date_cea = rget(s, 'date_ceased') or ''
-            ceased_text = date_cea if date_cea else 'Current\n現任'
+            ceased_text = date_cea if date_cea else 'Current / 現任'
 
-            # Designated rep info
+            # Designated rep info — horizontal
             if rget(s, 'is_designated_rep') and rget(s, 'designated_rep_name'):
                 rep_name = rget(s, 'designated_rep_name')
                 rep_contact = rget(s, 'designated_rep_contact') or ''
-                ceased_text += f"\nRep: {rep_name}"
+                ceased_text += f" | Rep: {rep_name}"
                 if rep_contact:
-                    ceased_text += f"\nContact: {rep_contact}"
+                    ceased_text += f" ({rep_contact})"
 
             entry_date = rget(s, 'created_at') or ''
             if entry_date and len(entry_date) > 10:
@@ -2167,49 +2168,51 @@ def generate_scr_pdf():
 
             row_num += 1
 
-            # Calculate row height based on content
-            row_h = max(data_size * 6 + 4, 28)
+            # Calculate row height based on content lines
+            num_lines = 1
+            for txt in [name_display, addr, id_block, nature_text, ceased_text]:
+                # Estimate lines based on text length vs column width
+                ci_for_txt = [0, 1, 2, 3, 4, 5][[name_display, addr, id_block, nature_text, ceased_text, ''].index(txt)] if txt in [name_display, addr, id_block, nature_text, ceased_text] else 0
+                lines_needed = max(1, -(-len(str(txt)) * data_size // col_w[ci_for_txt])) if txt else 1
+                num_lines = max(num_lines, min(lines_needed, 3))
+            data_row_h = max(num_lines * 14 + 4, 22)
 
             # Page break if needed
-            if y + row_h > PH - 50:
-                # Draw bottom border of current table
+            if y + data_row_h > PH - 40:
                 line_h(M, end_x, y, w=0.4)
                 pdf.add_page()
-                y = 28
-                tnr(f"NAME OF COMPANY: {co_name}", M, y, size=8, bold=True)
-                y += 14
+                y = 22
+                # Simplified continuation header
                 tnr("SIGNIFICANT CONTROLLERS REGISTER (Cont'd)", PW / 2, y, size=13, bold=True, align='C')
                 y += 16
                 tc("重要控制人登記冊（續）", PW / 2, y, size=11, bold=True, align='C')
-                y += 18
+                y += 14
                 line_h(M, PW - M, y, w=0.5)
-                y += 10
+                y += 8
                 hdr_y0 = y
                 for label, ci in hdr_labels:
-                    tnr(label, col_x[ci] + 2, y + 1, size=hdr_size, bold=True)
+                    tnr(label, col_x[ci] + 2, y + 2, size=hdr_size, bold=True)
                 y += hdr_h
                 line_h(M, end_x, y, w=0.4)
                 for ci in range(len(col_x)):
                     line_v(col_x[ci], hdr_y0, y, w=0.25)
                 line_v(end_x, hdr_y0, y, w=0.25)
 
-            # Draw data
-            row_y0 = y
+            # Draw data — horizontal text
             row_data = [
                 (entry_date, 0), (name_display, 1), (addr, 2),
                 (id_block, 3), (nature_text, 4),
-                (f"{date_became}\n{ceased_text}", 5), ('', 6),
+                (f"{date_became}  /  {ceased_text}", 5), ('', 6),
             ]
             for text, ci in row_data:
                 if text:
-                    # Use TC for CJK, TNR for English - detect if text has CJK
                     has_cjk = any('一' <= ch <= '鿿' or '　' <= ch <= '〿' for ch in str(text))
                     if has_cjk:
-                        tc(str(text), col_x[ci] + 2, y + 1, size=data_size)
+                        tc(str(text), col_x[ci] + 2, y + 2, size=data_size)
                     else:
-                        tnr(str(text), col_x[ci] + 2, y + 1, size=data_size)
+                        tnr(str(text), col_x[ci] + 2, y + 2, size=data_size)
 
-            y += row_h
+            y += data_row_h
             line_h(M, end_x, y, w=0.2, color=(150, 150, 150))
 
     # Draw outer table border

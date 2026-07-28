@@ -373,11 +373,10 @@ export default function NewCompanyGeneratorForm({ onBack }: Props) {
           }
         }
 
-        const resp = await fetch(`/api/generate-template-pdf`, {
+        const resp = await fetch(`/api/generate-nnc1-pdf`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
           body: JSON.stringify({
-            template: 'NNC1-template.pdf',
             fields,
             checkboxes,
             overlays,

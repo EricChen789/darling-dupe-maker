@@ -45,7 +45,7 @@ _RTF_CERTIFICATE = os.path.join(_RTF_DIR, 'Testing Share Certificate.rtf')
 
 # Register RTF templates (Paul Tang reference samples)
 _RTF_REGISTER_DIR = os.path.join(os.path.dirname(__file__), '..', '..', '秘书系统文件', 'rod rom')
-_RTF_ROM = os.path.join(_RTF_REGISTER_DIR, 'Testing ROM.rtf')
+_RTF_ROM = os.path.join(_RTF_REGISTER_DIR, 'Testing ROM.doc')
 _RTF_ROD = os.path.join(_RTF_REGISTER_DIR, 'Testing ROD.rtf')
 
 # python-docx for register DOCX generation
@@ -3504,6 +3504,23 @@ def table_list(table_name):
         s = f"%{search}%"
         where.append("(name LIKE ? OR name_english LIKE ? OR name_chinese LIKE ?)")
         bindings.extend([s, s, s])
+
+    # ── Multi-tenant: filter companies by user's accessible company groups ──
+    if table_name == 'companies':
+        u = get_user()
+        if u and u.get('role') != 'admin':
+            db2 = get_db()
+            user_row = db2.execute(
+                "SELECT accessible_company_groups FROM auth_users WHERE id = ?", (u['id'],)
+            ).fetchone()
+            if user_row:
+                groups = (user_row[0] or '').strip()
+                if groups and groups != '*':
+                    group_list = [g.strip() for g in groups.split(',') if g.strip()]
+                    if group_list:
+                        placeholders = ','.join(['?'] * len(group_list))
+                        where.append(f"(company_group IN ({placeholders}) OR company_group IS NULL OR company_group = '')")
+                        bindings.extend(group_list)
     sql = f"SELECT * FROM {table_name}"
     if where:
         sql += " WHERE " + " AND ".join(where)
@@ -3635,16 +3652,27 @@ def company_version_snapshot(company_id):
 def table_create(table_name):
     if table_name not in TABLES:
         return jsonify({'error': 'Not found'}), 404
-    data = request.json
-    if 'id' not in data:
-        data['id'] = str(uuid.uuid4())
+    body = request.json
+    # Support both single object and array (batch) inserts — matches CF Functions behavior
+    rows = body if isinstance(body, list) else [body]
+    if not rows:
+        return jsonify({'error': 'Empty data'}), 400
     db = get_db()
-    keys = list(data.keys())
-    vals = list(data.values())
-    placeholders = ', '.join(['?'] * len(keys))
-    db.execute(f"INSERT INTO {table_name} ({', '.join(keys)}) VALUES ({placeholders})", vals)
+    ids = []
+    for data in rows:
+        if not isinstance(data, dict):
+            continue
+        if 'id' not in data or not data['id']:
+            data['id'] = str(uuid.uuid4())
+        keys = list(data.keys())
+        vals = list(data.values())
+        placeholders = ', '.join(['?'] * len(keys))
+        db.execute(f"INSERT INTO {table_name} ({', '.join(keys)}) VALUES ({placeholders})", vals)
+        ids.append(data['id'])
     db.commit()
-    return jsonify({'success': True, 'id': data['id']}), 201
+    if isinstance(body, list):
+        return jsonify({'success': True, 'ids': ids, 'count': len(ids)}), 201
+    return jsonify({'success': True, 'id': ids[0] if ids else None}), 201
 
 @app.route('/api/<table_name>/<item_id>', methods=['PUT'])
 def table_update(table_name, item_id):
@@ -3940,8 +3968,9 @@ def _build_field_page_map(doc):
                 fmap[name] = pi
     return fmap
 
-def _set_text(doc, fmap, name, value):
-    """在指定頁面上查找 widget 並設置值（必須在迭代內完成 update，widget 引用不能外傳）"""
+def _set_text(doc, fmap, name, value, align='left'):
+    """在指定頁面上查找 widget 並設置值（必須在迭代內完成 update，widget 引用不能外傳）
+    align: 'left' (default), 'center', 'right'"""
     if name not in fmap:
         return False
     pi = fmap[name]
@@ -3949,6 +3978,10 @@ def _set_text(doc, fmap, name, value):
         if w.field_name == name:
             try:
                 w.field_value = value if value else ''
+                if align == 'right':
+                    doc.xref_set_key(w._annot.xref, 'Q', '2')
+                elif align == 'center':
+                    doc.xref_set_key(w._annot.xref, 'Q', '1')
                 w.update()
                 return True
             except Exception:
@@ -4086,6 +4119,13 @@ def _fill_nar1_pdf(data):
 
     # ── P.2 股本 ──
     _set_text(doc, fmap, 'fill_1_P.2', br8)
+    # 公司電郵（fill_2_P.2）和電話（fill_3_P.2）
+    company_email = data.get('companyEmail', '')
+    company_phone = data.get('companyPhone', '')
+    if company_email:
+        _set_text(doc, fmap, 'fill_2_P.2', company_email)
+    if company_phone:
+        _set_text(doc, fmap, 'fill_3_P.2', company_phone)
     shareholders = data.get('shareholders') or []
 
     def _norm_class(raw):
@@ -4158,7 +4198,7 @@ def _fill_nar1_pdf(data):
         _set_text(doc, fmap, 'fill_13_P.3', s.get('email', ''))
         hkid = _parse_hkid_partial(s.get('idNumber', ''))
         if hkid:
-            _set_text(doc, fmap, 'fill_14_P.3', hkid)
+            _set_text(doc, fmap, 'fill_14_P.3', hkid, align='right')
         if s.get('passportCountry'):
             _set_text(doc, fmap, 'fill_15_P.3', s.get('passportCountry', ''))
         if s.get('passportNumber'):
@@ -4199,7 +4239,7 @@ def _fill_nar1_pdf(data):
         _set_text(doc, fmap, 'fill_15_P.5', d.get('email', ''))
         hkid = _parse_hkid_partial(d.get('idNumber', ''))
         if hkid:
-            _set_text(doc, fmap, 'fill_16_P.5', hkid)
+            _set_text(doc, fmap, 'fill_16_P.5', hkid, align='right')
         if d.get('passportCountry'):
             _set_text(doc, fmap, 'fill_17_P.5', d.get('passportCountry', ''))
         if d.get('passportNumber'):
@@ -4225,6 +4265,8 @@ def _fill_nar1_pdf(data):
 
     # ── P.8 總結 + 簽署 ──
     _set_text(doc, fmap, 'fill_1_P.8', br8)
+    # 14. 股本/公司成員詳情 — 預設勾選「非上市公司的成員詳情列於附表一」
+    _check(doc, fmap, 'cb_1_P.8', True)
     valid_members = [sh for sh in shareholders if (int(sh.get('shares', 0) or 0)) > 0]
     is_listed = '上市' in company_type or 'listed' in ct_lower
     if not is_listed:
@@ -4420,7 +4462,7 @@ def _fill_nar1_pdf(data):
         _set_text(doc, fmap, 'fill_16_P.11', s.get('email', ''))
         hkid = _parse_hkid_partial(s.get('idNumber', ''))
         if hkid:
-            _set_text(doc, fmap, 'fill_17_P.11', hkid)
+            _set_text(doc, fmap, 'fill_17_P.11', hkid, align='right')
         if s.get('passportCountry'):
             _set_text(doc, fmap, 'fill_18_P.11', s.get('passportCountry', ''))
         if s.get('passportNumber'):
@@ -4470,7 +4512,7 @@ def _fill_nar1_pdf(data):
         _set_text(doc, fmap, 'fill_16_P.13', d.get('email', ''))
         hkid = _parse_hkid_partial(d.get('idNumber', ''))
         if hkid:
-            _set_text(doc, fmap, 'fill_17_P.13', hkid)
+            _set_text(doc, fmap, 'fill_17_P.13', hkid, align='right')
         if d.get('passportCountry'):
             _set_text(doc, fmap, 'fill_18_P.13', d.get('passportCountry', ''))
         if d.get('passportNumber'):
@@ -4671,6 +4713,1530 @@ def generate_nr1_pdf():
         return jsonify({'error': str(e)}), 500
 
 
+# ─── NDR1 PDF 生成（撤銷註冊申請書） ───
+
+# Global font cache for CJK widget AP rendering
+_CJK_AP_FONT_CACHE = {}
+
+
+def _get_cjk_font(fontfile):
+    """Get or create a cached fitz.Font for glyph-index lookups."""
+    if fontfile not in _CJK_AP_FONT_CACHE:
+        _CJK_AP_FONT_CACHE[fontfile] = fitz.Font(fontfile=fontfile)
+    return _CJK_AP_FONT_CACHE[fontfile]
+
+
+def _set_widget_cjk_ap(doc, page, widget, text, fontsize, fontfile, font_pages, font_xref_map, align='left', valign='bottom'):
+    """Build a custom widget AP stream with embedded CJK font.
+
+    Unlike page-content overlay (which hides the widget with F=3),
+    this writes the CJK text directly into the widget's /AP stream,
+    so the widget stays visible as a blue editable box with readable CJK text.
+
+    Automatically wraps text into multiple lines when it exceeds widget width
+    at the given fontsize (instead of shrinking font below readability).
+
+    align: 'left' (default) or 'center' — horizontal alignment per line.
+    valign: 'bottom' (default) or 'center' — vertical alignment of the entire
+            text block within the widget.
+    """
+    try:
+        import re as _re
+        pi = page.number
+        fontname = 'CJK_TPL'
+
+        # Embed CJK font on page if not already done (tracked per-page).
+        if pi not in font_pages:
+            page.clean_contents()
+            font_xref = page.insert_font(fontname=fontname, fontfile=fontfile)
+            font_pages.add(pi)
+            font_xref_map[pi] = font_xref
+        font_xref = font_xref_map.get(pi)
+        if not font_xref:
+            return  # font embedding failed, skip this widget
+
+        rect = widget.rect
+        w_width = rect.width
+        h_height = rect.height
+
+        cjk_font = _get_cjk_font(fontfile)
+
+        def _char_width(ch):
+            """Width of a single character in points at current fontsize."""
+            return fontsize * (1.0 if ord(ch) > 127 else 0.5)
+
+        def _build_hex(line):
+            """Convert a text line to PDF hex string using glyph indices."""
+            gids = []
+            for ch in line:
+                gid = cjk_font.has_glyph(ord(ch))
+                gids.append(gid if gid else 0)
+            return '<' + ''.join(f'{gid:04x}' for gid in gids) + '>'
+
+        inset = 2.0
+        usable_w = w_width - 2 * inset
+        line_height = fontsize * 1.35  # line spacing
+
+        # Build lines: word-aware wrapping with explicit \n support
+        paragraphs = text.split('\n')
+
+        def _wrap_paragraph(para):
+            """Tokenize and wrap a single paragraph. Empty → [''], else wrapped lines."""
+            if not para:
+                return ['']
+            tokens = []
+            i = 0
+            while i < len(para):
+                ch = para[i]
+                if ord(ch) > 127:
+                    tokens.append(ch)
+                    i += 1
+                else:
+                    j = i
+                    while j < len(para) and ord(para[j]) <= 127:
+                        j += 1
+                    tokens.append(para[i:j])
+                    i = j
+
+            para_width = sum(_char_width(ch) for ch in para)
+            if para_width <= usable_w:
+                return [para]
+
+            lines = []
+            cur_tokens = []
+            cur_w = 0.0
+            for tok in tokens:
+                tok_w = sum(_char_width(ch) for ch in tok)
+                if tok_w > usable_w:
+                    if cur_tokens:
+                        lines.append(''.join(cur_tokens))
+                        cur_tokens = []
+                        cur_w = 0.0
+                    for ch in tok:
+                        ch_w = _char_width(ch)
+                        if cur_w + ch_w > usable_w and cur_tokens:
+                            lines.append(''.join(cur_tokens))
+                            cur_tokens = [ch]
+                            cur_w = ch_w
+                        else:
+                            cur_tokens.append(ch)
+                            cur_w += ch_w
+                elif cur_w + tok_w > usable_w:
+                    lines.append(''.join(cur_tokens))
+                    cur_tokens = [tok]
+                    cur_w = tok_w
+                else:
+                    cur_tokens.append(tok)
+                    cur_w += tok_w
+            if cur_tokens:
+                lines.append(''.join(cur_tokens))
+            return lines
+
+        lines = []
+        for para in paragraphs:
+            lines.extend(_wrap_paragraph(para))
+
+        # Limit lines to what fits vertically in the widget
+        max_lines = max(1, int((h_height - inset) / line_height))
+        if len(lines) > max_lines:
+            lines = lines[:max_lines]
+            # Truncate last visible line with ellipsis
+            if len(lines[-1]) > 1:
+                lines[-1] = lines[-1][:-2] + '…'
+
+        line_hexes = [_build_hex(ln) for ln in lines]
+
+        # Calculate positions per line
+        line_widths = [sum(_char_width(ch) for ch in ln) for ln in lines]
+        total_block_h = len(lines) * line_height
+
+        # Vertical start position for the entire text block
+        if valign == 'center':
+            block_top = (h_height - total_block_h) / 2.0
+        else:
+            block_top = 0.0
+
+        # Build content stream — one Tm + Tj per line
+        stream_parts = [f"/Tx BMC\nq\nBT\n/{fontname} {fontsize} Tf"]
+        for i, (lh, lw) in enumerate(zip(line_hexes, line_widths)):
+            if align == 'center':
+                lx = max(inset, (w_width - lw) / 2.0)
+            else:
+                lx = inset
+            ly = h_height - (block_top + i * line_height + fontsize * 1.05)
+            stream_parts.append(f"1 0 0 1 {lx} {ly} Tm\n{lh} Tj")
+        stream_parts.append("ET\nQ\nEMC")
+        stream = '\n'.join(stream_parts)
+    except Exception:
+        return  # If font embedding or text processing fails, skip this widget
+
+    try:
+        # Create a new PDF object for the Form XObject
+        form_xref = doc.get_new_xref()
+        form_dict = (
+            f'<<\n'
+            f'/Type /XObject\n'
+            f'/Subtype /Form\n'
+            f'/BBox [0 0 {w_width} {h_height}]\n'
+            f'/Resources << /Font << /{fontname} {font_xref} 0 R >> >>\n'
+            f'/Length {len(stream.encode("utf-8"))}\n'
+            f'>>'
+        )
+        doc.update_object(form_xref, form_dict)
+        doc.update_stream(form_xref, stream.encode('utf-8'))
+
+        # Set as widget's normal appearance
+        annot_xref = widget._annot.xref
+        ap_dict = f'<< /N {form_xref} 0 R >>'
+        doc.xref_set_key(annot_xref, 'AP', ap_dict)
+
+        # Set the field value (UTF-16BE is correct for AcroForm /V)
+        doc.xref_set_key(annot_xref, 'V', fitz.get_pdf_str(text))
+    except Exception:
+        pass  # If anything fails, widget stays unfilled (better than crashing)
+
+
+def _stamp_br_on_page(doc, page_index, br_text):
+    """在指定頁面上用 insert_textbox 疊加 BR 號碼（數字字體，不依賴 AcroForm widget）。
+    放在頁面頂部靠右位置，確保每一頁都有商業登記號碼。"""
+    if not br_text:
+        return
+    page = doc[page_index]
+    rect = page.rect
+    text_rect = fitz.Rect(rect.width - 150, 15, rect.width - 10, 30)
+    try:
+        page.insert_textbox(
+            text_rect,
+            f"BR: {br_text}",
+            fontname="helv",
+            fontsize=7,
+            color=(0.2, 0.2, 0.2),
+            align=2,  # right-align
+        )
+    except Exception:
+        pass  # 若頁面無法插入文字則靜默跳過
+
+
+def _stamp_br_on_all_pages(doc, br_text):
+    """在 PDF 每一頁疊加 BR 號碼"""
+    if not br_text or not br_text.strip():
+        return
+    for pi in range(doc.page_count):
+        _stamp_br_on_page(doc, pi, br_text)
+
+
+def _fill_ndr1_pdf(data):
+    """填充 NDR1 PDF 模板，返回 bytes（仿照 NAR1 模式）
+
+    模板實際佈局（從 PDF 提取）：
+    P.1: BR + 公司名 + 聲明勾選 + 申請人資料（中英文名/地址/電話/傳真/電郵/參考編號）
+    P.2-P.3: 自然人申請人詳情（姓名/地址/電郵/傳真）
+    P.4: 簽署人 + 日期
+    """
+    template_path = os.path.join(os.path.dirname(__file__), '..', 'public', 'templates', 'NDR1-template.pdf')
+    doc = fitz.open(template_path)
+    fmap = _build_field_page_map(doc)
+
+    # Locate a system CJK font for blue widget AP rendering
+    _tpl_cjk_fontfile = None
+    for _sf in ['C:/Windows/Fonts/simhei.ttf', 'C:/Windows/Fonts/simsun.ttc',
+                 'C:/Windows/Fonts/msjh.ttc', 'C:/Windows/Fonts/Deng.ttf']:
+        if os.path.exists(_sf):
+            _tpl_cjk_fontfile = _sf
+            break
+
+    _cjk_ap_font_pages = set()
+    _cjk_ap_font_xref_map = {}
+
+    def _set_cjk_ap(name, value, fontsize=10, align='left', valign='bottom', min_fs=6):
+        """Fill field with blue editable CJK widget AP. Falls back to _set_text for ASCII."""
+        if name not in fmap or not value:
+            return False
+        vstr = str(value)
+        cjk_n = sum(1 for c in vstr if ord(c) > 127)
+        if cjk_n == 0 or not _tpl_cjk_fontfile:
+            # Pure ASCII or no CJK font — use standard _set_text
+            return _set_text(doc, fmap, name, value)
+        pi = fmap[name]
+        for w in doc[pi].widgets():
+            if w.field_name == name:
+                asc_n = len(vstr) - cjk_n
+                fs = fontsize
+                field_w = w.rect.width
+                field_h = w.rect.height
+                if field_w > 0:
+                    usable_w = field_w - 4.0
+                    est_w = fs * (cjk_n * 1.0 + asc_n * 0.66)
+                    if est_w > usable_w:
+                        fs = max(min_fs, int(fs * usable_w / est_w * 0.95))
+                if field_h > 0:
+                    fs = min(fs, max(min_fs, int(field_h - 3)))
+                _set_widget_cjk_ap(doc, doc[pi], w, vstr, fs, _tpl_cjk_fontfile,
+                                   _cjk_ap_font_pages, _cjk_ap_font_xref_map,
+                                   align=align, valign=valign)
+                return True
+        return False
+
+    br8 = re.sub(r'[^0-9A-Za-z]', '', data.get('brNumber', '') or '')[:8]
+
+    # ── P.1: 公司資料 ──
+    _set_text(doc, fmap, 'fill_1_P.1', br8)
+    _set_text(doc, fmap, 'fill_2_P.1', data.get('companyName', ''))
+
+    # 聲明勾選
+    _check(doc, fmap, 'cb_1_P.1', data.get('noOngoingBusiness'))
+    _check(doc, fmap, 'cb_2_P.1', data.get('noOutstandingLiabilities'))
+    _check(doc, fmap, 'cb_3_P.1', data.get('noLegalProceedings'))
+
+    # ── P.1 左下角：申請人資料 ──
+    _set_cjk_ap('fill_3_P.1', data.get('applicantNameCN', ''), align='left')
+    _set_text(doc, fmap, 'fill_4_P.1', data.get('applicantNameEN', ''))
+    _set_cjk_ap('fill_5_P.1', data.get('applicantAddress', ''), min_fs=9, valign='bottom')
+    _set_cjk_ap('fill_6_P.1', data.get('applicantAddress2', ''), min_fs=9, valign='bottom')
+    _set_cjk_ap('fill_7_P.1', data.get('applicantAddress3', ''), min_fs=9, valign='bottom')
+    _set_text(doc, fmap, 'fill_8_P.1', data.get('applicantTel', ''))
+    _set_text(doc, fmap, 'fill_9_P.1', data.get('applicantFax', ''))
+    _set_text(doc, fmap, 'fill_10_P.1', data.get('applicantEmail', ''))
+    _set_text(doc, fmap, 'fill_11_P.1', data.get('applicantReference', ''))
+
+    # ── P.4: 簽署人 + 日期 ──
+    _set_text(doc, fmap, 'fill_2_P.4', data.get('signerName', ''))
+    sign_date = data.get('signDate', '')
+    if sign_date and '-' in sign_date:
+        parts = sign_date.split('-')
+        sign_date = f'{parts[2]}/{parts[1]}/{parts[0]}'  # YYYY-MM-DD → DD/MM/YYYY
+    elif not sign_date:
+        dd = data.get('signDateDay', '')
+        mm = data.get('signDateMonth', '')
+        yy = data.get('signDateYear', '')
+        if dd and mm and yy:
+            sign_date = f'{dd}/{mm}/{yy}'
+    _set_text(doc, fmap, 'fill_3_P.4', sign_date)
+
+    # ── P.2-P.3: 自然人申請人詳情（選人後自動填入）──
+    person = data.get('selectedPerson')
+    if person:
+        cn = person.get('nameChinese', '')
+        en = person.get('nameEnglish', '')
+        surname, other = _parse_english_name(en) if en else ('', '')
+        address = person.get('address', '')
+        flat = person.get('addrFlat', '')
+        building = person.get('addrBuilding', '')
+        street = person.get('addrStreet', '')
+        district = person.get('addrDistrict', '')
+        region = person.get('addrRegion', '')
+        email = person.get('email', '')
+        tel = person.get('phone', '')
+
+        # P.2: 第1位自然人申請人
+        _set_text(doc, fmap, 'fill_1_P.2', br8)
+        _set_cjk_ap('fill_2_P.2', cn, align='center')
+        _set_text(doc, fmap, 'fill_3_P.2', surname)
+        _set_text(doc, fmap, 'fill_4_P.2', other)
+        # Parse address if individual fields are empty
+        if not any([flat, building, street, district, region]) and address:
+            parsed = _parse_address(address)
+            flat = flat or parsed.get('flat', '')
+            building = building or parsed.get('building', '') or parsed.get('block', '')
+            street = street or parsed.get('street', '')
+            district = district or parsed.get('district', '')
+            region = region or parsed.get('country', '')
+        _set_text(doc, fmap, 'fill_6_P.2', flat)
+        _set_text(doc, fmap, 'fill_7_P.2', building)
+        _set_text(doc, fmap, 'fill_8_P.2', street)
+        _set_text(doc, fmap, 'fill_9_P.2', district)
+        _set_text(doc, fmap, 'fill_10_P.2', region)
+        _set_text(doc, fmap, 'fill_11_P.2', email)
+        if tel:
+            _set_text(doc, fmap, 'fill_12_P.2', tel)
+
+    # BR on all pages
+    _stamp_br_on_all_pages(doc, br8)
+
+    pdf_bytes = doc.write(deflate=True)
+    doc.close()
+    return pdf_bytes
+
+
+@app.route('/api/generate-ndr1-pdf', methods=['POST'])
+def generate_ndr1_pdf():
+    try:
+        data = request.json
+        if not data:
+            return jsonify({'error': 'Empty request body'}), 400
+        pdf_bytes = _fill_ndr1_pdf(data)
+        import base64 as b64
+        return jsonify({'pdf': b64.b64encode(pdf_bytes).decode('ascii')})
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+# ─── ND4 PDF 生成（董事/秘書辭任通知書） ───
+
+def _fill_nd4_pdf(data):
+    """填充 ND4 PDF 模板（公司秘書及董事辭任通知書），返回 bytes
+
+    模板佈局：
+    P.1: BR + 公司名 + 公司類型勾選 + 辭任人資料（中英文名/證件/地址） + 簽署 + 提交人
+    P.2: 角色聲明勾選 + Dropdown 劃線 + 簽署人 + 日期
+    P.3-P.6: 空白頁
+    """
+    template_path = os.path.join(os.path.dirname(__file__), '..', 'public', 'templates', 'ND4-template.pdf')
+    doc = fitz.open(template_path)
+    fmap = _build_field_page_map(doc)
+
+    # Locate CJK font for blue widget AP rendering
+    _cjk_fontfile = None
+    for _sf in ['C:/Windows/Fonts/simhei.ttf', 'C:/Windows/Fonts/simsun.ttc',
+                 'C:/Windows/Fonts/msjh.ttc', 'C:/Windows/Fonts/Deng.ttf']:
+        if os.path.exists(_sf):
+            _cjk_fontfile = _sf
+            break
+
+    _cjk_ap_font_pages = set()
+    _cjk_ap_font_xref_map = {}
+
+    def _set_cjk(name, value, fontsize=10, align='left', valign='bottom', min_fs=6):
+        """Fill field with CJK widget AP. Falls back to _set_text for ASCII."""
+        if name not in fmap or not value:
+            return False
+        vstr = str(value)
+        cjk_n = sum(1 for c in vstr if ord(c) > 127)
+        if cjk_n == 0 or not _cjk_fontfile:
+            return _set_text(doc, fmap, name, value)
+        pi = fmap[name]
+        for w in doc[pi].widgets():
+            if w.field_name == name:
+                asc_n = len(vstr) - cjk_n
+                fs = fontsize
+                field_w = w.rect.width
+                field_h = w.rect.height
+                if field_w > 0:
+                    usable_w = field_w - 4.0
+                    est_w = fs * (cjk_n * 1.0 + asc_n * 0.66)
+                    if est_w > usable_w:
+                        fs = max(min_fs, int(fs * usable_w / est_w * 0.95))
+                if field_h > 0:
+                    fs = min(fs, max(min_fs, int(field_h - 3)))
+                _set_widget_cjk_ap(doc, doc[pi], w, vstr, fs, _cjk_fontfile,
+                                   _cjk_ap_font_pages, _cjk_ap_font_xref_map,
+                                   align=align, valign=valign)
+                return True
+        return False
+
+    br8 = re.sub(r'[^0-9A-Za-z]', '', data.get('brNumber', '') or '')[:8]
+    officer_type = data.get('officerType', 'director')  # director / secretary / alternate
+
+    # ── P.1: 公司資料 ──
+    _set_text(doc, fmap, 'fill_1_P.1', br8)
+    _set_text(doc, fmap, 'fill_2_P.1', data.get('companyName', ''))
+
+    # 公司類型勾選 (cb_1=私人, cb_2=公眾, cb_3=擔保)
+    company_type = (data.get('companyType') or '').lower()
+    _check(doc, fmap, 'cb_1_P.1', '私人' in company_type or 'private' in company_type)
+    _check(doc, fmap, 'cb_2_P.1', '公眾' in company_type or 'public' in company_type)
+    _check(doc, fmap, 'cb_3_P.1', '擔保' in company_type)
+
+    # 辭任生效日期（fill_3_P.1 是日期欄）
+    resign_day = data.get('resignationDay', '')
+    resign_month = data.get('resignationMonth', '')
+    resign_year = data.get('resignationYear', '')
+    if resign_day and resign_month and resign_year:
+        _set_text(doc, fmap, 'fill_3_P.1', f'{resign_day}/{resign_month}/{resign_year}')
+
+    # ── P.1: 辭任人資料 ──
+    # fill_3="代替 Alternate to" (僅候補董事)
+    if officer_type == 'alternate':
+        _set_cjk('fill_3_P.1', data.get('officerNameEnglish', ''), align='left')
+    # fill_4=中文姓名, fill_5=英文姓氏, fill_6=英文名字
+    _set_cjk('fill_4_P.1', data.get('officerNameChinese', ''), align='center')
+    _set_text(doc, fmap, 'fill_5_P.1', data.get('surname', ''))
+    _set_text(doc, fmap, 'fill_6_P.1', data.get('otherNames', ''))
+    # 證件：fill_7=HKID部分號碼, fill_8=護照簽發國
+    _set_text(doc, fmap, 'fill_7_P.1', data.get('hkidPartial', ''), align='right')
+    _set_text(doc, fmap, 'fill_8_P.1', data.get('passportCountry', ''))
+    # 護照部分號碼（模板可能無此欄位，前端發 fill_8b_P.1）
+    if 'fill_8b_P.1' in fmap:
+        _set_text(doc, fmap, 'fill_8b_P.1', data.get('passportPartial', ''))
+
+    # ── P.1: 簽署 ──
+    _set_text(doc, fmap, 'fill_9_P.1', data.get('signerName', ''))
+    _set_text(doc, fmap, 'fill_10_P.1', data.get('signerCapacity', ''))
+    _set_text(doc, fmap, 'fill_11_P.1', data.get('signDateDay', ''))
+    _set_text(doc, fmap, 'fill_12_P.1', data.get('signDateMonth', ''))
+    _set_text(doc, fmap, 'fill_13_P.1', data.get('signDateYear', ''))
+
+    # 身份 toggle: toggle_4=自然人, toggle_5=法人
+    identity = data.get('identity', 'natural')
+    _check(doc, fmap, 'toggle_4_P.1', identity == 'natural')
+    _check(doc, fmap, 'toggle_5_P.1', identity == 'corporate')
+
+    # ── P.1: 提交人 ──
+    _set_cjk('fill_14_P.1', data.get('presentorName', ''), align='left')
+    _set_cjk('fill_15_P.1', data.get('presentorAddress', ''), min_fs=8, valign='bottom')
+    _set_text(doc, fmap, 'fill_16_P.1', data.get('presentorPhone', ''))
+    _set_text(doc, fmap, 'fill_17_P.1', data.get('presentorFax', ''))
+    _set_text(doc, fmap, 'fill_18_P.1', data.get('presentorEmail', ''))
+    _set_text(doc, fmap, 'fill_19_P.1', data.get('presentorReference', ''))
+
+    # ── P.2: 角色聲明 ──
+    _set_text(doc, fmap, 'fill_1_P.2', br8)
+
+    # 角色勾選：cb_1=董事辭任, cb_2=候補董事辭任, cb_3=秘書辭任
+    _check(doc, fmap, 'cb_1_P.2', officer_type == 'director')
+    _check(doc, fmap, 'cb_2_P.2', officer_type == 'alternate')
+    _check(doc, fmap, 'cb_3_P.2', officer_type == 'secretary')
+
+    # ── P.2: Dropdown 劃線聲明 ──
+    # 模板有多個 Dropdown 實例（中英文各行），用於劃掉不適用的角色名稱。
+    # Dropdown1/2 → "Director"/"Secretary" 或 "董事"/"公司秘書" 互斥劃線
+    # Dropdown3/4 → 候補董事互斥
+    # 按 NAR1 風格處理：設 /I + /V + F=4 讓被選中的選項顯示劃線
+    _handle_nd4_dropdowns(doc, fmap, officer_type)
+
+    # ── P.2: 簽署 ──
+    _set_text(doc, fmap, 'fill_2_P.2', data.get('signerName', '') or data.get('presentorName', ''))
+    sign_date = f"{data.get('signDateDay','')}/{data.get('signDateMonth','')}/{data.get('signDateYear','')}"
+    if sign_date != '//':
+        _set_text(doc, fmap, 'fill_3_P.2', sign_date)
+
+    # BR on all pages
+    _stamp_br_on_all_pages(doc, br8)
+
+    pdf_bytes = doc.write(deflate=True)
+    doc.close()
+    return pdf_bytes
+
+
+def _handle_nd4_dropdowns(doc, fmap, officer_type):
+    """處理 ND4 P.2 的 Dropdown 劃線聲明。
+
+    Dropdown1/Dropdown2: 「董事／公司秘書」互斥（cb_1 / cb_3 對應）
+    Dropdown3/Dropdown4: 候補董事互斥（cb_2 對應）
+    Dropdown5/Dropdown6: 秘書辭任互斥
+    Dropdown7/Dropdown8: 簽署人身份（董事/秘書）
+
+    策略：設 widget /I 為對應選項索引，設 /V 為選中的選項值，設 F=4 顯示。
+    """
+    # 角色到 dropdown 選項值的映射（根據模板實際 choice_values）
+    # Dropdown1/3/5/7 通常是第一選項（保留），Dropdown2/4/6/8 是第二選項（劃掉）
+    _dropdown_role_map = {
+        'director':   {'keep': 1, 'cross': 2},   # Dropdown1=保留董事, Dropdown2=劃掉秘書
+        'secretary':  {'keep': 2, 'cross': 1},   # Dropdown1=劃掉董事, Dropdown2=保留秘書
+        'alternate':  {'keep': 2, 'cross': 1},   # Dropdown3=劃掉董事, Dropdown4=保留候補
+    }
+
+    mapping = _dropdown_role_map.get(officer_type)
+    if not mapping:
+        return
+
+    # 遍歷所有 P.2 dropdown 實例，按名稱前綴分組處理
+    dropdown_groups = {}
+    for name, pi in fmap.items():
+        if not name.startswith('Dropdown') or not name.endswith('_P.2'):
+            continue
+        base = name.split('_P.2')[0]  # e.g. "Dropdown1"
+        if base not in dropdown_groups:
+            dropdown_groups[base] = []
+        dropdown_groups[base].append(name)
+
+    for base, names in dropdown_groups.items():
+        # 提取數字後綴: Dropdown1 → 1
+        m = re.match(r'Dropdown(\d+)', base)
+        if not m:
+            continue
+        d_num = int(m.group(1))
+
+        # Dropdown1/2: 董事 vs 秘書
+        # Dropdown3/4: 候補董事互斥
+        # Dropdown5/6: 秘書辭任
+        # Dropdown7/8: 簽署人身份
+        if d_num in (1, 2):
+            # 董事辭任 → Dropdown1=keep 董事, Dropdown2=cross 秘書
+            # 秘書辭任 → Dropdown1=cross 董事, Dropdown2=keep 秘書
+            keep_dd = 'Dropdown1' if officer_type == 'director' else 'Dropdown2'
+            cross_dd = 'Dropdown2' if officer_type == 'director' else 'Dropdown1'
+        elif d_num in (3, 4):
+            # 候補董事 → Dropdown4=keep
+            keep_dd = 'Dropdown4' if officer_type == 'alternate' else 'Dropdown3'
+            cross_dd = 'Dropdown3' if officer_type == 'alternate' else 'Dropdown4'
+        elif d_num in (5, 6):
+            # 秘書辭任 → Dropdown6=keep
+            keep_dd = 'Dropdown6' if officer_type == 'secretary' else 'Dropdown5'
+            cross_dd = 'Dropdown5' if officer_type == 'secretary' else 'Dropdown6'
+        elif d_num in (7, 8):
+            # 簽署人身份 → Dropdown7=董事, Dropdown8=秘書
+            keep_dd = 'Dropdown7' if officer_type == 'director' else 'Dropdown8'
+            cross_dd = 'Dropdown8' if officer_type == 'director' else 'Dropdown7'
+        else:
+            continue
+
+        for name in names:
+            pi = fmap[name]
+            for w in doc[pi].widgets():
+                if w.field_name != name:
+                    continue
+                try:
+                    choices = w.choice_values
+                    if not choices or len(choices) < 2:
+                        continue
+                    # 獲取選項值列表
+                    choice_vals = [cv[0] for cv in choices]
+                    # 決定此 widget 應選哪個
+                    if name.startswith(keep_dd):
+                        idx = 0 if officer_type == 'director' or (d_num in (5, 6) and officer_type == 'secretary') else 1
+                        # 簡化：Dropdown1→選0, Dropdown2→選1 表示"保留此角色"
+                        if d_num % 2 == 1:  # 奇數 dropdown → 保留第一選項
+                            w.field_value = choice_vals[0]
+                        else:
+                            w.field_value = choice_vals[1] if len(choice_vals) > 1 else choice_vals[0]
+                    else:
+                        # 劃掉 → 選相反的
+                        if d_num % 2 == 1:
+                            w.field_value = choice_vals[1] if len(choice_vals) > 1 else choice_vals[0]
+                        else:
+                            w.field_value = choice_vals[0]
+                    w.update()
+                except Exception:
+                    pass
+                break
+
+
+@app.route('/api/generate-nd4-pdf', methods=['POST'])
+def generate_nd4_pdf():
+    try:
+        data = request.json
+        if not data:
+            return jsonify({'error': 'Empty request body'}), 400
+        pdf_bytes = _fill_nd4_pdf(data)
+        import base64 as b64
+        return jsonify({'pdf': b64.b64encode(pdf_bytes).decode('ascii')})
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+# ─── NSC1 PDF 生成（股份配發申報書） ───
+
+def _fill_nsc1_pdf(data):
+    """填充 NSC1 PDF 模板（股份配發申報書），返回 bytes
+
+    接受前端傳來的完整 fields dict（與 generate-template-pdf 兼容），
+    並附加 CJK 字體支持 + BR 全頁蓋印。
+    亦可接受 company_id 從 DB 自動填入公司資料。
+    """
+    template_path = os.path.join(os.path.dirname(__file__), '..', 'public', 'templates', 'NSC1-template.pdf')
+    doc = fitz.open(template_path)
+    fmap = _build_field_page_map(doc)
+
+    # Locate CJK font
+    _cjk_fontfile = None
+    for _sf in ['C:/Windows/Fonts/simhei.ttf', 'C:/Windows/Fonts/simsun.ttc',
+                 'C:/Windows/Fonts/msjh.ttc', 'C:/Windows/Fonts/Deng.ttf']:
+        if os.path.exists(_sf):
+            _cjk_fontfile = _sf
+            break
+    _cjk_ap_font_pages = set()
+    _cjk_ap_font_xref_map = {}
+
+    def _set(name, value, fontsize=10, align='left'):
+        """Fill widget with CJK support."""
+        if name not in fmap or not value:
+            return False
+        vstr = str(value)
+        has_cjk = any(ord(c) > 127 for c in vstr)
+        if not has_cjk:
+            return _set_text(doc, fmap, name, value)
+        pi = fmap[name]
+        for w in doc[pi].widgets():
+            if w.field_name == name:
+                fs = fontsize
+                field_w = w.rect.width
+                if field_w > 0:
+                    usable_w = field_w - 4.0
+                    est_w = fs * len(vstr) * 0.85
+                    if est_w > usable_w:
+                        fs = max(6, int(fs * usable_w / est_w * 0.95))
+                if _cjk_fontfile:
+                    _set_widget_cjk_ap(doc, doc[pi], w, vstr, fs, _cjk_fontfile,
+                                       _cjk_ap_font_pages, _cjk_ap_font_xref_map, align=align)
+                    return True
+                break
+        return _set_text(doc, fmap, name, value)
+
+    # ── Auto-populate company data from DB if company_id provided ──
+    br8 = re.sub(r'[^0-9A-Za-z]', '', data.get('brNumber', '') or '')[:8]
+    company_id = data.get('company_id')
+    if company_id:
+        try:
+            db = get_db()
+            company = db.execute("SELECT * FROM companies WHERE id = ?", (company_id,)).fetchone()
+            if company:
+                c = dict(company)
+                if not br8:
+                    br8 = re.sub(r'[^0-9A-Za-z]', '', c.get('company_number', '') or '')[:8]
+                # Auto-fill company fields
+                for k, v in {
+                    'fill_1_P.1': br8,
+                    'fill_2_P.1': c.get('name', ''),
+                }.items():
+                    if not data.get(k.replace('fill_', '').replace('_P.', ''), ''):
+                        _set_text(doc, fmap, k, v)
+                # Presenter info
+                address = ' '.join(filter(None, [
+                    c.get('reg_flat', ''), c.get('reg_building', ''),
+                    c.get('reg_street', ''), c.get('reg_district', ''), c.get('reg_region', '')
+                ]))
+                for k, v in {
+                    'fill_30_P.1': c.get('name', ''),
+                    'fill_31_P.1': address,
+                    'fill_32_P.1': c.get('phone', ''),
+                    'fill_34_P.1': c.get('email', ''),
+                }.items():
+                    _set_text(doc, fmap, k, v)
+        except Exception:
+            pass  # DB lookup is best-effort; fall through to manual fields
+
+    # ── Fill all provided fields ──
+    fields = data.get('fields', {})
+    for name, value in fields.items():
+        if not value:
+            continue
+        # Detect CJK fields by content
+        vstr = str(value)
+        if any(ord(c) > 127 for c in vstr):
+            _set(name, vstr)
+        else:
+            _set_text(doc, fmap, name, vstr)
+
+    # ── Align center fields ──
+    for name in data.get('alignCenterFields', []):
+        if name in fmap:
+            pi = fmap[name]
+            for w in doc[pi].widgets():
+                if w.field_name == name:
+                    try:
+                        doc.xref_set_key(w._annot.xref, 'Q', '1')
+                    except Exception:
+                        pass
+                    break
+
+    # ── Checkboxes ──
+    for name in (data.get('checkboxes', []) or []):
+        _check(doc, fmap, name, True)
+
+    # ── Overlays ──
+    for ov in (data.get('overlays', []) or []):
+        try:
+            page = doc[ov.get('page', 0)]
+            text = ov.get('text', '')
+            if text:
+                page.insert_textbox(
+                    fitz.Rect(ov.get('x', 0), ov.get('y', 0),
+                              ov.get('x', 0) + 200, ov.get('y', 0) + 20),
+                    text, fontname="helv", fontsize=ov.get('fontsize', 10)
+                )
+        except Exception:
+            pass
+
+    # ── BR on all pages ──
+    _stamp_br_on_all_pages(doc, br8)
+
+    pdf_bytes = doc.write(deflate=True)
+    doc.close()
+    return pdf_bytes
+
+
+@app.route('/api/generate-nsc1-pdf', methods=['POST'])
+def generate_nsc1_pdf():
+    try:
+        data = request.json
+        if not data:
+            return jsonify({'error': 'Empty request body'}), 400
+        pdf_bytes = _fill_nsc1_pdf(data)
+        import base64 as b64
+        return jsonify({'pdf': b64.b64encode(pdf_bytes).decode('ascii')})
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+# ─── NNC2 PDF 生成（更改公司名稱通知書） ───
+
+def _fill_nnc2_pdf(data):
+    """填充 NNC2 PDF 模板（更改公司名稱通知書），返回 bytes
+
+    模板佈局（3 頁）：
+    P.1: BR + 現有名稱(中/英) + 更改後名稱(中/英) + 生效日期 D/M/Y + 簽署 + 提交人
+    P.2-P.3: 空白頁
+    """
+    template_path = os.path.join(os.path.dirname(__file__), '..', 'public', 'templates', 'NNC2-template.pdf')
+    doc = fitz.open(template_path)
+    fmap = _build_field_page_map(doc)
+
+    # Locate CJK font
+    _cjk_fontfile = None
+    for _sf in ['C:/Windows/Fonts/simhei.ttf', 'C:/Windows/Fonts/simsun.ttc',
+                 'C:/Windows/Fonts/msjh.ttc', 'C:/Windows/Fonts/Deng.ttf']:
+        if os.path.exists(_sf):
+            _cjk_fontfile = _sf
+            break
+    _cjk_ap_font_pages = set()
+    _cjk_ap_font_xref_map = {}
+
+    def _set_cjk(name, value, fontsize=10, align='left', valign='bottom', min_fs=6):
+        """Fill field with CJK widget AP. Falls back to _set_text for ASCII."""
+        if name not in fmap or not value:
+            return False
+        vstr = str(value)
+        cjk_n = sum(1 for c in vstr if ord(c) > 127)
+        if cjk_n == 0 or not _cjk_fontfile:
+            return _set_text(doc, fmap, name, value)
+        pi = fmap[name]
+        for w in doc[pi].widgets():
+            if w.field_name == name:
+                asc_n = len(vstr) - cjk_n
+                fs = fontsize
+                field_w = w.rect.width
+                if field_w > 0:
+                    usable_w = field_w - 4.0
+                    est_w = fs * (cjk_n * 1.0 + asc_n * 0.66)
+                    if est_w > usable_w:
+                        fs = max(min_fs, int(fs * usable_w / est_w * 0.95))
+                _set_widget_cjk_ap(doc, doc[pi], w, vstr, fs, _cjk_fontfile,
+                                   _cjk_ap_font_pages, _cjk_ap_font_xref_map,
+                                   align=align, valign=valign)
+                return True
+        return False
+
+    br8 = re.sub(r'[^0-9A-Za-z]', '', data.get('brNumber', '') or '')[:8]
+
+    # ── P.1: Company Info ──
+    _set_text(doc, fmap, 'fill_1_P.1', br8)                          # BR 號碼（右上角窄欄）
+    _set_cjk('fill_2_P.1', data.get('oldName', '') or data.get('companyName', ''), align='center')  # 現有英文名稱
+    _set_cjk('fill_3_P.1', data.get('newName', ''), align='center')  # 更改後英文名稱
+
+    # 生效日期 D/M/Y（fill_4~6: x=393-571, y=329）
+    _set_text(doc, fmap, 'fill_4_P.1', data.get('effectiveDay', ''))
+    _set_text(doc, fmap, 'fill_5_P.1', data.get('effectiveMonth', ''))
+    _set_text(doc, fmap, 'fill_6_P.1', data.get('effectiveYear', ''))
+
+    # 中文名稱（fill_7-8: x=74, wide）
+    _set_cjk('fill_7_P.1', data.get('oldChineseName', ''), align='center')  # 現有中文名稱
+    _set_cjk('fill_8_P.1', data.get('newChineseName', ''), align='center')  # 更改後中文名稱
+
+    # 簽署 + 日期（fill_9=簽署人姓名, fill_10=決議日期, y=554）
+    _set_cjk('fill_9_P.1', data.get('signerName', '') or data.get('presentorName', ''))
+    _set_text(doc, fmap, 'fill_10_P.1', data.get('resolutionDate', ''))
+
+    # Dropdown 簽署人身份（Dropdown_1="Company Director 公司董事", Dropdown_2="Company Secretary 公司秘書"）
+    signer_capacity = (data.get('signerCapacity') or 'director').lower()
+    if 'Dropdown_1_P.1' in fmap:
+        try:
+            pi = fmap['Dropdown_1_P.1']
+            for w in doc[pi].widgets():
+                if w.field_name == 'Dropdown_1_P.1':
+                    choices = w.choice_values
+                    if choices and len(choices) >= 2:
+                        if 'secretary' in signer_capacity:
+                            w.field_value = choices[1][0]  # 選 Company Secretary
+                        else:
+                            w.field_value = choices[0][0]  # 選 Company Director
+                        w.update()
+                    break
+        except Exception:
+            pass
+
+    # ── P.1: 提交人資料（fill_11-17）──
+    _set_cjk('fill_11_P.1', data.get('presentorNameCn', '') or data.get('presentorNameChinese', ''))
+    _set_text(doc, fmap, 'fill_12_P.1', data.get('presentorNameEn', '') or data.get('presentorNameEnglish', ''))
+    _set_cjk('fill_13_P.1', data.get('presentorAddress', ''), min_fs=8, valign='bottom')
+    _set_text(doc, fmap, 'fill_14_P.1', data.get('presentorPhone', ''))
+    _set_text(doc, fmap, 'fill_15_P.1', data.get('presentorFax', ''))
+    _set_text(doc, fmap, 'fill_16_P.1', data.get('presentorEmail', ''))
+    _set_text(doc, fmap, 'fill_17_P.1', data.get('presentorRef', '') or data.get('presentorReference', ''))
+
+    # ── Auto-populate from DB ──
+    company_id = data.get('company_id')
+    if company_id:
+        try:
+            db = get_db()
+            company = db.execute("SELECT * FROM companies WHERE id = ?", (company_id,)).fetchone()
+            if company:
+                c = dict(company)
+                if not br8:
+                    br8 = re.sub(r'[^0-9A-Za-z]', '', c.get('company_number', '') or '')[:8]
+                    _set_text(doc, fmap, 'fill_1_P.1', br8)
+                # Auto-fill empty fields from DB
+                if not data.get('oldName') and not data.get('companyName'):
+                    _set_cjk('fill_2_P.1', c.get('name', ''), align='center')
+                if not data.get('oldChineseName'):
+                    _set_cjk('fill_7_P.1', c.get('chinese_name', ''), align='center')
+        except Exception:
+            pass
+
+    # BR on all pages
+    _stamp_br_on_all_pages(doc, br8)
+
+    pdf_bytes = doc.write(deflate=True)
+    doc.close()
+    return pdf_bytes
+
+
+@app.route('/api/generate-nnc2-pdf', methods=['POST'])
+def generate_nnc2_pdf():
+    try:
+        data = request.json
+        if not data:
+            return jsonify({'error': 'Empty request body'}), 400
+        # Accept both formats: semantic keys OR {fields: {...}} from generic template
+        if 'fields' in data and isinstance(data.get('fields'), dict):
+            field_map = data['fields']
+            # Merge common field mappings into top-level data keys
+            data.setdefault('oldName', field_map.get('fill_2_P.1', ''))
+            data.setdefault('newName', field_map.get('fill_3_P.1', ''))
+            data.setdefault('effectiveDay', field_map.get('fill_4_P.1', ''))
+            data.setdefault('effectiveMonth', field_map.get('fill_5_P.1', ''))
+            data.setdefault('effectiveYear', field_map.get('fill_6_P.1', ''))
+            data.setdefault('oldChineseName', field_map.get('fill_7_P.1', ''))
+            data.setdefault('newChineseName', field_map.get('fill_8_P.1', ''))
+            data.setdefault('signerName', field_map.get('fill_9_P.1', ''))
+            data.setdefault('resolutionDate', field_map.get('fill_10_P.1', ''))
+            data.setdefault('presentorNameCn', field_map.get('fill_11_P.1', ''))
+            data.setdefault('presentorNameEn', field_map.get('fill_12_P.1', ''))
+            data.setdefault('presentorAddress', field_map.get('fill_13_P.1', ''))
+            data.setdefault('presentorPhone', field_map.get('fill_14_P.1', ''))
+            data.setdefault('presentorFax', field_map.get('fill_15_P.1', ''))
+            data.setdefault('presentorEmail', field_map.get('fill_16_P.1', ''))
+            data.setdefault('presentorRef', field_map.get('fill_17_P.1', ''))
+            if 'brNumber' not in data:
+                data['brNumber'] = field_map.get('fill_1_P.1', '')
+        pdf_bytes = _fill_nnc2_pdf(data)
+        import base64 as b64
+        return jsonify({'pdf': b64.b64encode(pdf_bytes).decode('ascii')})
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+# ─── NNC1 PDF 生成（法團成立表格） ───
+
+def _fill_nnc1_pdf(data):
+    """填充 NNC1 PDF 模板（法團成立表格股份有限公司），返回 bytes
+
+    模板佈局（24 頁）：
+    P.1:  公司名稱(中/英) + 公司類別 checkbox + 業務性質 + 註冊地址 + 提交人
+    P.2:  電郵/電話 + 股本結構表
+    P.3:  創辦成員（股東）資料
+    P.4:  公司秘書（自然人）
+    P.5:  公司秘書（法人團體）
+    P.6:  董事（自然人）
+    P.7:  董事（法人團體）+ 簽署
+    P.8:  創辦成員陳述書（簽署 + 續頁頁數）
+    P.9-P.13: 續頁（同 P.3-P.7）
+    P.14: 呈遞聲明書
+    """
+    template_path = os.path.join(os.path.dirname(__file__), '..', 'public', 'templates', 'NNC1-template.pdf')
+    doc = fitz.open(template_path)
+    fmap = _build_field_page_map(doc)
+
+    # Locate CJK font
+    _cjk_fontfile = None
+    for _sf in ['C:/Windows/Fonts/simhei.ttf', 'C:/Windows/Fonts/simsun.ttc',
+                 'C:/Windows/Fonts/msjh.ttc', 'C:/Windows/Fonts/Deng.ttf']:
+        if os.path.exists(_sf):
+            _cjk_fontfile = _sf
+            break
+    _cjk_ap_font_pages = set()
+    _cjk_ap_font_xref_map = {}
+
+    def _set_cjk(name, value, fontsize=10, align='left', valign='bottom', min_fs=6):
+        """Fill field with CJK widget AP. Falls back to _set_text for ASCII."""
+        if name not in fmap or not value:
+            return False
+        vstr = str(value)
+        cjk_n = sum(1 for c in vstr if ord(c) > 127)
+        if cjk_n == 0 or not _cjk_fontfile:
+            return _set_text(doc, fmap, name, value)
+        pi = fmap[name]
+        for w in doc[pi].widgets():
+            if w.field_name == name:
+                asc_n = len(vstr) - cjk_n
+                fs = fontsize
+                field_w = w.rect.width
+                field_h = w.rect.height
+                if field_w > 0:
+                    usable_w = field_w - 4.0
+                    est_w = fs * (cjk_n * 1.0 + asc_n * 0.66)
+                    if est_w > usable_w:
+                        fs = max(min_fs, int(fs * usable_w / est_w * 0.95))
+                if field_h > 0:
+                    fs = min(fs, max(min_fs, int(field_h - 3)))
+                _set_widget_cjk_ap(doc, doc[pi], w, vstr, fs, _cjk_fontfile,
+                                   _cjk_ap_font_pages, _cjk_ap_font_xref_map,
+                                   align=align, valign=valign)
+                return True
+        return False
+
+    br8 = re.sub(r'[^0-9A-Za-z]', '', data.get('brNumber', '') or '')[:8]
+
+    # ── P.1: 公司名稱 ──
+    _set_cjk('fill_1_P.1', data.get('companyName', '') or data.get('nameEnglish', ''), align='center')
+    _set_cjk('fill_2_P.1', data.get('companyChinese', '') or data.get('nameChinese', ''), align='center')
+
+    # 公司類別 checkbox
+    company_type = (data.get('companyType') or '').lower()
+    _check(doc, fmap, 'cb_1_P.1', '私人' in company_type or 'private' in company_type)
+    _check(doc, fmap, 'cb_2_P.1', '公眾' in company_type or 'public' in company_type)
+
+    # 業務性質
+    _set_text(doc, fmap, 'fill_3_P.1', data.get('businessCode', ''))        # 業務編碼（窄欄 48px）
+    _set_cjk('fill_4_P.1', data.get('businessNature', ''), align='center')  # 業務描述（寬欄 420px）
+
+    # 註冊地址（fill_5-8: 室/大廈/街道/區）
+    _set_cjk('fill_5_P.1', data.get('addrFlat', ''))
+    _set_cjk('fill_6_P.1', data.get('addrBuilding', ''))
+    _set_cjk('fill_7_P.1', data.get('addrStreet', ''))
+    _set_cjk('fill_8_P.1', data.get('addrDistrict', ''))
+
+    # 提交人（fill_9-15）
+    _set_cjk('fill_9_P.1', data.get('presentorNameCn', '') or data.get('submitterNameCn', ''))
+    _set_text(doc, fmap, 'fill_10_P.1', data.get('presentorNameEn', '') or data.get('submitterNameEn', ''))
+    _set_cjk('fill_11_P.1', data.get('presentorAddress', '') or data.get('submitterAddress', ''), min_fs=7, valign='bottom')
+    _set_text(doc, fmap, 'fill_12_P.1', data.get('presentorPhone', '') or data.get('submitterPhone', ''))
+    _set_text(doc, fmap, 'fill_13_P.1', data.get('presentorFax', '') or data.get('submitterFax', ''))
+    _set_text(doc, fmap, 'fill_14_P.1', data.get('presentorEmail', '') or data.get('submitterEmail', ''))
+    _set_text(doc, fmap, 'fill_15_P.1', data.get('presentorRef', '') or data.get('submitterRef', ''))
+
+    # ── P.2: 聯絡 + 股本 ──
+    _set_text(doc, fmap, 'fill_1_P.2', data.get('companyEmail', ''))
+    _set_text(doc, fmap, 'fill_2_P.2', data.get('companyPhone', ''))
+
+    # 股本表 (Row 1: fill_3-8, Row 2: fill_9-14)
+    shares_data = data.get('shares', [])
+    # P.2 also accepts flat fields for single-share-class companies
+    if not shares_data and data.get('shareClass'):
+        shares_data = [{
+            'class': data.get('shareClass', 'Ordinary'),
+            'number': data.get('totalShares', ''),
+            'currency': data.get('shareCurrency', 'HKD'),
+            'totalAmount': data.get('shareCapital', ''),
+            'paid': data.get('totalPaid', ''),
+            'unpaid': data.get('totalUnpaid', ''),
+        }]
+    for idx, sh in enumerate(shares_data[:2]):  # P.2 最多兩行
+        row_offset = idx * 8  # Row1=fill_3-8, Row2=fill_9-14 → offset diff = 6 per field
+        # fill_3/9=類別, fill_4/10=數目, fill_5/11=貨幣, fill_6/12=總額, fill_7/13=已繳, fill_8/14=未繳
+        _set_text(doc, fmap, f'fill_{3 + row_offset}_P.2', sh.get('class', ''))
+        _set_text(doc, fmap, f'fill_{4 + row_offset}_P.2', str(sh.get('number', '')))
+        _set_text(doc, fmap, f'fill_{5 + row_offset}_P.2', sh.get('currency', ''))
+        _set_text(doc, fmap, f'fill_{6 + row_offset}_P.2', sh.get('totalAmount', ''))
+        _set_text(doc, fmap, f'fill_{7 + row_offset}_P.2', sh.get('paid', ''))
+        _set_text(doc, fmap, f'fill_{8 + row_offset}_P.2', sh.get('unpaid', ''))
+
+    # 合計行 (fill_16-19 = 貨幣/總額/已繳/未繳)
+    _set_text(doc, fmap, 'fill_16_P.2', data.get('totalCurrency', 'HKD'))
+    _set_text(doc, fmap, 'fill_17_P.2', data.get('totalCapital', ''))
+    _set_text(doc, fmap, 'fill_18_P.2', data.get('totalPaid', ''))
+    _set_text(doc, fmap, 'fill_19_P.2', data.get('totalUnpaid', ''))
+
+    # P.2 備註（fill_24=窄列, fill_25=寬列）
+    _set_text(doc, fmap, 'fill_24_P.2', data.get('notesLeft', '') or data.get('notesRef', ''))
+    _set_cjk('fill_25_P.2', data.get('notes', '') or data.get('remarks', ''), min_fs=7, valign='bottom')
+
+    # ── Helper: get first officer of each type ──
+    officers = data.get('officers', [])
+    first_sec_nat = next((o for o in officers if o.get('role') == 'secretary' and o.get('identity') != 'corporate'), None)
+    first_sec_corp = next((o for o in officers if o.get('role') == 'secretary' and o.get('identity') == 'corporate'), None)
+    first_dir_nat = next((o for o in officers if o.get('role') == 'director' and o.get('identity') != 'corporate'), None)
+    first_dir_corp = next((o for o in officers if o.get('role') == 'director' and o.get('identity') == 'corporate'), None)
+
+    shareholders = data.get('shareholders', [])
+    first_sh = shareholders[0] if shareholders else None
+    signer = data.get('signer', {}) or {}
+
+    # Name parsing helpers
+    def _parse_en_name(en):
+        parts = (en or '').strip().split()
+        return {'surname': parts[0] if parts else '', 'otherNames': ' '.join(parts[1:]) if len(parts) > 1 else ''}
+
+    def _parse_addr(addr):
+        parts = (addr or '').split(',')
+        return {
+            'flat': parts[0].strip() if len(parts) > 0 else '',
+            'building': parts[1].strip() if len(parts) > 1 else '',
+            'street': parts[2].strip() if len(parts) > 2 else '',
+            'district': parts[3].strip() if len(parts) > 3 else '',
+            'region': parts[4].strip() if len(parts) > 4 else '',
+        }
+
+    def _fmt_hkid(id_str):
+        return (id_str or '').strip()[:4]
+
+    # ── P.3: 創辦成員（股東）──
+    if first_sh:
+        _set_cjk('fill_1_P.3', first_sh.get('name', ''), align='center')       # 中文姓名
+        en = _parse_en_name(first_sh.get('surname', '') + ' ' + first_sh.get('otherNames', ''))
+        _set_text(doc, fmap, 'fill_2_P.3', first_sh.get('surname', '') or en['surname'])
+        _set_text(doc, fmap, 'fill_3_P.3', first_sh.get('otherNames', '') or en['otherNames'])
+        # fill_4=OR body-corporate alternative (法人備選), leave empty for natural person
+
+        # 地址（fill_5-9: 室/大廈/街道/區/國家）
+        addr = _parse_addr(first_sh.get('address', ''))
+        _set_cjk('fill_5_P.3', addr['flat'])
+        _set_cjk('fill_6_P.3', addr['building'])
+        _set_cjk('fill_7_P.3', addr['street'])
+        _set_cjk('fill_8_P.3', addr['district'])
+        _set_cjk('fill_9_P.3', addr['region'])
+
+        # 持股（fill_10-13: 類別/數目/貨幣/總額）
+        _set_text(doc, fmap, 'fill_10_P.3', first_sh.get('shareType', 'Ordinary'))
+        _set_text(doc, fmap, 'fill_11_P.3', str(first_sh.get('shares', '')))
+        _set_text(doc, fmap, 'fill_12_P.3', 'HKD')
+        _set_text(doc, fmap, 'fill_13_P.3', first_sh.get('amountPaid', ''))
+
+        # 合計行（fill_18=總股數）
+        total_shares = sum(int(str(s.get('shares', '0')) or '0') for s in shareholders)
+        _set_text(doc, fmap, 'fill_18_P.3', str(total_shares) if total_shares else '')
+
+    # ── P.4: 公司秘書（自然人）──
+    if first_sec_nat:
+        en = _parse_en_name(first_sec_nat.get('nameEnglish', ''))
+        _set_cjk('fill_1_P.4', first_sec_nat.get('nameChinese', ''), align='center')
+        _set_text(doc, fmap, 'fill_2_P.4', en['surname'])
+        _set_text(doc, fmap, 'fill_3_P.4', en['otherNames'])
+        addr = _parse_addr(first_sec_nat.get('address', ''))
+        _set_cjk('fill_8_P.4', addr['flat'])
+        _set_cjk('fill_9_P.4', addr['building'])
+        _set_cjk('fill_10_P.4', addr['street'])
+        _set_cjk('fill_11_P.4', addr['district'])
+        _set_text(doc, fmap, 'fill_12_P.4', first_sec_nat.get('email', ''))
+        _set_text(doc, fmap, 'fill_13_P.4', _fmt_hkid(first_sec_nat.get('idNumber', '')), align='right')
+        _check(doc, fmap, 'cb_1_P.4', True)  # 無須領有 TCSP 牌照
+
+    # ── P.5: 公司秘書（法人團體）──
+    if first_sec_corp:
+        _set_cjk('fill_1_P.5', first_sec_corp.get('nameChinese', ''), align='center')
+        _set_text(doc, fmap, 'fill_2_P.5', first_sec_corp.get('nameEnglish', ''))
+        addr = _parse_addr(first_sec_corp.get('address', ''))
+        _set_cjk('fill_3_P.5', addr['flat'])
+        _set_cjk('fill_4_P.5', addr['building'])
+        _set_cjk('fill_5_P.5', addr['street'])
+        _set_cjk('fill_6_P.5', addr['district'])
+        _set_text(doc, fmap, 'fill_7_P.5', first_sec_corp.get('email', ''))
+        _set_text(doc, fmap, 'fill_8_P.5', first_sec_corp.get('companyNumberRef', '') or first_sec_corp.get('idNumber', ''))
+        _check(doc, fmap, 'cb_1_P.5', True)
+
+    # ── P.6: 董事（自然人）──
+    if first_dir_nat:
+        en = _parse_en_name(first_dir_nat.get('nameEnglish', ''))
+        _set_cjk('fill_1_P.6', first_dir_nat.get('nameChinese', ''), align='center')
+        _set_text(doc, fmap, 'fill_2_P.6', en['surname'])
+        _set_text(doc, fmap, 'fill_3_P.6', en['otherNames'])
+        addr = _parse_addr(first_dir_nat.get('address', ''))
+        _set_cjk('fill_8_P.6', addr['flat'])
+        _set_cjk('fill_9_P.6', addr['building'])
+        _set_cjk('fill_10_P.6', addr['street'])
+        _set_cjk('fill_11_P.6', addr['district'])
+        _set_cjk('fill_12_P.6', addr['region'])
+        _set_text(doc, fmap, 'fill_13_P.6', first_dir_nat.get('email', ''))
+        _set_text(doc, fmap, 'fill_14_P.6', _fmt_hkid(first_dir_nat.get('idNumber', '')), align='right')
+        _check(doc, fmap, 'cb_1_P.6', True)  # 同意擔任董事
+
+    # ── P.7: 董事（法人團體）──
+    if first_dir_corp:
+        _set_cjk('fill_1_P.7', first_dir_corp.get('nameChinese', ''), align='center')
+        _set_text(doc, fmap, 'fill_2_P.7', first_dir_corp.get('nameEnglish', ''))
+        addr = _parse_addr(first_dir_corp.get('address', ''))
+        _set_cjk('fill_3_P.7', addr['flat'])
+        _set_cjk('fill_4_P.7', addr['building'])
+        _set_cjk('fill_5_P.7', addr['street'])
+        _set_cjk('fill_6_P.7', addr['district'])
+        _set_cjk('fill_7_P.7', addr['region'])
+        _set_text(doc, fmap, 'fill_8_P.7', first_dir_corp.get('email', ''))
+        _set_text(doc, fmap, 'fill_9_P.7', first_dir_corp.get('companyNumberRef', '') or first_dir_corp.get('idNumber', ''))
+        _check(doc, fmap, 'cb_1_P.7', True)
+        # 簽署人（法人董事需要簽署人，用股東/創辦成員作為簽署人）
+        signer_name = signer.get('nameEnglish', '') or signer.get('surname', '')
+        if not signer_name and first_sh:
+            signer_name = (first_sh.get('surname', '') + ' ' + first_sh.get('otherNames', '')).strip()
+        _set_text(doc, fmap, 'fill_10_P.7', signer_name)
+
+    # ── P.8: 創辦成員陳述書 ──
+    # fill_1-5: 續頁頁數（A=秘書自然人, B=秘書法人, C=董事自然人, D=董事法人, E=額外法人董事）
+    sec_nat_count = sum(1 for o in officers if o.get('role') == 'secretary' and o.get('identity') != 'corporate')
+    sec_corp_count = sum(1 for o in officers if o.get('role') == 'secretary' and o.get('identity') == 'corporate')
+    dir_nat_count = sum(1 for o in officers if o.get('role') == 'director' and o.get('identity') != 'corporate')
+    dir_corp_count = sum(1 for o in officers if o.get('role') == 'director' and o.get('identity') == 'corporate')
+
+    # Only fill page counts for types that need continuation sheets (>1)
+    _set_text(doc, fmap, 'fill_1_P.8', str(sec_nat_count - 1) if sec_nat_count > 1 else '')
+    _set_text(doc, fmap, 'fill_2_P.8', str(sec_corp_count - 1) if sec_corp_count > 1 else '')
+    _set_text(doc, fmap, 'fill_3_P.8', str(dir_nat_count - 1) if dir_nat_count > 1 else '')
+    _set_text(doc, fmap, 'fill_4_P.8', str(dir_corp_count - 1) if dir_corp_count > 1 else '')
+    _set_text(doc, fmap, 'fill_5_P.8', '')  # E = additional body corporate directors
+
+    # PI-NNC1 頁數（受保護資料頁）
+    pi_count = 0
+    if sec_nat_count > 0: pi_count += 1
+    if dir_nat_count > 0: pi_count += 1
+    _set_text(doc, fmap, 'fill_6_P.8', str(pi_count) if pi_count > 0 else '')
+
+    # 創辦成員簽署（fill_7=姓名, fill_8=日期 DD/MM/YYYY）
+    signer_fullname = signer.get('nameEnglish', '') or signer.get('fullName', '')
+    if not signer_fullname and first_sh:
+        signer_fullname = (first_sh.get('surname', '') + ' ' + first_sh.get('otherNames', '')).strip()
+    _set_text(doc, fmap, 'fill_7_P.8', signer_fullname)
+    sign_date = data.get('signerDate', '')
+    if sign_date:
+        _set_text(doc, fmap, 'fill_8_P.8', sign_date)
+
+    # ── Auto-populate from DB ──
+    company_id = data.get('company_id')
+    if company_id:
+        try:
+            db = get_db()
+            company = db.execute("SELECT * FROM companies WHERE id = ?", (company_id,)).fetchone()
+            if company:
+                c = dict(company)
+                if not br8:
+                    br8 = re.sub(r'[^0-9A-Za-z]', '', c.get('company_number', '') or '')[:8]
+                if not data.get('companyName'):
+                    _set_cjk('fill_1_P.1', c.get('name', ''), align='center')
+                if not data.get('companyChinese'):
+                    _set_cjk('fill_2_P.1', c.get('chinese_name', ''), align='center')
+                # Address
+                if not data.get('addrFlat'):
+                    _set_cjk('fill_5_P.1', c.get('reg_flat', ''))
+                    _set_cjk('fill_6_P.1', c.get('reg_building', ''))
+                    _set_cjk('fill_7_P.1', c.get('reg_street', ''))
+                    _set_cjk('fill_8_P.1', c.get('reg_district', ''))
+                if not data.get('companyEmail'):
+                    _set_text(doc, fmap, 'fill_1_P.2', c.get('email', ''))
+                if not data.get('companyPhone'):
+                    _set_text(doc, fmap, 'fill_2_P.2', c.get('phone', ''))
+        except Exception:
+            pass
+
+    # BR on all pages
+    _stamp_br_on_all_pages(doc, br8)
+
+    pdf_bytes = doc.write(deflate=True)
+    doc.close()
+    return pdf_bytes
+
+
+@app.route('/api/generate-nnc1-pdf', methods=['POST'])
+def generate_nnc1_pdf():
+    try:
+        data = request.json
+        if not data:
+            return jsonify({'error': 'Empty request body'}), 400
+        # Accept both formats: semantic keys OR {fields: {...}} from generic template
+        if 'fields' in data and isinstance(data.get('fields'), dict):
+            fm = data['fields']
+            data.setdefault('companyName', fm.get('fill_1_P.1', ''))
+            data.setdefault('companyChinese', fm.get('fill_2_P.1', ''))
+            data.setdefault('businessCode', fm.get('fill_3_P.1', ''))
+            data.setdefault('businessNature', fm.get('fill_4_P.1', ''))
+            data.setdefault('addrFlat', fm.get('fill_5_P.1', ''))
+            data.setdefault('addrBuilding', fm.get('fill_6_P.1', ''))
+            data.setdefault('addrStreet', fm.get('fill_7_P.1', ''))
+            data.setdefault('addrDistrict', fm.get('fill_8_P.1', ''))
+            data.setdefault('presentorNameCn', fm.get('fill_9_P.1', ''))
+            data.setdefault('presentorNameEn', fm.get('fill_10_P.1', ''))
+            data.setdefault('presentorAddress', fm.get('fill_11_P.1', ''))
+            data.setdefault('presentorPhone', fm.get('fill_12_P.1', ''))
+            data.setdefault('presentorFax', fm.get('fill_13_P.1', ''))
+            data.setdefault('presentorEmail', fm.get('fill_14_P.1', ''))
+            data.setdefault('presentorRef', fm.get('fill_15_P.1', ''))
+            data.setdefault('companyEmail', fm.get('fill_1_P.2', ''))
+            data.setdefault('companyPhone', fm.get('fill_2_P.2', ''))
+            # Checkboxes
+            if 'checkboxes' in data and isinstance(data['checkboxes'], list):
+                company_type = (data.get('companyType') or '').lower()
+                if 'cb_1_P.1' in data['checkboxes'] and 'private' not in company_type:
+                    data.setdefault('companyType', 'Private company limited by shares')
+                if 'cb_2_P.1' in data['checkboxes'] and 'public' not in company_type:
+                    data.setdefault('companyType', 'Public company limited by shares')
+        pdf_bytes = _fill_nnc1_pdf(data)
+        import base64 as b64
+        return jsonify({'pdf': b64.b64encode(pdf_bytes).decode('ascii')})
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+# ─── NN1 PDF 生成（註冊非香港公司申請書） ───
+
+def _fill_nn1_pdf(data):
+    """填充 NN1 PDF 模板（註冊非香港公司註冊申請書），返回 bytes
+
+    模板佈局（27 頁）：
+    P.1:  擬用公司名稱(中/英) + 成立地 + 成立日期 + 香港地址 + 提交人
+    P.2:  電郵/電話 + 主要營業地
+    P.3:  獲授權代表（自然人）
+    P.4:  公司類別 checkbox + 獲授權代表（法人）
+    P.5-P.6: 秘書/董事及其他詳細資料
+    P.7-P.9: 續頁
+    P.10: 股本結構
+    P.11-P.16: 董事/秘書詳情（續）
+    P.17: 呈遞聲明書
+    """
+    template_path = os.path.join(os.path.dirname(__file__), '..', 'public', 'templates', 'NN1-template.pdf')
+    doc = fitz.open(template_path)
+    fmap = _build_field_page_map(doc)
+
+    # Locate CJK font
+    _cjk_fontfile = None
+    for _sf in ['C:/Windows/Fonts/simhei.ttf', 'C:/Windows/Fonts/simsun.ttc',
+                 'C:/Windows/Fonts/msjh.ttc', 'C:/Windows/Fonts/Deng.ttf']:
+        if os.path.exists(_sf):
+            _cjk_fontfile = _sf
+            break
+    _cjk_ap_font_pages = set()
+    _cjk_ap_font_xref_map = {}
+
+    def _set_cjk(name, value, fontsize=10, align='left', valign='bottom', min_fs=6):
+        """Fill field with CJK widget AP. Falls back to _set_text for ASCII."""
+        if name not in fmap or not value:
+            return False
+        vstr = str(value)
+        cjk_n = sum(1 for c in vstr if ord(c) > 127)
+        if cjk_n == 0 or not _cjk_fontfile:
+            return _set_text(doc, fmap, name, value)
+        pi = fmap[name]
+        for w in doc[pi].widgets():
+            if w.field_name == name:
+                asc_n = len(vstr) - cjk_n
+                fs = fontsize
+                field_w = w.rect.width
+                field_h = w.rect.height
+                if field_w > 0:
+                    usable_w = field_w - 4.0
+                    est_w = fs * (cjk_n * 1.0 + asc_n * 0.66)
+                    if est_w > usable_w:
+                        fs = max(min_fs, int(fs * usable_w / est_w * 0.95))
+                if field_h > 0:
+                    fs = min(fs, max(min_fs, int(field_h - 3)))
+                _set_widget_cjk_ap(doc, doc[pi], w, vstr, fs, _cjk_fontfile,
+                                   _cjk_ap_font_pages, _cjk_ap_font_xref_map,
+                                   align=align, valign=valign)
+                return True
+        return False
+
+    br8 = re.sub(r'[^0-9A-Za-z]', '', data.get('brNumber', '') or '')[:8]
+
+    # ── P.1: 公司名稱 + 基本資料 ──
+    _set_cjk('fill_1_P.1', data.get('proposedNameEnglish', '') or data.get('companyName', ''), align='center')
+    _set_cjk('fill_2_P.1', data.get('proposedNameChinese', '') or data.get('companyChinese', ''), align='center')
+
+    # 成立日期 D/M/Y（fill_3-5）
+    _set_text(doc, fmap, 'fill_3_P.1', data.get('incorpDay', '') or data.get('estDay', ''))
+    _set_text(doc, fmap, 'fill_4_P.1', data.get('incorpMonth', '') or data.get('estMonth', ''))
+    _set_text(doc, fmap, 'fill_5_P.1', data.get('incorpYear', '') or data.get('estYear', ''))
+
+    # 成立地點 + 香港地址（fill_6-9: 室/大廈/街道/區）
+    _set_cjk('fill_6_P.1', data.get('placeOfIncorporation', ''))
+    _set_cjk('fill_7_P.1', data.get('flat', ''))
+    _set_cjk('fill_8_P.1', data.get('building', ''))
+    _set_cjk('fill_9_P.1', data.get('street', ''))
+
+    # 提交人（fill_10-16）
+    _set_cjk('fill_10_P.1', data.get('presentorNameCn', '') or data.get('presentorNameChinese', ''))
+    _set_text(doc, fmap, 'fill_11_P.1', data.get('presentorNameEn', '') or data.get('presentorNameEnglish', ''))
+    _set_cjk('fill_12_P.1', data.get('presentorAddress', ''), min_fs=7, valign='bottom')
+    _set_text(doc, fmap, 'fill_13_P.1', data.get('presentorPhone', ''))
+    _set_text(doc, fmap, 'fill_14_P.1', data.get('presentorFax', ''))
+    _set_text(doc, fmap, 'fill_15_P.1', data.get('presentorEmail', ''))
+    _set_text(doc, fmap, 'fill_16_P.1', data.get('presentorRef', '') or data.get('presentorReference', ''))
+
+    # ── P.2: 聯絡 + 主要營業地 ──
+    _set_text(doc, fmap, 'fill_1_P.2', data.get('companyEmail', ''))
+    _set_text(doc, fmap, 'fill_2_P.2', data.get('companyPhone', ''))
+    # Principal place of business (fill_3-12 = address rows)
+    ppb_addr = data.get('principalPlaceOfBusiness', '') or data.get('ppbAddress', '')
+    if ppb_addr:
+        lines = ppb_addr.split(',')
+        for i, line in enumerate(lines[:9]):  # fill_3_P.2 through fill_12_P.2
+            field_name = f'fill_{i + 3}_P.2'
+            _set_cjk(field_name, line.strip(), fontsize=9, min_fs=7)
+    # 授權代表備註
+    _set_cjk('fill_13_P.2', data.get('arNotes', '') or data.get('authRepNotes', ''))
+
+    # ── Helper functions ──
+    def _parse_en_name(en):
+        parts = (en or '').strip().split()
+        return {'surname': parts[0] if parts else '', 'otherNames': ' '.join(parts[1:]) if len(parts) > 1 else ''}
+
+    def _parse_addr(addr_str):
+        parts = (addr_str or '').split(',')
+        return {
+            'flat': parts[0].strip() if len(parts) > 0 else '',
+            'building': parts[1].strip() if len(parts) > 1 else '',
+            'street': parts[2].strip() if len(parts) > 2 else '',
+            'district': parts[3].strip() if len(parts) > 3 else '',
+        }
+
+    def _fmt_hkid(id_str):
+        return (id_str or '').strip()[:4]
+
+    officers = data.get('officers', [])
+
+    # ── P.3: 獲授權代表（自然人）──
+    ar_nat = next((o for o in officers if o.get('isAuthRep') and o.get('identity') != 'corporate'), None)
+    if ar_nat:
+        en = _parse_en_name(ar_nat.get('nameEnglish', ''))
+        _set_cjk('fill_1_P.3', ar_nat.get('nameChinese', ''), align='center')
+        _set_text(doc, fmap, 'fill_2_P.3', en['surname'])
+        _set_text(doc, fmap, 'fill_3_P.3', en['otherNames'])
+        # Alias / former name (fill_4~7)
+        addr = _parse_addr(ar_nat.get('address', ''))
+        _set_cjk('fill_8_P.3', addr['flat'])
+        _set_cjk('fill_9_P.3', addr['building'])
+        _set_cjk('fill_10_P.3', addr['street'])
+        _set_cjk('fill_11_P.3', addr['district'])
+        _set_text(doc, fmap, 'fill_12_P.3', ar_nat.get('hkid', ''), align='right')
+        _set_text(doc, fmap, 'fill_13_P.3', ar_nat.get('passportCountry', ''))
+        _set_text(doc, fmap, 'fill_14_P.3', ar_nat.get('passportNumber', ''))
+
+    # ── P.4: 公司類別 + 獲授權代表（法人）──
+    company_type = (data.get('companyType') or '').lower()
+    _check(doc, fmap, 'cb_1_P.4', '私人' in company_type or 'private' in company_type)
+    _check(doc, fmap, 'cb_2_P.4', '公眾' in company_type or 'public' in company_type)
+
+    ar_corp = next((o for o in officers if o.get('isAuthRep') and o.get('identity') == 'corporate'), None)
+    if ar_corp:
+        _set_cjk('fill_1_P.4', ar_corp.get('nameChinese', ''), align='center')
+        _set_text(doc, fmap, 'fill_2_P.4', ar_corp.get('nameEnglish', ''))
+        addr = _parse_addr(ar_corp.get('address', ''))
+        _set_cjk('fill_3_P.4', addr['flat'])
+        _set_cjk('fill_4_P.4', addr['building'])
+        _set_cjk('fill_5_P.4', addr['street'])
+        _set_cjk('fill_6_P.4', addr['district'])
+        _set_text(doc, fmap, 'fill_7_P.4', ar_corp.get('placeIncorporated', ''))
+        # Registration number D/M/Y
+        _set_text(doc, fmap, 'fill_8_P.4', ar_corp.get('regDay', ''))
+        _set_text(doc, fmap, 'fill_9_P.4', ar_corp.get('regMonth', ''))
+        _set_text(doc, fmap, 'fill_10_P.4', ar_corp.get('regYear', ''))
+
+    # ── P.5: 董事（自然人）──
+    dir_nat = next((o for o in officers if o.get('role') == 'director' and o.get('identity') != 'corporate'), None)
+    if dir_nat:
+        en = _parse_en_name(dir_nat.get('nameEnglish', ''))
+        _set_cjk('fill_1_P.5', dir_nat.get('nameChinese', ''), align='center')
+        _set_text(doc, fmap, 'fill_2_P.5', en['surname'])
+        _set_text(doc, fmap, 'fill_3_P.5', en['otherNames'])
+        addr = _parse_addr(dir_nat.get('address', ''))
+        _set_cjk('fill_8_P.5', addr['flat'])
+        _set_cjk('fill_9_P.5', addr['building'])
+        _set_cjk('fill_10_P.5', addr['street'])
+        _set_cjk('fill_11_P.5', addr['district'])
+        _set_cjk('fill_12_P.5', addr.get('region', ''))
+        _set_text(doc, fmap, 'fill_13_P.5', dir_nat.get('email', ''))
+        _set_text(doc, fmap, 'fill_14_P.5', _fmt_hkid(dir_nat.get('idNumber', '')), align='right')
+        _set_text(doc, fmap, 'fill_15_P.5', dir_nat.get('passportCountry', ''))
+        _set_text(doc, fmap, 'fill_16_P.5', dir_nat.get('passportNumber', ''))
+        # D/M/Y date of appointment
+        date_appt = (dir_nat.get('dateAppointed', '') or '').split('/')
+        if len(date_appt) >= 3:
+            _set_text(doc, fmap, 'fill_17_P.5', date_appt[0])
+            _set_text(doc, fmap, 'fill_18_P.5', date_appt[1])
+            _set_text(doc, fmap, 'fill_19_P.5', date_appt[2])
+
+    # ── P.6: 董事（法人團體）──
+    dir_corp = next((o for o in officers if o.get('role') == 'director' and o.get('identity') == 'corporate'), None)
+    if dir_corp:
+        _set_cjk('fill_1_P.6', dir_corp.get('nameChinese', ''), align='center')
+        _set_text(doc, fmap, 'fill_2_P.6', dir_corp.get('nameEnglish', ''))
+        addr = _parse_addr(dir_corp.get('address', ''))
+        _set_cjk('fill_3_P.6', addr['flat'])
+        _set_cjk('fill_4_P.6', addr['building'])
+        _set_cjk('fill_5_P.6', addr['street'])
+        _set_cjk('fill_6_P.6', addr['district'])
+        _set_cjk('fill_7_P.6', addr.get('region', ''))
+        _set_text(doc, fmap, 'fill_8_P.6', dir_corp.get('placeIncorporated', ''))
+        _set_text(doc, fmap, 'fill_9_P.6', dir_corp.get('companyNumberRef', '') or dir_corp.get('idNumber', ''))
+        # Registration date D/M/Y
+        _set_text(doc, fmap, 'fill_10_P.6', dir_corp.get('regDay', ''))
+        _set_text(doc, fmap, 'fill_11_P.6', dir_corp.get('regMonth', ''))
+        _set_text(doc, fmap, 'fill_12_P.6', dir_corp.get('regYear', ''))
+
+    # ── Auto-populate from DB ──
+    company_id = data.get('company_id')
+    if company_id:
+        try:
+            db = get_db()
+            company = db.execute("SELECT * FROM companies WHERE id = ?", (company_id,)).fetchone()
+            if company:
+                c = dict(company)
+                if not br8:
+                    br8 = re.sub(r'[^0-9A-Za-z]', '', c.get('company_number', '') or '')[:8]
+                if not data.get('proposedNameEnglish') and not data.get('companyName'):
+                    _set_cjk('fill_1_P.1', c.get('name', ''), align='center')
+                if not data.get('proposedNameChinese') and not data.get('companyChinese'):
+                    _set_cjk('fill_2_P.1', c.get('chinese_name', ''), align='center')
+                if not data.get('flat'):
+                    _set_cjk('fill_7_P.1', c.get('reg_flat', ''))
+                    _set_cjk('fill_8_P.1', c.get('reg_building', ''))
+                    _set_cjk('fill_9_P.1', c.get('reg_street', ''))
+                if not data.get('companyEmail'):
+                    _set_text(doc, fmap, 'fill_1_P.2', c.get('email', ''))
+                if not data.get('companyPhone'):
+                    _set_text(doc, fmap, 'fill_2_P.2', c.get('phone', ''))
+        except Exception:
+            pass
+
+    # BR on all pages
+    _stamp_br_on_all_pages(doc, br8)
+
+    pdf_bytes = doc.write(deflate=True)
+    doc.close()
+    return pdf_bytes
+
+
+@app.route('/api/generate-nn1-pdf', methods=['POST'])
+def generate_nn1_pdf():
+    try:
+        data = request.json
+        if not data:
+            return jsonify({'error': 'Empty request body'}), 400
+        # Accept both formats: semantic keys OR {fields: {...}} from generic template
+        if 'fields' in data and isinstance(data.get('fields'), dict):
+            fm = data['fields']
+            data.setdefault('proposedNameEnglish', fm.get('fill_1_P.1', ''))
+            data.setdefault('proposedNameChinese', fm.get('fill_2_P.1', ''))
+            data.setdefault('incorpDay', fm.get('fill_3_P.1', ''))
+            data.setdefault('incorpMonth', fm.get('fill_4_P.1', ''))
+            data.setdefault('incorpYear', fm.get('fill_5_P.1', ''))
+            data.setdefault('placeOfIncorporation', fm.get('fill_6_P.1', ''))
+            data.setdefault('flat', fm.get('fill_7_P.1', ''))
+            data.setdefault('building', fm.get('fill_8_P.1', ''))
+            data.setdefault('street', fm.get('fill_9_P.1', ''))
+            data.setdefault('presentorNameCn', fm.get('fill_10_P.1', ''))
+            data.setdefault('presentorNameEn', fm.get('fill_11_P.1', ''))
+            data.setdefault('presentorAddress', fm.get('fill_12_P.1', ''))
+            data.setdefault('presentorPhone', fm.get('fill_13_P.1', ''))
+            data.setdefault('presentorFax', fm.get('fill_14_P.1', ''))
+            data.setdefault('presentorEmail', fm.get('fill_15_P.1', ''))
+            data.setdefault('presentorRef', fm.get('fill_16_P.1', ''))
+            data.setdefault('companyEmail', fm.get('fill_1_P.2', ''))
+            data.setdefault('companyPhone', fm.get('fill_2_P.2', ''))
+        pdf_bytes = _fill_nn1_pdf(data)
+        import base64 as b64
+        return jsonify({'pdf': b64.b64encode(pdf_bytes).decode('ascii')})
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
 # ─── ND2A PDF 生成（委任/停任董事秘書） ───
 
 def _fill_nd2a_pdf(data, template='ND2A-template.pdf'):
@@ -4683,7 +6249,7 @@ def _fill_nd2a_pdf(data, template='ND2A-template.pdf'):
             if w.field_name:
                 fmap[w.field_name] = pi
 
-    def _set(name, value):
+    def _set(name, value, align=None):
         if name not in fmap or not value:
             return
         pi = fmap[name]
@@ -4691,6 +6257,10 @@ def _fill_nd2a_pdf(data, template='ND2A-template.pdf'):
             if w.field_name == name:
                 try:
                     w.field_value = str(value) if value else ''
+                    if align == 'right':
+                        doc.xref_set_key(w._annot.xref, 'Q', '2')
+                    elif align == 'center':
+                        doc.xref_set_key(w._annot.xref, 'Q', '1')
                     w.update()
                 except Exception:
                     pass
@@ -4782,7 +6352,7 @@ def _fill_nd2a_pdf(data, template='ND2A-template.pdf'):
                     # Fallback: flat address → fill_10
                     _set('fill_10_P.2', officer.get('address', ''))
                 # HKID + Passport
-                _set('fill_16_P.2', (officer.get('idNumber', '') or '')[:4])
+                _set('fill_16_P.2', (officer.get('idNumber', '') or '')[:4], align='right')
                 if officer.get('passportCountry'):
                     _set('fill_17_P.2', officer.get('passportCountry', ''))
                 if officer.get('passportNumber'):
@@ -4844,7 +6414,7 @@ def _fill_nd2a_pdf(data, template='ND2A-template.pdf'):
                 _set('fill_3_P.4', chinese)
                 _set('fill_4_P.4', surname)
                 _set('fill_5_P.4', other)
-                _set('fill_6_P.4', officer.get('idNumber', ''))
+                _set('fill_6_P.4', officer.get('idNumber', ''), align='right')
                 _set('fill_7_P.4', officer.get('passportNumber', ''))
                 # Address: two tall fields
                 addr_parts = [officer.get('addrFlatBlock', ''), officer.get('addrBuilding', ''),
@@ -4888,7 +6458,7 @@ def _fill_nd2a_pdf(data, template='ND2A-template.pdf'):
                     _set(f'fill_9_P.{p}', officer.get('passportCountry', ''))
                 # fill_11 = 身份證號碼（完整號碼，不截斷）
                 if officer.get('idNumber'):
-                    _set(f'fill_11_P.{p}', officer['idNumber'])
+                    _set(f'fill_11_P.{p}', officer['idNumber'], align='right')
                 # 護照號碼：P.6 無獨立欄位，與身份證號碼共用 fill_11
                 if officer.get('passportNumber'):
                     existing = officer.get('idNumber', '')
@@ -4941,47 +6511,52 @@ def _fill_nd2a_pdf(data, template='ND2A-template.pdf'):
                                     except Exception:
                                         pass
             elif p == 7:
-                # P.7 (PI-ND2A 續頁) — different layout from P.6
-                # No D/M/Y narrow fields (fill_14/15/16 don't exist), no Dropdowns
-                # Available: fill_1(BR) fill_2(代替) fill_3(name) fill_4(name) fill_5(ID wide)
-                #            fill_6(ID narrow) fill_7(addr1) fill_8(addr2) fill_9~13(wide text)
-                #            cb_1/2/3(role)
-                if officer.get('role') == 'alternate':
-                    _set(f'fill_2_P.{p}', officer.get('alternateTo', ''))
-                # fill_3 = 中文姓名, fill_4 = 英文姓名（姓+名）
-                _set(f'fill_3_P.{p}', chinese)
-                eng_full = f'{surname} {other}'.strip() if (surname or other) else officer.get('nameEnglish', '')
-                _set(f'fill_4_P.{p}', eng_full)
-                # fill_5 = 證件號碼（完整）, fill_6 = 校驗位／後綴
-                id_full = officer.get('idNumber', '')
-                passport = officer.get('passportNumber', '')
-                if id_full and passport:
-                    _set(f'fill_5_P.{p}', f'{id_full} / {passport}')
-                elif id_full:
-                    _set(f'fill_5_P.{p}', id_full)
-                elif passport:
-                    _set(f'fill_5_P.{p}', passport)
-                # fill_7 = 住址第1行, fill_8 = 住址第2行
-                addr_parts = [officer.get('addrFlatBlock', ''), officer.get('addrBuilding', ''),
-                              officer.get('addrStreetEstate', '')]
-                addr_dist_parts = [officer.get('addrDistrict', ''), officer.get('addrRegion', '')]
-                addr1 = ', '.join([x for x in addr_parts if x])
-                addr2 = ', '.join([x for x in addr_dist_parts if x])
-                if addr1 or addr2:
-                    _set(f'fill_7_P.{p}', addr1)
-                    _set(f'fill_8_P.{p}', addr2)
-                else:
-                    _set(f'fill_7_P.{p}', officer.get('address', ''))
-                # fill_9 = 護照簽發國家／地區
+                # ── P.7 (PI-ND2A) 受保護資料頁 ──
+                # 公眾紀錄不會顯示此頁。完整 HKID 及護照號碼在此頁全部顯示。
+                # 欄位佈局（由上至下）：
+                #   fill_2 = 中文姓名, fill_3 = 英文姓氏, fill_4 = 英文名字
+                #   fill_5 = 香港身份證(完整號碼), fill_6 = 括號校驗位 e.g. "(1)"
+                #   fill_7 = 護照簽發國家/地區, fill_8 = 護照完整號碼
+                #   fill_9 = 室/樓/座, fill_10 = 大廈, fill_11 = 街道/屋苑
+                #   fill_12 = 區/市/省, fill_13 = 國家/地區
+                _set(f'fill_2_P.{p}', chinese)
+                _set(f'fill_3_P.{p}', surname)
+                _set(f'fill_4_P.{p}', other)
+                # HKID 完整號碼 + 括號校驗位
+                id_full = officer.get('idNumber', '') or ''
+                if id_full:
+                    # 解析 HKID：主體部分 vs 括號校驗位
+                    # 格式如 "Y231456(1)" → main="Y231456", check="(1)"
+                    import re as _re
+                    hkid_match = _re.match(r'^([A-Za-z]?\d+)\s*(\([^)]*\))?$', id_full.strip())
+                    if hkid_match:
+                        hkid_main = hkid_match.group(1)
+                        hkid_check = hkid_match.group(2) or ''
+                        _set(f'fill_5_P.{p}', hkid_main, align='right')
+                        if hkid_check:
+                            _set(f'fill_6_P.{p}', hkid_check)
+                    else:
+                        _set(f'fill_5_P.{p}', id_full, align='right')
+                # 護照簽發國家 + 護照完整號碼
                 if officer.get('passportCountry'):
-                    _set(f'fill_9_P.{p}', officer.get('passportCountry', ''))
-                # fill_10 = 護照號碼（若未合併到 fill_5）
-                # (already handled in fill_5 above; use fill_10 for additional info)
-                # fill_11 = 委任／停任日期（完整日期字串，P.7 無 D/M/Y 分欄）
-                date_str = officer.get('dateAppointed') if officer.get('type') == 'appointment' else officer.get('dateCeased')
-                if date_str:
-                    _set(f'fill_11_P.{p}', date_str)
-                # Role checkboxes
+                    _set(f'fill_7_P.{p}', officer.get('passportCountry', ''))
+                if officer.get('passportNumber'):
+                    _set(f'fill_8_P.{p}', officer['passportNumber'])
+                # 通常住址（董事／候補董事）
+                addr_fb = officer.get('addrFlatBlock', '')
+                addr_bld = officer.get('addrBuilding', '')
+                addr_se = officer.get('addrStreetEstate', '')
+                addr_dist = officer.get('addrDistrict', '')
+                addr_reg = officer.get('addrRegion', '')
+                if any([addr_fb, addr_bld, addr_se, addr_dist, addr_reg]):
+                    _set(f'fill_9_P.{p}', addr_fb)
+                    _set(f'fill_10_P.{p}', addr_bld)
+                    _set(f'fill_11_P.{p}', addr_se)
+                    _set(f'fill_12_P.{p}', addr_dist)
+                    _set(f'fill_13_P.{p}', addr_reg)
+                else:
+                    _set(f'fill_9_P.{p}', officer.get('address', ''))
+                # Role checkboxes: cb_1=秘書, cb_2=董事, cb_3=候補
                 role = officer.get('role', 'director')
                 if role == 'secretary':
                     _check(f'cb_1_P.{p}')
@@ -4989,7 +6564,8 @@ def _fill_nd2a_pdf(data, template='ND2A-template.pdf'):
                     _check(f'cb_3_P.{p}')
                 else:
                     _check(f'cb_2_P.{p}')
-                # Note: P.7 has no cb_4 (cessation) and no Dropdown fields
+                # Note: P.7 (PI-ND2A) has no D/M/Y date fields, no cessation checkbox,
+                # no Dropdown cross-out fields, no "already director" checkboxes
             else:
                 # Should not reach here for natural persons; fallback to P.6-style
                 pass
@@ -5021,6 +6597,62 @@ def _fill_nd2a_pdf(data, template='ND2A-template.pdf'):
             # Type: only cessation needs checkbox (appointment is implicit)
             if officer.get('type') == 'cessation':
                 _check(f'cb_4_P.{p}')
+
+    # ── PI-ND2A 受保護資料頁（P.7）：始終填入第一個自然人的完整資料 ──
+    # P.7 是獨立於主表格的受保護資料頁，公眾紀錄不會顯示。
+    # 此頁顯示完整 HKID 和護照號碼（不截斷），以及董事／候補董事的通常住址。
+    first_nat = next((o for o in officers if o.get('identity') == 'natural'), None)
+    if first_nat and fmap.get('fill_1_P.7') is not None:
+        p = 7
+        eng = first_nat.get('nameEnglish', '') or ''
+        surname = first_nat.get('nameSurname', '') or ''
+        other = first_nat.get('nameOtherNames', '') or first_nat.get('nameOther', '') or ''
+        if not surname and eng:
+            parts = eng.strip().split()
+            surname = parts[-1] if len(parts) > 1 else (parts[0] if parts else '')
+            other = ' '.join(parts[:-1]) if len(parts) > 1 else ''
+        chinese = first_nat.get('nameChinese', '')
+        _set(f'fill_2_P.{p}', chinese)
+        _set(f'fill_3_P.{p}', surname)
+        _set(f'fill_4_P.{p}', other)
+        # HKID 完整號碼 + 括號校驗位
+        id_full = first_nat.get('idNumber', '') or ''
+        if id_full:
+            import re as _re
+            hkid_match = _re.match(r'^([A-Za-z]?\d+)\s*(\([^)]*\))?$', id_full.strip())
+            if hkid_match:
+                _set(f'fill_5_P.{p}', hkid_match.group(1), align='right')
+                if hkid_match.group(2):
+                    _set(f'fill_6_P.{p}', hkid_match.group(2))
+            else:
+                _set(f'fill_5_P.{p}', id_full, align='right')
+        # 護照：簽發國家 + 完整號碼（不截斷）
+        if first_nat.get('passportCountry'):
+            _set(f'fill_7_P.{p}', first_nat.get('passportCountry', ''))
+        if first_nat.get('passportNumber'):
+            _set(f'fill_8_P.{p}', first_nat['passportNumber'])
+        # 通常住址（僅董事／候補董事需要，秘書可選填）
+        addr_fb = first_nat.get('addrFlatBlock', '')
+        addr_bld = first_nat.get('addrBuilding', '')
+        addr_se = first_nat.get('addrStreetEstate', '')
+        addr_dist = first_nat.get('addrDistrict', '')
+        addr_reg = first_nat.get('addrRegion', '')
+        if any([addr_fb, addr_bld, addr_se, addr_dist, addr_reg]):
+            _set(f'fill_9_P.{p}', addr_fb)
+            _set(f'fill_10_P.{p}', addr_bld)
+            _set(f'fill_11_P.{p}', addr_se)
+            _set(f'fill_12_P.{p}', addr_dist)
+            _set(f'fill_13_P.{p}', addr_reg)
+        else:
+            _set(f'fill_9_P.{p}', first_nat.get('address', ''))
+        # Role checkbox
+        role = first_nat.get('role', 'director')
+        if role == 'secretary':
+            _check(f'cb_1_P.{p}')
+        elif role == 'alternate':
+            _check(f'cb_3_P.{p}')
+        else:
+            _check(f'cb_2_P.{p}')
 
     # ── P.1 日期（僅停任，取自第一個 officer） ──
     # fill_11/12/13 = D/M/Y（三個並排窄框），委任不填 P.1 日期
@@ -5119,7 +6751,7 @@ def _fill_nd2b_pdf(data, template='ND2B-template.pdf'):
             if w.field_name:
                 fmap[w.field_name] = pi
 
-    def _set(name, value):
+    def _set(name, value, align=None):
         if name not in fmap or not value:
             return
         pi = fmap[name]
@@ -5127,6 +6759,10 @@ def _fill_nd2b_pdf(data, template='ND2B-template.pdf'):
             if w.field_name == name:
                 try:
                     w.field_value = str(value) if value else ''
+                    if align == 'right':
+                        doc.xref_set_key(w._annot.xref, 'Q', '2')
+                    elif align == 'center':
+                        doc.xref_set_key(w._annot.xref, 'Q', '1')
                     w.update()
                 except Exception:
                     pass
@@ -5168,7 +6804,7 @@ def _fill_nd2b_pdf(data, template='ND2B-template.pdf'):
         _set('fill_3_P.1', data.get('nameChinese', ''))
         _set('fill_4_P.1', surname)
         _set('fill_5_P.1', other)
-        _set('fill_7_P.1', data.get('idNumber', ''))
+        _set('fill_7_P.1', data.get('idNumber', ''), align='right')
         if data.get('passportCountry') or data.get('passportPlaceOfIssue'):
             _set('fill_7b_P.1', data.get('passportCountry') or data.get('passportPlaceOfIssue', ''))
         if data.get('passportNumber'):
@@ -5667,10 +7303,16 @@ Context / Specific details from user:
 # ─────────────────────────────────────────────
 
 def _rtf_rom_to_pdf(db, company_id):
-    """Generate ROM PDF directly from Paul Tang RTF template via Word COM.
+    """Generate ROM PDF from Paul Tang .doc template via Word COM Table.Cell() API.
 
-    Opens Testing ROM.rtf, finds sample text placeholders, replaces them
-    with real data from the database, then saves as PDF.
+    Opens Testing ROM.doc (24-row x 15-col blank table), fills cells with
+    real data from the database, then saves as PDF.
+
+    Cell mapping:
+      Header:     Cell(1,2)=Company Name, Cell(2,2)=Company Number
+      SH1:        Rows 4-13  (labels at 4,1..8,10; data in col 2/4/6)
+      SH2:        Rows 15-24 (same layout as SH1, offset +11 rows)
+      Tx sub-table: Rows 9-13 (SH1), Rows 20-24 (SH2)
 
     Returns bytes (PDF content) or None on failure.
     Falls back to DOCX approach if >2 shareholders.
@@ -5711,9 +7353,8 @@ def _rtf_rom_to_pdf(db, company_id):
     for role in roles:
         p = person_map.get(role['person_id'], {})
         name_en = (rget(p, 'name_english') or rget(p, 'name_chinese') or '(unnamed)')[:80]
-        id_type = rget(p, 'id_type') or 'HKID'
         id_no = rget(p, 'id_number') or ''
-        id_str = f"({id_type} No: {id_no})" if id_no else ''
+        id_str = f"(HKID No: {id_no})" if id_no else ''
         full_name = f"{name_en} {id_str}".strip()
 
         addr, region = _get_person_address(db, p['id'])
@@ -5723,13 +7364,13 @@ def _rtf_rom_to_pdf(db, company_id):
             addr = f"{addr}, {region}".strip(', ')
         addr = (addr or '')[:100]
 
-        date_cea = rget(role, 'date_ceased') or '-'
+        occupation = rget(p, 'occupation') or ''
         date_app = rget(role, 'date_appointed') or '-'
+        date_cea = rget(role, 'date_ceased') or '-'
         shares_held = int(rget(role, 'shares') or 0)
         cert_no = rget(role, 'certificate_number') or '-'
         currency = rget(role, 'currency') or 'HKD'
         issue_price = rget(role, 'issue_price') or '1.00'
-        share_class = f"ORD - {currency}${issue_price} ORDINARY FULLY PAID ({currency})"
 
         person_name_key = name_en.strip().upper()
         person_txs = [
@@ -5741,14 +7382,14 @@ def _rtf_rom_to_pdf(db, company_id):
             'full_name': full_name,
             'name_en': name_en,
             'id_no': id_no,
+            'occupation': occupation,
             'addr': addr,
-            'date_cea': date_cea,
             'date_app': date_app,
+            'date_cea': date_cea,
             'shares_held': shares_held,
             'cert_no': cert_no,
             'currency': currency,
             'issue_price': issue_price,
-            'share_class': share_class,
             'txs': person_txs,
         })
 
@@ -5756,42 +7397,19 @@ def _rtf_rom_to_pdf(db, company_id):
     if len(shareholders) > 2:
         return None
 
-    # ── Build replacements dict ──
-    # Keys sorted by length DESC to prevent substring conflicts
-    replacements = {}
-
-    # Company info (unique text)
-    if co_name:
-        replacements['Testing Company Limited'] = co_name
-    if co_br:
-        replacements['0101234'] = co_br
-
-    # Report date: replace in the full title phrase
-    template_title = 'REGISTER OF MEMBERS AT 05 APRIL 2024'
-    new_title = f'REGISTER OF MEMBERS AT {report_date}'
-    if new_title != template_title:
-        replacements[template_title] = new_title
-
-    # Shareholder 1 (unique name+ID string)
-    template_sh1_name = 'ABC TESTING (Hong Kong ID No : Y000000(1))'
-    if len(shareholders) >= 1:
-        replacements[template_sh1_name] = shareholders[0]['full_name']
-    else:
-        replacements[template_sh1_name] = ''
-
-    # Shareholder 2 (unique name+ID string)
-    template_sh2_name = 'BCD TESTING (Hong Kong ID No : Y231456(1))'
-    if len(shareholders) >= 2:
-        replacements[template_sh2_name] = shareholders[1]['full_name']
-    else:
-        replacements[template_sh2_name] = ''
-
-    # ── Copy RTF to temp file (avoid Chinese path issues with Word COM) ──
+    # ── Copy .doc to temp file (avoid Chinese path issues with Word COM) ──
     import shutil as _shutil
-    tmp_rtf = tempfile.mktemp(suffix='.rtf')
-    _shutil.copy2(_RTF_ROM, tmp_rtf)
+    tmp_doc = tempfile.mktemp(suffix='.doc')
+    _shutil.copy2(_RTF_ROM, tmp_doc)
 
-    # ── Word COM: open → replace → save as PDF ──
+    # ── Compact currency prefix ──
+    _CURRENCY_COMPACT = {
+        'HKD': 'HK$', 'USD': 'US$', 'CNY': '\xa5', 'RMB': '\xa5',
+        'GBP': '\xa3', 'EUR': '€', 'JPY': '\xa5',
+        'AUD': 'A$', 'SGD': 'S$', 'CAD': 'C$', 'TWD': 'NT$',
+    }
+
+    # ── Word COM: open → fill cells → save as PDF ──
     with _word_lock:
         pythoncom.CoInitialize()
         word = None
@@ -5799,216 +7417,100 @@ def _rtf_rom_to_pdf(db, company_id):
         try:
             word = win32com.client.Dispatch('Word.Application')
             word.Visible = False
-            word.DisplayAlerts = 0  # wdAlertsNone
+            word.DisplayAlerts = 0
 
-            doc = word.Documents.Open(tmp_rtf)
-            sel = word.Selection
+            doc = word.Documents.Open(tmp_doc)
+            table = doc.Tables(1)
 
-            # Sort by key length DESC to prevent substring conflicts
-            sorted_items = sorted(
-                replacements.items(),
-                key=lambda kv: len(kv[0]),
-                reverse=True,
-            )
-            for find_text, replace_text in sorted_items:
-                if not find_text:
-                    continue
-                replace_text = str(replace_text or '')
-                sel.HomeKey(Unit=6)  # wdStory — go to doc start
-                while sel.Find.Execute(
-                    FindText=find_text,
-                    MatchCase=True,
-                    Forward=True,
-                    Wrap=0,  # wdFindStop
-                ):
-                    sel.Text = replace_text
-                    sel.Collapse(Direction=0)  # wdCollapseEnd
+            # Helper: safely set a cell's text
+            def _set_cell(r, c, value):
+                try:
+                    cell = table.Cell(r, c)
+                    cell.Range.Text = str(value or '')
+                except Exception as e:
+                    # Fallback: use Selection.Find for merged-cell edge cases
+                    pass
 
-            # Address replacements (positional, 2 occurrences)
-            # The RTF has the full address in a single text run per shareholder
-            tpl_addr_full = 'ROOM 405 TUNG NING BUILDING, 249-253 DES VOEUX ROAD CENTRAL, SHEUNG WAN, HONG KONG'
-            for i in range(min(2, len(shareholders))):
-                sh = shareholders[i]
-                if not sh['addr']:
-                    continue
-                # Find the (i+1)th occurrence of the full address line
-                sel.HomeKey(Unit=6)  # wdStory
-                for occ in range(i + 1):
-                    found = sel.Find.Execute(
-                        FindText=tpl_addr_full,
-                        MatchCase=True,
-                        Forward=True,
-                        Wrap=0,
-                    )
-                    if not found:
-                        break
-                    if occ < i:
-                        sel.Collapse(Direction=0)  # wdCollapseEnd — move past this occurrence
-                if not found:
-                    continue
-                sel.Text = str(sh['addr'] or '')[:100]
-                sel.Collapse(Direction=0)
+            # ── Header ──
+            _set_cell(1, 2, co_name)
+            _set_cell(2, 2, co_br)
+            # Update REGISTER OF MEMBERS title with report date
+            try:
+                title_cell = table.Cell(2, 4)
+                title_cell.Range.Text = f'REGISTER OF MEMBERS AT {report_date}'
+            except:
+                pass
 
-            # For any remaining template address occurrences (if <2 shareholders), clear them
-            # by replacing with empty string
-            for _ in range(2 - len(shareholders)):
-                sel.HomeKey(Unit=6)
-                found = sel.Find.Execute(
-                    FindText=tpl_addr_full,
-                    MatchCase=True,
-                    Forward=True,
-                    Wrap=0,
-                )
-                if not found:
-                    break
-                sel.Text = ''
-
-            # Share class / Security description (positional, 2 occurrences)
-            tpl_security = 'ORD - HK$1.00 ORDINARY FULLY PAID (HK$)'
-            for i in range(min(2, len(shareholders))):
-                sh = shareholders[i]
-                if not sh['share_class'] or sh['share_class'] == tpl_security:
-                    continue
-                sel.HomeKey(Unit=6)
-                for occ in range(i + 1):
-                    found = sel.Find.Execute(
-                        FindText=tpl_security,
-                        MatchCase=True,
-                        Forward=True,
-                        Wrap=0,
-                    )
-                    if not found:
-                        break
-                    if occ < i:
-                        sel.Collapse(Direction=0)
-                if not found:
-                    continue
-                sel.Text = str(sh['share_class'] or '')[:100]
-                sel.Collapse(Direction=0)
-
-            # ── Data row values replacement ──
-            # For each shareholder, navigate to the "Date Entered" grey header
-            # then sequentially replace template data values going forward.
-            # RTF text stream order after "Date Entered":
-            #   Units(10,000) → Date(08/04/2022) → Par(HK$1.00) →
-            #   PaidUp(HK$1.00) → Balance(10,000) → …(10,000) last
-            #
-            # IMPORTANT: (10,000) comes AFTER the primary data row in the
-            # RTF stream, so it must be replaced LAST.  Searching it first
-            # would skip past the data row and miss the correct values.
-            #
-            # Par/PaidUp use a compact currency format to prevent text
-            # overflow into the adjacent Certificate column (only 3pt gap).
-
-            # Compact currency prefix to keep Par/PaidUp values ≤7 chars
-            _CURRENCY_COMPACT = {
-                'HKD': 'HK$', 'USD': 'US$', 'CNY': '\xa5', 'RMB': '\xa5',
-                'GBP': '\xa3', 'EUR': '€', 'JPY': '\xa5',
-                'AUD': 'A$', 'SGD': 'S$', 'CAD': 'C$', 'TWD': 'NT$',
-            }
+            # ── Per-shareholder block fill ──
+            # SH1: label rows 4-5, data rows 6-13  →  base = 4
+            # SH2: label rows 15-16, data rows 17-24 →  base = 15
+            sh_bases = [(4, 9, 13), (15, 20, 24)]  # (label_base, tx_start, tx_end)
 
             for i, sh in enumerate(shareholders):
-                if i >= 2:  # RTF template only supports 2 shareholders
+                if i >= 2:
                     break
-                sh_shares = sh.get('shares_held', 0)
-                sh_date_app = sh.get('date_app', '-')
-                sh_currency = sh.get('currency', 'HKD')
-                sh_price = sh.get('issue_price', '1.00')
-                # Compact format: ~7 chars max to avoid Cert column overflow
-                ccy = _CURRENCY_COMPACT.get(
-                    sh_currency.upper(),
-                    sh_currency[:2] + '$' if len(sh_currency) >= 2 else sh_currency + '$'
-                )
-                par_str = f"{ccy}{sh_price}"
+                base, tx_row_start, tx_row_end = sh_bases[i]
 
-                # Navigate to the (i+1)th "Date Entered" grey header
-                sel.HomeKey(Unit=6)  # wdStory
-                for occ in range(i + 1):
-                    found = sel.Find.Execute(
-                        FindText="Date Entered",
-                        MatchCase=True,
-                        Forward=True,
-                        Wrap=0,
-                    )
-                    if not found:
-                        break
-                    if occ < i:
-                        sel.Collapse(Direction=0)  # wdCollapseEnd
-                if not found:
-                    continue
+                # Basic info (label row base)
+                _set_cell(base, 2, sh['full_name'])
+                _set_cell(base, 4, sh['occupation'])
+                _set_cell(base, 6, sh['date_app'])
 
-                # Collapse past the header text — now we're in this
-                # shareholder's data row area
-                sel.Collapse(Direction=0)  # wdCollapseEnd
+                # Address + Date Ceased (label row base+1)
+                _set_cell(base + 1, 2, sh['addr'])
+                _set_cell(base + 1, 4, sh['date_cea'])
 
-                # Steps 1-5: Primary data row (Subscription / Allotment)
-                # 1. Units: first 10,000 after header
-                if sel.Find.Execute(FindText="10,000", Forward=True, Wrap=0):
-                    sel.Text = f"{sh_shares:,}"
-                    sel.Collapse(Direction=0)
+                # ── Transaction sub-table ──
+                # Row layout within sub-table:
+                #   base+2: Date | Shares Acquired | Shares Transferred | Total Shares Held | Remarks | Entry Made By
+                #   base+3: Cert No | Distinctive Nos | No. of Shares | Consideration | Deed No | Cert No | ...
+                #   base+4: From | To | From | To
+                #   base+5+: Data rows
 
-                # 2. Date Entered value: 08/04/2022
-                if sel.Find.Execute(FindText="08/04/2022", Forward=True, Wrap=0):
-                    sel.Text = str(sh_date_app)
-                    sel.Collapse(Direction=0)
+                txs_for_sh = sh.get('txs', [])
+                shares_held = sh.get('shares_held', 0)
+                cert_no = sh.get('cert_no', '-')
+                ccy = _CURRENCY_COMPACT.get(sh.get('currency', 'HKD').upper(), sh.get('currency', 'HKD')[:2] + '$')
 
-                # 3. Par Value: first HK$1.00
-                if sel.Find.Execute(FindText="HK$1.00", Forward=True, Wrap=0):
-                    sel.Text = par_str
-                    sel.Collapse(Direction=0)
+                # Row 1 (Subscription): use first tx or initial holding
+                if txs_for_sh:
+                    first_tx = txs_for_sh[0]
+                    tx_date = rget(first_tx, 'transaction_date') or sh['date_app']
+                    tx_shares = int(rget(first_tx, 'shares') or 0)
+                    _set_cell(tx_row_start, 1, tx_date)
+                    _set_cell(tx_row_start, 2, f"{tx_shares:,}")
+                    _set_cell(tx_row_start, 3, '0')
+                    _set_cell(tx_row_start, 4, f"{tx_shares:,}")
+                    _set_cell(tx_row_start, 5, '-')
+                    _set_cell(tx_row_start, 6, '-')
+                else:
+                    # No transactions: fill initial subscription from role data
+                    _set_cell(tx_row_start, 1, sh['date_app'])
+                    _set_cell(tx_row_start, 2, f"{shares_held:,}")
+                    _set_cell(tx_row_start, 3, '0')
+                    _set_cell(tx_row_start, 4, f"{shares_held:,}")
+                    _set_cell(tx_row_start, 5, '-')
+                    _set_cell(tx_row_start, 6, '-')
 
-                # 4. Paid Up Value: second HK$1.00
-                if sel.Find.Execute(FindText="HK$1.00", Forward=True, Wrap=0):
-                    sel.Text = par_str
-                    sel.Collapse(Direction=0)
+                # Certificate / Distinctive numbers row
+                _set_cell(tx_row_start + 1, 2, str(cert_no))
+                _set_cell(tx_row_start + 1, 3, f"({shares_held:,})")
+                _set_cell(tx_row_start + 1, 4, f"{shares_held:,}")
+                _set_cell(tx_row_start + 1, 5, f"{ccy}{sh.get('issue_price', '1.00')}")
 
-                # 5. Balance: second 10,000 after header
-                if sel.Find.Execute(FindText="10,000", Forward=True, Wrap=0):
-                    sel.Text = f"{sh_shares:,}"
-                    sel.Collapse(Direction=0)
-
-                # 6-7. Row 2 (Transfer In) — only for the last shareholder.
-                # Must run BEFORE the (10,000) search, which can reposition
-                # the selection on failure and break subsequent finds.
-                # Template SH2 Row 2: Units=10,000, Balance=20,000
-                if i == len(shareholders) - 1:
-                    if sel.Find.Execute(FindText="10,000", Forward=True, Wrap=0):
-                        sel.Text = f"{sh_shares:,}"
-                        sel.Collapse(Direction=0)
-
-                    if sel.Find.Execute(FindText="20,000", Forward=True, Wrap=0):
-                        sel.Text = f"{sh_shares:,}"
-                        sel.Collapse(Direction=0)
-
-                # 8. Distinctive Numbers: (10,000) — LAST, after all data rows
-                if sel.Find.Execute(FindText="(10,000)", Forward=True, Wrap=0):
-                    sel.Text = f"({sh_shares:,})"
-                    sel.Collapse(Direction=0)
-
-            # ── Backwards cleanup: catch any unreplaced template values ──
-            # Forward Find can be unreliable with RTF positioned text boxes
-            # (failed searches may reposition the cursor).  Searching
-            # backwards from the end of the document guarantees we only
-            # find template values that were missed by the forward pass.
-            last_shares = (
-                shareholders[-1].get('shares_held', 0) if shareholders
-                else 0
-            )
-            # Replace any remaining 20,000 (SH2 Row 2 Balance)
-            sel.EndKey(Unit=6)  # wdStory — go to end
-            while sel.Find.Execute(
-                FindText="20,000", Forward=False, Wrap=0
-            ):
-                sel.Text = f"{last_shares:,}"
-                sel.Collapse(Direction=1)  # wdCollapseStart
-
-            # Replace any remaining 10,000 (unreplaced Row 2 Units etc.)
-            sel.EndKey(Unit=6)  # wdStory — go to end
-            while sel.Find.Execute(
-                FindText="10,000", Forward=False, Wrap=0
-            ):
-                sel.Text = f"{last_shares:,}"
-                sel.Collapse(Direction=1)  # wdCollapseStart
+                # Additional transaction rows (Allotment, Transfer In, etc.)
+                if len(txs_for_sh) > 1:
+                    for ti in range(1, min(len(txs_for_sh), 4)):  # max 4 more rows
+                        tx = txs_for_sh[ti]
+                        dr = tx_row_start + 2 + ti  # data row offset
+                        if dr > tx_row_end:
+                            break
+                        tx_date = rget(tx, 'transaction_date') or '-'
+                        tx_shares = int(rget(tx, 'shares') or 0)
+                        tx_type = rget(tx, 'type') or ''
+                        _set_cell(dr, 1, tx_date)
+                        _set_cell(dr, 2, f"{tx_shares:,}")
+                        _set_cell(dr, 4, f"{shares_held:,}")
 
             # Save as PDF
             tmp_pdf_out = tempfile.mktemp(suffix='.pdf')
@@ -6022,7 +7524,7 @@ def _rtf_rom_to_pdf(db, company_id):
         except Exception as e:
             import traceback
             traceback.print_exc()
-            print(f"[RTF ROM→PDF] Word COM error: {e}")
+            print(f"[DOC ROM→PDF] Word COM error: {e}")
             return None
         finally:
             if word:
@@ -6035,9 +7537,9 @@ def _rtf_rom_to_pdf(db, company_id):
                     os.unlink(tmp_pdf_out)
                 except:
                     pass
-            if os.path.exists(tmp_rtf):
+            if os.path.exists(tmp_doc):
                 try:
-                    os.unlink(tmp_rtf)
+                    os.unlink(tmp_doc)
                 except:
                     pass
             pythoncom.CoUninitialize()

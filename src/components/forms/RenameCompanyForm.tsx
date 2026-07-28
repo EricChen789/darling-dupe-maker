@@ -169,11 +169,10 @@ with effect from the date of issue of the Certificate of Change of Name by the R
         'fill_16_P.1': presEmail,
         'fill_17_P.1': presRef,
       };
-      const resp = await fetch(`/api/generate-template-pdf`, {
+      const resp = await fetch(`/api/generate-nnc2-pdf`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({
-          template: 'NNC2-template.pdf',
           fields,
           brNumber: company?.brNumber || '',
           keepWidgets: true,

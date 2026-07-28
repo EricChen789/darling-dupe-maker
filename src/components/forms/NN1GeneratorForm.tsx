@@ -201,11 +201,10 @@ export default function NN1GeneratorForm({ onBack }: NN1GeneratorFormProps) {
         checkboxes.push('cb_1_P.9');  // 勾選「董事」
       }
 
-      const resp = await fetch(`/api/generate-template-pdf`, {
+      const resp = await fetch(`/api/generate-nn1-pdf`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({
-          template: 'NN1-template.pdf',
           fields,
           checkboxes: checkboxes.length > 0 ? checkboxes : undefined,
           brNumber: formData.brNumber || undefined,

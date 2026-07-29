@@ -1,13 +1,14 @@
 // POST /api/generate-shareholders-register-pdf
-// Register of Members (ROM) — Paul Tang free-form layout
-// Landscape A4, per-shareholder blocks with transaction sub-table
-// Mirrors local Flask server.py RTF/DOCX Paul Tang format
+// Register of Members (ROM) — uses Paul Tang RTF template as background PDF
+// Overlays real data on top via pdf-lib (same pattern as SCR)
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
+import { verifyAuthRequest, type Env as AuthEnv } from './_auth';
 
-interface Env {
+type Env = AuthEnv & {
   DB: D1Database;
-}
+  PDF_TEMPLATES: R2Bucket;
+};
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -18,16 +19,66 @@ const CHINESE_FONT_URL = "https://cdn.jsdelivr.net/fontsource/fonts/noto-sans-tc
 
 // Landscape A4
 const PW = 842, PH = 595;
-const M = 28;
-const CW = PW - M * 2;
 
-// Paul Tang RTF colours
-const BLUE = rgb(0, 51 / 255, 153 / 255);  // #003399
-const GREY_HDR = rgb(227 / 255, 227 / 255, 227 / 255);
+const BLUE = rgb(0, 51 / 255, 153 / 255);
+const WHITE = rgb(1, 1, 1);
 const BLACK = rgb(0, 0, 0);
-const LINE_GREY = rgb(0.71, 0.71, 0.71);
+
+// ── Marker positions (from PyMuPDF analysis of RTF→PDF, origin top-left) ──
+// pdf-lib uses bottom-left origin, so: pdfY = PH - pymupdf_y1
+// Font sizes matching RTF template
+const FS = { header: 12, title: 13, label: 9, body: 9, table: 7 };
+
+interface Pos {
+  x: number;
+  y: number;   // pdf-lib y (already converted from PyMuPDF)
+  size: number; // font size
+  bold?: boolean;
+  color?: any;
+  align?: "L" | "R" | "C";
+  w?: number;   // available width hint for truncation
+  coverX?: number; // separate x for white cover (when text align differs from marker x)
+  coverW?: number; // override cover width
+}
+
+const POSITIONS: Record<string, Pos> = {
+  // ── Company header ──
+  co_name:       { x: 71,  y: 535, size: FS.header, bold: true, color: BLUE },
+  co_br:         { x: 153, y: 518, size: FS.body,   bold: true, color: BLUE },
+  // Title date: marker at x≈203 (left), but date is right-aligned in the RTF
+  report_date:   { x: 800, y: 503, size: FS.title,  bold: true, color: BLUE, align: "R", coverX: 203, coverW: 140 },
+
+  // ── SH1 info ──
+  sh1_name:      { x: 98,  y: 483, size: FS.label, bold: true, color: BLUE, w: 500 },
+  sh1_addr:      { x: 105, y: 471, size: FS.label, color: BLUE, w: 500 },
+  sh1_security:  { x: 113, y: 455, size: FS.label, bold: true, color: BLUE, w: 500 },
+
+  // ── SH2 info ──
+  sh2_name:      { x: 98,  y: 363, size: FS.label, bold: true, color: BLUE, w: 500 },
+  sh2_addr:      { x: 105, y: 351, size: FS.label, color: BLUE, w: 500 },
+  sh2_security:  { x: 113, y: 335, size: FS.label, bold: true, color: BLUE, w: 500 },
+};
+
+// Transaction table data row y positions (baseline, pdf-lib coords)
+const SH1_DATA_Y = [410, 395];  // row 0, row 1 (distinctive)
+const SH2_DATA_Y = [289, 274, 259];  // row 0, row 1, row 2
+const SH_DATA_Y_OFFSET = 289 - 410;  // offset between SH1 and SH2 data rows
+
+// Column x positions (left edge of each column cell, from rom-positions.json _table.columns)
+const TX_COL_X = {
+  date: 35,
+  type: 95,
+  units: 212,
+  par: 270,
+  paidup: 329,
+  cert: 392,
+  balance: 775,
+  transfer: 563,
+  distinct: 440,
+};
 
 // ── Helpers ──
+
 function uint8ToBase64(bytes: Uint8Array): string {
   let binary = "";
   const chunk = 0x8000;
@@ -44,14 +95,6 @@ function rget(row: any, key: string, dflt: any = null): any {
 
 function isAsciiChar(ch: string): boolean { return ch.charCodeAt(0) <= 0x7F; }
 
-function hasCjk(text: string): boolean {
-  for (const ch of text || "") {
-    const c = ch.charCodeAt(0);
-    if ((c >= 0x4E00 && c <= 0x9FFF) || (c >= 0x3000 && c <= 0x303F) || (c >= 0xFF00 && c <= 0xFFEF)) return true;
-  }
-  return false;
-}
-
 function segmentText(text: string): { text: string; useCjk: boolean }[] {
   const segments: { text: string; useCjk: boolean }[] = [];
   if (!text) return segments;
@@ -67,6 +110,12 @@ function segmentText(text: string): { text: string; useCjk: boolean }[] {
   }
   if (cur) segments.push({ text: cur, useCjk: curAscii === null ? false : !curAscii });
   return segments;
+}
+
+function widthOfText(text: string, cjk: any, ascii: any, size: number): number {
+  let w = 0;
+  for (const s of segmentText(text || "")) w += (s.useCjk ? cjk : ascii).widthOfTextAtSize(s.text, size);
+  return w;
 }
 
 function drawMixed(page: any, text: string, opts: {
@@ -105,59 +154,48 @@ function drawMixedRight(page: any, text: string, opts: {
   }
 }
 
-function widthOfText(text: string, cjk: any, ascii: any, size: number): number {
-  let w = 0;
-  for (const s of segmentText(text || "")) w += (s.useCjk ? cjk : ascii).widthOfTextAtSize(s.text, size);
-  return w;
-}
-
-function wrapText(text: string, cjk: any, ascii: any, fontSize: number, maxWidth: number): string[] {
-  const lines: string[] = [];
-  const paragraphs = (text || "").split('\n');
-  for (const para of paragraphs) {
-    if (!para) { lines.push(""); continue; }
-    if (widthOfText(para, cjk, ascii, fontSize) <= maxWidth) { lines.push(para); continue; }
-    let start = 0;
-    while (start < para.length) {
-      let lo = start + 1, hi = para.length;
-      while (lo < hi) {
-        const mid = Math.floor((lo + hi + 1) / 2);
-        if (widthOfText(para.slice(start, mid), cjk, ascii, fontSize) <= maxWidth) lo = mid;
-        else hi = mid - 1;
-      }
-      if (lo === start) lo = start + 1;
-      lines.push(para.slice(start, lo));
-      start = lo;
-    }
+// Draw white rectangle to cover marker, then overlay real text
+function drawOverlay(page: any, pos: Pos, text: string, fo: { cjk: any; ascii: any }) {
+  if (!text) return;
+  const str = String(text);
+  // Cover the marker area with white
+  const cx = pos.coverX !== undefined ? pos.coverX : pos.x;
+  const coverW = pos.coverW || pos.w || 500;
+  const coverH = pos.size + 4;
+  page.drawRectangle({
+    x: cx - 2,
+    y: pos.y - pos.size - 2,
+    width: coverW + 4,
+    height: coverH,
+    color: WHITE,
+  });
+  // Draw real text at pos.x
+  if (pos.align === "R") {
+    drawMixedRight(page, str, { x: pos.x, y: pos.y, size: pos.size, cjk: fo.cjk, ascii: fo.ascii, bold: pos.bold, color: pos.color });
+  } else {
+    drawMixed(page, str, { x: pos.x, y: pos.y, size: pos.size, cjk: fo.cjk, ascii: fo.ascii, bold: pos.bold, color: pos.color });
   }
-  if (lines.length === 0) lines.push("");
-  return lines;
 }
 
-function hline(page: any, x1: number, x2: number, y: number, thickness = 0.3, color = BLACK) {
-  page.drawLine({ start: { x: x1, y }, end: { x: x2, y }, color, thickness });
+// Draw text in a table cell
+function drawCell(page: any, text: string, x: number, y: number, size: number, fo: { cjk: any; ascii: any }, align = "L") {
+  if (!text) return;
+  const str = String(text).slice(0, 50);
+  if (align === "R") {
+    drawMixedRight(page, str, { x, y, size, cjk: fo.cjk, ascii: fo.ascii });
+  } else {
+    drawMixed(page, str, { x: x + 1, y, size, cjk: fo.cjk, ascii: fo.ascii });
+  }
 }
 
-function vline(page: any, x: number, y1: number, y2: number, thickness = 0.2, color = BLACK) {
-  page.drawLine({ start: { x, y: y1 }, end: { x, y: y2 }, color, thickness });
-}
-
-// ── Compact currency display (matching local) ──
-const COMPACT_CCY: Record<string, string> = {
-  HKD: 'HK$', USD: 'US$', CNY: '\xa5', RMB: '\xa5',
-  GBP: '\xa3', EUR: '€', JPY: '\xa5',
-  AUD: 'A$', SGD: 'S$', CAD: 'C$', TWD: 'NT$',
-};
-function compactCurrency(ccy: string): string {
-  return COMPACT_CCY[ccy?.toUpperCase()] || (ccy?.length >= 2 ? ccy.slice(0, 2) + '$' : (ccy || '') + '$');
-}
-
-// ══════════════════════════════════════════════════════════════
-//  Main handler
 // ══════════════════════════════════════════════════════════════
 export async function onRequest(context: { request: Request; env: Env }) {
   const { request, env } = context;
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+
+  // Auth
+  const { errorResponse } = await verifyAuthRequest(request, env);
+  if (errorResponse) return errorResponse;
 
   try {
     const { companyId } = await request.json() as any;
@@ -167,26 +205,27 @@ export async function onRequest(context: { request: Request; env: Env }) {
       });
     }
 
-    const [company, rolesResult, txResult, fontResp] = await Promise.all([
+    // ── Fetch data + template + font in parallel ──
+    const [company, rolesResult, txResult, fontResp, templateObj] = await Promise.all([
       env.DB.prepare("SELECT * FROM companies WHERE id = ?").bind(companyId).first(),
-      env.DB.prepare(
-        "SELECT * FROM person_company_roles WHERE company_id = ? AND role = 'shareholder'"
-      ).bind(companyId).all(),
-      env.DB.prepare(
-        "SELECT * FROM share_transactions WHERE company_id = ? ORDER BY transaction_date"
-      ).bind(companyId).all(),
+      env.DB.prepare("SELECT * FROM person_company_roles WHERE company_id = ? AND role = 'shareholder'")
+        .bind(companyId).all(),
+      env.DB.prepare("SELECT * FROM share_transactions WHERE company_id = ? ORDER BY transaction_date")
+        .bind(companyId).all(),
       fetch(CHINESE_FONT_URL, { headers: { Accept: "*/*" } }),
+      env.PDF_TEMPLATES.get("rom-template-bg.pdf"),
     ]);
 
     if (!company) throw new Error("Company not found");
     if (!fontResp.ok) throw new Error("Failed to load Chinese font");
+    if (!templateObj) throw new Error("ROM template not found in R2");
 
     const roles = (rolesResult.results || []) as any[];
     const transactions = (txResult.results || []) as any[];
 
     // Map persons
     const personIds = roles.map((r: any) => r.person_id).filter(Boolean);
-    let personMap = new Map<string, any>();
+    const personMap = new Map<string, any>();
     if (personIds.length > 0) {
       const placeholders = personIds.map(() => '?').join(',');
       const result = await env.DB.prepare(
@@ -205,69 +244,47 @@ export async function onRequest(context: { request: Request; env: Env }) {
       }
     }
 
-    // Load font
+    // Fonts
     const fontBytes = await fontResp.arrayBuffer();
+    const templateBytes = new Uint8Array(await templateObj.arrayBuffer());
+
     const pdf = await PDFDocument.create();
     pdf.registerFontkit(fontkit);
     const cjkFont = await pdf.embedFont(fontBytes);
     const asciiFont = await pdf.embedFont(StandardFonts.Helvetica);
-    const f = { cjk: cjkFont, ascii: asciiFont };
+    const fo = { cjk: cjkFont, ascii: asciiFont };
+
+    // Load template PDF
+    const templateDoc = await PDFDocument.load(templateBytes);
+    const [templatePage] = await pdf.embedPages(templateDoc.getPages().map(p => p));
 
     // ── Company data ──
     const coName = rget(company, 'name') || '';
     const br = rget(company, 'company_number') || '';
-    const today = new Date();
     const months = ['JANUARY','FEBRUARY','MARCH','APRIL','MAY','JUNE',
       'JULY','AUGUST','SEPTEMBER','OCTOBER','NOVEMBER','DECEMBER'];
+    const today = new Date();
     const reportDate = `${today.getDate()} ${months[today.getMonth()]} ${today.getFullYear()}`;
 
-    // ── Render ──
-    let page = pdf.addPage([PW, PH]);
-    let pageNum = 1;
-
-    // Continuation page helper
-    function newPage(): void {
-      page = pdf.addPage([PW, PH]);
-      pageNum++;
-      // Continuation header
-      drawMixed(page, coName, { x: PW / 2, y: PH - 35, size: 12, cjk: f.cjk, ascii: f.ascii, bold: true, color: BLUE });
-      drawMixedRight(page, "REGISTER OF MEMBERS (Cont'd)", {
-        x: PW - M, y: PH - 35, size: 13, cjk: f.cjk, ascii: f.ascii, bold: true, color: BLUE,
-      });
-      hline(page, M, PW - M, PH - 52, 1.0, BLUE);
+    // ── Build shareholder data ──
+    interface ShData {
+      nameEn: string; nameZh: string; idStr: string; fullName: string;
+      addr: string; shareClass: string;
+      dateApp: string; dateCea: string;
+      sharesHeld: number; certNo: string;
+      currency: string; issuePrice: string;
+      personNameKey: string; txs: any[];
     }
-
-    // ── Page 1 Header ──
-    let y = PH - 35;
-    // Company name — blue bold left
-    drawMixed(page, coName, { x: M, y, size: 12, cjk: f.cjk, ascii: f.ascii, bold: true, color: BLUE });
-    y -= 18;
-    // Company Number + Quorum — blue
-    const quorum = roles.length || 1;
-    drawMixed(page, `Company Number: ${br}`, { x: M, y, size: 9, cjk: f.cjk, ascii: f.ascii, color: BLUE });
-    drawMixedRight(page, `Quorum:  ${quorum}`, { x: PW - M, y, size: 8, cjk: f.cjk, ascii: f.ascii, color: BLUE });
-    // Title — right-aligned blue bold
-    drawMixedRight(page, `REGISTER OF MEMBERS AT ${reportDate}`, {
-      x: PW - M, y: PH - 35, size: 13, cjk: f.cjk, ascii: f.ascii, bold: true, color: BLUE,
-    });
-    y -= 16;
-    // Thick separator
-    hline(page, M, PW - M, y, 1.5, BLUE);
-    y -= 12;
-
-    // ── Render each shareholder ──
-    for (let si = 0; si < roles.length; si++) {
-      const r = roles[si];
+    const shareholders: ShData[] = [];
+    for (const r of roles) {
       const p = personMap.get(r.person_id) || {};
-
       const nameEn = (rget(p, 'name_english') || rget(p, 'name_chinese') || '(unnamed)').slice(0, 80);
-      const nameCh = (rget(p, 'name_chinese') || '').slice(0, 40);
+      const nameZh = (rget(p, 'name_chinese') || '').slice(0, 40);
       const idType = rget(p, 'id_type') || 'HKID';
       const idNo = rget(p, 'id_number') || '';
       const idStr = idNo ? `(${idType} No: ${idNo})` : '';
-      const fullNameLine = [nameEn, nameCh, idStr].filter(Boolean).join(' ').trim();
+      const fullName = [nameEn, nameZh, idStr].filter(Boolean).join(' ').trim();
 
-      // Address
       let addr = [
         rget(p, 'addr_flat'), rget(p, 'addr_building'),
         rget(p, 'addr_street'), rget(p, 'addr_district'),
@@ -277,224 +294,150 @@ export async function onRequest(context: { request: Request; env: Env }) {
       if (region && !addr.includes(region)) addr = addr ? `${addr}, ${region}` : region;
       addr = addr.slice(0, 100);
 
-      const dateApp = rget(r, 'date_appointed') || '-';
-      const dateCea = rget(r, 'date_ceased') || '';
-      const sharesHeld = Number(rget(r, 'shares') || 0);
-      const certNo = rget(r, 'certificate_number') || '-';
       const currency = rget(r, 'currency') || 'HKD';
       const issuePrice = rget(r, 'issue_price') || '1.00';
-      const ccyCompact = compactCurrency(currency);
       const shareClass = `ORD - ${currency}$${issuePrice} ORDINARY FULLY PAID (${currency})`;
-
       const personNameKey = nameEn.trim().toUpperCase();
-      const personTxs = txByName.get(personNameKey) || [];
 
-      // Check if we need a page break (~200pt needed for a shareholder block)
-      if (y < 200) {
-        newPage();
-        y = PH - 70;
-      }
-
-      // ── Name row ──
-      const labelSize = 9;
-      const labelW = 70; // width for "Name:", "Address:", "Security:" labels
-
-      drawMixed(page, "Name:", { x: M, y, size: labelSize, cjk: f.cjk, ascii: f.ascii, bold: true, color: BLUE });
-      drawMixed(page, fullNameLine, { x: M + labelW, y, size: labelSize, cjk: f.cjk, ascii: f.ascii, bold: true, color: BLUE });
-      y -= 16;
-
-      // ── Address row ──
-      drawMixed(page, "Address:", { x: M, y, size: labelSize, cjk: f.cjk, ascii: f.ascii, color: BLUE });
-      drawMixed(page, addr, { x: M + labelW, y, size: labelSize, cjk: f.cjk, ascii: f.ascii, color: BLUE });
-      y -= 16;
-
-      // Separator
-      hline(page, M, PW - M, y + 6, 1.0, BLUE);
-      y -= 6;
-
-      // ── Security row (with Date / Date Ceased on right) ──
-      drawMixed(page, "Security:", { x: M, y, size: labelSize, cjk: f.cjk, ascii: f.ascii, bold: true, color: BLUE });
-      drawMixed(page, shareClass, { x: M + labelW, y, size: labelSize, cjk: f.cjk, ascii: f.ascii, bold: true, color: BLUE });
-      // Date on right
-      drawMixedRight(page, `Date: ${dateApp}`, {
-        x: PW - M - 100, y, size: labelSize, cjk: f.cjk, ascii: f.ascii, color: BLUE,
+      shareholders.push({
+        nameEn, nameZh, idStr, fullName,
+        addr, shareClass,
+        dateApp: rget(r, 'date_appointed') || '-',
+        dateCea: rget(r, 'date_ceased') || '',
+        sharesHeld: Number(rget(r, 'shares') || 0),
+        certNo: rget(r, 'certificate_number') || '-',
+        currency, issuePrice,
+        personNameKey,
+        txs: txByName.get(personNameKey) || [],
       });
-      y -= 14;
-      if (dateCea && dateCea !== '-') {
-        drawMixedRight(page, `Date Ceased: ${dateCea}`, {
-          x: PW - M - 100, y, size: labelSize, cjk: f.cjk, ascii: f.ascii, color: BLUE,
+    }
+
+    // ── Render page ──
+    let page = pdf.addPage([PW, PH]);
+    page.drawPage(templatePage);  // background
+    let pageNum = 1;
+    let shIdx = 0;
+    const allPages = [page];  // track all pages for footer numbering
+
+    function newPage() {
+      page = pdf.addPage([PW, PH]);
+      page.drawPage(templatePage);
+      pageNum++;
+      allPages.push(page);
+    }
+
+    // Cover markers & draw company info
+    drawOverlay(page, POSITIONS.co_name, coName, fo);
+    drawOverlay(page, POSITIONS.co_br, br, fo);
+    drawOverlay(page, POSITIONS.report_date, reportDate, fo);
+
+    // ── Render shareholders (up to 2 per page from template) ──
+    while (shIdx < shareholders.length) {
+      const sh = shareholders[shIdx];
+      const posOnPage = shIdx % 2;  // 0 = SH1 positions, 1 = SH2 positions
+      const prefix = posOnPage === 0 ? "sh1" : "sh2";
+
+      // Cover & draw name/addr/security
+      drawOverlay(page, POSITIONS[`${prefix}_name`], sh.fullName, fo);
+      drawOverlay(page, POSITIONS[`${prefix}_addr`], sh.addr, fo);
+      drawOverlay(page, POSITIONS[`${prefix}_security`], sh.shareClass, fo);
+
+      // Cover transaction data markers + Date/Ceased area with white
+      const dataYs = posOnPage === 0 ? SH1_DATA_Y : SH2_DATA_Y;
+      const coverX0 = 25;
+      const coverX1 = 820;
+      for (const dy of dataYs) {
+        page.drawRectangle({
+          x: coverX0, y: dy - 11, width: coverX1 - coverX0, height: 14, color: WHITE,
         });
-        y -= 14;
       }
-      y -= 4;
 
-      // ── Transaction sub-table ──
-      const txCols = [
-        { label: "Date Entered\n/ Ceased", w: 78 },
-        { label: "Transaction\nType", w: 72 },
-        { label: "Units", w: 62 },
-        { label: "Par Value\nPer Share", w: 72 },
-        { label: "Paid Up Value\nPer Share", w: 72 },
-        { label: "Certificate\nNo", w: 56 },
-        { label: "Balance", w: 62 },
-        { label: "Transferred To/From,\nRedeemed, Reissued", w: 120 },
-        { label: "Distinctive\nNumbers", w: 70 },
-      ];
-      const txTotalW = txCols.reduce((s, c) => s + c.w, 0);
-      const txX0 = M + (CW - txTotalW) / 2; // center the sub-table
-      const txX: number[] = [txX0];
-      for (let i = 0; i < txCols.length - 1; i++) txX.push(txX[i] + txCols[i].w);
+      // Draw transaction data
+      // Row layout: [0]=Subscription, [1..N-1]=Transaction rows, [N]=Distinctive (LAST)
+      const initBalance = sh.sharesHeld;
+      const lastRowIdx = dataYs.length - 1;  // distinctive goes on last row
 
-      const txHdrSize = 7;
-      const txDataSize = 7;
-      const txRowH = 18;
+      // Row 0: Subscription / initial holding
+      const row0y = dataYs[0];
+      drawCell(page, sh.dateApp, TX_COL_X.date, row0y, FS.table, fo);
+      drawCell(page, initBalance > 0 ? 'Subscription' : '-', TX_COL_X.type, row0y, FS.table, fo);
+      drawCell(page, initBalance > 0 ? String(initBalance) : '-', TX_COL_X.units, row0y, FS.table, fo, "R");
+      drawCell(page, initBalance > 0 ? `${sh.currency}$${sh.issuePrice}` : '-', TX_COL_X.par, row0y, FS.table, fo);
+      drawCell(page, initBalance > 0 ? `${sh.currency}$${sh.issuePrice}` : '-', TX_COL_X.paidup, row0y, FS.table, fo);
+      drawCell(page, String(sh.certNo), TX_COL_X.cert, row0y, FS.table, fo);
+      drawCell(page, String(initBalance), TX_COL_X.balance, row0y, FS.table, fo, "R");
 
-      // Grey header
-      const hdrY0 = y;
-      for (let ci = 0; ci < txCols.length; ci++) {
-        const lines = txCols[ci].label.split('\n');
-        for (let li = 0; li < lines.length; li++) {
-          drawMixed(page, lines[li], {
-            x: txX[ci] + 1, y: y - 2 - li * 9, size: txHdrSize,
-            cjk: f.cjk, ascii: f.ascii, bold: true,
-          });
-        }
-      }
-      // Draw grey header background (using a filled rectangle behind text)
-      page.drawRectangle({
-        x: txX0 - 1, y: y - 26, width: txTotalW + 2, height: 26,
-        color: GREY_HDR,
-      });
-      // Redraw header text on top of grey background
-      for (let ci = 0; ci < txCols.length; ci++) {
-        const lines = txCols[ci].label.split('\n');
-        for (let li = 0; li < lines.length; li++) {
-          drawMixed(page, lines[li], {
-            x: txX[ci] + 1, y: y - 2 - li * 9, size: txHdrSize,
-            cjk: f.cjk, ascii: f.ascii, bold: true,
-          });
-        }
-      }
-      // Header bottom line
-      const hdrH = 26;
-      hline(page, txX0, txX0 + txTotalW, y - hdrH, 0.5);
-      y -= hdrH;
-
-      // Initial subscription/allotment row
-      const initBalance = sharesHeld;
-      const initRow = [
-        dateApp,
-        initBalance > 0 ? 'Subscription' : '-',
-        initBalance > 0 ? String(initBalance) : '-',
-        initBalance > 0 ? `${ccyCompact}${issuePrice}` : '-',
-        initBalance > 0 ? `${ccyCompact}${issuePrice}` : '-',
-        String(certNo),
-        String(initBalance),
-        '', '',
-      ];
-      for (let ci = 0; ci < initRow.length && ci < txCols.length; ci++) {
-        if (initRow[ci]) {
-          drawMixed(page, String(initRow[ci]).slice(0, 40), {
-            x: txX[ci] + 1, y: y - 2, size: txDataSize, cjk: f.cjk, ascii: f.ascii,
-          });
-        }
-      }
-      y -= txRowH;
-
-      // Transaction rows
+      // Transaction rows (use rows 1 to lastRowIdx-1, leave last row for distinctive)
       let balance = initBalance;
-      for (const tx of personTxs) {
-        if (y < 60) {
-          newPage();
-          y = PH - 70;
-          // Redraw sub-table header on new page
-          for (let ci = 0; ci < txCols.length; ci++) {
-            const lines = txCols[ci].label.split('\n');
-            for (let li = 0; li < lines.length; li++) {
-              drawMixed(page, lines[li], {
-                x: txX[ci] + 1, y: y - 2 - li * 9, size: txHdrSize,
-                cjk: f.cjk, ascii: f.ascii, bold: true,
-              });
-            }
-          }
-          page.drawRectangle({
-            x: txX0 - 1, y: y - 26, width: txTotalW + 2, height: 26,
-            color: GREY_HDR,
-          });
-          for (let ci = 0; ci < txCols.length; ci++) {
-            const lines = txCols[ci].label.split('\n');
-            for (let li = 0; li < lines.length; li++) {
-              drawMixed(page, lines[li], {
-                x: txX[ci] + 1, y: y - 2 - li * 9, size: txHdrSize,
-                cjk: f.cjk, ascii: f.ascii, bold: true,
-              });
-            }
-          }
-          hline(page, txX0, txX0 + txTotalW, y - 26, 0.5);
-          y -= 26;
-        }
+      for (let ti = 0; ti < sh.txs.length; ti++) {
+        const txRowIdx = ti + 1;  // row 1, 2, ...
+        if (txRowIdx >= lastRowIdx) break;  // stop before distinctive row
+        const rowY = dataYs[txRowIdx];
+        if (rowY === undefined) break;
 
+        const tx = sh.txs[ti];
         const txShares = Number(rget(tx, 'shares') || 0);
         const txDate = rget(tx, 'transaction_date') || '-';
         const txInst = rget(tx, 'instrument_number') || '-';
-        const txCert = rget(tx, 'certificate_number') || certNo;
-        const txPrice = rget(tx, 'price_per_share') || issuePrice;
-        const txCcy = rget(tx, 'currency') || currency;
-        const txCcyCompact = compactCurrency(txCcy);
+        const txCert = rget(tx, 'certificate_number') || sh.certNo;
+        const txPrice = rget(tx, 'price_per_share') || sh.issuePrice;
+        const txCurrency = rget(tx, 'currency') || sh.currency;
 
-        const isIn = (rget(tx, 'to_name') || '').trim().toUpperCase() === personNameKey;
-        const isOut = (rget(tx, 'from_name') || '').trim().toUpperCase() === personNameKey;
+        const isIn = (rget(tx, 'to_name') || '').trim().toUpperCase() === sh.personNameKey;
+        const isOut = (rget(tx, 'from_name') || '').trim().toUpperCase() === sh.personNameKey;
 
         let txType: string, counterparty: string;
-        if (isIn) {
-          balance += txShares;
-          txType = 'Transfer In';
-          counterparty = rget(tx, 'from_name') || '';
-        } else if (isOut) {
-          balance -= txShares;
-          txType = 'Transfer Out';
-          counterparty = rget(tx, 'to_name') || '';
-        } else {
-          balance += txShares;
-          txType = 'Allotment';
-          counterparty = '';
-        }
+        if (isIn) { balance += txShares; txType = 'Transfer In'; counterparty = rget(tx, 'from_name') || ''; }
+        else if (isOut) { balance -= txShares; txType = 'Transfer Out'; counterparty = rget(tx, 'to_name') || ''; }
+        else { balance += txShares; txType = 'Allotment'; counterparty = ''; }
 
-        const txRow = [
-          txDate, txType, String(txShares),
-          `${txCcyCompact}${txPrice}`, `${txCcyCompact}${txPrice}`,
-          String(txCert), String(balance), counterparty, txInst,
-        ];
-        for (let ci = 0; ci < txRow.length && ci < txCols.length; ci++) {
-          if (txRow[ci]) {
-            drawMixed(page, String(txRow[ci]).slice(0, 40), {
-              x: txX[ci] + 1, y: y - 2, size: txDataSize, cjk: f.cjk, ascii: f.ascii,
-            });
-          }
-        }
-        y -= txRowH;
+        drawCell(page, txDate, TX_COL_X.date, rowY, FS.table, fo);
+        drawCell(page, txType, TX_COL_X.type, rowY, FS.table, fo);
+        drawCell(page, String(txShares), TX_COL_X.units, rowY, FS.table, fo, "R");
+        drawCell(page, `${txCurrency}$${txPrice}`, TX_COL_X.par, rowY, FS.table, fo);
+        drawCell(page, `${txCurrency}$${txPrice}`, TX_COL_X.paidup, rowY, FS.table, fo);
+        drawCell(page, String(txCert), TX_COL_X.cert, rowY, FS.table, fo);
+        drawCell(page, String(balance), TX_COL_X.balance, rowY, FS.table, fo, "R");
+        drawCell(page, counterparty, TX_COL_X.transfer, rowY, FS.table, fo);
+        drawCell(page, txInst, TX_COL_X.distinct, rowY, FS.table, fo);
       }
 
-      // Sub-table bottom border
-      hline(page, txX0, txX0 + txTotalW, y, 0.5);
+      // Distinctive numbers — ALWAYS on the LAST data row
+      if (dataYs.length > 1) {
+        const distY = dataYs[lastRowIdx];
+        page.drawRectangle({
+          x: TX_COL_X.distinct - 5, y: distY - 11, width: 130, height: 14, color: WHITE,
+        });
+        drawCell(page, `(${balance})`, TX_COL_X.distinct, distY, FS.table, fo);
+      }
 
-      // Vertical borders for sub-table
-      vline(page, txX0, y, hdrY0, 0.5);
-      vline(page, txX0 + txTotalW, y, hdrY0, 0.5);
-
-      // Spacer between shareholders
-      y -= 14;
+      shIdx++;
+      // If more shareholders and current page is full (2 per page), add new page
+      if (shIdx < shareholders.length && shIdx % 2 === 0) {
+        newPage();
+        // Redraw company overlay on new page
+        drawOverlay(page, POSITIONS.co_name, coName, fo);
+        drawOverlay(page, POSITIONS.co_br, br, fo);
+        drawOverlay(page, POSITIONS.report_date, reportDate, fo);
+      }
     }
 
-    // ── Footer ──
-    if (y < 40) {
-      newPage();
-      y = PH - 70;
+    // ── Footer page numbers ──
+    // Template has "- 1 -" at bottom center (~y=25 in pdf-lib coords).
+    // Cover and redraw for ALL pages.
+    const FOOTER_Y = 23;  // pdf-lib y (baseline)
+    const FOOTER_SIZE = 8;
+    for (let pi = 0; pi < allPages.length; pi++) {
+      const pg = allPages[pi];
+      // Cover template "- 1 -" (centered, ~100pt wide, near bottom)
+      pg.drawRectangle({
+        x: 360, y: FOOTER_Y - FOOTER_SIZE, width: 120, height: FOOTER_SIZE + 4, color: WHITE,
+      });
+      drawMixed(pg, `- ${pi + 1} -`, {
+        x: 400, y: FOOTER_Y, size: FOOTER_SIZE,
+        cjk: fo.cjk, ascii: fo.ascii,
+      });
     }
-    y -= 10;
-    drawMixed(page, `- ${pageNum} -`, {
-      x: PW / 2, y, size: 8, cjk: f.cjk, ascii: f.ascii,
-    });
 
     const bytes = await pdf.save();
     return new Response(JSON.stringify({ pdf: uint8ToBase64(new Uint8Array(bytes)) }), {

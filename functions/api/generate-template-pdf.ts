@@ -5,45 +5,26 @@
 // resp: { pdf: '<base64>' }
 
 import { PDFDocument } from "pdf-lib";
-import fontkit from "@pdf-lib/fontkit";
+import {
+  corsHeaders, jsonResp, uint8ToBase64,
+  fetchAndEmbedFont,
+} from "./_pdf-utils";
+import { verifyAuthRequest, type Env } from "./_auth";
 
-interface Env {
-  PDF_TEMPLATES: R2Bucket;
-}
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
-
-const CHINESE_FONT_URL = "https://cdn.jsdelivr.net/fontsource/fonts/noto-sans-tc@latest/chinese-traditional-400-normal.woff2";
-
-function uint8ToBase64(bytes: Uint8Array): string {
-  let binary = "";
-  const chunkSize = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
-  }
-  return btoa(binary);
-}
-
-function jsonResp(data: unknown, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
-}
-
-export async function onRequest(context: { request: Request; env: Env }): Promise<Response> {
+export async function onRequest(context: { request: Request; env: Env }) {
   const { request, env } = context;
-  if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  if (request.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+
+  // Auth
+  const { user, errorResponse } = await verifyAuthRequest(request, env);
+  if (errorResponse) return errorResponse;
 
   try {
     const data = await request.json() as {
       template?: string;
       fields?: Record<string, unknown>;
       checkboxes?: string[];
+      brNumber?: string;
     };
 
     const template = data.template || "";
@@ -52,20 +33,19 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
       return jsonResp({ error: "Invalid template name" }, 400);
     }
 
-    const [templateObj, fontResponse] = await Promise.all([
-      env.PDF_TEMPLATES.get(template),
-      fetch(CHINESE_FONT_URL, { headers: { Accept: "*/*" } }),
-    ]);
+    const r2Bucket = (env as any).PDF_TEMPLATES || (env as any).R2;
+    if (!r2Bucket) {
+      return jsonResp({ error: "R2 bucket not available" }, 500);
+    }
+
+    const templateObj = await r2Bucket.get(template);
     if (!templateObj) return jsonResp({ error: `Template not found: ${template}` }, 404);
 
-    const templateBytes = await templateObj.arrayBuffer();
+    const templateBytes = new Uint8Array(await templateObj.arrayBuffer());
     const pdfDoc = await PDFDocument.load(templateBytes);
 
-    let customFont: any = undefined;
-    if (fontResponse.ok) {
-      pdfDoc.registerFontkit(fontkit);
-      customFont = await pdfDoc.embedFont(await fontResponse.arrayBuffer());
-    }
+    // 嵌入字體 (R2 → CDN → Helvetica fallback)
+    const { cjk } = await fetchAndEmbedFont(pdfDoc, env as any);
 
     const form = pdfDoc.getForm();
 
@@ -75,11 +55,11 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
       try {
         const tf = form.getTextField(name);
         tf.setText(value != null ? String(value) : "");
-        if (customFont) tf.updateAppearances(customFont);
+        if (cjk) tf.updateAppearances(cjk);
       } catch { /* 字段不存在或類型不符，跳過 */ }
     }
 
-    // 勾選框（通用端點用 check()，等價於 field_value = True）
+    // 勾選框
     for (const name of data.checkboxes || []) {
       try {
         form.getCheckBox(name).check();
@@ -87,6 +67,17 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
     }
 
     form.flatten();
+
+    // BR 號碼蓋印在所有頁面
+    const brNumber = data.brNumber || "";
+    if (brNumber) {
+      const { StandardFonts } = await import("pdf-lib");
+      const helv = await pdfDoc.embedFont(StandardFonts.Helvetica);
+      for (const page of pdfDoc.getPages()) {
+        page.drawText(brNumber, { x: 500, y: 820, size: 8, font: helv });
+      }
+    }
+
     const pdfBytes = await pdfDoc.save();
     return jsonResp({ pdf: uint8ToBase64(new Uint8Array(pdfBytes)) });
   } catch (err: any) {

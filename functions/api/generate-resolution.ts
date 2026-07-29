@@ -1,9 +1,11 @@
 // AI-assisted resolution generator using Lovable AI Gateway.
 // Returns: { content: string }  (Chinese resolution body, plain text with paragraphs)
 
-interface Env {
+import { verifyAuthRequest, type Env as AuthEnv } from './_auth';
+
+type Env = AuthEnv & {
   LOVABLE_API_KEY: string;
-}
+};
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -23,6 +25,10 @@ interface Req {
 export async function onRequest(context: { request: Request; env: Env }) {
   const { request, env } = context;
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+
+  // Auth
+  const { errorResponse } = await verifyAuthRequest(request, env);
+  if (errorResponse) return errorResponse;
 
   try {
     const body: Req = await request.json();

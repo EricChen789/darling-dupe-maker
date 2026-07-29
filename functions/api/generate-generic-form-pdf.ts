@@ -3,6 +3,7 @@
 // Uses Noto Sans TC for full Chinese support.
 import { PDFDocument, rgb } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
+import { verifyAuthRequest, type Env as AuthEnv } from './_auth';
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -28,13 +29,15 @@ interface DocPayload {
   signatureLines?: string[]; // e.g. ["Director: ____________", "Date: ____________"]
 }
 
-interface Env {
-  // No specific bindings needed — this function generates PDFs from scratch
-}
+type Env = AuthEnv;
 
 export async function onRequest(context: { request: Request; env: Env }) {
-  const { request } = context;
+  const { request, env } = context;
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+
+  // Auth
+  const { errorResponse } = await verifyAuthRequest(request, env);
+  if (errorResponse) return errorResponse;
 
   try {
     const data: DocPayload = await request.json();

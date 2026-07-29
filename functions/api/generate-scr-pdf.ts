@@ -4,11 +4,12 @@
 // Much simpler and lighter than the old draw-from-scratch approach.
 import { PDFDocument, StandardFonts } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
+import { verifyAuthRequest, type Env as AuthEnv } from './_auth';
 
-interface Env {
+type Env = AuthEnv & {
   DB: D1Database;
   R2: R2Bucket;
-}
+};
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -117,6 +118,10 @@ function wrapText(text: string, cjk: any, ascii: any, fontSize: number, maxWidth
 export async function onRequest(context: { request: Request; env: Env }) {
   const { request, env } = context;
   if (request.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
+
+  // Auth
+  const { errorResponse } = await verifyAuthRequest(request, env);
+  if (errorResponse) return errorResponse;
 
   try {
     const { companyId } = await request.json() as any;

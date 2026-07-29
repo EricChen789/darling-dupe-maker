@@ -3,18 +3,13 @@
 // body: { company_id, form_code }
 // resp: { success: true, pdf: '<base64>', filename }
 
-import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
-
-interface Env {
-  DB: D1Database;
-  JWT_SECRET: string;
-}
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { PDFDocument, rgb } from 'pdf-lib';
+import {
+  corsHeaders, jsonResp, uint8ToBase64, rget, fmtDate,
+  drawMixed, segmentText, widthOfText, personLabel,
+  fetchAndEmbedFont, buildAddress
+} from './_pdf-utils';
+import { verifyAuthRequest, type User, type Env } from './_auth';
 
 const CR_FORM_META: Record<string, { code: string; title: string; title_en: string }> = {
   nar1:  { code: 'NAR1',  title: '周年申報表',           title_en: 'Annual Return' },
@@ -32,53 +27,6 @@ const CR_FORM_META: Record<string, { code: string; title: string; title_en: stri
   nn7:   { code: 'NN7',   title: '非香港公司更改秘書及董事詳情',         title_en: 'Change in Particulars of Company Secretary and Director of Non-Hong Kong Company' },
   nn9:   { code: 'NN9',   title: '非香港公司更改地址申報表',            title_en: 'Notice of Change of Address of Non-Hong Kong Company' },
 };
-
-// ─── JWT verify ───
-async function verifyJWT(token: string, secret: string): Promise<Record<string, unknown> | null> {
-  try {
-    const [headerB64, payloadB64, sigB64] = token.split('.');
-    const encoder = new TextEncoder();
-
-    // Verify signature
-    const key = await crypto.subtle.importKey(
-      'raw', encoder.encode(secret),
-      { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']
-    );
-    const sigBytes = Uint8Array.from(atob(sigB64.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
-    const valid = await crypto.subtle.verify('HMAC', key, sigBytes, encoder.encode(`${headerB64}.${payloadB64}`));
-    if (!valid) return null;
-
-    // Parse payload
-    const payloadJson = atob(payloadB64.replace(/-/g, '+').replace(/_/g, '/'));
-    const payload = JSON.parse(payloadJson);
-
-    // Check expiry
-    if (payload.exp && Date.now() / 1000 > (payload.exp as number)) return null;
-
-    return payload;
-  } catch { return null; }
-}
-
-function json(data: unknown, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
-}
-
-function fmtDate(s: string | null | undefined): string {
-  if (!s) return '';
-  const t = String(s).trim();
-  if (t.length === 8 && /^\d{8}$/.test(t)) return `${t.slice(0,2)}/${t.slice(2,4)}/${t.slice(4,8)}`;
-  return t;
-}
-
-function personLabel(m: any): string {
-  const en = (m.name_english || '').trim();
-  const cn = (m.name_chinese || '').trim();
-  if (en && cn) return `${en}（${cn}）`;
-  return en || cn || '—';
-}
 
 async function fetchCompanyBundle(db: D1Database, companyId: string) {
   const row = await db.prepare("SELECT * FROM companies WHERE id = ?").bind(companyId).first();
@@ -100,124 +48,140 @@ async function fetchCompanyBundle(db: D1Database, companyId: string) {
   const totalShares = shareholders.reduce((sum: number, m: any) => sum + (Number(m.shares) || 0), 0);
 
   const c = row as any;
-  const addr = [c.reg_flat, c.reg_building, c.reg_street, c.reg_district, c.reg_region]
-    .filter(Boolean).join(', ');
+  const address = buildAddress(c);
 
-  return { c, address: addr, directors, secretaries, shareholders, totalShares };
+  return { c, address, directors, secretaries, shareholders, totalShares };
 }
 
 // ─── PDF builder ───
-async function buildPdf(bundle: any, meta: { code: string; title: string; title_en: string }, formCode: string) {
+async function buildPdf(
+  bundle: any,
+  meta: { code: string; title: string; title_en: string },
+  formCode: string,
+  env: Env
+) {
   const doc = await PDFDocument.create();
-  const font = await doc.embedFont(StandardFonts.Helvetica);
-  const bold = await doc.embedFont(StandardFonts.HelveticaBold);
-  let page = doc.addPage([595, 842]); // A4
+  const { cjk, ascii, cjkMissing } = await fetchAndEmbedFont(doc, env as any);
+
+  const MARGIN = 50;
+  const PAGE_W = 595, PAGE_H = 842; // A4
+  let page = doc.addPage([PAGE_W, PAGE_H]);
   let y = 800;
-  const margin = 50;
   const lineH = 14;
 
-  const addLine = (text: string, size = 10, isBold = false) => {
-    if (y < 60) { page = doc.addPage([595, 842]); y = 800; }
-    const f = isBold ? bold : font;
-    page.drawText(text, { x: margin, y, size, font: f, color: rgb(0, 0, 0) });
+  // Helper: draw a line of text with mixed CJK/ASCII
+  const drawLine = (text: string, size = 10, bold = false, color?: any) => {
+    if (y < 60) {
+      page = doc.addPage([PAGE_W, PAGE_H]);
+      y = 800;
+    }
+    drawMixed(page, text, {
+      x: MARGIN, y, size,
+      cjk: bold ? cjk : (cjkMissing ? ascii : cjk),
+      ascii,
+      color,
+    });
     y -= lineH;
   };
 
-  const addTitle = (text: string, size = 14) => {
-    const f = bold;
-    const w = f.widthOfTextAtSize(text, size);
-    page.drawText(text, { x: (595 - w) / 2, y, size, font: f, color: rgb(0, 0, 0) });
+  // Helper: centered title
+  const drawTitle = (text: string, size = 14, color?: any) => {
+    const w = widthOfText(text, cjk, ascii, size);
+    const x = (PAGE_W - w) / 2;
+    drawMixed(page, text, { x, y, size, cjk, ascii, color });
     y -= lineH + 4;
   };
 
   const c = bundle.c;
-  const nameEn = c.name || '';
-  const nameCn = c.chinese_name || '';
-  const br = c.company_number || '';
-  const cr = c.ci_number || '';
+  const nameEn = rget(c, 'name');
+  const nameCn = rget(c, 'chinese_name');
+  const br = rget(c, 'company_number');
+  const cr = rget(c, 'ci_number');
 
-  addTitle(`${meta.title}  ${meta.code}`, 16);
-  addTitle(meta.title_en, 10);
+  const BLUE = rgb(0, 0.2, 0.6);
+
+  drawTitle(`${meta.title}  ${meta.code}`, 16, BLUE);
+  drawTitle(meta.title_en, 10, BLUE);
   y -= 4;
-  addLine(`公司註冊處表格 ${meta.code} · 由系統自動填入生成草稿`, 8);
+  drawLine(`公司註冊處表格 ${meta.code} · 由系統自動填入生成草稿`, 8);
   y -= 6;
 
   // Company info
-  addLine('公司基本資料', 11, true);
-  const info = [
+  drawLine('公司基本資料', 11, true);
+  const info: [string, string][] = [
     ['英文名稱', nameEn], ['中文名稱', nameCn],
     ['商業登記號碼 (BR)', br], ['公司註冊編號 (CR)', cr],
-    ['公司類型', c.company_type || ''], ['成立日期', fmtDate(c.incorporation_date)],
-    ['狀態', c.status || ''], ['註冊辦事處地址', bundle.address],
-    ['電郵', c.email || ''], ['電話', c.phone || ''],
+    ['公司類型', rget(c, 'company_type')], ['成立日期', fmtDate(rget(c, 'incorporation_date'))],
+    ['狀態', rget(c, 'status')], ['註冊辦事處地址', bundle.address],
+    ['電郵', rget(c, 'email')], ['電話', rget(c, 'phone')],
   ];
   for (const [label, val] of info) {
-    if (val) addLine(`${label}：${val}`, 9);
+    if (val) drawLine(`${label}：${val}`, 9);
   }
   y -= 4;
 
   // Directors & Secretaries
   const hasOfficers = ['nar1','nd2a','nd2b','nd4','nnc1','nn1','nn3','nn6','nn7'].includes(formCode);
   if (hasOfficers) {
-    addLine(`董事（${bundle.directors.length} 人）`, 10, true);
+    drawLine(`董事（${bundle.directors.length} 人）`, 10, true);
     for (const d of bundle.directors) {
-      const parts = [personLabel(d), d.id_number || d.passport_number || '', `委任: ${fmtDate(d.date_appointed)}`];
-      addLine(`  ${parts.filter(Boolean).join('  |  ')}`, 8);
+      const parts = [personLabel(d), rget(d, 'id_number') || rget(d, 'passport_number') || '', `委任: ${fmtDate(rget(d, 'date_appointed'))}`];
+      drawLine(`  ${parts.filter(Boolean).join('  |  ')}`, 8);
     }
-    if (!bundle.directors.length) addLine('  （無董事記錄）', 8);
+    if (!bundle.directors.length) drawLine('  （無董事記錄）', 8);
     y -= 2;
 
-    addLine(`公司秘書（${bundle.secretaries.length} 人）`, 10, true);
+    drawLine(`公司秘書（${bundle.secretaries.length} 人）`, 10, true);
     for (const s of bundle.secretaries) {
-      const parts = [personLabel(s), `TCSP: ${s.tcsp_number || ''}`, `委任: ${fmtDate(s.date_appointed)}`];
-      addLine(`  ${parts.filter(Boolean).join('  |  ')}`, 8);
+      const parts = [personLabel(s), `TCSP: ${rget(s, 'tcsp_number')}`, `委任: ${fmtDate(rget(s, 'date_appointed'))}`];
+      drawLine(`  ${parts.filter(Boolean).join('  |  ')}`, 8);
     }
-    if (!bundle.secretaries.length) addLine('  （無秘書記錄）', 8);
+    if (!bundle.secretaries.length) drawLine('  （無秘書記錄）', 8);
     y -= 4;
   }
 
   // Shareholders
   const hasShares = ['nar1','nsc1','nnc1','nn1','nn3'].includes(formCode);
   if (hasShares) {
-    addLine(`股東／股本結構（總發行股數：${bundle.totalShares}）`, 10, true);
+    drawLine(`股東／股本結構（總發行股數：${bundle.totalShares}）`, 10, true);
     for (const sh of bundle.shareholders) {
       const pct = bundle.totalShares ? `${(Number(sh.shares || 0) * 100 / bundle.totalShares).toFixed(2)}%` : '—';
-      addLine(`  ${personLabel(sh)}  |  ${sh.shares || 0} 股  |  ${sh.share_type || '普通股'}  |  ${pct}`, 8);
+      drawLine(`  ${personLabel(sh)}  |  ${sh.shares || 0} 股  |  ${sh.share_type || '普通股'}  |  ${pct}`, 8);
     }
-    if (!bundle.shareholders.length) addLine('  （無股東記錄）', 8);
+    if (!bundle.shareholders.length) drawLine('  （無股東記錄）', 8);
     y -= 4;
   }
 
   // Form-specific
   if (formCode === 'nar1') {
-    addLine('重要控制人登記冊 (SCR) 是否備存於公司註冊辦事處？  是 □  否 □', 9);
+    drawLine('重要控制人登記冊 (SCR) 是否備存於公司註冊辦事處？  是 □  否 □', 9);
   }
   if (['nr1','ndr1','nn9'].includes(formCode)) {
-    addLine(`現有註冊地址：${bundle.address || '（未填）'}`, 9);
-    addLine('變更後註冊地址（請手動填寫）：＿＿＿＿＿＿＿＿＿＿＿＿', 9);
+    drawLine(`現有註冊地址：${bundle.address || '（未填）'}`, 9);
+    drawLine('變更後註冊地址（請手動填寫）：＿＿＿＿＿＿＿＿＿＿＿＿', 9);
   }
   if (formCode === 'nsc1') {
     for (const line of ['配發日期：＿＿＿＿', '配發股份類別：＿＿＿＿', '每股發行價：＿＿＿＿', '配發總額：＿＿＿＿']) {
-      addLine(line, 9);
+      drawLine(line, 9);
     }
   }
 
   // Signature block
   y -= 10;
-  if (y < 120) { page = doc.addPage([595, 842]); y = 800; }
-  addLine('簽署 / SIGNED:', 10, true);
+  if (y < 120) { page = doc.addPage([PAGE_W, PAGE_H]); y = 800; }
+  drawLine('簽署 / SIGNED:', 10, true);
   y -= 8;
-  addLine('_______________________________', 10);
-  addLine('董事 / Director       日期 Date：＿＿＿＿', 9);
+  drawLine('_______________________________', 10);
+  drawLine('董事 / Director       日期 Date：＿＿＿＿', 9);
   y -= 4;
-  addLine('_______________________________', 10);
-  addLine('公司秘書 / Company Secretary       日期 Date：＿＿＿＿', 9);
+  drawLine('_______________________________', 10);
+  drawLine('公司秘書 / Company Secretary       日期 Date：＿＿＿＿', 9);
 
   // Footer
   y -= 10;
-  if (y < 50) { page = doc.addPage([595, 842]); y = 800; }
+  if (y < 50) { page = doc.addPage([PAGE_W, PAGE_H]); y = 800; }
   const today = new Date().toISOString().slice(0, 10);
-  addLine(`本文件由公司秘書管理系統自動生成 · ${today}`, 7);
+  drawLine(`本文件由公司秘書管理系統自動生成 · ${today}`, 7);
 
   const pdfBytes = await doc.save();
   return pdfBytes;
@@ -228,41 +192,33 @@ export async function onRequestPost(context: { request: Request; env: Env }) {
   const { request, env } = context;
 
   // Auth
-  const authHeader = request.headers.get('Authorization') || '';
-  const token = authHeader.replace('Bearer ', '');
-  if (!token) return json({ error: 'Not authenticated' }, 401);
-  const payload = await verifyJWT(token, env.JWT_SECRET);
-  if (!payload) return json({ error: 'Invalid or expired token' }, 401);
+  const { user, errorResponse } = await verifyAuthRequest(request, env);
+  if (errorResponse) return errorResponse;
 
   try {
     const body: any = await request.json().catch(() => ({}));
-    const companyId = body.company_id;
-    const formCode = (body.form_code || '').toLowerCase();
-    if (!companyId || !formCode) return json({ error: '缺少 company_id 或 form_code' }, 400);
+    const companyId = body.company_id || body.companyId;
+    const formCode = (body.form_code || body.formType || '').toLowerCase();
+    if (!companyId || !formCode) return jsonResp({ error: '缺少 company_id 或 form_code' }, 400);
 
     const meta = CR_FORM_META[formCode];
-    if (!meta) return json({ error: `不支援的表格代碼：${formCode}` }, 400);
+    if (!meta) return jsonResp({ error: `不支援的表格代碼：${formCode}` }, 400);
 
-    const bundle = await fetchCompanyBundle(env.DB, companyId);
-    if (!bundle) return json({ error: '找不到該公司' }, 404);
+    const bundle = await fetchCompanyBundle(env.DB as unknown as D1Database, companyId);
+    if (!bundle) return jsonResp({ error: '找不到該公司' }, 404);
 
-    const pdfBytes = await buildPdf(bundle, meta, formCode);
+    const pdfBytes = await buildPdf(bundle, meta, formCode, env);
 
-    // Base64 encode (avoid spread operator for compatibility)
     const bytes = new Uint8Array(pdfBytes);
-    let binary = '';
-    for (let i = 0; i < bytes.length; i++) {
-      binary += String.fromCharCode(bytes[i]);
-    }
-    const base64 = btoa(binary);
+    const base64 = uint8ToBase64(bytes);
 
     const safeName = (bundle.c.name || bundle.c.chinese_name || 'company')
       .replace(/[^\w一-鿿-]/g, '_').slice(0, 30);
     const filename = `${meta.code}_${meta.title}_${safeName}.pdf`;
 
-    return json({ success: true, pdf: base64, filename });
+    return jsonResp({ success: true, pdf: base64, filename });
   } catch (e: any) {
-    return json({ error: e.message || 'Internal error' }, 500);
+    return jsonResp({ error: e.message || 'Internal error' }, 500);
   }
 }
 

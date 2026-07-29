@@ -1,9 +1,10 @@
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
+import { verifyAuthRequest, type Env as AuthEnv } from './_auth';
 
-interface Env {
+type Env = AuthEnv & {
   DB: D1Database;
-}
+};
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -210,6 +211,10 @@ function drawDataRow(page: any, f: { cjk: any; ascii: any },
 export async function onRequest(context: { request: Request; env: Env }) {
   const { request, env } = context;
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+
+  // Auth
+  const { errorResponse } = await verifyAuthRequest(request, env);
+  if (errorResponse) return errorResponse;
 
   try {
     const { companyId } = await request.json();

@@ -1,14 +1,12 @@
 // POST /api/generate-nn6-pdf
 // 非香港公司更改秘書及董事（委任/停任）—— 移植自 local-server/server.py:_fill_nd2a_pdf(template='NN6-template.pdf')
 // body: { brNumber, companyName, officers[], signerName, signDate, presentorName, presentorAddress, presentorContact }
-// resp: { pdf: '<base64>' }
 
-import { PDFDocument } from "pdf-lib";
-import fontkit from "@pdf-lib/fontkit";
-
-interface Env {
-  PDF_TEMPLATES: R2Bucket;
-}
+import { PDFDocument, StandardFonts } from "pdf-lib";
+import {
+  corsHeaders, jsonResp, uint8ToBase64
+} from "./_pdf-utils";
+import { verifyAuthRequest, type Env } from "./_auth";
 
 interface Officer {
   type?: "appointment" | "cessation";
@@ -35,35 +33,19 @@ interface Officer {
   cessationIdNumber?: string;
   cessationPassportNumber?: string;
   cessationAlreadyDirector?: "yes" | "no" | "";
+  corpSignerName?: string;
+  corpSignDate?: string;
 }
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
-
-const CHINESE_FONT_URL = "https://cdn.jsdelivr.net/fontsource/fonts/noto-sans-tc@latest/chinese-traditional-400-normal.woff2";
-
-function uint8ToBase64(bytes: Uint8Array): string {
-  let binary = "";
-  const chunkSize = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
-  }
-  return btoa(binary);
-}
-
-function jsonResp(data: unknown, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
-}
+const TEMPLATE = "NN6-template.pdf";
 
 export async function onRequest(context: { request: Request; env: Env }): Promise<Response> {
   const { request, env } = context;
-  if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  if (request.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+
+  // Auth
+  const { errorResponse } = await verifyAuthRequest(request, env);
+  if (errorResponse) return errorResponse;
 
   try {
     const data = await request.json() as {
@@ -77,35 +59,31 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
       presentorContact?: string;
     };
 
-    const [templateObj, fontResponse] = await Promise.all([
-      env.PDF_TEMPLATES.get("NN6-template.pdf"),
-      fetch(CHINESE_FONT_URL, { headers: { Accept: "*/*" } }),
-    ]);
-    if (!templateObj) return jsonResp({ error: "Template not found: NN6-template.pdf" }, 404);
+    const r2Bucket = (env as any).PDF_TEMPLATES || (env as any).R2;
+    if (!r2Bucket) return jsonResp({ error: "R2 bucket not available" }, 500);
+
+    const templateObj = await r2Bucket.get(TEMPLATE);
+    if (!templateObj) return jsonResp({ error: `Template not found: ${TEMPLATE}` }, 404);
 
     const pdfDoc = await PDFDocument.load(await templateObj.arrayBuffer());
-    let font: any = undefined;
-    if (fontResponse.ok) {
-      pdfDoc.registerFontkit(fontkit);
-      font = await pdfDoc.embedFont(await fontResponse.arrayBuffer());
-    }
+    // Skip CJK font embedding for NN6 (large template, limited CPU)
+    // Use Helvetica only — ASCII fields still render correctly
+    const asciiFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const cjk = asciiFont; // fallback for ASCII-only
     const form = pdfDoc.getForm();
-
-    const usedPages = new Set<number>([1]); // P.1 始終保留（1-based）
 
     const setF = (name: string, value?: string) => {
       if (value == null || value === "") return;
       try {
         const tf = form.getTextField(name);
         tf.setText(String(value));
-        if (font) tf.updateAppearances(font);
+        // skip updateAppearances to save CPU for large templates
       } catch { /* skip */ }
     };
     const checkF = (name: string) => {
       try { form.getCheckBox(name).check(); } catch { /* skip */ }
     };
 
-    // BR：去非字母數字後取前 8 位
     const br8 = (data.brNumber || "").replace(/[^0-9A-Za-z]/g, "").slice(0, 8);
     setF("fill_1_P.1", br8);
     setF("fill_2_P.1", data.companyName);
@@ -114,60 +92,49 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
     officers.forEach((officer, i) => {
       const isNatural = (officer.identity || "natural") === "natural";
       const p = isNatural ? i * 2 + 2 : i * 2 + 3; // 自然人 P.2/4/6，法人 P.3/5/7
-      usedPages.add(p);
 
       if (isNatural) {
         setF(`fill_3_P.${p}`, officer.nameEnglish);
         setF(`fill_4_P.${p}`, officer.nameChinese);
         setF(`fill_7_P.${p}`, officer.idNumber);
         setF(`fill_8_P.${p}`, officer.address);
-        // fill_9/10/11 = 委任日期，只填委任，停任不写
         if (officer.type !== 'cessation' && officer.dateAppointed) {
           const parts = officer.dateAppointed.split(/[-/]/);
           if (parts.length >= 3) {
-            setF(`fill_9_P.${p}`, parts[2]);  // 日
-            setF(`fill_10_P.${p}`, parts[1]); // 月
-            setF(`fill_11_P.${p}`, parts[0]); // 年
+            setF(`fill_9_P.${p}`, parts[2]);
+            setF(`fill_10_P.${p}`, parts[1]);
+            setF(`fill_11_P.${p}`, parts[0]);
           }
         }
       } else {
-        // 法人：中文名、英文名、商業登記號碼、電郵、地址
         setF(`fill_3_P.${p}`, officer.nameChinese || "");
         setF(`fill_4_P.${p}`, officer.companyName || officer.nameEnglish || "");
         setF(`fill_11_P.${p}`, officer.companyNumber || "");
         setF(`fill_10_P.${p}`, officer.email || "");
         setF(`fill_5_P.${p}`, (officer as any).addrFlatBlock || officer.address || "");
-        // 委任日期（法人）：只填委任，停任不写
         if (officer.type !== 'cessation' && officer.dateAppointed) {
           const corpParts = officer.dateAppointed.split(/[-/]/);
           if (corpParts.length >= 3) {
-            setF(`fill_12_P.${p}`, corpParts[2]);  // 日
-            setF(`fill_13_P.${p}`, corpParts[1]);  // 月
-            setF(`fill_14_P.${p}`, corpParts[0]);  // 年
+            setF(`fill_12_P.${p}`, corpParts[2]);
+            setF(`fill_13_P.${p}`, corpParts[1]);
+            setF(`fill_14_P.${p}`, corpParts[0]);
           }
         }
-        // 簽署人姓名 + 簽署日期（P.3 底部）
         setF(`fill_19_P.${p}`, (officer as any).corpSignerName || "");
         const signDate = (officer as any).corpSignDate || "";
-        if (signDate) {
-          setF(`fill_20_P.${p}`, signDate);
-        }
-        // 續頁頁數
+        if (signDate) setF(`fill_20_P.${p}`, signDate);
         if ((officer as any).hasCessation && officer.dateCeased) {
-          setF(`fill_15_P.${p}`, "1");  // 續頁A
+          setF(`fill_15_P.${p}`, "1");
         }
       }
 
-      // checkbox：角色 & 委任/停任
       checkF(officer.role === "secretary" ? `cb_1_P.${p}` : `cb_2_P.${p}`);
       checkF(officer.type === "appointment" ? `cb_3_P.${p}` : `cb_4_P.${p}`);
 
-      // 停任操作
+      // Cessation handling
       if ((officer as any).hasCessation && officer.dateCeased) {
         const cessId = (officer as any).cessationIdentity || 'natural';
         if (cessId === 'natural') {
-          // P.4 自然人停任
-          usedPages.add(4);
           setF('fill_3_P.4', (officer as any).cessationNameChinese || '');
           setF('fill_4_P.4', (officer as any).cessationNameSurname || '');
           setF('fill_5_P.4', (officer as any).cessationNameOtherNames || '');
@@ -178,8 +145,6 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
           const cr = (officer as any).cessationRole || officer.role || 'director';
           checkF(cr === 'secretary' ? 'cb_1_P.4' : 'cb_2_P.4');
         } else {
-          // P.5 法人停任
-          usedPages.add(5);
           setF('fill_3_P.5', (officer as any).cessationNameEnglish || officer.companyName || officer.nameEnglish || '');
           setF('fill_4_P.5', (officer as any).cessationNameChinese || officer.nameChinese || '');
           setF('fill_5_P.5', officer.companyNumber || '');
@@ -191,18 +156,15 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
       }
     });
 
-    // 簽署人 + 提交人（P.1 底部）
+    // Signer + Presenter (P.1 bottom)
     const sd = (data.signDate || "").split(/[-/]/);
-    if (sd.length >= 3) setF("fill_11_P.1", `${sd[2]}/${sd[1]}/${sd[0]}`); // 反轉成 D/M/Y
+    if (sd.length >= 3) setF("fill_11_P.1", `${sd[2]}/${sd[1]}/${sd[0]}`);
     setF("fill_12_P.1", data.signerName);
     setF("fill_13_P.1", data.presentorName);
-    // fill_15 is tall multi-line (44px) → address; fill_14 is short (14px) → contact
     setF("fill_14_P.1", data.presentorContact);
     setF("fill_15_P.1", data.presentorAddress);
 
-    form.flatten();
-
-    // ⚠️ 不删页：保留模板全部页面（仅 NAR1 可以删空页）
+    // Don't flatten — saves CPU for large templates
     const pdfBytes = await pdfDoc.save();
     return jsonResp({ pdf: uint8ToBase64(new Uint8Array(pdfBytes)) });
   } catch (err: any) {

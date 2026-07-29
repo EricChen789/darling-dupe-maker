@@ -405,12 +405,32 @@ addRoute("DELETE", "/api/storage/:bucket/:file*", async (_req, env, user, params
 
 // ─── Table CRUD routes ───
 
-const TABLES = ["companies", "officers", "shareholders", "persons", "person_company_roles", "presenters", "significant_controllers", "company_logs", "reminders", "resolutions", "secretary_templates", "share_transactions", "user_roles", "email_templates", "email_logs", "invoices", "whatsapp_logs", "company_versions"];
+const TABLES = ["companies", "officers", "shareholders", "persons", "person_company_roles", "presenters", "significant_controllers", "company_logs", "reminders", "resolutions", "secretary_templates", "share_transactions", "user_roles", "email_templates", "email_logs", "invoices", "whatsapp_logs", "whatsapp_queue", "company_versions", "change_events", "nar1_filings", "form_linkages"];
 
 for (const table of TABLES) {
-  addRoute("GET", `/api/${table}`, async (req, env, _user) => {
+  addRoute("GET", `/api/${table}`, async (req, env, user) => {
     const { sql, bindings } = buildSelect(table, new URL(req.url).searchParams);
-    const { results } = await env.DB.prepare(sql).bind(...bindings).all();
+
+    // Multi-tenant: filter companies by user's accessible company groups
+    let finalSql = sql;
+    if (table === 'companies' && user && user.role !== 'admin') {
+      const userRow = await env.DB.prepare(
+        "SELECT accessible_company_groups FROM auth_users WHERE id = ?"
+      ).bind(user.id).first() as any;
+      if (userRow && userRow.accessible_company_groups) {
+        const groups = (userRow.accessible_company_groups as string).trim();
+        if (groups && groups !== '*') {
+          const groupList = groups.split(',').map((g: string) => g.trim()).filter(Boolean);
+          if (groupList.length > 0) {
+            const ph = groupList.map(() => '?').join(',');
+            finalSql = sql.replace('WHERE 1=1', `WHERE (company_group IN (${ph}) OR company_group IS NULL OR company_group = '') AND 1=1`);
+            bindings.unshift(...groupList);
+          }
+        }
+      }
+    }
+
+    const { results } = await env.DB.prepare(finalSql).bind(...bindings).all();
     return json(results);
   });
 
@@ -776,23 +796,401 @@ addRoute("POST", "/api/export-all", async (_req, env, user) => {
   return json({ success: true, data: exportData, exported_at: new Date().toISOString() });
 });
 
+// ─── Phase 4: NAR1 Smart Filing Endpoints ───
+
+function calcNAR1Dates(incorporationDate: string) {
+  try {
+    const incDate = new Date(incorporationDate);
+    if (isNaN(incDate.getTime())) return null;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // Current year's anniversary
+    const thisYear = new Date(incDate);
+    thisYear.setFullYear(today.getFullYear());
+
+    let periodStart: Date, periodEnd: Date;
+    if (thisYear > today) {
+      periodStart = new Date(thisYear);
+      periodStart.setFullYear(today.getFullYear() - 1);
+      periodEnd = new Date(thisYear);
+    } else {
+      periodStart = new Date(thisYear);
+      periodEnd = new Date(thisYear);
+      periodEnd.setFullYear(today.getFullYear() + 1);
+    }
+
+    const dueDate = new Date(periodEnd);
+    dueDate.setDate(dueDate.getDate() + 42);
+
+    const daysRemaining = Math.ceil((dueDate.getTime() - today.getTime()) / 86400000);
+    let status = 'ok';
+    if (daysRemaining < 0) status = 'late';
+    else if (daysRemaining <= 7) status = 'due_soon';
+    else if (daysRemaining <= 42) status = 'grace';
+
+    const fmt = (d: Date) => {
+      const dd = String(d.getDate()).padStart(2, '0');
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      return `${dd}/${mm}/${d.getFullYear()}`;
+    };
+
+    return {
+      period_start: fmt(periodStart),
+      period_end: fmt(periodEnd),
+      due_date: fmt(dueDate),
+      days_remaining: daysRemaining,
+      status,
+      today: fmt(today),
+    };
+  } catch { return null; }
+}
+
+addRoute("GET", "/api/companies/:company_id/nar1-status", async (req, env, user, params) => {
+  if (!user) return error("Unauthorized", 401);
+  const companyId = params.company_id;
+
+  const company = await env.DB.prepare(
+    "SELECT id, name, incorporation_date, nar1_due_date FROM companies WHERE id = ?"
+  ).bind(companyId).first<{ id: string; name: string; incorporation_date: string; nar1_due_date: string }>();
+  if (!company) return error("Company not found", 404);
+
+  const result: Record<string, any> = {
+    company_id: companyId,
+    company_name: company.name,
+    incorporation_date: company.incorporation_date,
+  };
+
+  if (company.incorporation_date) {
+    const dates = calcNAR1Dates(company.incorporation_date);
+    if (dates) {
+      Object.assign(result, dates);
+      if (company.nar1_due_date !== dates.due_date) {
+        await env.DB.prepare("UPDATE companies SET nar1_due_date = ? WHERE id = ?")
+          .bind(dates.due_date, companyId).run();
+      }
+    }
+  }
+
+  // Get current NAR1 period
+  const periods = await env.DB.prepare(
+    "SELECT * FROM nar1_filings WHERE company_id = ? ORDER BY period_start DESC"
+  ).bind(companyId).all();
+
+  // Auto-assign changes
+  const unassigned = await env.DB.prepare(
+    "SELECT * FROM change_events WHERE company_id = ? AND (nar1_period_id = '' OR nar1_period_id IS NULL)"
+  ).bind(companyId).all();
+
+  if (periods.results?.length > 0 && unassigned.results?.length > 0) {
+    for (const evt of unassigned.results as any[]) {
+      const evtDate = evt.change_date;
+      const d = parseDateDMY(evtDate);
+      if (!d) continue;
+      for (const period of periods.results as any[]) {
+        const ps = parseDateDMY(period.period_start);
+        const pe = parseDateDMY(period.period_end);
+        if (ps && pe && ps <= d && d < pe) {
+          await env.DB.prepare("UPDATE change_events SET nar1_period_id = ? WHERE id = ?")
+            .bind(period.id, evt.id).run();
+          break;
+        }
+      }
+    }
+  }
+
+  // Refresh periods
+  const updatedPeriods = await env.DB.prepare(
+    "SELECT * FROM nar1_filings WHERE company_id = ? ORDER BY period_start DESC"
+  ).bind(companyId).all();
+
+  if (updatedPeriods.results?.length > 0) {
+    const current = updatedPeriods.results[0] as any;
+    result.current_period = {
+      id: current.id,
+      period_start: current.period_start,
+      period_end: current.period_end,
+      filing_date: current.filing_date,
+      status: current.status,
+    };
+
+    // Get changes summary
+    const changes = await env.DB.prepare(
+      "SELECT * FROM change_events WHERE company_id = ? AND nar1_period_id = ? ORDER BY change_date DESC"
+    ).bind(companyId, current.id).all();
+
+    const summary: Record<string, number> = {
+      total_changes: 0, director_appointments: 0, director_cessations: 0,
+      secretary_appointments: 0, secretary_cessations: 0,
+      shareholder_changes: 0, share_transfers: 0, share_allotments: 0,
+      address_changes: 0, name_changes: 0, other_changes: 0,
+    };
+
+    for (const c of (changes.results || []) as any[]) {
+      summary.total_changes++;
+      switch (c.event_type) {
+        case 'director_appoint': summary.director_appointments++; break;
+        case 'director_cease': summary.director_cessations++; break;
+        case 'secretary_appoint': summary.secretary_appointments++; break;
+        case 'secretary_cease': summary.secretary_cessations++; break;
+        case 'shareholder_add': case 'shareholder_remove': summary.shareholder_changes++; break;
+        case 'share_transfer': summary.share_transfers++; break;
+        case 'share_allotment': summary.share_allotments++; break;
+        case 'address_change': summary.address_changes++; break;
+        case 'name_change': summary.name_changes++; break;
+        default: summary.other_changes++; break;
+      }
+    }
+
+    result.changes_summary = summary;
+    result.changes = changes.results || [];
+  }
+
+  return json({ success: true, ...result });
+});
+
+addRoute("GET", "/api/companies/:company_id/nar1-changes", async (req, env, user, params) => {
+  if (!user) return error("Unauthorized", 401);
+  const companyId = params.company_id;
+  const url = new URL(req.url);
+  const periodId = url.searchParams.get('period_id');
+
+  // Get or create periods
+  let periods = await env.DB.prepare(
+    "SELECT * FROM nar1_filings WHERE company_id = ? ORDER BY period_start DESC"
+  ).bind(companyId).all();
+
+  // Auto-assign
+  await autoAssignNAR1Changes(env, companyId);
+
+  periods = await env.DB.prepare(
+    "SELECT * FROM nar1_filings WHERE company_id = ? ORDER BY period_start DESC"
+  ).bind(companyId).all();
+
+  const target = periodId
+    ? (periods.results as any[])?.find(p => p.id === periodId)
+    : (periods.results?.[0] as any);
+
+  if (!target) {
+    return json({ success: true, period: null, changes: [], summary: { total_changes: 0 } });
+  }
+
+  const changes = await env.DB.prepare(
+    "SELECT * FROM change_events WHERE company_id = ? AND nar1_period_id = ? ORDER BY change_date DESC"
+  ).bind(companyId, target.id).all();
+
+  const summary: Record<string, number> = {
+    total_changes: 0, director_appointments: 0, director_cessations: 0,
+    secretary_appointments: 0, secretary_cessations: 0,
+    shareholder_changes: 0, share_transfers: 0, share_allotments: 0,
+    address_changes: 0, name_changes: 0, other_changes: 0,
+  };
+  for (const c of (changes.results || []) as any[]) {
+    summary.total_changes++;
+    const et = c.event_type as string;
+    if (et === 'director_appoint') summary.director_appointments++;
+    else if (et === 'director_cease') summary.director_cessations++;
+    else if (et === 'secretary_appoint') summary.secretary_appointments++;
+    else if (et === 'secretary_cease') summary.secretary_cessations++;
+    else if (et === 'shareholder_add' || et === 'shareholder_remove') summary.shareholder_changes++;
+    else if (et === 'share_transfer') summary.share_transfers++;
+    else if (et === 'share_allotment') summary.share_allotments++;
+    else if (et === 'address_change') summary.address_changes++;
+    else if (et === 'name_change') summary.name_changes++;
+    else summary.other_changes++;
+  }
+
+  return json({
+    success: true,
+    period: { id: target.id, period_start: target.period_start, period_end: target.period_end, filing_date: target.filing_date, status: target.status },
+    changes: changes.results || [],
+    summary,
+  });
+});
+
+addRoute("POST", "/api/companies/:company_id/nar1-file", async (req, env, user, params) => {
+  if (!user) return error("Unauthorized", 401);
+  const companyId = params.company_id;
+  const data = await req.json() as { period_id?: string; filing_date?: string };
+  const filingDate = data.filing_date || new Date().toLocaleDateString('en-GB');
+
+  let periodId = data.period_id;
+  if (!periodId) {
+    const periods = await env.DB.prepare(
+      "SELECT * FROM nar1_filings WHERE company_id = ? ORDER BY period_start DESC LIMIT 1"
+    ).bind(companyId).all();
+    if (!periods.results?.length) return error("No NAR1 periods found", 404);
+    periodId = (periods.results[0] as any).id;
+  }
+
+  await env.DB.prepare(
+    "UPDATE nar1_filings SET status = 'filed', filing_date = ? WHERE id = ? AND company_id = ?"
+  ).bind(filingDate, periodId, companyId).run();
+
+  await autoAssignNAR1Changes(env, companyId);
+
+  return json({ success: true, period_id: periodId, filing_date: filingDate, message: "NAR1 period marked as filed" });
+});
+
+// ─── NAR1: Manually assign unassigned change_events to NAR1 periods ───
+addRoute("POST", "/api/companies/:company_id/nar1-assign-changes", async (req, env, user, params) => {
+  if (!user) return error("Unauthorized", 401);
+  const companyId = params.company_id;
+  await autoAssignNAR1Changes(env, companyId);
+  // Count assigned changes
+  const assigned = await env.DB.prepare(
+    "SELECT COUNT(*) as cnt FROM change_events WHERE company_id = ? AND nar1_period_id != '' AND nar1_period_id IS NOT NULL"
+  ).bind(companyId).first<{ cnt: number }>();
+  return json({ success: true, assigned: assigned?.cnt || 0, message: "Changes assigned to NAR1 periods" });
+});
+
+// ─── Form Linkages ───
+addRoute("GET", "/api/form-linkages", async (req, env, user) => {
+  const primary = new URL(req.url).searchParams.get("primary");
+  try {
+    let results;
+    if (primary) {
+      results = await env.DB.prepare(
+        "SELECT * FROM form_linkages WHERE primary_form = ? AND is_active = 1"
+      ).bind(primary.toUpperCase()).all();
+    } else {
+      results = await env.DB.prepare(
+        "SELECT * FROM form_linkages WHERE is_active = 1"
+      ).all();
+    }
+    // If DB has no linkages yet, return default static map
+    if (!results.results?.length) {
+      const staticMap: Record<string, string[]> = {
+        "NR1": ["IRC3111A"],
+        "ND2A": ["ND4"],
+        "NDR1": ["IR1263"],
+        "NN9": ["IRC3111A"],
+      };
+      if (primary) {
+        return json({ linkages: staticMap[primary.toUpperCase()] || [] });
+      }
+      return json({ linkages: staticMap });
+    }
+    const linkages: Record<string, string[]> = {};
+    for (const row of results.results as any[]) {
+      if (!linkages[row.primary_form]) linkages[row.primary_form] = [];
+      linkages[row.primary_form].push(row.linked_form);
+    }
+    if (primary) return json({ linkages: linkages[primary.toUpperCase()] || [] });
+    return json({ linkages });
+  } catch {
+    // Fallback: static map
+    const staticMap: Record<string, string[]> = {
+      "NR1": ["IRC3111A"],
+      "ND2A": ["ND4"],
+      "NDR1": ["IR1263"],
+      "NN9": ["IRC3111A"],
+    };
+    if (primary) return json({ linkages: staticMap[primary.toUpperCase()] || [] });
+    return json({ linkages: staticMap });
+  }
+});
+
+// Helper: auto-assign unassigned change_events to NAR1 periods
+async function autoAssignNAR1Changes(env: Env, companyId: string) {
+  const unassigned = await env.DB.prepare(
+    "SELECT * FROM change_events WHERE company_id = ? AND (nar1_period_id = '' OR nar1_period_id IS NULL)"
+  ).bind(companyId).all();
+
+  const periods = await env.DB.prepare(
+    "SELECT * FROM nar1_filings WHERE company_id = ? ORDER BY period_start"
+  ).bind(companyId).all();
+
+  if (!unassigned.results?.length || !periods.results?.length) return;
+
+  for (const evt of unassigned.results as any[]) {
+    const d = parseDateDMY(evt.change_date);
+    if (!d) continue;
+    for (const period of periods.results as any[]) {
+      const ps = parseDateDMY(period.period_start);
+      const pe = parseDateDMY(period.period_end);
+      if (ps && pe && ps <= d && d < pe) {
+        await env.DB.prepare("UPDATE change_events SET nar1_period_id = ? WHERE id = ?")
+          .bind(period.id, evt.id).run();
+        break;
+      }
+    }
+  }
+}
+
+function parseDateDMY(dateStr: string): Date | null {
+  if (!dateStr) return null;
+  const parts = dateStr.split('/');
+  if (parts.length === 3) {
+    const d = new Date(+parts[2], +parts[1] - 1, +parts[0]);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  // Try YYYY-MM-DD
+  const d = new Date(dateStr);
+  return isNaN(d.getTime()) ? null : d;
+}
+
 // ─── Send WhatsApp ───
 
+// WhatsApp Queue endpoints
+addRoute("POST", "/api/whatsapp/enqueue", async (req, env, user) => {
+  requireAdmin(user);
+  const data = await req.json() as {
+    phone?: string; message?: string; task_title?: string;
+    company_id?: string; scheduled_at?: string;
+  };
+  if (!data.phone || !data.message) return error("phone and message required", 400);
+  const id = generateUUID();
+  const now = new Date().toISOString();
+  await env.DB.prepare(
+    "INSERT INTO whatsapp_queue (id, company_id, phone, message, task_title, status, scheduled_at, created_at) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)"
+  ).bind(id, data.company_id || null, data.phone, data.message, data.task_title || "", data.scheduled_at || null, now).run();
+  return json({ success: true, id, queued: true, message: "Message queued" });
+});
+
+addRoute("POST", "/api/whatsapp/batch-enqueue", async (req, env, user) => {
+  requireAdmin(user);
+  const data = await req.json() as {
+    messages?: Array<{ phone: string; message: string; task_title?: string; company_id?: string }>;
+  };
+  if (!data.messages || !Array.isArray(data.messages)) return error("messages array required", 400);
+  const now = new Date().toISOString();
+  const ids: string[] = [];
+  const stmt = env.DB.prepare(
+    "INSERT INTO whatsapp_queue (id, company_id, phone, message, task_title, status, created_at) VALUES (?, ?, ?, ?, ?, 'pending', ?)"
+  );
+  const batch = data.messages.map(m => {
+    const id = generateUUID(); ids.push(id);
+    return stmt.bind(id, (m as any).company_id || null, m.phone, m.message, (m as any).task_title || "", now);
+  });
+  await env.DB.batch(batch);
+  return json({ success: true, ids, count: ids.length });
+});
+
+addRoute("GET", "/api/whatsapp/queue-status", async (req, env, user) => {
+  requireAdmin(user);
+  const { results } = await env.DB.prepare(
+    "SELECT status, COUNT(*) as count FROM whatsapp_queue GROUP BY status"
+  ).all();
+  const stats: Record<string, number> = {};
+  for (const row of (results || []) as any[]) stats[row.status] = row.count;
+  return json({ stats });
+});
+
+// Legacy: direct send now enqueues
 addRoute("POST", "/api/send-whatsapp", async (req, env, user) => {
   requireAdmin(user);
   const data = await req.json() as { phone?: string; message?: string; task_title?: string; company_id?: string };
   if (!data.phone || !data.message) return error("phone and message required", 400);
-
-  // In Cloudflare, we can't call Wuzapi directly (it's local).
-  // Log the message and return simulated success.
   const id = generateUUID();
+  const now = new Date().toISOString();
   await env.DB.prepare(
-    "INSERT INTO whatsapp_logs (id, company_id, phone, message, task_title, status) VALUES (?, ?, ?, ?, ?, 'sent')"
-  ).bind(id, data.company_id || null, data.phone, data.message, data.task_title || "").run();
-
-  console.log(`[WHATSAPP:SIMULATED] to=${data.phone} msg=${data.message.slice(0, 80)}`);
-
-  return json({ success: true, id, simulated: true, message: "WhatsApp message logged (Wuzapi not available in Cloud)" });
+    "INSERT INTO whatsapp_queue (id, company_id, phone, message, task_title, status, created_at) VALUES (?, ?, ?, ?, ?, 'pending', ?)"
+  ).bind(id, data.company_id || null, data.phone, data.message, data.task_title || "", now).run();
+  await env.DB.prepare(
+    "INSERT INTO whatsapp_logs (id, company_id, phone, message, task_title, status, created_at) VALUES (?, ?, ?, ?, ?, 'queued', ?)"
+  ).bind(id, data.company_id || null, data.phone, data.message, data.task_title || "", now).run();
+  return json({ success: true, id, queued: true, message: "Message queued for worker" });
 });
 
 // ─── Main handler ───

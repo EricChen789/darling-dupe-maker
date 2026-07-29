@@ -1,0 +1,24 @@
+# WhatsApp Queue Worker — Cloudflare Worker with cron trigger
+# Polls D1 for pending WhatsApp messages and sends via Wuzapi API.
+name = "secretary-whatsapp-worker"
+main = "index.ts"
+compatibility_date = "2025-05-19"
+compatibility_flags = ["nodejs_compat"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "secretary-db"
+database_id = "d623d895-04fb-497f-8a68-df2f148dc412"
+
+# Cron: every 60 seconds (check for pending messages)
+[triggers]
+crons = ["* * * * *"]
+
+[vars]
+# Wuzapi API base URL (set via wrangler secret or Dashboard env)
+# WUZAPI_URL = "https://xxx.trycloudflare.com"
+# WUZAPI_TOKEN = "main-user-token-2026"
+# If WUZAPI_URL is not set, worker runs in simulation mode.
+
+[env.production]
+# Production overrides (set actual secrets via Dashboard)

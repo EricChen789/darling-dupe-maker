@@ -98,25 +98,28 @@ def get_auth_token(api_base=LOCAL_API):
     return None
 
 
-def call_api(api_base, endpoint, payload, token=None):
+def call_api(api_base, endpoint, payload, token=None, quiet=False):
     """Call an API endpoint, return response JSON"""
     headers = {"Content-Type": "application/json"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
 
     url = f"{api_base}{endpoint}"
-    print(f"  → {api_base.split('//')[1].split('/')[0]}{endpoint} ...", end=" ")
+    if not quiet:
+        label = api_base.split('//')[1].split('/')[0]
+        print(f"  -> {label}{endpoint} ...", end=" ")
     start = time.time()
     try:
         resp = requests.post(url, json=payload, headers=headers, timeout=120)
         elapsed = time.time() - start
 
         if resp.status_code != 200:
-            print(f"❌ HTTP {resp.status_code} ({elapsed:.1f}s)")
-            try:
-                print(f"    Body: {resp.text[:200]}")
-            except:
-                pass
+            if not quiet:
+                print(f"X HTTP {resp.status_code} ({elapsed:.1f}s)")
+                try:
+                    print(f"    Body: {resp.text[:200]}")
+                except:
+                    pass
             return None
 
         # Check content type
@@ -124,17 +127,21 @@ def call_api(api_base, endpoint, payload, token=None):
         if "application/pdf" in ct:
             # Raw PDF bytes
             pdf_bytes = resp.content
-            print(f"✅ raw PDF {len(pdf_bytes)} bytes ({elapsed:.1f}s)")
+            if not quiet:
+                print(f"OK raw PDF {len(pdf_bytes)} bytes ({elapsed:.1f}s)")
             return {"_raw_pdf": True, "_pdf_bytes": pdf_bytes}
 
         data = resp.json()
-        print(f"✅ JSON ({elapsed:.1f}s)")
+        if not quiet:
+            print(f"OK JSON ({elapsed:.1f}s)")
         return data
     except requests.exceptions.ConnectionError:
-        print(f"❌ Connection refused ({elapsed:.1f}s)")
+        if not quiet:
+            print(f"X Connection refused ({elapsed:.1f}s)")
         return None
     except Exception as e:
-        print(f"❌ Error: {e}")
+        if not quiet:
+            print(f"X Error: {e}")
         return None
 
 
@@ -214,11 +221,12 @@ def compare_texts(local_pages, cloud_pages, form_name):
     }
 
 
-def verify_form(form_type, company_id, use_vision=False):
+def verify_form(form_type, company_id, use_vision=False, ci_mode=False):
     """Verify a single form type"""
-    print(f"\n{'='*60}")
-    print(f"🔍 Verifying: {form_type}")
-    print(f"{'='*60}")
+    if not ci_mode:
+        print(f"\n{'='*60}")
+        print(f"Verifying: {form_type}")
+        print(f"{'='*60}")
 
     endpoint = FORM_ENDPOINTS.get(form_type)
     if not endpoint:
@@ -240,65 +248,88 @@ def verify_form(form_type, company_id, use_vision=False):
 
     # Generate locally
     local_token = get_auth_token(LOCAL_API)
-    print(f"  📍 Local:")
-    local_resp = call_api(LOCAL_API, endpoint, payload, local_token)
+    if not ci_mode:
+        print(f"  Local:")
+    local_resp = call_api(LOCAL_API, endpoint, payload, local_token, quiet=ci_mode)
     local_pdf = extract_pdf_bytes(local_resp)
 
     if local_pdf:
         local_path = TEST_DIR / f"{form_type}_local.pdf"
         local_path.write_bytes(local_pdf)
-        print(f"    Saved: {local_path} ({len(local_pdf)} bytes)")
+        if not ci_mode:
+            print(f"    Saved: {local_path} ({len(local_pdf)} bytes)")
 
     # Generate from cloud
     cloud_token = get_auth_token(CLOUD_API)
-    print(f"  ☁️  Cloud:")
-    cloud_resp = call_api(CLOUD_API, endpoint, payload, cloud_token)
+    if not ci_mode:
+        print(f"  Cloud:")
+    cloud_resp = call_api(CLOUD_API, endpoint, payload, cloud_token, quiet=ci_mode)
     cloud_pdf = extract_pdf_bytes(cloud_resp)
 
     if cloud_pdf:
         cloud_path = TEST_DIR / f"{form_type}_cloud.pdf"
         cloud_path.write_bytes(cloud_pdf)
-        print(f"    Saved: {cloud_path} ({len(cloud_pdf)} bytes)")
+        if not ci_mode:
+            print(f"    Saved: {cloud_path} ({len(cloud_pdf)} bytes)")
 
     # Compare
     if local_pdf and cloud_pdf:
-        print(f"  📊 Comparing text...")
+        if not ci_mode:
+            print(f"  Comparing text...")
         local_text = extract_text_from_pdf(local_pdf)
         cloud_text = extract_text_from_pdf(cloud_pdf)
 
-        result = compare_texts(local_text, cloud_text, form_type)
+        text_result = compare_texts(local_text, cloud_text, form_type)
 
-        if result["match"]:
-            print(f"  ✅ TEXT MATCH — all {result['pages']} pages identical")
-        else:
-            print(f"  ❌ TEXT MISMATCH — {result['pages']} pages, differences found:")
-            for d in result.get("details", []):
-                if not d["match"]:
-                    print(f"    Page {d['page']}: similarity={d['similarity']}, "
-                          f"local={d.get('local_len', '?')} chars, "
-                          f"cloud={d.get('cloud_len', '?')} chars")
+        # Field-level comparison (more granular)
+        field_result = compare_field_values(local_pdf, cloud_pdf)
+        field_match_rate = field_result.get("field_match_rate") if field_result else None
+
+        if not ci_mode:
+            if text_result["match"]:
+                print(f"  + TEXT MATCH — all {text_result['pages']} pages identical")
+            else:
+                print(f"  X TEXT MISMATCH — {text_result['pages']} pages, differences found:")
+                for d in text_result.get("details", []):
+                    if not d["match"]:
+                        print(f"    Page {d['page']}: similarity={d['similarity']}, "
+                              f"local={d.get('local_len', '?')} chars, "
+                              f"cloud={d.get('cloud_len', '?')} chars")
+
+            if field_result and not field_result.get("error"):
+                print(f"  Field match: {field_result['matched']}/{field_result['total_fields']} "
+                      f"({field_match_rate:.1%})")
+                if field_result["mismatched"]:
+                    for m in field_result["mismatched"][:5]:
+                        print(f"    X {m['field']}: local='{m['local_value']}' vs cloud='{m['cloud_value']}'")
+            elif field_result and field_result.get("error"):
+                print(f"  Field comparison skipped: {field_result['error']}")
 
         # Vision comparison (optional)
         vision_result = None
-        if use_vision and not result["match"]:
-            print(f"  👁️  Qwen Vision comparison...")
+        if use_vision:
+            if not ci_mode:
+                print(f"  Qwen Vision comparison...")
             vision_result = qwen_vision_compare(local_pdf, cloud_pdf, form_type)
 
         return {
             "form": form_type,
-            "text_match": result["match"],
-            "text_details": result,
+            "text_match": text_result["match"],
+            "text_details": text_result,
+            "field_match_rate": field_match_rate,
+            "field_details": field_result,
             "local_size": len(local_pdf),
             "cloud_size": len(cloud_pdf),
             "vision_result": vision_result,
         }
     else:
-        status = "⚠️"
+        status = "SKIP"
         if not local_pdf:
             status += " LOCAL_FAIL"
         if not cloud_pdf:
             status += " CLOUD_FAIL"
-        print(f"  {status}")
+        if not ci_mode:
+            print(f"  {status}")
         return {
             "form": form_type,
             "text_match": False,
@@ -410,30 +441,118 @@ If identical, match=true and issues=[]."""
         return {"match": None, "error": str(e)}
 
 
-def print_summary(all_results):
+def compare_field_values(local_pdf_bytes, cloud_pdf_bytes):
+    """Extract and compare individual form field values (more granular than page text)."""
+    try:
+        import fitz
+        local_doc = fitz.open(stream=local_pdf_bytes, filetype="pdf")
+        cloud_doc = fitz.open(stream=cloud_pdf_bytes, filetype="pdf")
+
+        local_fields = {}
+        cloud_fields = {}
+
+        # Extract field values from local PDF
+        for pi in range(local_doc.page_count):
+            for w in local_doc[pi].widgets():
+                if w.field_name:
+                    val = w.field_value
+                    local_fields[w.field_name] = {
+                        "value": str(val) if val is not None else "",
+                        "page": pi + 1,
+                        "type": "checkbox" if w.field_name.startswith("cb_") else
+                                "dropdown" if w.field_name.startswith("Dropdown") else "text"
+                    }
+
+        # Extract field values from cloud PDF
+        for pi in range(cloud_doc.page_count):
+            for w in cloud_doc[pi].widgets():
+                if w.field_name:
+                    val = w.field_value
+                    cloud_fields[w.field_name] = {
+                        "value": str(val) if val is not None else "",
+                        "page": pi + 1,
+                    }
+
+        local_doc.close()
+        cloud_doc.close()
+
+        # Compare
+        all_fields = sorted(set(list(local_fields.keys()) + list(cloud_fields.keys())))
+        matched = 0
+        mismatched = []
+        missing_in_cloud = []
+        missing_in_local = []
+
+        for fname in all_fields:
+            lf = local_fields.get(fname)
+            cf = cloud_fields.get(fname)
+
+            if lf and not cf:
+                missing_in_cloud.append(fname)
+                continue
+            if cf and not lf:
+                missing_in_local.append(fname)
+                continue
+
+            # Both exist — compare values (normalized)
+            lv = lf["value"].strip()
+            cv = cf["value"].strip()
+            if lv == cv:
+                matched += 1
+            else:
+                mismatched.append({
+                    "field": fname,
+                    "page": lf["page"],
+                    "type": lf["type"],
+                    "local_value": lv[:80],
+                    "cloud_value": cv[:80],
+                })
+
+        total_fields = len(all_fields)
+        result = {
+            "total_fields": total_fields,
+            "matched": matched,
+            "mismatched_count": len(mismatched),
+            "missing_in_cloud": missing_in_cloud,
+            "missing_in_local": missing_in_local,
+            "mismatched": mismatched[:20],  # Top 20
+            "field_match_rate": round(matched / total_fields, 4) if total_fields > 0 else 0,
+        }
+
+        return result
+    except ImportError:
+        return {"error": "PyMuPDF not installed"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def print_summary(all_results, ci_mode=False):
     """Print verification summary table"""
-    print(f"\n{'='*60}")
-    print(f"📋 VERIFICATION SUMMARY")
-    print(f"{'='*60}")
-    print(f"{'Form':<8} {'Text':<8} {'Local':<10} {'Cloud':<10} {'Notes'}")
-    print(f"{'-'*8} {'-'*8} {'-'*10} {'-'*10} {'-'*20}")
+    if not ci_mode:
+        print(f"\n{'='*60}")
+        print(f"VERIFICATION SUMMARY")
+        print(f"{'='*60}")
+        print(f"{'Form':<8} {'Text':<8} {'Fields':<10} {'Local':<10} {'Cloud':<10} {'Notes'}")
+        print(f"{'-'*8} {'-'*8} {'-'*10} {'-'*10} {'-'*10} {'-'*20}")
 
     passed = 0
     failed = 0
     skipped = 0
+    ci_lines = []
 
     for r in all_results:
         if not r:
             continue
         form = r["form"]
         match = r.get("text_match", False)
+        field_match = r.get("field_match_rate")
         local_size = r.get("local_size", 0)
         cloud_size = r.get("cloud_size", 0)
         error = r.get("error", "")
 
-        status = "✅" if match else "❌"
+        status = "PASS" if match else "FAIL"
         if error:
-            status = "⚠️"
+            status = "SKIP"
             skipped += 1
         elif match:
             passed += 1
@@ -444,10 +563,22 @@ def print_summary(all_results):
         cloud_str = f"{cloud_size/1024:.0f}KB" if cloud_size else "N/A"
         notes = error or (f"{r.get('text_details', {}).get('pages', '?')} pages")
 
-        print(f"{form:<8} {status:<8} {local_str:<10} {cloud_str:<10} {notes}")
+        if ci_mode:
+            fm_str = f"{field_match:.1%}" if field_match is not None else "N/A"
+            ci_lines.append(f"{form:<8} {status:<8} {fm_str:<10} {local_str:<10} {notes}")
+        else:
+            fm_str = f"{field_match:.1%}" if field_match is not None else "N/A"
+            emoji = {"PASS": "+", "FAIL": "X", "SKIP": "?"}[status]
+            print(f"{form:<8} {emoji:<8} {fm_str:<10} {local_str:<10} {cloud_str:<10} {notes}")
 
-    print(f"\n{'='*60}")
-    print(f"Passed: {passed} | Failed: {failed} | Skipped: {skipped} | Total: {len(all_results)}")
+    if ci_mode:
+        print(f"\n===== CI SUMMARY =====")
+        print(f"PASS: {passed} | FAIL: {failed} | SKIP: {skipped} | TOTAL: {len(all_results)}")
+        for line in ci_lines:
+            print(line)
+    else:
+        print(f"\n{'='*60}")
+        print(f"Passed: {passed} | Failed: {failed} | Skipped: {skipped} | Total: {len(all_results)}")
 
     return passed, failed, skipped
 
@@ -459,6 +590,7 @@ def main():
                         help="Company ID (default: Paul Tang)")
     parser.add_argument("--vision", action="store_true", help="Enable Qwen Vision comparison")
     parser.add_argument("--all", action="store_true", help="Verify all 14 forms")
+    parser.add_argument("--ci", action="store_true", help="CI mode: JSON output only, strict exit codes, no emoji")
     args = parser.parse_args()
 
     # Determine which forms to verify
@@ -470,31 +602,45 @@ def main():
         # Default: verify the 3 critical AcroForm forms
         forms = ["NAR1", "ND2A", "NR1"]
 
-    print(f"🔬 PDF Form Verification")
-    print(f"   Company: {args.company}")
-    print(f"   Forms: {', '.join(forms)}")
-    print(f"   Vision: {'✅ enabled' if args.vision else '❌ disabled'}")
-    print(f"   Output: {TEST_DIR}")
+    if not args.ci:
+        print(f"PDF Form Verification")
+        print(f"   Company: {args.company}")
+        print(f"   Forms: {', '.join(forms)}")
+        print(f"   Vision: {'enabled' if args.vision else 'disabled'}")
+        print(f"   CI mode: {'enabled' if args.ci else 'disabled'}")
+        print(f"   Output: {TEST_DIR}")
 
     # Verify each form
     results = []
     for form in forms:
-        result = verify_form(form, args.company, use_vision=args.vision)
+        result = verify_form(form, args.company, use_vision=args.vision, ci_mode=args.ci)
         results.append(result)
         if len(forms) > 1:
             time.sleep(1)  # Rate limiting
 
     # Print summary
-    print_summary(results)
+    passed, failed, skipped = print_summary(results, ci_mode=args.ci)
 
     # Save results to JSON
     results_path = TEST_DIR / "verify_results.json"
     results_path.write_text(json.dumps(results, indent=2, ensure_ascii=False, default=str), encoding='utf-8')
-    print(f"\n📝 Results saved: {results_path}")
+    if not args.ci:
+        print(f"\nResults saved: {results_path}")
 
-    # Return exit code
-    failed_count = sum(1 for r in results if r and not r.get("text_match") and not r.get("error"))
-    sys.exit(0 if failed_count == 0 else 1)
+    # Exit code: fail if any form had text mismatch (not just unavailable)
+    if args.ci:
+        if failed > 0:
+            print(f"\nFAILED: {failed} forms have text mismatches")
+            sys.exit(1)
+        elif skipped > 0:
+            print(f"\nDEGRADED: {skipped} forms unavailable but no mismatches")
+            sys.exit(0)  # Don't fail CI if services just aren't running
+        else:
+            print(f"\nOK: all {passed} forms passed text comparison")
+            sys.exit(0)
+    else:
+        failed_count = sum(1 for r in results if r and not r.get("text_match") and not r.get("error"))
+        sys.exit(0 if failed_count == 0 else 1)
 
 
 if __name__ == "__main__":

@@ -2,8 +2,11 @@
 // 公司登記冊明細（6.2–6.6）：當前/歷史董事、股東、秘書、股份轉讓、SCR
 // 移植自 local-server/server.py:company_registers
 
+import { verifyAuthRequest, type Env as AuthEnv } from './_auth';
+
 interface Env {
   DB: D1Database;
+  JWT_SECRET?: string;
 }
 
 const corsHeaders = {
@@ -23,6 +26,9 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
   const { request, env } = context;
   if (request.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   if (request.method !== "GET") return json({ error: "Method not allowed" }, 405);
+
+  const { errorResponse } = await verifyAuthRequest(request, env);
+  if (errorResponse) return errorResponse;
 
   const companyId = new URL(request.url).searchParams.get("company_id");
   if (!companyId) return json({ error: "缺少 company_id" }, 400);

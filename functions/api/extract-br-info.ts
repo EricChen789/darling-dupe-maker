@@ -1,5 +1,8 @@
+import { verifyAuthRequest, type Env as AuthEnv } from './_auth';
+
 interface Env {
   LOVABLE_API_KEY: string;
+  JWT_SECRET?: string;
 }
 
 const corsHeaders = {
@@ -13,6 +16,9 @@ export async function onRequest(context: { request: Request; env: Env }) {
   if (request.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
+
+  const { errorResponse } = await verifyAuthRequest(request, env);
+  if (errorResponse) return errorResponse;
 
   try {
     const LOVABLE_API_KEY = env.LOVABLE_API_KEY;

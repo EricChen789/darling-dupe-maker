@@ -2,6 +2,8 @@
 // 列出支援的 Word 文件類型（對應 generate-docx.ts 的 DOCX_TYPES）
 // resp: [{ key, label }]
 
+import { verifyAuthRequest, type Env as AuthEnv } from './_auth';
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, OPTIONS",
@@ -16,9 +18,13 @@ const DOCX_TYPES: Record<string, string> = {
   meeting_minutes: "董事會會議記錄",
 };
 
-export async function onRequest(context: { request: Request }): Promise<Response> {
-  const { request } = context;
+export async function onRequest(context: { request: Request; env: AuthEnv }): Promise<Response> {
+  const { request, env } = context;
   if (request.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+
+  const { errorResponse } = await verifyAuthRequest(request, env);
+  if (errorResponse) return errorResponse;
+
   const body = Object.entries(DOCX_TYPES).map(([key, label]) => ({ key, label }));
   return new Response(JSON.stringify(body), {
     headers: { ...corsHeaders, "Content-Type": "application/json" },

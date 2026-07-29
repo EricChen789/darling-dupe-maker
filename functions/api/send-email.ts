@@ -5,6 +5,8 @@
 //   1. 在 resend.com 註冊帳號，取得 API Key
 //   2. 在 Cloudflare Dashboard 設定 RESEND_API_KEY
 
+import { verifyAuthRequest, type Env as AuthEnv } from './_auth';
+
 interface Env {
   DB: D1Database;
   JWT_SECRET?: string;
@@ -25,29 +27,6 @@ function json(data: unknown, status = 200) {
   });
 }
 
-// ── JWT 驗證（與 [[route]].ts 共用同樣的 JWT_SECRET）──
-async function base64url(buf: ArrayBuffer): Promise<string> {
-  const bytes = new Uint8Array(buf);
-  let str = "";
-  for (const b of bytes) str += String.fromCharCode(b);
-  return btoa(str).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
-async function verifyJWT(token: string, secret: string): Promise<Record<string, unknown> | null> {
-  try {
-    const parts = token.split(".");
-    if (parts.length !== 3) return null;
-    const enc = new TextEncoder();
-    const key = await crypto.subtle.importKey("raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["verify"]);
-    const sig = Uint8Array.from(atob(parts[2].replace(/-/g, "+").replace(/_/g, "/")), c => c.charCodeAt(0));
-    const valid = await crypto.subtle.verify("HMAC", key, sig, enc.encode(`${parts[0]}.${parts[1]}`));
-    if (!valid) return null;
-    const payload = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
-    if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) return null;
-    return payload;
-  } catch { return null; }
-}
-
 function substituteVars(text: string, vars: Record<string, string>): string {
   if (!text) return "";
   return text.replace(/\{([a-zA-Z_][a-zA-Z0-9_]*)\}/g, (_, key) =>
@@ -64,12 +43,8 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
   }
 
   // ── 驗證 JWT ──
-  const authHeader = context.request.headers.get("Authorization") || "";
-  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
-  if (context.env.JWT_SECRET && token) {
-    const payload = await verifyJWT(token, context.env.JWT_SECRET);
-    if (!payload) return json({ error: "Invalid or expired token" }, 401);
-  }
+  const { errorResponse } = await verifyAuthRequest(context.request, context.env);
+  if (errorResponse) return errorResponse;
 
   const data = await context.request.json() as Record<string, any>;
   const to = (data.to || "").trim();

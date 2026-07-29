@@ -1,7 +1,10 @@
 import { PDFDocument, PDFName, PDFHexString, PDFString, PDFBool, PDFNumber, PDFArray, StandardFonts, rgb } from "pdf-lib";
+import { verifyAuthRequest, type Env as AuthEnv } from './_auth';
 
 interface Env {
   PDF_TEMPLATES: R2Bucket;
+  DB: D1Database;
+  JWT_SECRET?: string;
 }
 
 // ============================================================================
@@ -79,6 +82,8 @@ interface CompanyData {
   businessNature: string;
   businessCode: string;
   companyType: string;
+  companyEmail?: string;
+  companyPhone?: string;
   registeredOffice?: {
     flat?: string;
     building?: string;
@@ -131,7 +136,7 @@ async function listAllFormFields(): Promise<{ fields: Array<{name: string; type:
   const all: Array<{name: string; type: string}> = [];
   for (const [tag, key] of Object.entries(TEMPLATE_KEYS)) {
     try {
-      const bytes = await fetchTemplate(url);
+      const bytes = await fetchTemplate(key);
       const doc = await PDFDocument.load(bytes);
       const form = doc.getForm();
       for (const f of form.getFields()) {
@@ -340,7 +345,7 @@ function toAdobeSafeText(value: string): string {
 
 interface FormHelpers {
   form: any;
-  setText: (fieldName: string, value: string) => boolean;
+  setText: (fieldName: string, value: string, align?: 'left' | 'center' | 'right') => boolean;
   check: (fieldName: string, shouldCheck: boolean) => boolean;
   selectDropdown: (fieldName: string, value: string) => boolean;
 }
@@ -352,7 +357,7 @@ function createFormHelpers(pdfDoc: PDFDocument): FormHelpers {
 
   const fields = collectFormFields(pdfDoc);
 
-  const setText = (fieldName: string, value: string): boolean => {
+  const setText = (fieldName: string, value: string, align?: 'left' | 'center' | 'right'): boolean => {
     const v = (value ?? "").toString();
     const target = fields.get(fieldName);
     if (!target) {
@@ -375,6 +380,12 @@ function createFormHelpers(pdfDoc: PDFDocument): FormHelpers {
         // 純 ASCII：保留 Helv
         target.widget.set(PDFName.of("DA"), PDFString.of(buildHelvDA(da)));
         target.widget.set(PDFName.of("V"), PDFString.of(v));
+      }
+      // Right/Center alignment via /Q (0=left, 1=center, 2=right)
+      if (align === 'right') {
+        target.widget.set(PDFName.of("Q"), pdfDoc.context.obj(2));
+      } else if (align === 'center') {
+        target.widget.set(PDFName.of("Q"), pdfDoc.context.obj(1));
       }
       // 移除舊的 appearance，強制 reader 用 NeedAppearances 重建
       target.widget.delete(PDFName.of("AP"));
@@ -498,6 +509,9 @@ function fillMainDocument(pdfDoc: PDFDocument, ctx: CommonCtx) {
 
   // ===== Page 2 - Share Capital =====
   setText("fill_1_P.2", br8);
+  // Company email & phone (fill_2_P.2 / fill_3_P.2)
+  if (data.companyEmail) setText("fill_2_P.2", data.companyEmail);
+  if (data.companyPhone) setText("fill_3_P.2", data.companyPhone);
   let totalShares = 0, totalAmountSum = 0, totalPaidUpSum = 0, firstCurrency = "";
   for (let i = 0; i < Math.min(4, shareInfos.length); i++) {
     const info = shareInfos[i];
@@ -536,7 +550,7 @@ function fillMainDocument(pdfDoc: PDFDocument, ctx: CommonCtx) {
     setText("fill_12_P.3", addr.district);
     setText("fill_13_P.3", sec.email || "");
     const hkid = parseHkidPartial(sec.idNumber || '');
-    if (hkid) setText("fill_14_P.3", hkid);
+    if (hkid) setText("fill_14_P.3", hkid, 'right');
     if ((sec as any).passportCountry) setText("fill_15_P.3", (sec as any).passportCountry);
     if (sec.passportNumber) setText("fill_16_P.3", parsePassportPartial(sec.passportNumber));
   }
@@ -579,7 +593,7 @@ function fillMainDocument(pdfDoc: PDFDocument, ctx: CommonCtx) {
     setText("fill_15_P.5", dir.email || "");
     const hkid = parseHkidPartial(dir.idNumber || '');
     if (hkid) {
-      setText("fill_16_P.5", hkid);
+      setText("fill_16_P.5", hkid, 'right');
     }
     if ((dir as any).passportCountry || dir.nationality) {
       setText("fill_17_P.5", (dir as any).passportCountry || dir.nationality || '');
@@ -614,8 +628,9 @@ function fillMainDocument(pdfDoc: PDFDocument, ctx: CommonCtx) {
   const memberCount = (data.shareholders || []).filter(sh => (Number(sh.shares) || 0) > 0).length;
   const isListedCo = data.companyType?.includes("上市") || data.companyType?.toLowerCase().includes("listed") || false;
 
-  // P.8 勾選：只剔一格 — cb_4_P.8 = 非上市公司聲明
-  // (cb_1/2/3 為其他選擇性陳述，預設不剔)
+  // P.8 勾選：cb_1_P.8 = 非上市公司→附表一（所有公司默認剔）
+  // cb_4_P.8 = 非上市公司聲明
+  check("cb_1_P.8", true);
   if (!isListedCo) check("cb_4_P.8", true);
 
   const sheetA = Math.max(0, naturalSecretaries.length - 1);
@@ -780,7 +795,7 @@ function fillSheetA(pdfDoc: PDFDocument, ctx: CommonCtx, sec: OfficerData) {
   setText("fill_15_P11", addr.district);
   setText("fill_16_P11", sec.email || "");
   const hkid = parseHkidPartial(sec.idNumber || '');
-  if (hkid) setText("fill_17_P11", hkid);
+  if (hkid) setText("fill_17_P11", hkid, 'right');
   if ((sec as any).passportCountry) setText("fill_18_P11", (sec as any).passportCountry);
   if (sec.passportNumber) setText("fill_19_P11", parsePassportPartial(sec.passportNumber));
   if (sec.tcspNumber) setText("fill_20_P11", sec.tcspNumber);
@@ -835,7 +850,7 @@ function fillSheetC(pdfDoc: PDFDocument, ctx: CommonCtx, dir: OfficerData) {
   setText("fill_20_P.13", dir.email || "");
   const hkid = parseHkidPartial(dir.idNumber || '');
   if (hkid) {
-    setText("fill_21_P.13", hkid);
+    setText("fill_21_P.13", hkid, 'right');
   }
   if ((dir as any).passportCountry || dir.nationality) {
     setText("fill_22_P.13", (dir as any).passportCountry || dir.nationality || '');
@@ -1139,10 +1154,50 @@ async function buildDebugPdf(): Promise<Uint8Array> {
   return await mainDoc.save({ updateFieldAppearances: false });
 }
 
+// Phase 4 helper: auto-assign unassigned change_events to NAR1 periods
+async function autoAssignNAR1ChangesForCloud(env: Env, companyId: string) {
+  if (!env.DB) return;
+  const unassigned = await env.DB.prepare(
+    "SELECT * FROM change_events WHERE company_id = ? AND (nar1_period_id = '' OR nar1_period_id IS NULL)"
+  ).bind(companyId).all();
+  const periods = await env.DB.prepare(
+    "SELECT * FROM nar1_filings WHERE company_id = ? ORDER BY period_start"
+  ).bind(companyId).all();
+  if (!unassigned.results?.length || !periods.results?.length) return;
+
+  for (const evt of unassigned.results as any[]) {
+    const d = parseDMY(evt.change_date);
+    if (!d) continue;
+    for (const period of periods.results as any[]) {
+      const ps = parseDMY(period.period_start);
+      const pe = parseDMY(period.period_end);
+      if (ps && pe && ps <= d && d < pe) {
+        await env.DB.prepare("UPDATE change_events SET nar1_period_id = ? WHERE id = ?")
+          .bind(period.id, evt.id).run();
+        break;
+      }
+    }
+  }
+}
+
+function parseDMY(dateStr: string): Date | null {
+  if (!dateStr) return null;
+  const parts = dateStr.split('/');
+  if (parts.length === 3) {
+    const d = new Date(+parts[2], +parts[1] - 1, +parts[0]);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  const d = new Date(dateStr);
+  return isNaN(d.getTime()) ? null : d;
+}
+
 export async function onRequest(context: { request: Request; env: Env }): Promise<Response> {
   const { request, env } = context;
   if (!_r2Bucket) setR2Bucket(env.PDF_TEMPLATES);
-  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  if (request.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+
+  const { errorResponse } = await verifyAuthRequest(request, env);
+  if (errorResponse) return errorResponse;
 
   try {
     const requestBody = await request.json();
@@ -1165,7 +1220,30 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
     console.log(`Generating NAR1 for: ${companyData.name} (BR: ${companyData.brNumber})`);
     const pdfBytes = await buildNAR1Pdf(companyData);
 
-    return new Response(JSON.stringify({ pdf: uint8ToBase64(pdfBytes) }), {
+    const result: Record<string, any> = { pdf: uint8ToBase64(pdfBytes) };
+
+    // Phase 4: Auto-assign change events to NAR1 periods
+    const companyId = (requestBody as any).company_id || (requestBody as any).selectedCompanyId;
+    if (companyId && env.DB) {
+      try {
+        await autoAssignNAR1ChangesForCloud(env, companyId);
+        // Get current period for response
+        const periods = await env.DB.prepare(
+          "SELECT * FROM nar1_filings WHERE company_id = ? ORDER BY period_start DESC LIMIT 1"
+        ).bind(companyId).all();
+        if (periods.results?.length > 0) {
+          result.nar1_current_period = {
+            id: (periods.results[0] as any).id,
+            period_start: (periods.results[0] as any).period_start,
+            period_end: (periods.results[0] as any).period_end,
+          };
+        }
+      } catch (e: any) {
+        console.log(`[NAR1] Warning: Failed to assign changes: ${e.message}`);
+      }
+    }
+
+    return new Response(JSON.stringify(result), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {

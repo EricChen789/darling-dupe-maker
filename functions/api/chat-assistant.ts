@@ -1,6 +1,9 @@
+import { verifyAuthRequest, type Env as AuthEnv } from './_auth';
+
 interface Env {
   DB: D1Database;
   LOVABLE_API_KEY: string;
+  JWT_SECRET?: string;
 }
 
 const corsHeaders = {
@@ -465,6 +468,9 @@ async function executeTool(db: D1Database, name: string, args: any): Promise<str
 export async function onRequest(context: { request: Request; env: Env }) {
   const { request, env } = context;
   if (request.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+
+  const { errorResponse } = await verifyAuthRequest(request, env);
+  if (errorResponse) return errorResponse;
 
   try {
     const { messages } = await request.json();

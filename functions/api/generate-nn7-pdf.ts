@@ -4,11 +4,12 @@
 //         changeType, newAddress, effectiveDate, signerName, signDate,
 //         presentorName, presentorAddress, presentorContact }
 
-import { PDFDocument, PDFName } from "pdf-lib";
+import { PDFDocument, PDFName, StandardFonts } from "pdf-lib";
 import {
   corsHeaders, jsonResp, uint8ToBase64,
-  fetchAndEmbedFont, parseEnglishName
+  parseEnglishName
 } from "./_pdf-utils";
+import { enableNeedAppearances } from "./_acroform";
 import { verifyAuthRequest, type Env } from "./_auth";
 
 const TEMPLATE = "NN7-template.pdf";
@@ -31,7 +32,8 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
     if (!templateObj) return jsonResp({ error: `Template not found: ${TEMPLATE}` }, 404);
 
     const pdfDoc = await PDFDocument.load(await templateObj.arrayBuffer());
-    const { cjk } = await fetchAndEmbedFont(pdfDoc, env as any);
+    // Skip CJK font embedding — saves CPU for large templates (avoid error 1102)
+    const helv = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const form = pdfDoc.getForm();
 
     const setF = (name: string, value?: string, align?: 'left' | 'center' | 'right') => {
@@ -96,7 +98,8 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
       setF(`fill_1_P.${pi}`, br8);
     }
 
-    // Don't flatten — saves CPU for large templates
+    // Don't flatten — saves CPU for large templates; NeedAppearances lets reader rebuild
+    enableNeedAppearances(pdfDoc);
     const pdfBytes = await pdfDoc.save();
     return jsonResp({ pdf: uint8ToBase64(new Uint8Array(pdfBytes)) });
   } catch (err: any) {

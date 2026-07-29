@@ -3,10 +3,9 @@
 // Template fill with CJK font support
 // Accepts { fields: {...}, checkboxes: [...] } or semantic keys
 
-import { PDFDocument } from 'pdf-lib';
+import { PDFDocument, StandardFonts } from 'pdf-lib';
 import {
   corsHeaders, jsonResp, uint8ToBase64, rget,
-  fetchAndEmbedFont
 } from './_pdf-utils';
 import { verifyAuthRequest, type Env } from './_auth';
 import { enableNeedAppearances } from './_acroform';
@@ -31,7 +30,8 @@ export async function onRequest(context: { request: Request; env: Env }) {
 
     const templateBytes = new Uint8Array(await templateObj.arrayBuffer());
     const pdfDoc = await PDFDocument.load(templateBytes);
-    const { cjk } = await fetchAndEmbedFont(pdfDoc, env as any);
+    // Skip CJK font embedding — saves CPU for large templates (avoid error 1102)
+    const helv = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const form = pdfDoc.getForm();
 
     const brNumber = String(rget(data, 'brNumber') || '').replace(/[^0-9A-Za-z]/g, '').slice(0, 8);
@@ -85,13 +85,13 @@ export async function onRequest(context: { request: Request; env: Env }) {
     fields['fill_20_P.1'] = fields['fill_20_P.1'] || rget(data, 'presentorAddress') || rget(data, 'presenterAddress') || '';
     fields['fill_21_P.1'] = fields['fill_21_P.1'] || rget(data, 'presentorContact') || rget(data, 'presenterContact') || '';
 
-    // Fill all fields
+    // Fill all fields (skip updateAppearances — saves CPU, reader rebuilds via NeedAppearances)
     for (const [name, value] of Object.entries(fields)) {
       if (value === null || value === undefined || value === '') continue;
       try {
         const tf = form.getTextField(name);
         tf.setText(String(value));
-        if (cjk) tf.updateAppearances(cjk);
+        // skip updateAppearances to save CPU for large templates
       } catch { /* field not in template */ }
     }
 

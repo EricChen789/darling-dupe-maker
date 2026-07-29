@@ -3,11 +3,12 @@
 // Template fill with CJK font support, matching local Flask _fill_nsc1_pdf
 // Accepts { company_id } for auto-populate, or { fields: {...}, checkboxes: [...] }
 
-import { PDFDocument } from 'pdf-lib';
+import { PDFDocument, StandardFonts } from 'pdf-lib';
 import {
   corsHeaders, jsonResp, uint8ToBase64, rget,
-  fetchAndEmbedFont, fmtDate, buildAddress
+  fmtDate, buildAddress
 } from './_pdf-utils';
+import { enableNeedAppearances } from './_acroform';
 import { verifyAuthRequest, type Env } from './_auth';
 
 const TEMPLATE = "NSC1-template.pdf";
@@ -30,7 +31,8 @@ export async function onRequest(context: { request: Request; env: Env }) {
 
     const templateBytes = new Uint8Array(await templateObj.arrayBuffer());
     const pdfDoc = await PDFDocument.load(templateBytes);
-    const { cjk } = await fetchAndEmbedFont(pdfDoc, env as any);
+    // Skip CJK font embedding — saves CPU for large templates (avoid error 1102)
+    const helv = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const form = pdfDoc.getForm();
 
     // Auto-populate from DB if company_id provided
@@ -105,13 +107,13 @@ export async function onRequest(context: { request: Request; env: Env }) {
     fields['fill_22_P.1'] = fields['fill_22_P.1'] || rget(data, 'presentorAddress') || rget(data, 'presenterAddress') || '';
     fields['fill_23_P.1'] = fields['fill_23_P.1'] || rget(data, 'presentorContact') || rget(data, 'presenterContact') || '';
 
-    // Fill all text fields
+    // Fill all text fields (skip updateAppearances — saves CPU, reader rebuilds via NeedAppearances)
     for (const [name, value] of Object.entries(fields)) {
       if (value === null || value === undefined || value === '') continue;
       try {
         const tf = form.getTextField(name);
         tf.setText(String(value));
-        if (cjk) tf.updateAppearances(cjk);
+        // skip updateAppearances to save CPU for large templates
       } catch { /* field not in template */ }
     }
 
@@ -120,12 +122,13 @@ export async function onRequest(context: { request: Request; env: Env }) {
       try { form.getCheckBox(name).check(); } catch { /* skip */ }
     }
 
-    form.flatten();
+    // Skip flatten() — saves CPU; enableNeedAppearances lets PDF reader rebuild
+    enableNeedAppearances(pdfDoc);
 
-    // BR stamp on all pages (use cjk font from fetchAndEmbedFont)
+    // BR stamp on all pages (Helvetica only for ASCII BR number)
     if (brNumber) {
       for (const page of pdfDoc.getPages()) {
-        page.drawText(brNumber, { x: 500, y: 820, size: 8, font: cjk });
+        page.drawText(brNumber, { x: 500, y: 820, size: 8, font: helv });
       }
     }
 

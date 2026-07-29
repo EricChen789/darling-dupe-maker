@@ -2,11 +2,11 @@
 // NNC1 法團成立表格（股份有限公司）— 專用端點（Phase 2.2）
 // 使用 R2 模板 + Noto Sans TC CJK 字體填充
 
-import { PDFDocument } from "pdf-lib";
+import { PDFDocument, StandardFonts } from "pdf-lib";
 import {
   corsHeaders, jsonResp, uint8ToBase64,
-  fetchAndEmbedFont
 } from "./_pdf-utils";
+import { enableNeedAppearances } from "./_acroform";
 import { verifyAuthRequest, type Env } from "./_auth";
 
 const TEMPLATE_NAME = "NNC1-template.pdf";
@@ -33,7 +33,8 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
 
     const templateBytes = new Uint8Array(await templateObj.arrayBuffer());
     const pdfDoc = await PDFDocument.load(templateBytes);
-    const { cjk } = await fetchAndEmbedFont(pdfDoc, env as any);
+    // Skip CJK font embedding — saves CPU for large templates (avoid error 1102)
+    const helv = await pdfDoc.embedFont(StandardFonts.Helvetica);
 
     const form = pdfDoc.getForm();
 
@@ -42,7 +43,7 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
       try {
         const tf = form.getTextField(name);
         tf.setText(value != null ? String(value) : "");
-        if (cjk) tf.updateAppearances(cjk);
+        // skip updateAppearances to save CPU for large templates
       } catch { /* skip */ }
     }
 
@@ -50,7 +51,8 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
       try { form.getCheckBox(name).check(); } catch { /* skip */ }
     }
 
-    // Don't flatten — saves CPU for large templates
+    // Skip flatten — saves CPU; NeedAppearances lets PDF reader rebuild
+    enableNeedAppearances(pdfDoc);
     const pdfBytes = await pdfDoc.save();
     return jsonResp({ pdf: uint8ToBase64(new Uint8Array(pdfBytes)) });
   } catch (err: any) {

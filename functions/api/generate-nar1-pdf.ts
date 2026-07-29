@@ -754,7 +754,10 @@ function fillSheetE(pdfDoc: PDFDocument, ctx: CommonCtx, records: Array<{ record
 
 // === 主流程 ===
 async function buildNAR1Pdf(data: CompanyData): Promise<Uint8Array> {
-  const returnDate = data.returnDate || new Date().toISOString().split("T")[0];
+  // Use Hong Kong local time (UTC+8) to avoid 1-day offset when UTC is still yesterday
+  const now = new Date();
+  const hkNow = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+  const returnDate = data.returnDate || hkNow.toISOString().split("T")[0];
   const [year, month, day] = returnDate.split("-");
   const office = data.registeredOffice || {};
   const br8 = (data.brNumber || "").replace(/[^0-9A-Za-z]/g, "").slice(0, 8);

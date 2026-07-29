@@ -58,10 +58,10 @@ FORM_ENDPOINTS = {
     "NNC1": "/api/generate-nnc1-pdf",
     "NNC2": "/api/generate-nnc2-pdf",
     "NN1": "/api/generate-nn1-pdf",
-    "NN3": "/api/generate-template-pdf",  # Uses generic template endpoint
+    "NN3": "/api/generate-nn3-pdf",
     "NN6": "/api/generate-nn6-pdf",
     "NN7": "/api/generate-nn7-pdf",
-    "NN9": "/api/generate-template-pdf",  # Uses generic template endpoint
+    "NN9": "/api/generate-nn9-pdf",
 }
 
 
@@ -236,8 +236,7 @@ def verify_form(form_type, company_id, use_vision=False):
     elif form_type in ("NNC1", "NNC2", "NN1"):
         payload["companyId"] = company_id
     elif form_type in ("NN3", "NN9"):
-        payload["formType"] = form_type
-        payload["templateName"] = f"{form_type}-template.pdf"
+        payload["companyId"] = company_id
 
     # Generate locally
     local_token = get_auth_token(LOCAL_API)

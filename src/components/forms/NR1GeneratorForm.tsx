@@ -11,6 +11,7 @@ import { downloadBase64Pdf } from '@/lib/downloadPdf';
 import { useSaveFormHistory } from '@/hooks/useFormHistory';
 import FormHistorySelector from './FormHistorySelector';
 import PresenterSelector from './PresenterSelector';
+import RelatedFormsPrompt from './RelatedFormsPrompt';
 import type { Presenter } from '@/hooks/usePresenters';
 
 interface NR1GeneratorFormProps {
@@ -22,6 +23,8 @@ export default function NR1GeneratorForm({ onBack, initialCompanyId }: NR1Genera
   const { data: companies = [] } = useCompanies();
   const [selectedCompanyId, setSelectedCompanyId] = useState('');
   const [generating, setGenerating] = useState(false);
+  const [showRelatedPrompt, setShowRelatedPrompt] = useState(false);
+  const [relatedLinkages, setRelatedLinkages] = useState<any[]>([]);
   const { mutate: saveFormHistory } = useSaveFormHistory();
 
   const today = new Date();
@@ -106,6 +109,18 @@ export default function NR1GeneratorForm({ onBack, initialCompanyId }: NR1Genera
       downloadBase64Pdf(result.pdf, 'NR1-form.pdf');
       toast({ title: '生成成功', description: 'NR1 表格已下載' });
       saveFormHistory({ formType: 'NR1', formData: { formData, selectedCompanyId } });
+
+      // Phase 5: Check for related forms
+      try {
+        const linkResp = await fetch(`/api/form-linkages?primary=NR1`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const linkData = await linkResp.json();
+        if (linkData.linkages && linkData.linkages.length > 0) {
+          setRelatedLinkages(linkData.linkages);
+          setShowRelatedPrompt(true);
+        }
+      } catch (_) { /* linkage check is non-critical */ }
     } catch (err: any) {
       toast({ title: '生成失敗', description: err.message, variant: 'destructive' });
     } finally {
@@ -238,6 +253,17 @@ export default function NR1GeneratorForm({ onBack, initialCompanyId }: NR1Genera
           </Button>
         </div>
       </div>
+
+      <RelatedFormsPrompt
+        open={showRelatedPrompt}
+        onOpenChange={setShowRelatedPrompt}
+        primaryFormCode="NR1"
+        primaryFormName="NR1 — 註冊辦事處地址變更通知書"
+        primaryFormData={{ ...formData, company_id: selectedCompanyId }}
+        companyId={selectedCompanyId}
+        companyName={formData.companyName}
+        linkages={relatedLinkages}
+      />
     </div>
   );
 }

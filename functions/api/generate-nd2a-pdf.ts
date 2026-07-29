@@ -1,25 +1,18 @@
 import { PDFDocument, PDFName, PDFHexString, PDFString, PDFBool, StandardFonts } from "pdf-lib";
 import { verifyAuthRequest, type Env as AuthEnv } from './_auth';
+import {
+  isAscii, decodePdfText,
+  collectFormFields, detachWidget, rebuildAcroFormFields,
+  enableNeedAppearances, buildCjkDA, buildHelvDA,
+  parsePassportPartial
+} from './_acroform';
+import { corsHeaders, jsonResp, uint8ToBase64 } from './_pdf-utils';
 
 interface Env {
   PDF_TEMPLATES: R2Bucket;
   JWT_SECRET?: string;
 }
 
-function uint8ToBase64(bytes: Uint8Array): string {
-  let binary = "";
-  const chunkSize = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    const chunk = bytes.subarray(i, i + chunkSize);
-    binary += String.fromCharCode(...chunk);
-  }
-  return btoa(binary);
-}
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
 
 interface OfficerChange {
   type: 'appointment' | 'cessation';
@@ -72,124 +65,7 @@ interface ND2AData {
 // Low-level AcroForm helpers (same pattern as NAR1)
 // ============================================================================
 
-function decodePdfText(value: any): string {
-  if (!value) return "";
-  try {
-    if (typeof value.decodeText === "function") return value.decodeText();
-  } catch (_) { /* ignore */ }
-  return String(value).replace(/^\((.*)\)$/s, "$1");
-}
-
 const CJK_RE = /[㐀-鿿豈-﫿]/;
-
-function isAscii(s: string): boolean {
-  // eslint-disable-next-line no-control-regex
-  return /^[\x00-\x7F]*$/.test(s);
-}
-
-function collectFormFields(pdfDoc: PDFDocument): Map<string, { widget: any; field: any }> {
-  const map = new Map<string, { widget: any; field: any }>();
-  const addAlias = (name: string, target: { widget: any; field: any }) => {
-    if (name && !map.has(name)) map.set(name, target);
-  };
-
-  for (const page of pdfDoc.getPages()) {
-    const annots = page.node.lookup(PDFName.of("Annots")) as any;
-    if (!annots || typeof annots.size !== "function") continue;
-
-    for (let i = 0; i < annots.size(); i++) {
-      try {
-        const widget = pdfDoc.context.lookup(annots.get(i)) as any;
-        if (!widget || typeof widget.get !== "function") continue;
-        const subtype = widget.get(PDFName.of("Subtype"));
-        if (subtype && String(subtype) !== "/Widget") continue;
-
-        const parentRef = widget.get(PDFName.of("Parent"));
-        const field = parentRef ? pdfDoc.context.lookup(parentRef) as any : widget;
-        const parentName = field ? decodePdfText(field.get(PDFName.of("T"))) : "";
-        const widgetName = decodePdfText(widget.get(PDFName.of("T")));
-        const target = { widget, field };
-
-        addAlias(parentName, target);
-        addAlias(widgetName, target);
-        // Normalize: fill_4_P.9 ↔ fill_4_P9
-        if (widgetName) {
-          addAlias(widgetName.replace(/_P\.(\d+)$/g, "_P$1"), target);
-          addAlias(widgetName.replace(/_P(\d+)$/g, "_P.$1"), target);
-        }
-        if (parentName) {
-          addAlias(parentName.replace(/_P\.(\d+)$/g, "_P$1"), target);
-          addAlias(parentName.replace(/_P(\d+)$/g, "_P.$1"), target);
-        }
-      } catch (_) { /* skip */ }
-    }
-  }
-  return map;
-}
-
-function detachWidget(widget: any, field: any) {
-  if (widget === field) return;
-  try {
-    const parentName = decodePdfText(field.get(PDFName.of("T")));
-    const widgetName = decodePdfText(widget.get(PDFName.of("T")));
-    const inheritKeys = ["FT", "DA", "Ff", "MaxLen", "Q", "DV"];
-    for (const k of inheritKeys) {
-      const key = PDFName.of(k);
-      if (!widget.get(key)) {
-        const v = field.get(key);
-        if (v !== undefined && v !== null) widget.set(key, v);
-      }
-    }
-    if (parentName && widgetName) widget.set(PDFName.of("T"), PDFString.of(`${parentName}.${widgetName}`));
-    widget.delete(PDFName.of("Parent"));
-  } catch (_) { /* best-effort */ }
-}
-
-function enableNeedAppearances(pdfDoc: PDFDocument) {
-  try {
-    const acroForm = pdfDoc.catalog.lookup(PDFName.of("AcroForm")) as any;
-    if (acroForm && typeof acroForm.set === "function") {
-      acroForm.set(PDFName.of("NeedAppearances"), PDFBool.True);
-    }
-  } catch (_) { /* ignore */ }
-}
-
-function rebuildAcroFormFields(pdfDoc: PDFDocument) {
-  try {
-    const acroForm = pdfDoc.catalog.lookup(PDFName.of("AcroForm")) as any;
-    if (!acroForm || typeof acroForm.set !== "function") return;
-    const fields = pdfDoc.context.obj([]);
-    for (const page of pdfDoc.getPages()) {
-      const annots = page.node.lookup(PDFName.of("Annots")) as any;
-      if (!annots || typeof annots.size !== "function") continue;
-      for (let i = 0; i < annots.size(); i++) {
-        const ref = annots.get(i);
-        const widget = pdfDoc.context.lookup(ref) as any;
-        if (!widget || typeof widget.get !== "function") continue;
-        if (String(widget.get(PDFName.of("Subtype"))) !== "/Widget") continue;
-        if (!widget.get(PDFName.of("FT"))) continue;
-        fields.push(ref);
-      }
-    }
-    acroForm.set(PDFName.of("Fields"), fields);
-    acroForm.set(PDFName.of("NeedAppearances"), PDFBool.True);
-  } catch (e) {
-    console.warn("⚠ Could not rebuild AcroForm fields:", e);
-  }
-}
-
-// ND2A uses Helv or PMingLiU from template — pass CJK via hex strings
-function buildCjkDA(originalDA: string | undefined): string {
-  const m = originalDA?.match(/(\d+(?:\.\d+)?)\s+Tf/);
-  const size = m ? m[1] : "12";
-  return `/PMingLiU ${size} Tf 0 g`;
-}
-
-function buildHelvDA(originalDA: string | undefined): string {
-  const m = originalDA?.match(/(\d+(?:\.\d+)?)\s+Tf/);
-  const size = m ? m[1] : "12";
-  return `/Helv ${size} Tf 0 g`;
-}
 
 // ============================================================================
 // Form helpers
@@ -282,12 +158,6 @@ function parseEnglishName(fullName: string): { surname: string; otherNames: stri
   const surname = parts[parts.length - 1];
   const otherNames = parts.slice(0, -1).join(" ");
   return { surname, otherNames };
-}
-
-function parsePassportPartial(passportNumber: string): string {
-  if (!passportNumber) return '';
-  const cleaned = passportNumber.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-  return cleaned.slice(0, Math.ceil(cleaned.length / 2));
 }
 
 // ============================================================================

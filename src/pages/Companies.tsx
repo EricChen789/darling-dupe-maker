@@ -146,15 +146,13 @@ const Companies = () => {
     toast({ title: '已重新整理', description: '公司列表已更新' });
   };
 
-  const handleSaveCompany = (companyData: Partial<Company>) => {
+  const handleSaveCompany = async (companyData: Partial<Company>): Promise<void> => {
     if (selectedCompany) {
-      updateCompany.mutate({ id: selectedCompany.id, data: companyData }, {
-        onSuccess: () => toast({ title: '公司已更新', description: `${companyData.name} 已成功更新` }),
-      });
+      await updateCompany.mutateAsync({ id: selectedCompany.id, data: companyData });
+      toast({ title: '公司已更新', description: `${companyData.name} 已成功更新` });
     } else {
-      addCompany.mutate(companyData, {
-        onSuccess: () => toast({ title: '公司已新增', description: `${companyData.name} 已成功新增` }),
-      });
+      await addCompany.mutateAsync(companyData);
+      toast({ title: '公司已新增', description: `${companyData.name} 已成功新增` });
     }
   };
 

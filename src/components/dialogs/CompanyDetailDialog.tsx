@@ -38,6 +38,8 @@ import { PersonnelSection } from './PersonnelChangeTab';
 import { DocGenerationTab } from './DocGenerationTab';
 import { CopyFromCompanyDialog } from './CopyFromCompanyDialog';
 import { useSecretaryTemplates } from '@/hooks/useSecretaryTemplates';
+import { useUnassignedChangeEvents, EVENT_TYPE_LABELS } from '@/hooks/useChangeEvents';
+import { useNAR1Status, getNAR1StatusBadge } from '@/hooks/useNAR1Status';
 
 interface CompanyDetailDialogProps {
   open: boolean;
@@ -223,6 +225,8 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
   const updateShareholder = useUpdateShareholder();
   const deleteShareholder = useDeleteShareholder();
   const { data: secretaryTemplates = [] } = useSecretaryTemplates();
+  const { data: unassignedChanges = [] } = useUnassignedChangeEvents(company?.id);
+  const { data: nar1Status } = useNAR1Status(company?.id);
 
   useEffect(() => {
     // Only sync form from company when NOT in edit mode, to avoid wiping user input
@@ -625,6 +629,66 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
           </DialogDescription>
         </DialogHeader>
 
+        {/* NAR1 待辦變更提示 (Phase 3.4 + Phase 4) */}
+        {(unassignedChanges.length > 0 || (nar1Status && nar1Status.due_date)) && (
+          <div className="px-6 py-2 shrink-0 space-y-2">
+            {/* NAR1 Due Date Status Banner (Phase 4) */}
+            {nar1Status && nar1Status.due_date && (() => {
+              const badge = getNAR1StatusBadge(nar1Status.status);
+              const isUrgent = nar1Status.status === 'late' || nar1Status.status === 'due_soon';
+              return (
+                <div className={`flex items-start gap-2 p-3 rounded-md border text-sm ${
+                  isUrgent
+                    ? 'border-red-200 bg-red-50 dark:bg-red-950/20 dark:border-red-800'
+                    : 'border-blue-200 bg-blue-50 dark:bg-blue-950/20 dark:border-blue-800'
+                }`}>
+                  <span className="text-base shrink-0 mt-0.5">{isUrgent ? '🔴' : '📅'}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className={`font-medium ${isUrgent ? 'text-red-900 dark:text-red-100' : 'text-blue-900 dark:text-blue-100'}`}>
+                      NAR1 週年申報：{nar1Status.period_start} ~ {nar1Status.period_end}
+                    </p>
+                    <p className={`mt-0.5 ${isUrgent ? 'text-red-800 dark:text-red-200' : 'text-blue-800 dark:text-blue-200'}`}>
+                      到期日：{nar1Status.due_date}
+                      <span className={`inline-block ml-2 px-2 py-0.5 rounded-full text-xs ${badge.bgColor} ${badge.color}`}>
+                        {badge.label}
+                      </span>
+                      {nar1Status.days_remaining !== undefined && (
+                        <span className="ml-1">
+                          {nar1Status.days_remaining < 0
+                            ? `（已逾期 ${Math.abs(nar1Status.days_remaining)} 天）`
+                            : nar1Status.days_remaining === 0
+                            ? '（今日到期！）'
+                            : `（還有 ${nar1Status.days_remaining} 天）`}
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                </div>
+              );
+            })()}
+            {/* Unassigned Changes Warning (Phase 3.4) */}
+            {unassignedChanges.length > 0 && (
+              <div className="flex items-start gap-2 p-3 rounded-md border border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800 text-sm">
+                <span className="text-base shrink-0 mt-0.5">⚠️</span>
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-amber-900 dark:text-amber-100">
+                    自上次 NAR1 申報以來，有 {unassignedChanges.length} 項未申報變更：
+                  </p>
+                  <p className="text-amber-800 dark:text-amber-200 mt-0.5">
+                    {unassignedChanges.slice(0, 5).map((e, i) => (
+                      <span key={e.id}>
+                        {i > 0 && '、'}
+                        {EVENT_TYPE_LABELS[e.event_type] || e.event_type}
+                      </span>
+                    ))}
+                    {unassignedChanges.length > 5 && ` 等${unassignedChanges.length}項`}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="flex-1 overflow-hidden flex">
           {/* Left: Tabbed content */}
           <div className={`overflow-y-auto p-6 pt-2 transition-all ${(selectedPerson || selectedSh) ? 'w-1/2 border-r border-border' : 'w-full'}`}>
@@ -728,6 +792,33 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                     <InfoItem label="司法管轄區" value={company.jurisdiction} />
                     <InfoItem label="電郵地址" value={company.email} />
                     <InfoItem label="電話" value={company.phone} />
+                    {nar1Status && nar1Status.due_date && (() => {
+                      const badge = getNAR1StatusBadge(nar1Status.status);
+                      return (
+                        <>
+                          <InfoItem label="NAR1 到期日" value={nar1Status.due_date} />
+                          <div>
+                            <Label className="text-xs text-muted-foreground">NAR1 狀態</Label>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              <span className={`text-sm font-medium ${badge.color}`}>
+                                <span className={`inline-block px-2 py-0.5 rounded-full text-xs ${badge.bgColor} ${badge.color}`}>
+                                  {badge.label}
+                                </span>
+                              </span>
+                              {nar1Status.days_remaining !== undefined && (
+                                <span className={`text-xs ${nar1Status.days_remaining < 0 ? 'text-red-600' : nar1Status.days_remaining <= 7 ? 'text-orange-600' : 'text-muted-foreground'}`}>
+                                  {nar1Status.days_remaining < 0
+                                    ? `已逾期 ${Math.abs(nar1Status.days_remaining)} 天`
+                                    : nar1Status.days_remaining === 0
+                                    ? '今日到期'
+                                    : `還有 ${nar1Status.days_remaining} 天`}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </>
+                      );
+                    })()}
                     <div className="col-span-2">
                       <InfoItem label="註冊辦事處地址" value={[company.regFlat, company.regBuilding, company.regStreet, company.regDistrict, company.regRegion].filter(Boolean).join(', ') || '—'} />
                     </div>

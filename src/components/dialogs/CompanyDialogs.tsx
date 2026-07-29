@@ -36,7 +36,7 @@ interface CompanyDialogProps {
   onOpenChange: (open: boolean) => void;
   mode: DialogMode;
   company?: Company | null;
-  onSave?: (company: Partial<Company>) => void;
+  onSave?: (company: Partial<Company>) => Promise<void> | void;
 }
 
 type AssignSubMode = 'many-to-one' | 'one-to-many';
@@ -128,6 +128,37 @@ export const CompanyDialog = ({ open, onOpenChange, mode, company, onSave }: Com
   const { data: companies = [], refetch: refetchCompanies } = useCompanies();
   const queryClient = useQueryClient();
   const batchAssign = useBatchAssign();
+
+  // ── Copy address from existing company ──
+  const [addressSourceId, setAddressSourceId] = useState<string>('');
+  const companyAddressOptions = useMemo(() => {
+    return companies
+      .filter(c => c.regFlat || c.regBuilding || c.regStreet || c.regDistrict || c.regRegion)
+      .map(c => ({
+        id: c.id,
+        label: c.name,
+        sub: [c.regFlat, c.regBuilding, c.regStreet, c.regDistrict, c.regRegion]
+          .filter(Boolean).join(', ') || '(無地址)',
+      }));
+  }, [companies]);
+
+  const fillAddressFromCompany = (companyId: string, target: 'formData' | 'newCompany') => {
+    const source = companies.find(c => c.id === companyId);
+    if (!source) return;
+    const addr = {
+      regFlat: source.regFlat || '',
+      regBuilding: source.regBuilding || '',
+      regStreet: source.regStreet || '',
+      regDistrict: source.regDistrict || '',
+      regRegion: source.regRegion || '',
+    };
+    if (target === 'formData') {
+      setFormData(prev => ({ ...prev, ...addr }));
+    } else {
+      setNewCompany(prev => ({ ...prev, ...addr }));
+    }
+    setAddressSourceId('');
+  };
 
   // Collapsible people section (create/edit mode) — 多角色组
   const [showPeopleSection, setShowPeopleSection] = useState(false);
@@ -738,7 +769,7 @@ export const CompanyDialog = ({ open, onOpenChange, mode, company, onSave }: Com
         shareholders: shareholders as Shareholder[],
         manualPeople,
       };
-      onSave?.(payload);
+      await onSave?.(payload);
       onOpenChange(false);
     } catch (e: any) {
       toast({ title: '操作失敗', description: e.message, variant: 'destructive' });
@@ -959,6 +990,15 @@ export const CompanyDialog = ({ open, onOpenChange, mode, company, onSave }: Com
         <div className="space-y-1"><Label className="text-xs">司法管轄區</Label><Input value={newCompany.jurisdiction} onChange={e => updateNewCompany({ jurisdiction: e.target.value })} placeholder="Hong Kong" /></div>
       </div>
       <div className="text-xs text-muted-foreground mt-1">註冊辦事處地址</div>
+      <SearchableSelect
+        options={companyAddressOptions}
+        selected={addressSourceId}
+        onSelect={id => fillAddressFromCompany(id, 'newCompany')}
+        placeholder="從現有公司複製地址..."
+        searchPlaceholder="搜尋公司..."
+        emptyText="無匹配公司"
+        className="mb-1"
+      />
       <div className="grid grid-cols-2 gap-2">
         <div className="space-y-1"><Label className="text-xs">室/樓</Label><Input value={newCompany.regFlat} onChange={e => updateNewCompany({ regFlat: e.target.value })} placeholder="Flat A, 12/F" /></div>
         <div className="space-y-1"><Label className="text-xs">大廈</Label><Input value={newCompany.regBuilding} onChange={e => updateNewCompany({ regBuilding: e.target.value })} placeholder="大廈名稱" /></div>
@@ -1351,6 +1391,15 @@ export const CompanyDialog = ({ open, onOpenChange, mode, company, onSave }: Com
               </div>
               <div className="space-y-2 col-span-2"><Label htmlFor="businessCode">業務代碼</Label><Input id="businessCode" value={formData.businessCode} onChange={e => setFormData({ ...formData, businessCode: e.target.value })} placeholder="輸入業務代碼" /></div>
               <div className="col-span-2 mt-2 text-sm font-medium">註冊辦事處地址</div>
+              <SearchableSelect
+                options={companyAddressOptions}
+                selected={addressSourceId}
+                onSelect={id => fillAddressFromCompany(id, 'formData')}
+                placeholder="從現有公司複製地址..."
+                searchPlaceholder="搜尋公司..."
+                emptyText="無匹配公司"
+                className="col-span-2 mb-1"
+              />
               <div className="space-y-2"><Label htmlFor="regFlat">室/樓</Label><Input id="regFlat" value={formData.regFlat} onChange={e => setFormData({ ...formData, regFlat: e.target.value })} placeholder="例如 Flat A, 12/F" /></div>
               <div className="space-y-2"><Label htmlFor="regBuilding">大廈</Label><Input id="regBuilding" value={formData.regBuilding} onChange={e => setFormData({ ...formData, regBuilding: e.target.value })} placeholder="大廈名稱" /></div>
               <div className="space-y-2"><Label htmlFor="regStreet">街道</Label><Input id="regStreet" value={formData.regStreet} onChange={e => setFormData({ ...formData, regStreet: e.target.value })} placeholder="街道及門牌" /></div>
@@ -1445,6 +1494,15 @@ export const CompanyDialog = ({ open, onOpenChange, mode, company, onSave }: Com
               </div>
               <div className="space-y-2 col-span-2"><Label htmlFor="businessCode">業務代碼</Label><Input id="businessCode" value={formData.businessCode} onChange={e => setFormData({ ...formData, businessCode: e.target.value })} placeholder="輸入業務代碼" /></div>
               <div className="col-span-2 mt-2 text-sm font-medium">註冊辦事處地址</div>
+              <SearchableSelect
+                options={companyAddressOptions}
+                selected={addressSourceId}
+                onSelect={id => fillAddressFromCompany(id, 'formData')}
+                placeholder="從現有公司複製地址..."
+                searchPlaceholder="搜尋公司..."
+                emptyText="無匹配公司"
+                className="col-span-2 mb-1"
+              />
               <div className="space-y-2"><Label htmlFor="regFlat">室/樓</Label><Input id="regFlat" value={formData.regFlat} onChange={e => setFormData({ ...formData, regFlat: e.target.value })} placeholder="例如 Flat A, 12/F" /></div>
               <div className="space-y-2"><Label htmlFor="regBuilding">大廈</Label><Input id="regBuilding" value={formData.regBuilding} onChange={e => setFormData({ ...formData, regBuilding: e.target.value })} placeholder="大廈名稱" /></div>
               <div className="space-y-2"><Label htmlFor="regStreet">街道</Label><Input id="regStreet" value={formData.regStreet} onChange={e => setFormData({ ...formData, regStreet: e.target.value })} placeholder="街道及門牌" /></div>

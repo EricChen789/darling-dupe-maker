@@ -247,6 +247,8 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
           unpaid: sh.unpaid || '',
         })),
         returnDate: formData.returnDate,
+        companyEmail: company.email || '',
+        companyPhone: company.phone || '',
         presenter: {
           name: formData.presenterName || '',
           address: formData.presenterAddress || '',

@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Company, Person, Shareholder } from '@/types';
+import { recordChangeEvent, EVENT_FORM_MAP } from '@/lib/changeEvents';
 
 interface DbCompany {
   id: string;
@@ -288,7 +289,7 @@ export function useDeleteCompany() {
       return data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['companies'] });
+      queryClient.refetchQueries({ queryKey: ['companies'] });
       queryClient.invalidateQueries({ queryKey: ['persons-list'] });
     },
   });
@@ -575,7 +576,7 @@ export function useAddCompany() {
       return company;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['companies'] });
+      queryClient.refetchQueries({ queryKey: ['companies'] });
       queryClient.invalidateQueries({ queryKey: ['persons-list'] });
     },
   });
@@ -615,8 +616,22 @@ export function useUpdateCompany() {
         .eq('id', id);
       if (error) throw error;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['companies'] });
+    onSuccess: (_data, variables) => {
+      queryClient.refetchQueries({ queryKey: ['companies'] });
+      // Record change events for NAR1 smart filing
+      const { id: companyId, data } = variables;
+      if (data.regFlat !== undefined || data.regBuilding !== undefined || data.regStreet !== undefined || data.regDistrict !== undefined || data.regRegion !== undefined) {
+        recordChangeEvent({ company_id: companyId, event_type: 'address_change', new_value: { reg_flat: data.regFlat, reg_building: data.regBuilding, reg_street: data.regStreet, reg_district: data.regDistrict, reg_region: data.regRegion }, related_form_type: 'NR1' });
+      }
+      if (data.name !== undefined || data.chineseName !== undefined) {
+        recordChangeEvent({ company_id: companyId, event_type: 'name_change', new_value: { name: data.name, chinese_name: data.chineseName }, related_form_type: 'NNC2' });
+      }
+      if (data.email !== undefined) {
+        recordChangeEvent({ company_id: companyId, event_type: 'company_email_change', new_value: { email: data.email }, related_form_type: 'NR1' });
+      }
+      if (data.phone !== undefined) {
+        recordChangeEvent({ company_id: companyId, event_type: 'company_phone_change', new_value: { phone: data.phone }, related_form_type: 'NR1' });
+      }
     },
   });
 }
@@ -661,9 +676,24 @@ export function useAddOfficer() {
       } as any);
       if (error) throw error;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['companies'] });
+    onSuccess: (_data, variables) => {
+      queryClient.refetchQueries({ queryKey: ['companies'] });
       queryClient.invalidateQueries({ queryKey: ['persons-list'] });
+      // Record change event for NAR1 smart filing
+      const role = variables.role;
+      let eventType: string | null = null;
+      if (role === 'director') eventType = 'director_appoint';
+      else if (role === 'secretary') eventType = 'secretary_appoint';
+      else if (role === 'reserve_director') eventType = 'reserve_director_appoint';
+      if (eventType) {
+        recordChangeEvent({
+          company_id: variables.company_id,
+          event_type: eventType,
+          role: variables.role,
+          new_value: { name_english: variables.name_english, name_chinese: variables.name_chinese, date_appointed: variables.date_appointed },
+          related_form_type: EVENT_FORM_MAP[eventType] || '',
+        });
+      }
     },
   });
 }
@@ -672,11 +702,13 @@ export function useUpdateOfficer() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, data }: { id: string; data: { name_english?: string; name_chinese?: string; identity?: string; id_number?: string; email?: string; tcsp_number?: string; address?: string; service_address?: string; date_appointed?: string; date_ceased?: string; place_incorporated?: string; company_number_ref?: string; is_reserve?: boolean; date_of_birth?: string; auth_scope?: string } }) => {
-      // id is person_company_roles.id — first lookup the person_id
+      // id is person_company_roles.id — first lookup the person_id, company_id, role
       const { data: roleRow, error: e1 } = await supabase
-        .from('person_company_roles').select('person_id').eq('id', id).single();
+        .from('person_company_roles').select('person_id, company_id, role').eq('id', id).single();
       if (e1) throw e1;
       const personId = roleRow.person_id;
+      const companyId = roleRow.company_id;
+      const officerRole = roleRow.role;
 
       // Update central person
       const personUpdate: Record<string, any> = {};
@@ -706,10 +738,29 @@ export function useUpdateOfficer() {
         const { error } = await supabase.from('person_company_roles').update(roleUpdate).eq('id', id);
         if (error) throw error;
       }
+
+      return { personId, companyId, officerRole, hasDateCeased: !!data.date_ceased };
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['companies'] });
+    onSuccess: (result) => {
+      queryClient.refetchQueries({ queryKey: ['companies'] });
       queryClient.invalidateQueries({ queryKey: ['persons-list'] });
+      // If date_ceased is being set, record a cessation event
+      if (result.hasDateCeased) {
+        const role = result.officerRole;
+        let eventType: string | null = null;
+        if (role === 'director') eventType = 'director_cease';
+        else if (role === 'secretary') eventType = 'secretary_cease';
+        else if (role === 'reserve_director') eventType = 'reserve_director_cease';
+        if (eventType) {
+          recordChangeEvent({
+            company_id: result.companyId,
+            event_type: eventType,
+            person_id: result.personId,
+            role: result.officerRole,
+            related_form_type: EVENT_FORM_MAP[eventType] || '',
+          });
+        }
+      }
     },
   });
 }
@@ -718,16 +769,34 @@ export function useDeleteOfficer() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
-      // id = person_company_roles.id; only remove the assignment, keep the person
-      console.log('[useDeleteOfficer] deleting id:', id);
+      // Fetch role info before deleting for change event recording
+      const { data: roleRow, error: fetchErr } = await supabase
+        .from('person_company_roles').select('person_id, company_id, role').eq('id', id).single();
+      if (fetchErr) throw fetchErr;
+
       const { data, error } = await supabase.from('person_company_roles').delete().eq('id', id);
-      console.log('[useDeleteOfficer] result:', { data, error });
       if (error) throw error;
+
+      return { person_id: roleRow.person_id, company_id: roleRow.company_id, role: roleRow.role };
     },
-    onSuccess: () => {
-      console.log('[useDeleteOfficer] onSuccess — invalidating queries');
-      queryClient.invalidateQueries({ queryKey: ['companies'] });
+    onSuccess: (result) => {
+      queryClient.refetchQueries({ queryKey: ['companies'] });
       queryClient.invalidateQueries({ queryKey: ['persons-list'] });
+      // Record cessation event for NAR1 smart filing
+      const role = result.role;
+      let eventType: string | null = null;
+      if (role === 'director') eventType = 'director_cease';
+      else if (role === 'secretary') eventType = 'secretary_cease';
+      else if (role === 'reserve_director') eventType = 'reserve_director_cease';
+      if (eventType) {
+        recordChangeEvent({
+          company_id: result.company_id,
+          event_type: eventType,
+          person_id: result.person_id,
+          role: result.role,
+          related_form_type: EVENT_FORM_MAP[eventType] || '',
+        });
+      }
     },
     onError: (err: any) => {
       console.error('[useDeleteOfficer] onError:', err);
@@ -774,9 +843,15 @@ export function useAddShareholder() {
       } as any);
       if (error) throw error;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['companies'] });
+    onSuccess: (_data, variables) => {
+      queryClient.refetchQueries({ queryKey: ['companies'] });
       queryClient.invalidateQueries({ queryKey: ['persons-list'] });
+      recordChangeEvent({
+        company_id: variables.company_id,
+        event_type: 'shareholder_add',
+        new_value: { name: variables.name_english || variables.name, name_chinese: variables.name_chinese, shares: variables.shares, share_type: variables.share_type },
+        related_form_type: 'NSC1',
+      });
     },
   });
 }
@@ -819,7 +894,7 @@ export function useUpdateShareholder() {
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['companies'] });
+      queryClient.refetchQueries({ queryKey: ['companies'] });
       queryClient.invalidateQueries({ queryKey: ['persons-list'] });
     },
   });
@@ -829,12 +904,26 @@ export function useDeleteShareholder() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
+      // Fetch person_id and company_id before deleting for change event recording
+      const { data: roleRow, error: fetchErr } = await supabase
+        .from('person_company_roles').select('person_id, company_id').eq('id', id).single();
+      if (fetchErr) throw fetchErr;
+
       const { error } = await supabase.from('person_company_roles').delete().eq('id', id);
       if (error) throw error;
+
+      return { person_id: roleRow.person_id, company_id: roleRow.company_id };
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['companies'] });
+    onSuccess: (result) => {
+      queryClient.refetchQueries({ queryKey: ['companies'] });
       queryClient.invalidateQueries({ queryKey: ['persons-list'] });
+      recordChangeEvent({
+        company_id: result.company_id,
+        event_type: 'shareholder_remove',
+        person_id: result.person_id,
+        role: 'shareholder',
+        related_form_type: 'Share Transfer',
+      });
     },
   });
 }
@@ -946,7 +1035,7 @@ export function useBatchAssign() {
       return { count, inserted: inserts.length };
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['companies'] });
+      queryClient.refetchQueries({ queryKey: ['companies'] });
       queryClient.invalidateQueries({ queryKey: ['persons-list'] });
     },
   });
@@ -1000,7 +1089,7 @@ export function useCopyFromCompany() {
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['companies'] });
+      queryClient.refetchQueries({ queryKey: ['companies'] });
       queryClient.invalidateQueries({ queryKey: ['persons-list'] });
     },
   });

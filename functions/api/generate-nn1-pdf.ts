@@ -8,6 +8,7 @@ import {
   fetchAndEmbedFont
 } from "./_pdf-utils";
 import { verifyAuthRequest, type Env } from "./_auth";
+import { enableNeedAppearances } from "./_acroform";
 
 const TEMPLATE_NAME = "NN1-template.pdf";
 
@@ -54,7 +55,8 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
       try { form.getCheckBox(name).check(); } catch { /* 跳過 */ }
     }
 
-    form.flatten();
+    // SKIP flatten() — NN1 template has 27 pages, flatten() exceeds Workers CPU budget
+    enableNeedAppearances(pdfDoc);
     const pdfBytes = await pdfDoc.save();
     return jsonResp({ pdf: uint8ToBase64(new Uint8Array(pdfBytes)) });
   } catch (err: any) {

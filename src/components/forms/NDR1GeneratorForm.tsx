@@ -11,6 +11,7 @@ import { Person } from '@/types';
 import { downloadBase64Pdf } from '@/lib/downloadPdf';
 import { useSaveFormHistory } from '@/hooks/useFormHistory';
 import FormHistorySelector from './FormHistorySelector';
+import RelatedFormsPrompt from './RelatedFormsPrompt';
 
 interface NDR1GeneratorFormProps { onBack: () => void; initialCompanyId?: string; }
 
@@ -19,6 +20,8 @@ export default function NDR1GeneratorForm({ onBack, initialCompanyId }: NDR1Gene
   const [selectedCompanyId, setSelectedCompanyId] = useState('');
   const [selectedPersonId, setSelectedPersonId] = useState('');
   const [generating, setGenerating] = useState(false);
+  const [showRelatedPrompt, setShowRelatedPrompt] = useState(false);
+  const [relatedLinkages, setRelatedLinkages] = useState<any[]>([]);
   const { mutate: saveFormHistory } = useSaveFormHistory();
 
   const today = new Date();
@@ -134,6 +137,18 @@ export default function NDR1GeneratorForm({ onBack, initialCompanyId }: NDR1Gene
       downloadBase64Pdf(result.pdf, 'NDR1-form.pdf');
       toast({ title: '生成成功', description: 'NDR1 表格已下載' });
       saveFormHistory({ formType: 'NDR1', formData: { formData, selectedCompanyId } });
+
+      // Phase 5: Check for related forms
+      try {
+        const linkResp = await fetch(`/api/form-linkages?primary=NDR1`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const linkData = await linkResp.json();
+        if (linkData.linkages && linkData.linkages.length > 0) {
+          setRelatedLinkages(linkData.linkages);
+          setShowRelatedPrompt(true);
+        }
+      } catch (_) { /* linkage check is non-critical */ }
     } catch (err: any) { toast({ title: '生成失敗', description: err.message, variant: 'destructive' }); }
     finally { setGenerating(false); }
   };
@@ -244,6 +259,17 @@ export default function NDR1GeneratorForm({ onBack, initialCompanyId }: NDR1Gene
           </Button>
         </div>
       </div>
+
+      <RelatedFormsPrompt
+        open={showRelatedPrompt}
+        onOpenChange={setShowRelatedPrompt}
+        primaryFormCode="NDR1"
+        primaryFormName="NDR1 — 撤銷註冊申請書"
+        primaryFormData={{ ...formData, company_id: selectedCompanyId }}
+        companyId={selectedCompanyId}
+        companyName={formData.companyName}
+        linkages={relatedLinkages}
+      />
     </div>
   );
 }

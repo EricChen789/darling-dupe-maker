@@ -8,6 +8,7 @@ import {
   corsHeaders, jsonResp, uint8ToBase64, rget,
 } from './_pdf-utils';
 import { verifyAuthRequest, type Env } from './_auth';
+import { enableNeedAppearances } from './_acroform';
 
 const TEMPLATE = "NN3-template.pdf";
 
@@ -89,7 +90,7 @@ export async function onRequest(context: { request: Request; env: Env }) {
 
     // SKIP flatten() — NN3 template has 20+ pages, flatten() exceeds Workers CPU budget
     // Instead set NeedAppearances=true so PDF viewers render form appearances on open
-    form.setNeedsAppearances(true);
+    enableNeedAppearances(pdfDoc);
 
     const pdfBytes = new Uint8Array(await pdfDoc.save());
     const filename = `NN3_${brNumber || 'form'}.pdf`;

@@ -9,6 +9,7 @@ import {
   fetchAndEmbedFont
 } from './_pdf-utils';
 import { verifyAuthRequest, type Env } from './_auth';
+import { enableNeedAppearances } from './_acroform';
 
 const TEMPLATE = "NN9-template.pdf";
 
@@ -99,7 +100,8 @@ export async function onRequest(context: { request: Request; env: Env }) {
       try { form.getCheckBox(name).check(); } catch { /* skip */ }
     }
 
-    form.flatten();
+    // SKIP flatten() — NN9 exceeds Workers CPU budget
+    enableNeedAppearances(pdfDoc);
 
     const pdfBytes = new Uint8Array(await pdfDoc.save());
     const filename = `NN9_${brNumber || 'form'}.pdf`;

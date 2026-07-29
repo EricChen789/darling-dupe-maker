@@ -999,7 +999,8 @@ def scheduler_loop():
 TABLES = ['companies', 'officers', 'shareholders', 'persons', 'person_company_roles',
           'presenters', 'significant_controllers', 'company_logs', 'reminders', 'invoices',
           'resolutions', 'secretary_templates', 'share_transactions', 'user_roles',
-          'email_templates', 'email_logs', 'company_versions']
+          'email_templates', 'email_logs', 'company_versions',
+          'change_events', 'nar1_filings', 'form_linkages']
 
 @app.route('/api/send-email', methods=['POST', 'OPTIONS'])
 def send_email():
@@ -3744,6 +3745,85 @@ def table_delete_filtered(table_name):
     db.commit()
     return jsonify({'success': True})
 
+# ─── Form → Company data auto-update (Phase 3.2) ───
+
+def _apply_form_changes_to_company(data, form_code):
+    """After generating a form PDF, check if the form data implies changes
+    to the company record and apply them automatically.
+
+    Also records a change_event for NAR1 tracking."""
+    company_id = data.get('company_id')
+    if not company_id:
+        return
+
+    db = get_db()
+    company = db.execute("SELECT * FROM companies WHERE id = ?", (company_id,)).fetchone()
+    if not company:
+        return
+
+    changes = {}
+    event_type = None
+
+    if form_code == 'nr1':
+        # Address change: update company registered address
+        new_flat = data.get('flat', data.get('regFlat', ''))
+        new_building = data.get('building', data.get('regBuilding', ''))
+        new_street = data.get('street', data.get('regStreet', ''))
+        new_district = data.get('district', data.get('regDistrict', ''))
+        new_region = data.get('region', data.get('regRegion', ''))
+
+        if new_flat: changes['reg_flat'] = new_flat
+        if new_building: changes['reg_building'] = new_building
+        if new_street: changes['reg_street'] = new_street
+        if new_district: changes['reg_district'] = new_district
+        if new_region: changes['reg_region'] = new_region
+
+        if changes:
+            event_type = 'address_change'
+
+    elif form_code == 'nnc2':
+        # Name change: update company name
+        new_name = data.get('newName', data.get('newCompanyName', ''))
+        new_chinese_name = data.get('newChineseName', '')
+
+        if new_name and new_name != company['name']:
+            changes['name'] = new_name
+        if new_chinese_name and new_chinese_name != (company['chinese_name'] or ''):
+            changes['chinese_name'] = new_chinese_name
+
+        if changes:
+            event_type = 'name_change'
+
+    elif form_code == 'nd4':
+        # Director/Secretary resignation — the date_ceased is already set
+        # by useUpdateOfficer. No additional company update needed here.
+        pass
+
+    elif form_code == 'nd2a':
+        # New director/secretary appointment — already handled by useAddOfficer.
+        pass
+
+    # Apply changes to companies table
+    if changes:
+        sets = ', '.join([f"{k} = ?" for k in changes.keys()])
+        vals = list(changes.values()) + [company_id]
+        db.execute(f"UPDATE companies SET {sets} WHERE id = ?", vals)
+        db.commit()
+
+        # Record change event
+        if event_type:
+            today = datetime.now().strftime('%d/%m/%Y')
+            evt_id = str(uuid.uuid4())
+            related_form = {'address_change': 'NR1', 'name_change': 'NNC2'}.get(event_type, '')
+            db.execute(
+                "INSERT INTO change_events (id, company_id, event_type, new_value, change_date, related_form_type) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (evt_id, company_id, event_type, json.dumps(changes, ensure_ascii=False), today, related_form)
+            )
+            db.commit()
+            print(f"[FORM SYNC] {form_code} → company {company_id}: {event_type} {list(changes.keys())}")
+
+
 # ─── Special routes ───
 @app.route('/api/persons/cleanup-orphans', methods=['POST'])
 def cleanup_orphan_persons():
@@ -4041,6 +4121,342 @@ def _select_dropdown(doc, fmap, name, value):
                 pass
             break
     return False
+
+# ─── Phase 4: NAR1 Smart Filing Engine ───
+
+def _calculate_nar1_dates(incorporation_date_str):
+    """Calculate NAR1 period and due dates from incorporation date.
+
+    Returns dict with:
+      - period_start: DD/MM/YYYY (incorporation anniversary this year)
+      - period_end: DD/MM/YYYY (anniversary next year)
+      - due_date: DD/MM/YYYY (period_end + 42 days grace period)
+      - days_remaining: int (days until due_date, negative if overdue)
+      - status: 'ok' | 'grace' | 'late' | 'due_soon'
+    """
+    from datetime import datetime, timedelta
+    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+
+    try:
+        inc_date = datetime.strptime(incorporation_date_str, '%Y-%m-%d')
+    except (ValueError, TypeError):
+        # Try DD/MM/YYYY
+        try:
+            inc_date = datetime.strptime(incorporation_date_str, '%d/%m/%Y')
+        except (ValueError, TypeError):
+            return None
+
+    # Current year's anniversary
+    this_year_anniv = inc_date.replace(year=today.year)
+    if this_year_anniv > today:
+        # This year's anniversary hasn't happened yet → period started last year
+        period_start = this_year_anniv.replace(year=today.year - 1)
+        period_end = this_year_anniv
+    else:
+        # This year's anniversary has passed → period started this year
+        period_start = this_year_anniv
+        period_end = this_year_anniv.replace(year=today.year + 1)
+
+    # Due date = period_end + 42 days (statutory grace period)
+    due_date = period_end + timedelta(days=42)
+
+    days_remaining = (due_date - today).days
+
+    # Determine status
+    if days_remaining < 0:
+        status = 'late'
+    elif days_remaining <= 7:
+        status = 'due_soon'
+    elif days_remaining <= 42:
+        status = 'grace'
+    else:
+        status = 'ok'
+
+    return {
+        'period_start': period_start.strftime('%d/%m/%Y'),
+        'period_end': period_end.strftime('%d/%m/%Y'),
+        'due_date': due_date.strftime('%d/%m/%Y'),
+        'days_remaining': days_remaining,
+        'status': status,
+        'today': today.strftime('%d/%m/%Y'),
+    }
+
+
+def _ensure_nar1_periods(company_id):
+    """Create nar1_filings periods for a company if they don't exist.
+    Creates all periods from incorporation year to current year.
+    Returns list of period dicts."""
+    db = get_db()
+    company = db.execute(
+        "SELECT incorporation_date, nar1_due_date FROM companies WHERE id = ?",
+        (company_id,)
+    ).fetchone()
+    if not company or not company['incorporation_date']:
+        return []
+
+    dates = _calculate_nar1_dates(company['incorporation_date'])
+    if not dates:
+        return []
+
+    # Update company's nar1_due_date if changed
+    if company['nar1_due_date'] != dates['due_date']:
+        db.execute(
+            "UPDATE companies SET nar1_due_date = ? WHERE id = ?",
+            (dates['due_date'], company_id)
+        )
+        db.commit()
+
+    # Check existing periods
+    existing = db.execute(
+        "SELECT * FROM nar1_filings WHERE company_id = ? ORDER BY period_start",
+        (company_id,)
+    ).fetchall()
+
+    existing_starts = {r['period_start'] for r in existing}
+
+    # Create current period if missing
+    if dates['period_start'] not in existing_starts:
+        period_id = str(uuid.uuid4())
+        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        db.execute(
+            "INSERT INTO nar1_filings (id, company_id, period_start, period_end, status, created_at) "
+            "VALUES (?, ?, ?, ?, 'pending', ?)",
+            (period_id, company_id, dates['period_start'], dates['period_end'], now)
+        )
+        db.commit()
+
+    # Sync NAR1 reminders (30, 7, 1 days before due)
+    _sync_nar1_reminders(company_id, dates['due_date'])
+
+    # Refresh and return all periods
+    return [dict(r) for r in db.execute(
+        "SELECT * FROM nar1_filings WHERE company_id = ? ORDER BY period_start DESC",
+        (company_id,)
+    ).fetchall()]
+
+
+def _sync_nar1_reminders(company_id, due_date_str):
+    """Create/update NAR1 reminders for a company.
+    Creates reminders at 30, 7, and 1 days before the due date.
+    If reminders already exist, updates their due_date. Deletes old ones
+    if the due date has moved past a reminder date."""
+    db = get_db()
+    from datetime import datetime as dt, timedelta
+
+    try:
+        due_date = dt.strptime(due_date_str, '%d/%m/%Y')
+    except (ValueError, TypeError):
+        return
+
+    # Reminder offsets: (days_before, label_suffix)
+    reminders_config = [
+        (30, ' - 30天前提醒'),
+        (7, ' - 7天前提醒'),
+        (1, ' - 到期日提醒'),
+    ]
+
+    # Get company name
+    company = db.execute("SELECT name FROM companies WHERE id = ?", (company_id,)).fetchone()
+    company_name = company['name'] if company else 'Unknown'
+
+    # Get existing NAR1 reminders for this company
+    existing = db.execute(
+        "SELECT * FROM reminders WHERE company_id = ? AND reminder_type = 'NAR1' "
+        "ORDER BY due_date",
+        (company_id,)
+    ).fetchall()
+
+    existing_dates = {r['due_date']: r for r in existing}
+    now = dt.now().strftime('%Y-%m-%d %H:%M:%S')
+
+    for days_before, label_suffix in reminders_config:
+        reminder_date = due_date - timedelta(days=days_before)
+        reminder_date_str = reminder_date.strftime('%d/%m/%Y')
+
+        if reminder_date_str in existing_dates:
+            # Already exists, skip
+            del existing_dates[reminder_date_str]
+            continue
+
+        # Check if we already have a reminder for this offset
+        found = False
+        for r in existing:
+            # Check if existing reminder date matches this offset
+            try:
+                ed = dt.strptime(r['due_date'], '%d/%m/%Y')
+                expected = due_date - timedelta(days=days_before)
+                if ed == expected:
+                    found = True
+                    del existing_dates[r['due_date']]
+                    break
+            except (ValueError, TypeError):
+                pass
+
+        if not found and reminder_date > dt.now():
+            reminder_id = str(uuid.uuid4())
+            title = f'NAR1 週年申報{label_suffix} - {company_name}'
+            db.execute(
+                "INSERT INTO reminders (id, company_id, reminder_type, title, due_date, status, notes, created_at, updated_at) "
+                "VALUES (?, ?, 'NAR1', ?, ?, 'pending', ?, ?, ?)",
+                (reminder_id, company_id, title, reminder_date_str,
+                 f'到期日: {due_date_str}', now, now)
+            )
+            db.commit()
+
+    # Delete any remaining existing reminders that no longer match
+    # (due date has changed and old reminders are stale)
+    for stale_date, stale_reminder in existing_dates.items():
+        # Only delete if not already past (keep completed reminders)
+        if stale_reminder['status'] == 'pending':
+            db.execute("DELETE FROM reminders WHERE id = ?", (stale_reminder['id'],))
+            db.commit()
+
+
+def _assign_changes_to_nar1_periods(company_id):
+    """Auto-assign unassigned change_events to the correct nar1_filings period
+    based on change_date falling within period_start <= change_date < period_end.
+    Changes after period_end up to filing_date belong to next period.
+
+    Returns: {assigned_count: int, periods: [...]}
+    """
+    db = get_db()
+
+    # Get unassigned events
+    events = db.execute(
+        "SELECT * FROM change_events WHERE company_id = ? AND (nar1_period_id = '' OR nar1_period_id IS NULL) "
+        "ORDER BY change_date",
+        (company_id,)
+    ).fetchall()
+
+    # Get all periods for this company
+    periods = db.execute(
+        "SELECT * FROM nar1_filings WHERE company_id = ? ORDER BY period_start",
+        (company_id,)
+    ).fetchall()
+
+    if not events or not periods:
+        return {'assigned_count': 0, 'periods': [dict(p) for p in periods]}
+
+    assigned = 0
+    for event in events:
+        evt_date = event['change_date']  # DD/MM/YYYY
+        try:
+            d = datetime.strptime(evt_date, '%d/%m/%Y')
+        except (ValueError, TypeError):
+            continue
+
+        # Find matching period
+        for period in periods:
+            try:
+                ps = datetime.strptime(period['period_start'], '%d/%m/%Y')
+                pe = datetime.strptime(period['period_end'], '%d/%m/%Y')
+            except (ValueError, TypeError):
+                continue
+            if ps <= d < pe:
+                db.execute(
+                    "UPDATE change_events SET nar1_period_id = ? WHERE id = ?",
+                    (period['id'], event['id'])
+                )
+                assigned += 1
+                break
+            # If event date >= period_end, it falls into the NEXT period
+            # (handled by the next iteration in the period loop)
+
+    db.commit()
+
+    # Refresh periods
+    periods = db.execute(
+        "SELECT * FROM nar1_filings WHERE company_id = ? ORDER BY period_start DESC",
+        (company_id,)
+    ).fetchall()
+
+    return {'assigned_count': assigned, 'periods': [dict(p) for p in periods]}
+
+
+def _get_nar1_changes_summary(company_id, period_id=None):
+    """Get a summary of changes for a specific NAR1 period.
+    If period_id is None, returns changes for the current (most recent) period.
+
+    Returns: {period: {...}, changes: [...], summary: {director_changes, secretary_changes, ...}}
+    """
+    db = get_db()
+
+    # Get periods
+    periods = db.execute(
+        "SELECT * FROM nar1_filings WHERE company_id = ? ORDER BY period_start DESC",
+        (company_id,)
+    ).fetchall()
+
+    if not periods:
+        # Ensure periods exist
+        _ensure_nar1_periods(company_id)
+        periods = db.execute(
+            "SELECT * FROM nar1_filings WHERE company_id = ? ORDER BY period_start DESC",
+            (company_id,)
+        ).fetchall()
+
+    if not periods:
+        return {'period': None, 'changes': [], 'summary': {}}
+
+    target = None
+    if period_id:
+        for p in periods:
+            if p['id'] == period_id:
+                target = p
+                break
+    if not target:
+        target = periods[0]  # most recent period
+
+    # Assign unassigned changes first
+    _assign_changes_to_nar1_periods(company_id)
+
+    # Get changes for this period
+    changes = db.execute(
+        "SELECT * FROM change_events WHERE company_id = ? AND nar1_period_id = ? "
+        "ORDER BY change_date DESC",
+        (company_id, target['id'])
+    ).fetchall()
+
+    # Build summary counts
+    summary = {
+        'total_changes': len(changes),
+        'director_appointments': 0,
+        'director_cessations': 0,
+        'secretary_appointments': 0,
+        'secretary_cessations': 0,
+        'shareholder_changes': 0,
+        'share_transfers': 0,
+        'share_allotments': 0,
+        'address_changes': 0,
+        'name_changes': 0,
+        'other_changes': 0,
+    }
+
+    for c in changes:
+        et = c['event_type']
+        if et == 'director_appoint': summary['director_appointments'] += 1
+        elif et == 'director_cease': summary['director_cessations'] += 1
+        elif et == 'secretary_appoint': summary['secretary_appointments'] += 1
+        elif et == 'secretary_cease': summary['secretary_cessations'] += 1
+        elif et in ('shareholder_add', 'shareholder_remove'): summary['shareholder_changes'] += 1
+        elif et == 'share_transfer': summary['share_transfers'] += 1
+        elif et == 'share_allotment': summary['share_allotments'] += 1
+        elif et == 'address_change': summary['address_changes'] += 1
+        elif et == 'name_change': summary['name_changes'] += 1
+        else: summary['other_changes'] += 1
+
+    return {
+        'period': {
+            'id': target['id'],
+            'period_start': target['period_start'],
+            'period_end': target['period_end'],
+            'filing_date': target['filing_date'],
+            'status': target['status'],
+        },
+        'changes': [dict(c) for c in changes],
+        'summary': summary,
+    }
+
 
 def _fill_nar1_pdf(data):
     """填充 NAR1 PDF 模板，返回 bytes"""
@@ -4619,11 +5035,240 @@ def generate_nar1_pdf():
             return jsonify({'error': 'Empty request body'}), 400
         pdf_bytes = _fill_nar1_pdf(data)
         import base64 as b64
-        return jsonify({'pdf': b64.b64encode(pdf_bytes).decode('ascii')})
+        result = {'pdf': b64.b64encode(pdf_bytes).decode('ascii')}
+
+        # Phase 4: Auto-assign change events to NAR1 periods after PDF generation
+        company_id = data.get('company_id') or data.get('selectedCompanyId')
+        if company_id:
+            try:
+                # Ensure NAR1 periods exist
+                _ensure_nar1_periods(company_id)
+                # Assign unassigned changes to current period
+                assign_result = _assign_changes_to_nar1_periods(company_id)
+                if assign_result.get('assigned_count', 0) > 0:
+                    result['nar1_assigned_changes'] = assign_result['assigned_count']
+                # Get the current period info for the response
+                periods = assign_result.get('periods', [])
+                if periods:
+                    result['nar1_current_period'] = {
+                        'id': periods[0]['id'],
+                        'period_start': periods[0]['period_start'],
+                        'period_end': periods[0]['period_end'],
+                    }
+            except Exception as e:
+                print(f"[NAR1] Warning: Failed to assign changes: {e}")
+                # Don't fail the PDF generation for this
+
+        return jsonify(result)
     except Exception as e:
         import traceback
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
+
+# ─── Phase 4: NAR1 Smart Filing API Endpoints ───
+
+@app.route('/api/companies/<company_id>/nar1-status', methods=['GET'])
+def get_nar1_status(company_id):
+    """Get NAR1 filing status for a company: dates, grace period, and pending changes count."""
+    try:
+        db = get_db()
+        company = db.execute(
+            "SELECT id, name, incorporation_date, nar1_due_date FROM companies WHERE id = ?",
+            (company_id,)
+        ).fetchone()
+        if not company:
+            return jsonify({'error': 'Company not found'}), 404
+
+        result = {
+            'company_id': company_id,
+            'company_name': company['name'],
+            'incorporation_date': company['incorporation_date'],
+        }
+
+        # Calculate dates
+        if company['incorporation_date']:
+            dates = _calculate_nar1_dates(company['incorporation_date'])
+            if dates:
+                result.update({
+                    'period_start': dates['period_start'],
+                    'period_end': dates['period_end'],
+                    'due_date': dates['due_date'],
+                    'days_remaining': dates['days_remaining'],
+                    'status': dates['status'],
+                    'today': dates['today'],
+                })
+
+                # Update stored due_date if changed
+                if company['nar1_due_date'] != dates['due_date']:
+                    db.execute(
+                        "UPDATE companies SET nar1_due_date = ? WHERE id = ?",
+                        (dates['due_date'], company_id)
+                    )
+                    db.commit()
+
+        # Get current period
+        periods = _ensure_nar1_periods(company_id)
+        if periods:
+            current = periods[0]
+            # Get changes summary for current period
+            summary = _get_nar1_changes_summary(company_id)
+            result['current_period'] = summary['period']
+            result['changes_summary'] = summary['summary']
+            result['changes'] = summary['changes']
+
+        return jsonify({'success': True, **result})
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/companies/<company_id>/nar1-changes', methods=['GET'])
+def get_nar1_changes(company_id):
+    """Get changes for a specific NAR1 period. Query params: period_id (optional)."""
+    try:
+        period_id = request.args.get('period_id')
+        summary = _get_nar1_changes_summary(company_id, period_id)
+        return jsonify({'success': True, **summary})
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/companies/<company_id>/nar1-assign-changes', methods=['POST'])
+def assign_nar1_changes(company_id):
+    """Manually trigger assignment of unassigned change events to NAR1 periods."""
+    try:
+        result = _assign_changes_to_nar1_periods(company_id)
+        return jsonify({'success': True, **result})
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/companies/<company_id>/nar1-file', methods=['POST'])
+def file_nar1(company_id):
+    """Mark a NAR1 period as filed. Body: {period_id, filing_date (optional)}.
+    After filing, auto-assigns post-period changes to the next period."""
+    try:
+        db = get_db()
+        data = request.json or {}
+        period_id = data.get('period_id')
+
+        if not period_id:
+            # Use current period
+            periods = db.execute(
+                "SELECT * FROM nar1_filings WHERE company_id = ? ORDER BY period_start DESC LIMIT 1",
+                (company_id,)
+            ).fetchall()
+            if not periods:
+                return jsonify({'error': 'No NAR1 periods found'}), 404
+            period_id = periods[0]['id']
+
+        filing_date = data.get('filing_date') or datetime.now().strftime('%d/%m/%Y')
+
+        db.execute(
+            "UPDATE nar1_filings SET status = 'filed', filing_date = ? WHERE id = ? AND company_id = ?",
+            (filing_date, period_id, company_id)
+        )
+        db.commit()
+
+        # Re-assign changes: events after period_end go to next period
+        _assign_changes_to_nar1_periods(company_id)
+
+        return jsonify({
+            'success': True,
+            'period_id': period_id,
+            'filing_date': filing_date,
+            'message': 'NAR1 period marked as filed'
+        })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/companies/<company_id>/calculate-nar1-dates', methods=['POST'])
+def calculate_nar1_dates(company_id):
+    """Calculate NAR1 dates for a company and update the stored due_date.
+    Also ensures nar1_filings periods exist."""
+    try:
+        db = get_db()
+        company = db.execute(
+            "SELECT incorporation_date FROM companies WHERE id = ?",
+            (company_id,)
+        ).fetchone()
+        if not company:
+            return jsonify({'error': 'Company not found'}), 404
+
+        dates = _calculate_nar1_dates(company['incorporation_date'])
+        if not dates:
+            return jsonify({'error': 'Invalid incorporation date'}), 400
+
+        # Update company
+        db.execute(
+            "UPDATE companies SET nar1_due_date = ? WHERE id = ?",
+            (dates['due_date'], company_id)
+        )
+        db.commit()
+
+        # Ensure periods
+        periods = _ensure_nar1_periods(company_id)
+
+        return jsonify({
+            'success': True,
+            'dates': dates,
+            'periods': periods,
+        })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/nar1-due-companies', methods=['GET'])
+def list_nar1_due_companies():
+    """List companies with upcoming or overdue NAR1 filings.
+    Query params: status (ok/grace/due_soon/late), days (int, default 42)."""
+    try:
+        db = get_db()
+        status_filter = request.args.get('status', '')
+        days_ahead = int(request.args.get('days', '42'))
+
+        companies = db.execute(
+            "SELECT id, name, chinese_name, company_number as br_number, "
+            "incorporation_date, nar1_due_date, status as company_status "
+            "FROM companies WHERE incorporation_date != '' AND status != 'deleted' "
+            "ORDER BY nar1_due_date"
+        ).fetchall()
+
+        result = []
+        for c in companies:
+            dates = _calculate_nar1_dates(c['incorporation_date'])
+            if not dates:
+                continue
+            entry = {
+                'company_id': c['id'],
+                'company_name': c['name'],
+                'chinese_name': c['chinese_name'],
+                'br_number': c['br_number'],
+                'incorporation_date': c['incorporation_date'],
+                **dates,
+            }
+            if status_filter:
+                if dates['status'] == status_filter:
+                    result.append(entry)
+            elif dates['days_remaining'] <= days_ahead:
+                result.append(entry)
+
+        return jsonify({'success': True, 'companies': result, 'total': len(result)})
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
 
 # ─── NR1 PDF 生成（本地 Python + PyMuPDF） ───
 
@@ -4705,6 +5350,8 @@ def generate_nr1_pdf():
         if not data:
             return jsonify({'error': 'Empty request body'}), 400
         pdf_bytes = _fill_nr1_pdf(data)
+        # Auto-update company data from form (Phase 3.2)
+        _apply_form_changes_to_company(data, 'nr1')
         import base64 as b64
         return jsonify({'pdf': b64.b64encode(pdf_bytes).decode('ascii')})
     except Exception as e:
@@ -5128,6 +5775,7 @@ def _fill_nd4_pdf(data):
 
     br8 = re.sub(r'[^0-9A-Za-z]', '', data.get('brNumber', '') or '')[:8]
     officer_type = data.get('officerType', 'director')  # director / secretary / alternate
+    identity = data.get('identity', 'natural')
 
     # ── P.1: 公司資料 ──
     _set_text(doc, fmap, 'fill_1_P.1', br8)
@@ -5139,39 +5787,44 @@ def _fill_nd4_pdf(data):
     _check(doc, fmap, 'cb_2_P.1', '公眾' in company_type or 'public' in company_type)
     _check(doc, fmap, 'cb_3_P.1', '擔保' in company_type)
 
-    # 辭任生效日期（fill_3_P.1 是日期欄）
-    resign_day = data.get('resignationDay', '')
-    resign_month = data.get('resignationMonth', '')
-    resign_year = data.get('resignationYear', '')
-    if resign_day and resign_month and resign_year:
-        _set_text(doc, fmap, 'fill_3_P.1', f'{resign_day}/{resign_month}/{resign_year}')
+    # ── P.1: 身份 toggle（toggle_4=自然人, toggle_5=法人）──
+    _check(doc, fmap, 'toggle_4_P.1', identity == 'natural')
+    _check(doc, fmap, 'toggle_5_P.1', identity == 'corporate')
 
-    # ── P.1: 辭任人資料 ──
-    # fill_3="代替 Alternate to" (僅候補董事)
-    if officer_type == 'alternate':
-        _set_cjk('fill_3_P.1', data.get('officerNameEnglish', ''), align='left')
-    # fill_4=中文姓名, fill_5=英文姓氏, fill_6=英文名字
-    _set_cjk('fill_4_P.1', data.get('officerNameChinese', ''), align='center')
-    _set_text(doc, fmap, 'fill_5_P.1', data.get('surname', ''))
-    _set_text(doc, fmap, 'fill_6_P.1', data.get('otherNames', ''))
-    # 證件：fill_7=HKID部分號碼, fill_8=護照簽發國
-    _set_text(doc, fmap, 'fill_7_P.1', data.get('hkidPartial', ''), align='right')
-    _set_text(doc, fmap, 'fill_8_P.1', data.get('passportCountry', ''))
-    # 護照部分號碼（模板可能無此欄位，前端發 fill_8b_P.1）
-    if 'fill_8b_P.1' in fmap:
-        _set_text(doc, fmap, 'fill_8b_P.1', data.get('passportPartial', ''))
+    # ── P.1: 辭任人資料（按身份分區填寫）──
+    if identity == 'natural':
+        # 辭任生效日期 或 代替 Alternate to（fill_3_P.1 雙用途）
+        if officer_type == 'alternate':
+            _set_cjk('fill_3_P.1', data.get('alternateTo', '') or data.get('officerNameEnglish', ''), align='left')
+        else:
+            resign_day = data.get('resignationDay', '')
+            resign_month = data.get('resignationMonth', '')
+            resign_year = data.get('resignationYear', '')
+            if resign_day and resign_month and resign_year:
+                _set_text(doc, fmap, 'fill_3_P.1', f'{resign_day}/{resign_month}/{resign_year}')
+        # 自然人：中文姓名 + 英文姓氏/名字 + HKID + 护照
+        _set_cjk('fill_4_P.1', data.get('officerNameChinese', ''), align='center')
+        _set_text(doc, fmap, 'fill_5_P.1', data.get('surname', ''))
+        _set_text(doc, fmap, 'fill_6_P.1', data.get('otherNames', ''))
+        _set_text(doc, fmap, 'fill_7_P.1', data.get('hkidPartial', ''), align='right')
+        _set_text(doc, fmap, 'fill_8_P.1', data.get('passportCountry', ''))
+        if 'fill_8b_P.1' in fmap:
+            _set_text(doc, fmap, 'fill_8b_P.1', data.get('passportPartial', ''))
+    else:
+        # 法人團體：公司名稱 + 公司編號（fill_9/fill_10 是法人專區）
+        _set_cjk('fill_9_P.1', data.get('corporateName', '') or data.get('officerNameEnglish', ''), align='left')
+        _set_text(doc, fmap, 'fill_10_P.1', data.get('corporateNumber', '') or data.get('brNumber', ''))
+        # 辭任生效日期（法人也用 fill_3，但填公司名已用 fill_9，日期改用 fill_3）
+        resign_day = data.get('resignationDay', '')
+        resign_month = data.get('resignationMonth', '')
+        resign_year = data.get('resignationYear', '')
+        if resign_day and resign_month and resign_year:
+            _set_text(doc, fmap, 'fill_3_P.1', f'{resign_day}/{resign_month}/{resign_year}')
 
-    # ── P.1: 簽署 ──
-    _set_text(doc, fmap, 'fill_9_P.1', data.get('signerName', ''))
-    _set_text(doc, fmap, 'fill_10_P.1', data.get('signerCapacity', ''))
+    # ── P.1: 簽署日期 ──
     _set_text(doc, fmap, 'fill_11_P.1', data.get('signDateDay', ''))
     _set_text(doc, fmap, 'fill_12_P.1', data.get('signDateMonth', ''))
     _set_text(doc, fmap, 'fill_13_P.1', data.get('signDateYear', ''))
-
-    # 身份 toggle: toggle_4=自然人, toggle_5=法人
-    identity = data.get('identity', 'natural')
-    _check(doc, fmap, 'toggle_4_P.1', identity == 'natural')
-    _check(doc, fmap, 'toggle_5_P.1', identity == 'corporate')
 
     # ── P.1: 提交人 ──
     _set_cjk('fill_14_P.1', data.get('presentorName', ''), align='left')
@@ -5311,6 +5964,7 @@ def generate_nd4_pdf():
         if not data:
             return jsonify({'error': 'Empty request body'}), 400
         pdf_bytes = _fill_nd4_pdf(data)
+        _apply_form_changes_to_company(data, 'nd4')
         import base64 as b64
         return jsonify({'pdf': b64.b64encode(pdf_bytes).decode('ascii')})
     except Exception as e:
@@ -5616,6 +6270,7 @@ def generate_nnc2_pdf():
             if 'brNumber' not in data:
                 data['brNumber'] = field_map.get('fill_1_P.1', '')
         pdf_bytes = _fill_nnc2_pdf(data)
+        _apply_form_changes_to_company(data, 'nnc2')
         import base64 as b64
         return jsonify({'pdf': b64.b64encode(pdf_bytes).decode('ascii')})
     except Exception as e:
@@ -6237,6 +6892,306 @@ def generate_nn1_pdf():
         return jsonify({'error': str(e)}), 500
 
 
+# ─── NN3 PDF 生成（註冊非香港公司周年申報表） ───
+
+def _fill_nn3_pdf(data):
+    """填充 NN3 PDF 模板（非香港公司周年申报表），返回 bytes
+
+    模板佈局：20+ 頁
+    P.1: BR + 公司名稱(中/英) + 註冊地 + 香港辦事處地址 + 申報日期 D/M/Y + 提交人
+    """
+    template_path = os.path.join(os.path.dirname(__file__), '..', 'public', 'templates', 'NN3-template.pdf')
+    doc = fitz.open(template_path)
+    fmap = _build_field_page_map(doc)
+
+    # Locate CJK font
+    _cjk_fontfile = None
+    for _sf in ['C:/Windows/Fonts/simhei.ttf', 'C:/Windows/Fonts/simsun.ttc',
+                 'C:/Windows/Fonts/msjh.ttc', 'C:/Windows/Fonts/Deng.ttf']:
+        if os.path.exists(_sf):
+            _cjk_fontfile = _sf
+            break
+    _cjk_ap_font_pages = set()
+    _cjk_ap_font_xref_map = {}
+
+    def _set_cjk(name, value, fontsize=10, align='left', valign='bottom', min_fs=6):
+        if name not in fmap or not value:
+            return False
+        vstr = str(value)
+        cjk_n = sum(1 for c in vstr if ord(c) > 127)
+        if cjk_n == 0 or not _cjk_fontfile:
+            return _set_text(doc, fmap, name, value)
+        pi = fmap[name]
+        for w in doc[pi].widgets():
+            if w.field_name == name:
+                asc_n = len(vstr) - cjk_n
+                fs = fontsize
+                field_w = w.rect.width
+                if field_w > 0:
+                    usable_w = field_w - 4.0
+                    est_w = fs * (cjk_n * 1.0 + asc_n * 0.66)
+                    if est_w > usable_w:
+                        fs = max(min_fs, int(fs * usable_w / est_w * 0.95))
+                _set_widget_cjk_ap(doc, doc[pi], w, vstr, fs, _cjk_fontfile,
+                                   _cjk_ap_font_pages, _cjk_ap_font_xref_map,
+                                   align=align, valign=valign)
+                return True
+        return False
+
+    br8 = re.sub(r'[^0-9A-Za-z]', '', data.get('brNumber', '') or '')[:8]
+
+    # ── P.1: BR + 公司名稱 ──
+    _set_text(doc, fmap, 'fill_1_P.1', br8)
+    _set_cjk('fill_2_P.1', data.get('companyName', '') or data.get('nameEnglish', ''))
+    _set_cjk('fill_3_P.1', data.get('companyChineseName', '') or data.get('nameChinese', ''))
+
+    # ── P.1: 註冊地 ──
+    _set_text(doc, fmap, 'fill_4_P.1', data.get('placeOfIncorporation', ''))
+
+    # ── P.1: 香港主要辦事處地址（5 fields）──
+    addr_src = data
+    _set_cjk('fill_5_P.1',  addr_src.get('flat', '') or addr_src.get('regFlat', ''))
+    _set_cjk('fill_6_P.1',  addr_src.get('building', '') or addr_src.get('regBuilding', ''))
+    _set_cjk('fill_7_P.1',  addr_src.get('street', '') or addr_src.get('regStreet', ''))
+    _set_cjk('fill_8_P.1',  addr_src.get('district', '') or addr_src.get('regDistrict', ''))
+    _set_cjk('fill_9_P.1',  addr_src.get('region', '') or addr_src.get('regRegion', ''))
+
+    # ── P.1: 申報日期 D/M/Y ──
+    return_date = data.get('returnDate', '') or data.get('annualReturnDate', '')
+    if return_date and '/' in return_date:
+        parts = return_date.split('/')
+        if len(parts) >= 3:
+            _set_text(doc, fmap, 'fill_10_P.1', parts[0])  # D
+            _set_text(doc, fmap, 'fill_11_P.1', parts[1])  # M
+            _set_text(doc, fmap, 'fill_12_P.1', parts[2])  # Y
+
+    # ── P.1: 提交人 ──
+    _set_cjk('fill_13_P.1', data.get('presentorName', '') or data.get('presenterName', ''))
+    _set_cjk('fill_14_P.1', data.get('presentorAddress', '') or data.get('presenterAddress', ''), min_fs=7)
+    _set_text(doc, fmap, 'fill_15_P.1', data.get('presentorContact', '') or data.get('presenterContact', ''))
+
+    # ── Auto-populate from DB ──
+    company_id = data.get('company_id')
+    if company_id:
+        try:
+            db = get_db()
+            company = db.execute("SELECT * FROM companies WHERE id = ?", (company_id,)).fetchone()
+            if company:
+                c = dict(company)
+                if not br8:
+                    br8 = re.sub(r'[^0-9A-Za-z]', '', c.get('company_number', '') or '')[:8]
+                    _set_text(doc, fmap, 'fill_1_P.1', br8)
+                # 从 DB 补充空字段
+                if not data.get('companyName') and not data.get('nameEnglish'):
+                    _set_cjk('fill_2_P.1', c.get('name', ''))
+                if not data.get('companyChineseName') and not data.get('nameChinese'):
+                    _set_cjk('fill_3_P.1', c.get('chinese_name', ''))
+                if not data.get('placeOfIncorporation'):
+                    # Non-HK company may have jurisdiction/incorporation info
+                    jurisdiction = c.get('jurisdiction', '') or c.get('place_of_incorporation', '')
+                    if jurisdiction:
+                        _set_text(doc, fmap, 'fill_4_P.1', jurisdiction)
+                # 地址（从公司注册地址，如果表单没有指定）
+                if not data.get('flat') and not data.get('regFlat'):
+                    _set_cjk('fill_5_P.1', c.get('reg_flat', ''))
+                    _set_cjk('fill_6_P.1', c.get('reg_building', ''))
+                    _set_cjk('fill_7_P.1', c.get('reg_street', ''))
+                    _set_cjk('fill_8_P.1', c.get('reg_district', ''))
+                    _set_cjk('fill_9_P.1', c.get('reg_region', ''))
+        except Exception:
+            pass
+
+    # BR on all pages
+    _stamp_br_on_all_pages(doc, br8)
+
+    pdf_bytes = doc.write(deflate=True)
+    doc.close()
+    return pdf_bytes
+
+
+@app.route('/api/generate-nn3-pdf', methods=['POST'])
+def generate_nn3_pdf():
+    try:
+        data = request.json
+        if not data:
+            return jsonify({'error': 'Empty request body'}), 400
+        # Accept both formats: semantic keys OR {fields: {...}} from generic template
+        if 'fields' in data and isinstance(data.get('fields'), dict):
+            fm = data['fields']
+            data.setdefault('companyName', fm.get('fill_2_P.1', ''))
+            data.setdefault('companyChineseName', fm.get('fill_3_P.1', ''))
+            data.setdefault('placeOfIncorporation', fm.get('fill_4_P.1', ''))
+            data.setdefault('flat', fm.get('fill_5_P.1', ''))
+            data.setdefault('building', fm.get('fill_6_P.1', ''))
+            data.setdefault('street', fm.get('fill_7_P.1', ''))
+            data.setdefault('district', fm.get('fill_8_P.1', ''))
+            data.setdefault('region', fm.get('fill_9_P.1', ''))
+            data.setdefault('presentorName', fm.get('fill_13_P.1', ''))
+            data.setdefault('presentorAddress', fm.get('fill_14_P.1', ''))
+            data.setdefault('presentorContact', fm.get('fill_15_P.1', ''))
+        pdf_bytes = _fill_nn3_pdf(data)
+        import base64 as b64
+        return jsonify({'pdf': b64.b64encode(pdf_bytes).decode('ascii')})
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+# ─── NN9 PDF 生成（非香港公司更改地址申報表） ───
+
+def _fill_nn9_pdf(data):
+    """填充 NN9 PDF 模板（非香港公司更改地址申报表），返回 bytes
+
+    模板佈局：
+    P.1: BR + 公司名稱(中/英) + 舊地址 + 新地址 + 更改日期 D/M/Y + 簽署 + 提交人
+    """
+    template_path = os.path.join(os.path.dirname(__file__), '..', 'public', 'templates', 'NN9-template.pdf')
+    doc = fitz.open(template_path)
+    fmap = _build_field_page_map(doc)
+
+    # Locate CJK font
+    _cjk_fontfile = None
+    for _sf in ['C:/Windows/Fonts/simhei.ttf', 'C:/Windows/Fonts/simsun.ttc',
+                 'C:/Windows/Fonts/msjh.ttc', 'C:/Windows/Fonts/Deng.ttf']:
+        if os.path.exists(_sf):
+            _cjk_fontfile = _sf
+            break
+    _cjk_ap_font_pages = set()
+    _cjk_ap_font_xref_map = {}
+
+    def _set_cjk(name, value, fontsize=10, align='left', valign='bottom', min_fs=6):
+        if name not in fmap or not value:
+            return False
+        vstr = str(value)
+        cjk_n = sum(1 for c in vstr if ord(c) > 127)
+        if cjk_n == 0 or not _cjk_fontfile:
+            return _set_text(doc, fmap, name, value)
+        pi = fmap[name]
+        for w in doc[pi].widgets():
+            if w.field_name == name:
+                asc_n = len(vstr) - cjk_n
+                fs = fontsize
+                field_w = w.rect.width
+                if field_w > 0:
+                    usable_w = field_w - 4.0
+                    est_w = fs * (cjk_n * 1.0 + asc_n * 0.66)
+                    if est_w > usable_w:
+                        fs = max(min_fs, int(fs * usable_w / est_w * 0.95))
+                _set_widget_cjk_ap(doc, doc[pi], w, vstr, fs, _cjk_fontfile,
+                                   _cjk_ap_font_pages, _cjk_ap_font_xref_map,
+                                   align=align, valign=valign)
+                return True
+        return False
+
+    br8 = re.sub(r'[^0-9A-Za-z]', '', data.get('brNumber', '') or '')[:8]
+
+    # ── P.1: BR + 公司名稱 ──
+    _set_text(doc, fmap, 'fill_1_P.1', br8)
+    _set_cjk('fill_2_P.1', data.get('companyName', '') or data.get('nameEnglish', ''))
+    _set_cjk('fill_3_P.1', data.get('companyChineseName', '') or data.get('nameChinese', ''))
+
+    # ── P.1: 舊地址（4 fields）──
+    _set_cjk('fill_4_P.1', data.get('oldFlat', '') or data.get('flat', ''))
+    _set_cjk('fill_5_P.1', data.get('oldBuilding', '') or data.get('building', ''))
+    _set_cjk('fill_6_P.1', data.get('oldStreet', '') or data.get('street', ''))
+    _set_cjk('fill_7_P.1', data.get('oldDistrict', '') or data.get('district', ''))
+
+    # ── P.1: 新地址（4 fields）──
+    _set_cjk('fill_8_P.1',  data.get('newFlat', '') or data.get('flat', ''))
+    _set_cjk('fill_9_P.1',  data.get('newBuilding', '') or data.get('building', ''))
+    _set_cjk('fill_10_P.1', data.get('newStreet', '') or data.get('street', ''))
+    _set_cjk('fill_11_P.1', data.get('newDistrict', '') or data.get('district', ''))
+
+    # ── P.1: 更改日期 D/M/Y ──
+    change_date = data.get('changeDate', '') or data.get('effectiveDate', '')
+    if change_date and '/' in change_date:
+        parts = change_date.split('/')
+        if len(parts) >= 3:
+            _set_text(doc, fmap, 'fill_12_P.1', parts[0])  # D
+            _set_text(doc, fmap, 'fill_13_P.1', parts[1])  # M
+            _set_text(doc, fmap, 'fill_14_P.1', parts[2])  # Y
+
+    # ── P.1: 簽署人 ──
+    _set_cjk('fill_15_P.1', data.get('signerName', '') or data.get('presentorName', ''))
+    sign_date = data.get('signDate', '') or data.get('resolutionDate', '')
+    if sign_date and '/' in sign_date:
+        parts = sign_date.split('/')
+        if len(parts) >= 3:
+            _set_text(doc, fmap, 'fill_16_P.1', parts[0])  # D
+            _set_text(doc, fmap, 'fill_17_P.1', parts[1])  # M
+            _set_text(doc, fmap, 'fill_18_P.1', parts[2])  # Y
+
+    # ── P.1: 提交人 ──
+    _set_cjk('fill_19_P.1', data.get('presentorName', '') or data.get('presenterName', ''))
+    _set_cjk('fill_20_P.1', data.get('presentorAddress', '') or data.get('presenterAddress', ''), min_fs=7)
+    _set_text(doc, fmap, 'fill_21_P.1', data.get('presentorContact', '') or data.get('presenterContact', ''))
+
+    # ── Auto-populate from DB ──
+    company_id = data.get('company_id')
+    if company_id:
+        try:
+            db = get_db()
+            company = db.execute("SELECT * FROM companies WHERE id = ?", (company_id,)).fetchone()
+            if company:
+                c = dict(company)
+                if not br8:
+                    br8 = re.sub(r'[^0-9A-Za-z]', '', c.get('company_number', '') or '')[:8]
+                    _set_text(doc, fmap, 'fill_1_P.1', br8)
+                # 从 DB 补充空字段
+                if not data.get('companyName') and not data.get('nameEnglish'):
+                    _set_cjk('fill_2_P.1', c.get('name', ''))
+                if not data.get('companyChineseName') and not data.get('nameChinese'):
+                    _set_cjk('fill_3_P.1', c.get('chinese_name', ''))
+                # 自动取旧地址 = DB 中的当前注册地址
+                if not data.get('oldFlat') and not data.get('flat'):
+                    _set_cjk('fill_4_P.1', c.get('reg_flat', ''))
+                    _set_cjk('fill_5_P.1', c.get('reg_building', ''))
+                    _set_cjk('fill_6_P.1', c.get('reg_street', ''))
+                    _set_cjk('fill_7_P.1', c.get('reg_district', ''))
+        except Exception:
+            pass
+
+    # BR on all pages
+    _stamp_br_on_all_pages(doc, br8)
+
+    pdf_bytes = doc.write(deflate=True)
+    doc.close()
+    return pdf_bytes
+
+
+@app.route('/api/generate-nn9-pdf', methods=['POST'])
+def generate_nn9_pdf():
+    try:
+        data = request.json
+        if not data:
+            return jsonify({'error': 'Empty request body'}), 400
+        # Accept both formats: semantic keys OR {fields: {...}} from generic template
+        if 'fields' in data and isinstance(data.get('fields'), dict):
+            fm = data['fields']
+            data.setdefault('companyName', fm.get('fill_2_P.1', ''))
+            data.setdefault('companyChineseName', fm.get('fill_3_P.1', ''))
+            data.setdefault('oldFlat', fm.get('fill_4_P.1', ''))
+            data.setdefault('oldBuilding', fm.get('fill_5_P.1', ''))
+            data.setdefault('oldStreet', fm.get('fill_6_P.1', ''))
+            data.setdefault('oldDistrict', fm.get('fill_7_P.1', ''))
+            data.setdefault('newFlat', fm.get('fill_8_P.1', ''))
+            data.setdefault('newBuilding', fm.get('fill_9_P.1', ''))
+            data.setdefault('newStreet', fm.get('fill_10_P.1', ''))
+            data.setdefault('newDistrict', fm.get('fill_11_P.1', ''))
+            data.setdefault('signerName', fm.get('fill_15_P.1', ''))
+            data.setdefault('presentorName', fm.get('fill_19_P.1', ''))
+            data.setdefault('presentorAddress', fm.get('fill_20_P.1', ''))
+            data.setdefault('presentorContact', fm.get('fill_21_P.1', ''))
+        pdf_bytes = _fill_nn9_pdf(data)
+        import base64 as b64
+        return jsonify({'pdf': b64.b64encode(pdf_bytes).decode('ascii')})
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
 # ─── ND2A PDF 生成（委任/停任董事秘書） ───
 
 def _fill_nd2a_pdf(data, template='ND2A-template.pdf'):
@@ -6714,6 +7669,7 @@ def generate_nd2a_pdf():
         if not data:
             return jsonify({'error': 'Empty request body'}), 400
         pdf_bytes = _fill_nd2a_pdf(data)
+        _apply_form_changes_to_company(data, 'nd2a')
         import base64 as b64
         return jsonify({'pdf': b64.b64encode(pdf_bytes).decode('ascii')})
     except Exception as e:
@@ -8840,6 +9796,335 @@ def form_history_delete(entry_id):
         db.execute('UPDATE form_history SET label = ? WHERE id = ?', (new_label, r['id']))
     db.commit()
     return jsonify({'ok': True})
+
+
+# ─── Form Linkages (Phase 5.1: 表单关联查询) ───
+
+@app.route('/api/form-linkages', methods=['GET'])
+def form_linkages():
+    """Return active form linkage rules, optionally filtered by primary form."""
+    primary = request.args.get('primary', '')
+    db = get_db()
+    if primary:
+        rows = db.execute(
+            'SELECT id, primary_form, linked_form, linkage_type, description FROM form_linkages WHERE primary_form = ? AND is_active = 1',
+            (primary,)
+        ).fetchall()
+    else:
+        rows = db.execute(
+            'SELECT id, primary_form, linked_form, linkage_type, description FROM form_linkages WHERE is_active = 1'
+        ).fetchall()
+    linkages = [{
+        'id': r['id'],
+        'primary_form': r['primary_form'],
+        'linked_form': r['linked_form'],
+        'linkage_type': r['linkage_type'],
+        'description': r['description'],
+    } for r in rows]
+    return jsonify({'linkages': linkages})
+
+
+# ─── IRC3111A PDF 生成（Phase 5.4: 税務局更改業務地址通知）───
+
+def _build_irc3111a_pdf(data):
+    """Build IRC 3111A — Notification of Change of Business Address (税務局).
+    Free-form layout, Portrait A4, fpdf2. Matches IRD form style."""
+    pdf = create_pdf(landscape=False)
+    pdf.add_page()
+    pdf.set_auto_page_break(auto=False)
+
+    M = 50  # margin
+    PW, PH = 595, 842
+    label_x = M
+    value_x = M + 170  # label ~170pt wide
+
+    co_name = data.get('companyName', data.get('name', ''))
+    br = data.get('brNumber', data.get('br_number', ''))
+    old_addr = data.get('oldAddress', '')
+    new_addr = data.get('newAddress', '')
+    effective_date = data.get('changeDate', data.get('effectiveDate', ''))
+    signer = data.get('signerName', '')
+    sign_date = data.get('signDate', '')
+
+    # Build address strings if structured fields provided
+    if not new_addr:
+        parts = [
+            data.get('newFlat', data.get('flat', '')),
+            data.get('newBuilding', data.get('building', '')),
+            data.get('newStreet', data.get('street', '')),
+            data.get('newDistrict', data.get('district', '')),
+        ]
+        new_addr = ', '.join(p for p in parts if p)
+    if not old_addr:
+        parts_old = [
+            data.get('oldFlat', ''),
+            data.get('oldBuilding', ''),
+            data.get('oldStreet', ''),
+            data.get('oldDistrict', ''),
+        ]
+        old_addr = ', '.join(p for p in parts_old if p)
+    if not effective_date:
+        d = data.get('addressEffectiveDay', '')
+        m = data.get('addressEffectiveMonth', '')
+        y = data.get('addressEffectiveYear', '')
+        if d or m or y:
+            effective_date = f'{d}/{m}/{y}'
+    if not sign_date:
+        d = data.get('signDateDay', '')
+        m = data.get('signDateMonth', '')
+        y = data.get('signDateYear', '')
+        if d or m or y:
+            sign_date = f'{d}/{m}/{y}'
+
+    def tnr(text, x, y, size=11, bold=False, align='L'):
+        style = 'B' if bold else ''
+        pdf.set_font('TNR', style, size)
+        pdf.set_text_color(0, 0, 0)
+        if align == 'C':
+            tw = pdf.get_string_width(str(text or ''))
+            x = x - tw / 2
+        pdf.set_xy(x, y)
+        pdf.cell(0, size + 4, str(text or ''))
+
+    def tc(text, x, y, size=11, bold=False):
+        style = 'B' if bold else ''
+        pdf.set_font('TC', style, size)
+        pdf.set_text_color(0, 0, 0)
+        pdf.set_xy(x, y)
+        pdf.cell(0, size + 4, str(text or ''))
+
+    def draw_label(label_cn, label_en, y_pos, size=11):
+        tc(label_cn, label_x, y_pos, size=size, bold=True)
+        tnr(label_en, label_x, y_pos + size + 4, size=size - 2)
+
+    def draw_value(value, y_pos, size=11):
+        y_line = y_pos + 6
+        tnr(str(value or ''), value_x, y_line, size=size)
+        # Underline
+        if value:
+            tw = pdf.get_string_width(str(value or '')) + 4
+        else:
+            tw = PW - value_x - M - 10
+        pdf.set_draw_color(0, 0, 0)
+        pdf.set_line_width(0.5)
+        pdf.line(value_x, y_line + size + 3, min(value_x + tw, PW - M), y_line + size + 3)
+        pdf.set_line_width(0.3)
+
+    # ── Header ──
+    y = PH - 55
+
+    # IRD reference
+    tnr('Inland Revenue Department', PW / 2, y, size=9, align='C')
+    tc('税 務 局', PW / 2, y + 12, size=9)
+    y -= 35
+
+    # Form title
+    tnr('IR 3111A', PW / 2, y, size=16, bold=True, align='C')
+    y -= 22
+    tnr('Notification of Change of Business Address', PW / 2, y, size=12, bold=True, align='C')
+    tc('通知更改業務地址', PW / 2, y + 16, size=10)
+    y -= 50
+
+    # Thick separator line
+    pdf.set_draw_color(0, 0, 0)
+    pdf.set_line_width(1.2)
+    pdf.line(M, y, PW - M, y)
+    pdf.set_line_width(0.3)
+    y -= 22
+
+    # ── Section 1: Business Registration Number ──
+    draw_label('商業登記號碼', 'Business Registration No.', y)
+    draw_value(br, y, size=12)
+    y -= 36
+
+    # ── Section 2: Name of Business ──
+    draw_label('商業名稱', 'Name of Business', y)
+    draw_value(co_name, y, size=12)
+    y -= 42
+
+    # ── Section 3: Old Business Address ──
+    draw_label('舊業務地址', 'Old Business Address', y)
+    draw_value(old_addr, y, size=11)
+    y -= 42
+
+    # ── Section 4: New Business Address ──
+    draw_label('新業務地址', 'New Business Address', y)
+    draw_value(new_addr, y, size=11)
+    y -= 42
+
+    # ── Section 5: Effective Date of Change ──
+    draw_label('更改生效日期', 'Effective Date of Change', y)
+    draw_value(effective_date, y, size=12)
+    y -= 50
+
+    # ── Section 6: Declaration ──
+    tnr('Declaration', label_x, y, size=11, bold=True)
+    tc('聲明', label_x + 70, y, size=11, bold=True)
+    y -= 20
+
+    declaration_text = (
+        'I hereby declare that the above particulars are true and correct. '
+        '本人謹此聲明，以上填報的詳情均屬真實和正確。'
+    )
+    tc(declaration_text, label_x + 5, y, size=9)
+    y -= 28
+
+    # Signer
+    draw_label('簽署人姓名', 'Name of Signatory', y)
+    draw_value(signer, y, size=12)
+    y -= 42
+
+    # Date
+    draw_label('日期', 'Date', y)
+    draw_value(sign_date, y, size=12)
+    y -= 50
+
+    # ── Footer note ──
+    tnr('Notes:', label_x, y, size=8, bold=True)
+    tc('註：', label_x + 35, y, size=8, bold=True)
+    y -= 14
+    note = (
+        '1. This form should be completed and submitted to the Inland Revenue Department '
+        'within 1 month of the change.\n'
+        '2. 本表格須於更改生效後1個月內提交税務局。'
+    )
+    tc(note, label_x + 5, y, size=7.5)
+
+    return pdf.output()
+
+
+@app.route('/api/generate-irc3111a-pdf', methods=['POST'])
+def generate_irc3111a_pdf():
+    try:
+        data = request.json
+        if not data:
+            return jsonify({'error': 'Empty request body'}), 400
+        pdf_bytes = _build_irc3111a_pdf(data)
+        import base64 as b64
+        return jsonify({'pdf': b64.b64encode(pdf_bytes).decode('ascii')})
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+# ─── Batch Generation (Phase 5.3: 批量生成關聯表格) ───
+
+def _translate_form_data(primary_data, primary_form, linked_form, db=None):
+    """Translate primary form data into linked form fill data."""
+    result = dict(primary_data)
+
+    if primary_form == 'NR1' and linked_form == 'IRC3111A':
+        new_addr = ', '.join(filter(None, [
+            primary_data.get('flat', ''), primary_data.get('building', ''),
+            primary_data.get('street', ''), primary_data.get('district', ''),
+            primary_data.get('region', '')
+        ]))
+        eff_date = '/'.join(filter(None, [
+            primary_data.get('addressEffectiveDay', ''),
+            primary_data.get('addressEffectiveMonth', ''),
+            primary_data.get('addressEffectiveYear', ''),
+        ]))
+        sign_date = '/'.join(filter(None, [
+            primary_data.get('signDateDay', ''),
+            primary_data.get('signDateMonth', ''),
+            primary_data.get('signDateYear', ''),
+        ]))
+        result = {
+            'companyName': primary_data.get('companyName', ''),
+            'brNumber': primary_data.get('brNumber', ''),
+            'oldAddress': '',
+            'newAddress': new_addr,
+            'changeDate': eff_date,
+            'signerName': primary_data.get('signerName', ''),
+            'signDate': sign_date,
+        }
+        # Fetch old address from DB
+        company_id = primary_data.get('company_id', '')
+        if company_id and db:
+            row = db.execute('SELECT reg_flat, reg_building, reg_street, reg_district, reg_region FROM companies WHERE id=?', (company_id,)).fetchone()
+            if row:
+                old_addr = ', '.join(filter(None, [row['reg_flat'], row['reg_building'], row['reg_street'], row['reg_district'], row['reg_region']]))
+                result['oldAddress'] = old_addr
+
+    elif primary_form == 'NN9' and linked_form == 'IRC3111A':
+        new_addr = ', '.join(filter(None, [
+            primary_data.get('newFlat', primary_data.get('flat', '')),
+            primary_data.get('newBuilding', primary_data.get('building', '')),
+            primary_data.get('newStreet', primary_data.get('street', '')),
+            primary_data.get('newDistrict', primary_data.get('district', '')),
+        ]))
+        result = {
+            'companyName': primary_data.get('companyName', ''),
+            'brNumber': primary_data.get('brNumber', ''),
+            'oldAddress': '',
+            'newAddress': new_addr,
+            'changeDate': primary_data.get('changeDate', ''),
+            'signerName': primary_data.get('signerName', ''),
+            'signDate': primary_data.get('signDate', ''),
+        }
+
+    elif primary_form == 'NDR1' and linked_form == 'IR1263':
+        result = {
+            'companyName': primary_data.get('companyName', ''),
+            'brNumber': primary_data.get('brNumber', ''),
+            'applicationDate': primary_data.get('applicationDate', ''),
+        }
+
+    elif primary_form == 'ND2A' and linked_form == 'ND4':
+        # Transfer cessation-related data
+        result = primary_data
+
+    return result
+
+
+@app.route('/api/generate-related-forms', methods=['POST'])
+def generate_related_forms():
+    """Batch generate primary form + linked forms."""
+    try:
+        data = request.json
+        if not data:
+            return jsonify({'error': 'Empty request body'}), 400
+        primary_form = data.get('primary_form', '')
+        form_data = data.get('form_data', {})
+        linked_forms = data.get('linked_forms', [])
+        company_id = data.get('company_id', '')
+        db = get_db()
+        import base64 as b64
+
+        results = []
+        for form_code in linked_forms:
+            try:
+                linked_data = _translate_form_data(form_data, primary_form, form_code, db)
+                if form_code == 'IRC3111A':
+                    pdf_bytes = _build_irc3111a_pdf(linked_data)
+                elif form_code == 'ND4':
+                    # Use existing ND4 fill function
+                    pdf_bytes = _fill_nd4_pdf(linked_data) if '_fill_nd4_pdf' in dir() else None
+                    if pdf_bytes is None:
+                        results.append({'form_code': form_code, 'error': 'ND4 function not available'})
+                        continue
+                elif form_code == 'IR1263':
+                    results.append({'form_code': form_code, 'error': 'IR1263 not yet implemented'})
+                    continue
+                else:
+                    results.append({'form_code': form_code, 'error': f'Unsupported form: {form_code}'})
+                    continue
+                results.append({
+                    'form_code': form_code,
+                    'pdf': b64.b64encode(pdf_bytes).decode('ascii'),
+                    'filename': f'{form_code}_{linked_data.get("companyName", "form")}.pdf'
+                })
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                results.append({'form_code': form_code, 'error': str(e)})
+
+        return jsonify({'success': True, 'forms': results})
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
 
 
 if __name__ == '__main__':

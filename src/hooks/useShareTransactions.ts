@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { recordChangeEvent, EVENT_FORM_MAP } from '@/lib/changeEvents';
 
 export interface ShareTransaction {
   id: string;
@@ -67,6 +68,22 @@ export function useUpsertShareTransaction() {
     },
     onSuccess: (_d, vars) => {
       qc.invalidateQueries({ queryKey: ['share_transactions', vars.company_id] });
+      // Record change event for NAR1 smart filing
+      const txType = vars.transaction_type || 'transfer';
+      const eventType = txType === 'allotment' ? 'share_allotment' : 'share_transfer';
+      recordChangeEvent({
+        company_id: vars.company_id || '',
+        event_type: eventType,
+        new_value: {
+          transaction_type: txType,
+          from_name: vars.from_name,
+          to_name: vars.to_name,
+          shares: vars.shares,
+          price_per_share: vars.price_per_share,
+        },
+        related_form_type: EVENT_FORM_MAP[eventType] || '',
+        change_date: vars.transaction_date,
+      });
     },
   });
 }

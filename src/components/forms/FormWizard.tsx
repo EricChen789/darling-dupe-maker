@@ -18,6 +18,7 @@ import { Page1Company } from './nar1/Page1Company';
 import { Page2ShareCapital } from './nar1/Page2ShareCapital';
 import { OfficerForm } from './nar1/OfficerForm';
 import { ShareholderForm } from './nar1/ShareholderForm';
+import { NAR1ChangesSummary } from './nar1/NAR1ChangesSummary';
 import { useSaveFormHistory } from '@/hooks/useFormHistory';
 import FormHistorySelector from './FormHistorySelector';
 
@@ -205,6 +206,7 @@ const FormWizard = ({ formId, onBack }: FormWizardProps) => {
   };
 
   const buildPayload = () => ({
+    company_id: selectedCompanyId || undefined,
     name: formData.companyName,
     chineseName: formData.chineseName,
     brNumber: formData.brNumber,
@@ -446,6 +448,10 @@ const FormWizard = ({ formId, onBack }: FormWizardProps) => {
         {currentStep === 7 && (
           <div className="space-y-6">
             <h2 className="text-lg font-semibold">確認並生成 PDF</h2>
+            {/* NAR1 Changes Summary (Phase 4.3) */}
+            {selectedCompanyId && (
+              <NAR1ChangesSummary companyId={selectedCompanyId} />
+            )}
             <div className="bg-muted/50 rounded-lg p-4 space-y-3 text-sm">
               <div className="grid grid-cols-2 gap-2">
                 <div><span className="text-muted-foreground">公司名稱：</span>{formData.companyName}</div>

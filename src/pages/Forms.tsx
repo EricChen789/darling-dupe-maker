@@ -18,6 +18,7 @@ import NN9GeneratorForm from '@/components/forms/NN9GeneratorForm';
 import NewCompanyGeneratorForm from '@/components/forms/NewCompanyGeneratorForm';
 import ResolutionGeneratorForm from '@/components/forms/ResolutionGeneratorForm';
 import RenameCompanyForm from '@/components/forms/RenameCompanyForm';
+import IRC3111AGeneratorForm from '@/components/forms/IRC3111AGeneratorForm';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from '@/hooks/use-toast';
 import ErrorBoundary from '@/components/ErrorBoundary';
@@ -72,6 +73,9 @@ const Forms = () => {
   if (selectedForm === 'resolution') {
     return <ResolutionGeneratorForm onBack={() => setSelectedForm(null)} />;
   }
+  if (selectedForm === 'irc3111a') {
+    return <IRC3111AGeneratorForm onBack={() => setSelectedForm(null)} />;
+  }
 
   // Group forms by category
   const crFormIds = ['nar1', 'nd2a', 'nd2b', 'nd4', 'ndr1', 'nr1', 'nsc1', 'nn1', 'nn3', 'nn6', 'nn7', 'nn9', 'nnc1', 'nnc2'];
@@ -82,7 +86,7 @@ const Forms = () => {
   const otherForms = mockForms.filter(f => otherFormIds.includes(f.id));
   const irdForms = mockForms.filter(f => irdFormIds.includes(f.id));
 
-  const isReady = (id: string) => [...crFormIds, ...otherFormIds].includes(id);
+  const isReady = (id: string) => [...crFormIds, ...otherFormIds, 'irc3111a'].includes(id);
 
   return (
     <div>
@@ -195,9 +199,15 @@ const Forms = () => {
                 </div>
               </div>
               <div className="flex items-center gap-3">
-                <Button size="sm" variant="outline" disabled>
-                  <AlertCircle className="h-4 w-4 mr-1" />即將推出
-                </Button>
+                {isReady(form.id) ? (
+                  <Button size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90" onClick={() => setSelectedForm(form.id)}>
+                    開始填寫
+                  </Button>
+                ) : (
+                  <Button size="sm" variant="outline" disabled>
+                    <AlertCircle className="h-4 w-4 mr-1" />即將推出
+                  </Button>
+                )}
               </div>
             </div>
           ))}

@@ -106,44 +106,42 @@ export function CopyFromCompanyDialog({ open, onOpenChange, targetCompany, roleO
 
     // Copy officers & shareholders (person_company_roles table)
     if (selectedOfficers.size > 0 || selectedShs.size > 0) {
-      copy.mutate({
-        sourceCompanyId: sourceId,
-        targetCompanyId: targetCompany.id,
-        officerIds: Array.from(selectedOfficers),
-        shareholderIds: Array.from(selectedShs),
-        roleOverride: roleOverride || undefined,
-      }, {
-        onSuccess: () => {
-          const parts: string[] = [];
-          const officerLabel = roleOverride
-            ? (roleOverride.isReserve ? '備選董事' : '授權代表')
-            : '董事/秘書/授權代表';
-          if (selectedOfficers.size > 0) parts.push(`${selectedOfficers.size} 位${officerLabel}`);
-          if (selectedShs.size > 0) parts.push(`${selectedShs.size} 位股東`);
-          if (selectedSCRs.size > 0 && !scrError) parts.push(`${selectedSCRs.size} 位重要控制人`);
-          if (scrError) {
-            toast({ title: '部份複製成功', description: `${parts.join('、')}已複製，但重要控制人複製失敗：${scrError.message}`, variant: 'destructive' });
-          } else {
-            toast({ title: '複製成功', description: `已複製 ${parts.join('、')}` });
-          }
-          // Instant cache refresh for officers/shareholders (same pattern as SCR)
-          queryClient.invalidateQueries({ queryKey: ['companies'] });
-          // Also refetch to sync server-side defaults (e.g. created_at)
-          if (selectedSCRs.size > 0 && !scrError) {
-            queryClient.invalidateQueries({ queryKey: ['scr', targetCompany.id] });
-          }
-          handleClose(false);
-        },
-        onError: (e: any) => toast({ title: '複製失敗', description: e.message, variant: 'destructive' }),
-      });
+      try {
+        await copy.mutateAsync({
+          sourceCompanyId: sourceId,
+          targetCompanyId: targetCompany.id,
+          officerIds: Array.from(selectedOfficers),
+          shareholderIds: Array.from(selectedShs),
+          roleOverride: roleOverride || undefined,
+        });
+        const parts: string[] = [];
+        const officerLabel = roleOverride
+          ? (roleOverride.isReserve ? '備選董事' : '授權代表')
+          : '董事/秘書/授權代表';
+        if (selectedOfficers.size > 0) parts.push(`${selectedOfficers.size} 位${officerLabel}`);
+        if (selectedShs.size > 0) parts.push(`${selectedShs.size} 位股東`);
+        if (selectedSCRs.size > 0 && !scrError) parts.push(`${selectedSCRs.size} 位重要控制人`);
+        if (scrError) {
+          toast({ title: '部份複製成功', description: `${parts.join('、')}已複製，但重要控制人複製失敗：${scrError.message}`, variant: 'destructive' });
+        } else {
+          toast({ title: '複製成功', description: `已複製 ${parts.join('、')}` });
+        }
+        // Force immediate refetch to ensure UI updates instantly
+        await queryClient.refetchQueries({ queryKey: ['companies'] });
+        if (selectedSCRs.size > 0 && !scrError) {
+          queryClient.invalidateQueries({ queryKey: ['scr', targetCompany.id] });
+        }
+        handleClose(false);
+      } catch (e: any) {
+        toast({ title: '複製失敗', description: e.message, variant: 'destructive' });
+      }
     } else {
       // Only SCRs were selected
       if (scrError) {
         toast({ title: '複製失敗', description: scrError.message, variant: 'destructive' });
       } else {
         toast({ title: '複製成功', description: `已複製 ${selectedSCRs.size} 位重要控制人` });
-        // Background refetch to sync server-side fields (created_at, etc.)
-        queryClient.invalidateQueries({ queryKey: ['scr', targetCompany.id] });
+        await queryClient.refetchQueries({ queryKey: ['scr', targetCompany.id] });
         handleClose(false);
       }
     }

@@ -17,8 +17,9 @@ import { useCompanyLogs, useCreateCompanyLog, type CompanyLog } from '@/hooks/us
 import {
   ArrowUp, ArrowDown, ArrowRight, Plus, Camera, History, FileText,
   Loader2, Pencil, Trash2, Save, X, Filter, Coins, Users, GitBranch,
-  UserPlus, UserMinus, TrendingUp,
+  UserPlus, UserMinus, TrendingUp, FileOutput,
 } from 'lucide-react';
+import { QuickFormDialog } from '@/components/forms/QuickFormDialog';
 
 // ── 日期工具 ──
 function fmtDate(s?: string): string {
@@ -140,6 +141,8 @@ export function CompanyChronicleTab({ company }: { company: Company }) {
   const [compareMode, setCompareMode] = useState(false);
   const [compareIds, setCompareIds] = useState<string[]>([]);
   const [expandedVersion, setExpandedVersion] = useState<string | null>(null);
+  const [quickFormEvent, setQuickFormEvent] = useState<ChronicleEvent | null>(null);
+  const [quickFormOpen, setQuickFormOpen] = useState(false);
 
   const isLoading = txsLoading || versionsLoading || logsLoading;
 
@@ -635,6 +638,19 @@ export function CompanyChronicleTab({ company }: { company: Company }) {
 
                     {/* 操作按鈕 */}
                     <div className="flex gap-1 mt-2 pt-2 border-t border-border/50">
+                      {/* 生成表單按鈕 (Phase 3.3) — for personnel & share events */}
+                      {(event.type === 'appoint' || event.type === 'cease' ||
+                        event.type === 'transfer' || event.type === 'allotment' ||
+                        event.type === 'shareholder_add' || event.type === 'shareholder_remove') && (
+                        <Button variant="outline" size="sm" className="h-6 px-1.5 text-xs"
+                          onClick={e => {
+                            e.stopPropagation();
+                            setQuickFormEvent(event);
+                            setQuickFormOpen(true);
+                          }}>
+                          <FileOutput className="h-3 w-3 mr-1" /> 生成表格
+                        </Button>
+                      )}
                       {isShareTx && (
                         <>
                           <Button variant="ghost" size="sm" className="h-6 px-1.5 text-xs"
@@ -685,6 +701,14 @@ export function CompanyChronicleTab({ company }: { company: Company }) {
           </div>
         </div>
       )}
+
+      {/* Quick Form Dialog (Phase 3.3) */}
+      <QuickFormDialog
+        open={quickFormOpen}
+        onOpenChange={setQuickFormOpen}
+        company={company}
+        event={quickFormEvent}
+      />
     </div>
   );
 }

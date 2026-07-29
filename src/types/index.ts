@@ -32,6 +32,7 @@ export interface Company {
    * 為空時系統自動 fallback：第一個秘書 → 第一個董事。
    */
   signerRoleId?: string;
+  nar1DueDate?: string;
 }
 
 export interface Person {

@@ -5,9 +5,11 @@
 // resp: { success: true, docx: '<base64>', filename, doc_type }
 // 6 種 doc_type: company_profile / directors_register / members_register / board_resolution / meeting_minutes / scr_register
 
-interface Env {
+import { verifyAuthRequest, type Env as AuthEnv } from './_auth';
+
+type Env = AuthEnv & {
   DB: D1Database;
-}
+};
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -22,6 +24,24 @@ const DOCX_TYPES: Record<string, string> = {
   board_resolution: "董事會書面決議",
   meeting_minutes: "董事會會議記錄",
   scr_register: "重要控制人登記冊",
+  cr_form: "政府表格 (Word)",
+};
+
+const CR_FORM_META: Record<string, { code: string; title: string; title_en: string }> = {
+  nar1:  { code: "NAR1",  title: "周年申報表",           title_en: "Annual Return" },
+  nd2a:  { code: "ND2A",  title: "更改公司秘書及董事通知書（委任／停任）", title_en: "Notice of Change of Company Secretary and Director (Appointment/Cessation)" },
+  nd2b:  { code: "ND2B",  title: "更改公司秘書及董事詳情通知書",       title_en: "Notice of Change in Particulars of Company Secretary and Director" },
+  nd4:   { code: "ND4",   title: "公司秘書及董事辭任通知書",           title_en: "Notice of Resignation of Company Secretary and Director" },
+  ndr1:  { code: "NDR1",  title: "撤銷註冊申請書",                    title_en: "Application for Deregistration" },
+  nr1:   { code: "NR1",   title: "註冊辦事處地址變更通知書",           title_en: "Notice of Change of Registered Office Address" },
+  nsc1:  { code: "NSC1",  title: "股份配發申報書",                    title_en: "Return of Allotment" },
+  nnc1:  { code: "NNC1",  title: "法團成立表格（股份有限公司）",        title_en: "Incorporation Form (Company Limited by Shares)" },
+  nnc2:  { code: "NNC2",  title: "更改公司名稱通知書",                 title_en: "Notice of Change of Company Name" },
+  nn1:   { code: "NN1",   title: "註冊非香港公司註冊申請書",            title_en: "Application for Registration as Registered Non-Hong Kong Company" },
+  nn3:   { code: "NN3",   title: "註冊非香港公司周年申報表",            title_en: "Annual Return of Registered Non-Hong Kong Company" },
+  nn6:   { code: "NN6",   title: "非香港公司更改秘書及董事（委任／停任）", title_en: "Change of Company Secretary and Director of Non-Hong Kong Company" },
+  nn7:   { code: "NN7",   title: "非香港公司更改秘書及董事詳情",         title_en: "Change in Particulars of Company Secretary and Director of Non-Hong Kong Company" },
+  nn9:   { code: "NN9",   title: "非香港公司更改地址申報表",            title_en: "Notice of Change of Address of Non-Hong Kong Company" },
 };
 
 const CJK_FONT = "Microsoft JhengHei";
@@ -520,7 +540,7 @@ function buildScrRegister(bundle: Bundle, scrs: any[]): string {
   );
 }
 
-function buildBody(bundle: Bundle, docType: string, extra: { content?: string; meeting_date?: string; location?: string }): string | null {
+function buildBody(bundle: Bundle, docType: string, extra: { content?: string; meeting_date?: string; location?: string; form_code?: string }): string | null {
   const c = bundle.c;
   const nameEn = c.name || "";
   const nameCn = c.chinese_name || "";
@@ -661,6 +681,131 @@ function buildBody(bundle: Bundle, docType: string, extra: { content?: string; m
       blocks.push(P("_______________________________", { size: 11 }));
       blocks.push(P(`${personLabel(m)}　董事 / Director`, { size: 10 }));
     }
+  } else if (docType === "cr_form") {
+    const formCode = (extra.form_code || "").toLowerCase();
+    const meta = CR_FORM_META[formCode];
+    if (!meta) return null;
+
+    companyHeader();
+    blocks.push(H(`${meta.title} ${meta.code}`, { size: 15 }));
+    blocks.push(H(meta.title_en, { size: 11, bold: false }));
+    blocks.push(P(`公司註冊處表格 ${meta.code} — 由系統自動填入公司資料生成草稿`, { size: 9 }));
+    blocks.push(EMPTY_P);
+
+    // Shared company info
+    blocks.push(
+      kvTable([
+        ["公司英文名稱", nameEn],
+        ["公司中文名稱", nameCn],
+        ["商業登記號碼 (BR)", br],
+        ["公司註冊編號 (CR)", cr],
+        ["公司類型", c.company_type],
+        ["註冊辦事處地址", bundle.address],
+        ["電郵", c.email],
+        ["電話", c.phone],
+        ["成立日期", fmtDate(c.incorporation_date)],
+        ["公司狀態", c.status],
+      ])
+    );
+    blocks.push(EMPTY_P);
+
+    // Directors / Secretaries (for most forms)
+    const hasOfficers = ["nar1","nd2a","nd2b","nd4","nnc1","nn1","nn3","nn6","nn7"].includes(formCode);
+    if (hasOfficers) {
+      blocks.push(H(`董事（${bundle.directors.length}）`, { size: 13, center: false }));
+      blocks.push(
+        membersTable(
+          ["姓名", "身份", "身份證／護照／公司編號", "委任日期", "辭任日期", "地址", "電郵"],
+          bundle.directors.length
+            ? bundle.directors.map((m) => [
+                personLabel(m),
+                m.identity === "corporate" ? "法人" : "自然人",
+                m.id_number || m.passport_number || m.tcsp_number || "",
+                fmtDate(m.date_appointed),
+                fmtDate(m.date_ceased),
+                m.address || "",
+                m.email || "",
+              ])
+            : [["（無）", "", "", "", "", "", ""]]
+        )
+      );
+      blocks.push(EMPTY_P);
+      blocks.push(H(`公司秘書（${bundle.secretaries.length}）`, { size: 13, center: false }));
+      blocks.push(
+        membersTable(
+          ["姓名", "身份", "TCSP／公司編號", "委任日期", "地址", "電郵"],
+          bundle.secretaries.length
+            ? bundle.secretaries.map((m) => [
+                personLabel(m),
+                m.identity === "corporate" ? "法人" : "自然人",
+                m.tcsp_number || "",
+                fmtDate(m.date_appointed),
+                m.address || "",
+                m.email || "",
+              ])
+            : [["（無）", "", "", "", "", ""]]
+        )
+      );
+      blocks.push(EMPTY_P);
+    }
+
+    // Shareholders (for forms that need it)
+    const hasShares = ["nar1","nsc1","nnc1","nn1","nn3"].includes(formCode);
+    if (hasShares) {
+      const ts = bundle.totalShares;
+      blocks.push(H(`股東／股本結構（總發行股數：${ts}）`, { size: 13, center: false }));
+      blocks.push(
+        membersTable(
+          ["股東", "持股數", "股份類別", "已繳股款", "佔比"],
+          bundle.shareholders.length
+            ? bundle.shareholders.map((m) => [
+                personLabel(m),
+                m.shares || "0",
+                m.share_type || "普通股",
+                m.paid_up || "",
+                pct(m.shares, ts),
+              ])
+            : [["（無）", "", "", "", ""]]
+        )
+      );
+      blocks.push(EMPTY_P);
+    }
+
+    // NAR1 extras
+    if (formCode === "nar1") {
+      blocks.push(P("重要控制人登記冊 (SCR) 是否備存於公司註冊辦事處？　是 □　否 □", { size: 11 }));
+      blocks.push(P("截至申報日期之董事／秘書／股東資料以上表為準。", { size: 10 }));
+      blocks.push(EMPTY_P);
+    }
+
+    // Address change forms
+    if (["nr1","ndr1","nn9"].includes(formCode)) {
+      blocks.push(P("現有註冊地址：", { bold: true, size: 11 }));
+      blocks.push(P(bundle.address || "（未填）", { size: 11 }));
+      blocks.push(P("變更後註冊地址（請手動填寫）：", { bold: true, size: 11 }));
+      blocks.push(P("＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿", { size: 11 }));
+      blocks.push(EMPTY_P);
+    }
+
+    // NSC1 extras
+    if (formCode === "nsc1") {
+      blocks.push(P("配發日期：＿＿＿＿＿＿＿＿", { size: 11 }));
+      blocks.push(P("配發股份類別：＿＿＿＿＿＿＿＿", { size: 11 }));
+      blocks.push(P("每股發行價：＿＿＿＿＿＿＿＿", { size: 11 }));
+      blocks.push(P("配發總額：＿＿＿＿＿＿＿＿", { size: 11 }));
+      blocks.push(EMPTY_P);
+    }
+
+    // Signature block
+    blocks.push(EMPTY_P);
+    blocks.push(P("簽署 / SIGNED:", { bold: true, size: 11 }));
+    blocks.push(EMPTY_P);
+    blocks.push(P("_______________________________", { size: 11 }));
+    blocks.push(P("董事 / Director　　日期 Date：＿＿＿＿＿＿＿＿", { size: 10 }));
+    blocks.push(EMPTY_P);
+    blocks.push(P("_______________________________", { size: 11 }));
+    blocks.push(P("公司秘書 / Company Secretary　　日期 Date：＿＿＿＿＿＿＿＿", { size: 10 }));
+
   } else {
     return null;
   }
@@ -724,6 +869,10 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
   if (request.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   if (request.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
+  // Auth
+  const { errorResponse } = await verifyAuthRequest(request, env);
+  if (errorResponse) return errorResponse;
+
   try {
     const data = (await request.json().catch(() => ({}))) as {
       company_id?: string;
@@ -731,12 +880,21 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
       content?: string;
       meeting_date?: string;
       location?: string;
+      form_code?: string;
     };
     const companyId = data.company_id;
     const docType = data.doc_type || "";
     if (!companyId) return json({ error: "缺少 company_id" }, 400);
     if (!(docType in DOCX_TYPES)) {
       return json({ error: `不支援的文件類型：${docType}`, supported: Object.keys(DOCX_TYPES) }, 400);
+    }
+
+    // cr_form requires form_code
+    if (docType === "cr_form") {
+      const formCode = (data.form_code || "").toLowerCase();
+      if (!formCode || !(formCode in CR_FORM_META)) {
+        return json({ error: `不支援的表格編號：${formCode}`, supported: Object.keys(CR_FORM_META) }, 400);
+      }
     }
 
     // SCR register needs separate data fetch
@@ -774,6 +932,7 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
       content: data.content,
       meeting_date: data.meeting_date,
       location: data.location,
+      form_code: data.form_code,
     });
     if (documentXml == null) return json({ error: "找不到該公司" }, 404);
 

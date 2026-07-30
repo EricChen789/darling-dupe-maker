@@ -545,6 +545,25 @@ for (const table of TABLES) {
 
     return json({ success: true });
   });
+
+  // ─── Batch DELETE by query parameters (port from Flask server.py line 3863) ───
+  addRoute("DELETE", `/api/${table}`, async (req, env, user) => {
+    requireAdmin(user);
+    const url = new URL(req.url);
+    const where: string[] = [];
+    const bindings: any[] = [];
+    for (const [key, value] of url.searchParams.entries()) {
+      where.push(`${key} = ?`);
+      bindings.push(value);
+    }
+    if (where.length === 0) {
+      return error("At least one query parameter required for batch delete", 400);
+    }
+    await env.DB.prepare(
+      `DELETE FROM ${table} WHERE ${where.join(" AND ")}`
+    ).bind(...bindings).run();
+    return json({ success: true });
+  });
 }
 
 // ─── Special routes ───
@@ -800,7 +819,14 @@ addRoute("POST", "/api/export-all", async (_req, env, user) => {
 
 function calcNAR1Dates(incorporationDate: string) {
   try {
-    const incDate = new Date(incorporationDate);
+    // Support both YYYY-MM-DD and DD/MM/YYYY formats (matching Flask)
+    let incDate: Date;
+    if (incorporationDate.includes('/')) {
+      const parts = incorporationDate.split('/');
+      incDate = new Date(Number(parts[2]), Number(parts[1]) - 1, Number(parts[0]));
+    } else {
+      incDate = new Date(incorporationDate);
+    }
     if (isNaN(incDate.getTime())) return null;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -821,13 +847,12 @@ function calcNAR1Dates(incorporationDate: string) {
     }
 
     const dueDate = new Date(periodEnd);
-    dueDate.setDate(dueDate.getDate() + 42);
 
     const daysRemaining = Math.ceil((dueDate.getTime() - today.getTime()) / 86400000);
     let status = 'ok';
     if (daysRemaining < 0) status = 'late';
-    else if (daysRemaining <= 7) status = 'due_soon';
-    else if (daysRemaining <= 42) status = 'grace';
+    else if (daysRemaining <= 30) status = 'due_soon';
+    else if (daysRemaining <= 90) status = 'grace';
 
     const fmt = (d: Date) => {
       const dd = String(d.getDate()).padStart(2, '0');
@@ -1042,6 +1067,80 @@ addRoute("POST", "/api/companies/:company_id/nar1-assign-changes", async (req, e
     "SELECT COUNT(*) as cnt FROM change_events WHERE company_id = ? AND nar1_period_id != '' AND nar1_period_id IS NOT NULL"
   ).bind(companyId).first<{ cnt: number }>();
   return json({ success: true, assigned: assigned?.cnt || 0, message: "Changes assigned to NAR1 periods" });
+});
+
+// ─── NAR1: Calculate dates for a company ───
+addRoute("POST", "/api/companies/:company_id/calculate-nar1-dates", async (req, env, user, params) => {
+  if (!user) return error("Unauthorized", 401);
+  const companyId = params.company_id;
+
+  const company = await env.DB.prepare(
+    "SELECT incorporation_date FROM companies WHERE id = ?"
+  ).bind(companyId).first<{ incorporation_date: string }>();
+  if (!company) return error("Company not found", 404);
+
+  const dates = calcNAR1Dates(company.incorporation_date);
+  if (!dates) return error("Invalid incorporation date", 400);
+
+  // Update company's nar1_due_date
+  await env.DB.prepare(
+    "UPDATE companies SET nar1_due_date = ? WHERE id = ?"
+  ).bind(dates.due_date, companyId).run();
+
+  // Ensure NAR1 periods exist
+  const existing = await env.DB.prepare(
+    "SELECT * FROM nar1_filings WHERE company_id = ? AND period_start = ?"
+  ).bind(companyId, dates.period_start).all();
+  if (!existing.results?.length) {
+    const periodId = generateUUID();
+    const now = new Date().toISOString();
+    await env.DB.prepare(
+      "INSERT INTO nar1_filings (id, company_id, period_start, period_end, status, created_at) VALUES (?, ?, ?, ?, 'pending', ?)"
+    ).bind(periodId, companyId, dates.period_start, dates.period_end, now).run();
+  }
+
+  // Refresh all periods
+  const periods = await env.DB.prepare(
+    "SELECT * FROM nar1_filings WHERE company_id = ? ORDER BY period_start"
+  ).bind(companyId).all();
+
+  return json({ success: true, dates, periods: periods.results || [] });
+});
+
+// ─── NAR1: List companies with upcoming/late filings ───
+addRoute("GET", "/api/nar1-due-companies", async (req, env, user) => {
+  if (!user) return error("Unauthorized", 401);
+  const url = new URL(req.url);
+  const statusFilter = url.searchParams.get("status") || "";
+  const daysAhead = parseInt(url.searchParams.get("days") || "42");
+
+  const companies = await env.DB.prepare(
+    "SELECT id, name, chinese_name, company_number as br_number, " +
+    "incorporation_date, nar1_due_date, status as company_status " +
+    "FROM companies WHERE incorporation_date != '' AND status != 'deleted' " +
+    "ORDER BY nar1_due_date"
+  ).all();
+
+  const result: any[] = [];
+  for (const c of (companies.results || []) as any[]) {
+    const dates = calcNAR1Dates(c.incorporation_date as string);
+    if (!dates) continue;
+    const entry = {
+      company_id: c.id,
+      company_name: c.name,
+      chinese_name: c.chinese_name,
+      br_number: c.br_number,
+      incorporation_date: c.incorporation_date,
+      ...dates,
+    };
+    if (statusFilter) {
+      if (dates.status === statusFilter) result.push(entry);
+    } else if (dates.days_remaining <= daysAhead) {
+      result.push(entry);
+    }
+  }
+
+  return json({ success: true, companies: result, total: result.length });
 });
 
 // ─── Form Linkages ───

@@ -1,28 +1,18 @@
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
-import fontkit from "@pdf-lib/fontkit";
 import { verifyAuthRequest, type Env as AuthEnv } from './_auth';
+import { corsHeaders, jsonResp, uint8ToBase64 } from './_pdf-utils';
 
 // IRC3111A — Notification of Change of Business Address (税務局更改業務地址通知)
 // Drawn from scratch with pdf-lib (no AcroForm template).
+// Uses R2-stored CJK font (same as other PDF endpoints).
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+const PW = 595, PH = 842; // A4 portrait
+const M = 50;
+const labelX = M;
+const valueX = M + 170;
+const BLACK = rgb(0, 0, 0);
 
-function uint8ToBase64(bytes: Uint8Array): string {
-  let binary = "";
-  const chunkSize = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    const chunk = bytes.subarray(i, i + chunkSize);
-    binary += String.fromCharCode(...chunk);
-  }
-  return btoa(binary);
-}
-
-function isAsciiChar(ch: string): boolean {
-  return ch.charCodeAt(0) < 128;
-}
+function isAsciiChar(ch: string): boolean { return ch.charCodeAt(0) < 128; }
 
 function segmentText(text: string): { text: string; isAscii: boolean }[] {
   const segments: { text: string; isAscii: boolean }[] = [];
@@ -32,7 +22,7 @@ function segmentText(text: string): { text: string; isAscii: boolean }[] {
     const ascii = isAsciiChar(ch);
     if (curAscii === null) curAscii = ascii;
     else if (ascii !== curAscii) {
-      segments.push({ text: cur, isAscii: curAscii });
+      segments.push({ text: cur, isAscii: curAscii! });
       cur = ""; curAscii = ascii;
     }
     cur += ch;
@@ -51,40 +41,33 @@ interface IRC3111AData {
   signDate?: string;
 }
 
-export async function generateIRC3111APdf(data: IRC3111AData): Promise<Uint8Array> {
+export async function generateIRC3111APdf(data: IRC3111AData, r2Bucket: any): Promise<Uint8Array> {
   const pdfDoc = await PDFDocument.create();
-  pdfDoc.registerFontkit(fontkit);
-  const page = pdfDoc.addPage([595, 842]); // A4 portrait
+  const page = pdfDoc.addPage([PW, PH]); // A4 portrait
   const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const helveticaBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
 
-  // Load CJK font from CDN (WOFF2 via fontkit)
+  // Load CJK font from R2 (same pattern as other endpoints)
   let cjkFont: any = null;
   try {
-    const cjkResp = await fetch(
-      "https://cdn.jsdelivr.net/fontsource/fonts/noto-sans-tc@latest/chinese-traditional-400-normal.woff2"
-    );
-    if (cjkResp.ok) {
-      const cjkBytes = new Uint8Array(await cjkResp.arrayBuffer());
-      cjkFont = await pdfDoc.embedFont(cjkBytes);
+    const fontObj = await r2Bucket.get("NotoSansTC.woff2");
+    if (fontObj) {
+      const fontBytes = new Uint8Array(await fontObj.arrayBuffer());
+      cjkFont = await pdfDoc.embedFont(fontBytes);
     }
   } catch (_) {
-    // CJK font not available — Chinese text won't render, but PDF is still valid
+    // CJK font not available — Chinese text won't render
   }
-
-  const M = 50;
-  const PW = 595;
-  const labelX = M;
-  const valueX = M + 170;
-  const BLACK = rgb(0, 0, 0);
 
   function drawMixedAt(text: string, x: number, y: number, fontSize: number, bold = false): number {
     const segs = segmentText(text);
     let cx = x;
     for (const s of segs) {
+      // If non-ASCII but no CJK font, skip (prevents WinAnsi encoding error)
+      if (!s.isAscii && !cjkFont) continue;
       const f = s.isAscii
         ? (bold ? helveticaBold : helvetica)
-        : (cjkFont || helvetica);
+        : cjkFont!;
       page.drawText(s.text, { x: cx, y, size: fontSize, font: f, color: BLACK });
       cx += f.widthOfTextAtSize(s.text, fontSize);
     }
@@ -99,8 +82,7 @@ export async function generateIRC3111APdf(data: IRC3111AData): Promise<Uint8Arra
     page.drawLine({
       start: { x: valueX, y: y - 3 },
       end: { x: Math.min(valueX + tw, PW - M), y: y - 3 },
-      color: BLACK,
-      thickness: 0.5,
+      color: BLACK, thickness: 0.5,
     });
     return y;
   }
@@ -123,15 +105,9 @@ export async function generateIRC3111APdf(data: IRC3111AData): Promise<Uint8Arra
   y -= 48;
 
   // Separator
-  page.drawLine({
-    start: { x: M, y },
-    end: { x: PW - M, y },
-    color: BLACK,
-    thickness: 1.2,
-  });
+  page.drawLine({ start: { x: M, y }, end: { x: PW - M, y }, color: BLACK, thickness: 1.2 });
   y -= 22;
 
-  // ── Form fields ──
   const cn = data.companyName || "";
   const br = data.brNumber || "";
   const oldAddr = data.oldAddress || "";
@@ -147,27 +123,13 @@ export async function generateIRC3111APdf(data: IRC3111AData): Promise<Uint8Arra
     page.drawText(enLabel, { x: labelX, y: yPos - fontSize - 3, size: fontSize - 2, font: helvetica, color: BLACK });
   }
 
-  drawLabel("商業登記號碼", "Business Registration No.", y);
-  drawValue(br, y - 14);
-  y -= 50;
+  drawLabel("商業登記號碼", "Business Registration No.", y); drawValue(br, y - 14); y -= 50;
+  drawLabel("商業名稱", "Name of Business", y); drawValue(cn, y - 14); y -= 58;
+  drawLabel("舊業務地址", "Old Business Address", y); drawValue(oldAddr, y - 14); y -= 58;
+  drawLabel("新業務地址", "New Business Address", y); drawValue(newAddr, y - 14); y -= 58;
+  drawLabel("更改生效日期", "Effective Date of Change", y); drawValue(effDate, y - 14); y -= 58;
 
-  drawLabel("商業名稱", "Name of Business", y);
-  drawValue(cn, y - 14);
-  y -= 58;
-
-  drawLabel("舊業務地址", "Old Business Address", y);
-  drawValue(oldAddr, y - 14);
-  y -= 58;
-
-  drawLabel("新業務地址", "New Business Address", y);
-  drawValue(newAddr, y - 14);
-  y -= 58;
-
-  drawLabel("更改生效日期", "Effective Date of Change", y);
-  drawValue(effDate, y - 14);
-  y -= 58;
-
-  // ── Declaration ──
+  // Declaration
   drawMixedAt("Declaration / 聲明", labelX, y, 11, true);
   y -= 22;
   drawMixedAt(
@@ -176,21 +138,13 @@ export async function generateIRC3111APdf(data: IRC3111AData): Promise<Uint8Arra
   );
   y -= 28;
 
-  drawLabel("簽署人姓名", "Name of Signatory", y);
-  drawValue(signer, y - 14);
-  y -= 50;
+  drawLabel("簽署人姓名", "Name of Signatory", y); drawValue(signer, y - 14); y -= 50;
+  drawLabel("日期", "Date", y); drawValue(signDate, y - 14); y -= 50;
 
-  drawLabel("日期", "Date", y);
-  drawValue(signDate, y - 14);
-  y -= 50;
-
-  // ── Footer ──
+  // Footer
   drawMixedAt("Notes / 註：", labelX, y, 8, true);
   y -= 14;
-  drawMixedAt(
-    "1. Submit within 1 month of change. 須於更改後1個月內提交。",
-    labelX + 5, y, 7.5
-  );
+  drawMixedAt("1. Submit within 1 month of change. 須於更改後1個月內提交。", labelX + 5, y, 7.5);
 
   return pdfDoc.save();
 }
@@ -206,16 +160,14 @@ export async function onRequest(context: { request: Request; env: AuthEnv }) {
   if (errorResponse) return errorResponse;
 
   try {
+    const r2Bucket = (env as any).PDF_TEMPLATES || (env as any).R2;
+    if (!r2Bucket) return jsonResp({ error: "R2 bucket not available" }, 500);
+
     const data: IRC3111AData = await request.json();
-    const pdfBytes = await generateIRC3111APdf(data);
-    const b64 = uint8ToBase64(pdfBytes);
-    return new Response(JSON.stringify({ pdf: b64 }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    const pdfBytes = await generateIRC3111APdf(data, r2Bucket);
+    const b64 = uint8ToBase64(new Uint8Array(pdfBytes));
+    return jsonResp({ pdf: b64 });
   } catch (e: any) {
-    return new Response(JSON.stringify({ error: e.message || String(e) }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return jsonResp({ error: e.message || String(e) }, 500);
   }
 }

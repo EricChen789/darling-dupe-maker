@@ -2,10 +2,11 @@ import { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Loader2, FileText, Download } from 'lucide-react';
+import { Loader2, FileText, Download, Package } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { downloadBase64Pdf } from '@/lib/downloadPdf';
 import { getFormLinkageLabel } from '@/hooks/useFormLinkages';
+import JSZip from 'jszip';
 
 export interface FormLinkage {
   id: string;
@@ -40,6 +41,7 @@ export default function RelatedFormsPrompt({
   const [generating, setGenerating] = useState(false);
   const [results, setResults] = useState<Array<{ form_code: string; pdf?: string; filename?: string; error?: string; success: boolean }>>([]);
   const [phase, setPhase] = useState<'select' | 'generating' | 'done'>('select');
+  const [downloadingZip, setDownloadingZip] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -84,19 +86,13 @@ export default function RelatedFormsPrompt({
         success: !f.error && !!f.pdf,
       }));
       setResults(res);
-
-      // Download each successfully-generated PDF
-      let downloaded = 0;
-      for (const r of res) {
-        if (r.pdf) {
-          downloadBase64Pdf(r.pdf, r.filename);
-          downloaded++;
-          await new Promise(resolve => setTimeout(resolve, 300));
-        }
-      }
       setPhase('done');
-      if (downloaded > 0) {
-        toast({ title: '批量生成完成', description: `已生成 ${downloaded} 份相關表格` });
+
+      const succeeded = res.filter(r => r.success).length;
+      if (succeeded > 0) {
+        toast({ title: '批量生成完成', description: `已生成 ${succeeded} 份相關表格，可下載 ZIP 或單獨下載` });
+      } else {
+        toast({ title: '批量生成失敗', description: '所有表格生成均失敗', variant: 'destructive' });
       }
     } catch (err: any) {
       toast({ title: '批量生成失敗', description: err.message, variant: 'destructive' });
@@ -106,11 +102,47 @@ export default function RelatedFormsPrompt({
     }
   };
 
+  const handleDownloadZip = async () => {
+    const succeeded = results.filter(r => r.success);
+    if (succeeded.length === 0) return;
+    setDownloadingZip(true);
+    try {
+      const zip = new JSZip();
+      for (const r of succeeded) {
+        if (r.pdf) {
+          zip.file(r.filename, r.pdf, { base64: true });
+        }
+      }
+      const blob = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${primaryFormCode}_related_forms_${companyName.replace(/\s+/g, '_')}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast({ title: 'ZIP 下載完成', description: `已打包 ${succeeded.length} 份表格` });
+    } catch (err: any) {
+      toast({ title: 'ZIP 打包失敗', description: err.message, variant: 'destructive' });
+    } finally {
+      setDownloadingZip(false);
+    }
+  };
+
+  const handleDownloadSingle = (r: { pdf?: string; filename?: string }) => {
+    if (r.pdf) {
+      downloadBase64Pdf(r.pdf, r.filename || 'form.pdf');
+    }
+  };
+
   const linkedFormsList = linkages.map(l => ({
     code: l.linked_form,
     label: getFormLinkageLabel(l.linked_form),
     desc: l.description,
   }));
+
+  const succeededCount = results.filter(r => r.success).length;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -176,6 +208,21 @@ export default function RelatedFormsPrompt({
 
         {phase === 'done' && (
           <>
+            {/* Zip download button */}
+            {succeededCount > 1 && (
+              <Button
+                onClick={handleDownloadZip}
+                disabled={downloadingZip}
+                className="w-full bg-green-600 hover:bg-green-700 text-white"
+              >
+                {downloadingZip ? (
+                  <><Loader2 className="h-4 w-4 mr-2 animate-spin" />打包中...</>
+                ) : (
+                  <><Package className="h-4 w-4 mr-2" />下載全部為 ZIP ({succeededCount} 份)</>
+                )}
+              </Button>
+            )}
+
             <div className="space-y-2 py-2">
               {results.map((r) => (
                 <div
@@ -188,9 +235,14 @@ export default function RelatedFormsPrompt({
                   <div className="flex-1">
                     <div className="font-medium text-sm">{getFormLinkageLabel(r.form_code)}</div>
                     <div className="text-xs text-muted-foreground">
-                      {r.success ? '✅ 已生成並下載' : `❌ ${r.error || '失敗'}`}
+                      {r.success ? '✅ 已生成' : `❌ ${r.error || '失敗'}`}
                     </div>
                   </div>
+                  {r.success && (
+                    <Button variant="outline" size="sm" onClick={() => handleDownloadSingle(r)}>
+                      <Download className="h-3 w-3 mr-1" />下載
+                    </Button>
+                  )}
                 </div>
               ))}
             </div>

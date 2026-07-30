@@ -12,6 +12,7 @@ import { ArrowLeft, Download, Loader2, Building2, Plus, Trash2 } from 'lucide-re
 import { toast } from '@/hooks/use-toast';
 import { useCompanies } from '@/hooks/useCompanies';
 import { downloadBase64Pdf } from '@/lib/downloadPdf';
+import RelatedFormsPrompt from './RelatedFormsPrompt';
 
 interface OfficerEntry {
   type: 'appointment' | 'cessation';
@@ -91,6 +92,9 @@ export default function ND2AGeneratorForm({ onBack, initialCompanyId }: ND2AGene
   const [presentorFax, setPresentorFax] = useState('');
   const [presentorEmail, setPresentorEmail] = useState('');
   const [presentorReference, setPresentorReference] = useState('');
+  // Phase 5: Related forms prompt (ND2A→ND4 conditional linkage)
+  const [showRelatedPrompt, setShowRelatedPrompt] = useState(false);
+  const [relatedLinkages, setRelatedLinkages] = useState<any[]>([]);
 
   // 所选公司的人员（用于签署人下拉）
   const selectedCompany = companies.find(c => c.id === selectedCompanyId);
@@ -176,6 +180,21 @@ export default function ND2AGeneratorForm({ onBack, initialCompanyId }: ND2AGene
       downloadBase64Pdf(result.pdf, `ND2A_${brNumber}_${companyName.replace(/\s+/g, '_')}.pdf`);
       saveFormHistory({ formType: 'ND2A', formData: { brNumber, companyName, selectedCompanyId, officers, signerId, signerName, signDate, presentorName, presentorAddress, presentorPhone, presentorFax, presentorEmail, presentorReference } });
       toast({ title: '生成成功', description: 'ND2A 表格已下載' });
+
+      // Phase 5: Check for related forms (ND2A→ND4 conditional: only if cessation exists)
+      const hasCessation = officers.some(o => o.type === 'cessation');
+      if (hasCessation) {
+        try {
+          const linkResp = await fetch(`/api/form-linkages?primary=ND2A`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          const linkData = await linkResp.json();
+          if (linkData.linkages && linkData.linkages.length > 0) {
+            setRelatedLinkages(linkData.linkages);
+            setShowRelatedPrompt(true);
+          }
+        } catch (_) { /* linkage check is non-critical */ }
+      }
     } catch (err: any) {
       toast({ title: '生成失敗', description: err.message, variant: 'destructive' });
     } finally {
@@ -397,6 +416,17 @@ export default function ND2AGeneratorForm({ onBack, initialCompanyId }: ND2AGene
           <Button variant="outline" onClick={() => handleGenerate(true)} disabled={generating}>生成測試 PDF（Debug）</Button>
         </div>
       </div>
+
+      <RelatedFormsPrompt
+        open={showRelatedPrompt}
+        onOpenChange={setShowRelatedPrompt}
+        primaryFormCode="ND2A"
+        primaryFormName="ND2A — 更改公司秘書及董事通知書"
+        primaryFormData={{ brNumber, companyName, officers, signerName, signDate, presentorName, presentorAddress, presentorPhone, presentorFax, presentorEmail, presentorReference, company_id: selectedCompanyId }}
+        companyId={selectedCompanyId}
+        companyName={companyName}
+        linkages={relatedLinkages}
+      />
     </div>
   );
 }

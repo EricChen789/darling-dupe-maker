@@ -32,9 +32,9 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
     if (!templateObj) return jsonResp({ error: `Template not found: ${TEMPLATE_NAME}` }, 404);
 
     const templateBytes = new Uint8Array(await templateObj.arrayBuffer());
-    const pdfDoc = await PDFDocument.load(templateBytes);
+    const pdfDoc = await PDFDocument.load(templateBytes, { ignoreEncryption: true });
     // Skip CJK font embedding — saves CPU for large templates (avoid error 1102)
-    const helv = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    // (Helvetica is a StandardFont — embedding is a no-op, removed to save CPU)
 
     const form = pdfDoc.getForm();
 
@@ -53,7 +53,8 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
 
     // Skip flatten — saves CPU; NeedAppearances lets PDF reader rebuild
     enableNeedAppearances(pdfDoc);
-    const pdfBytes = await pdfDoc.save();
+    // useObjectStreams: false saves significant CPU on large templates (24-page NNC1)
+    const pdfBytes = await pdfDoc.save({ useObjectStreams: false });
     return jsonResp({ pdf: uint8ToBase64(new Uint8Array(pdfBytes)) });
   } catch (err: any) {
     console.error("generate-nnc1-pdf error:", err);

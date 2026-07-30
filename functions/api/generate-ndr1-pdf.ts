@@ -7,11 +7,12 @@
 //   P.2-P.3: Natural person applicant details (name/address/email/tel)
 //   P.4: Signer name + date
 
-import { PDFDocument } from "pdf-lib";
+import { PDFDocument, StandardFonts } from "pdf-lib";
 import {
   corsHeaders, jsonResp, uint8ToBase64,
-  fetchAndEmbedFont, parseEnglishName
+  parseEnglishName
 } from "./_pdf-utils";
+import { enableNeedAppearances } from "./_acroform";
 import { verifyAuthRequest, type Env } from "./_auth";
 
 const TEMPLATE = "NDR1-template.pdf";
@@ -36,7 +37,8 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
     if (!templateObj) return jsonResp({ error: `Template not found: ${TEMPLATE}` }, 404);
 
     const pdfDoc = await PDFDocument.load(await templateObj.arrayBuffer());
-    const { cjk, ascii } = await fetchAndEmbedFont(pdfDoc, env as any);
+    enableNeedAppearances(pdfDoc);
+    const asciiFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const form = pdfDoc.getForm();
 
     // ── Helper: set text field ──
@@ -45,7 +47,7 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
       try {
         const tf = form.getTextField(name);
         tf.setText(String(value));
-        if (cjk) tf.updateAppearances(cjk);
+        // Skip updateAppearances to save CPU
       } catch { /* skip */ }
     };
 
@@ -127,14 +129,12 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
         const tf = form.getTextField(`fill_1_P.${pi}`);
         if (tf) {
           tf.setText(br8);
-          if (cjk) tf.updateAppearances(cjk);
         }
       } catch { /* no BR field */ }
     }
 
-    // ── Flatten and save ──
-    form.flatten();
-    const pdfBytes = await pdfDoc.save();
+    // ── Skip flatten to save CPU ──
+    const pdfBytes = await pdfDoc.save({ updateFieldAppearances: false });
     return jsonResp({ pdf: uint8ToBase64(new Uint8Array(pdfBytes)) });
   } catch (err: any) {
     console.error("[NDR1] generation error:", err);

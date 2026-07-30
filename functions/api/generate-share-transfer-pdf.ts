@@ -1,83 +1,19 @@
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import { verifyAuthRequest, type Env as AuthEnv } from './_auth';
+import {
+  corsHeaders, uint8ToBase64,
+  drawMixed, widthOfText,
+} from './_pdf-utils';
 
 type Env = AuthEnv & {
   DB: D1Database;
+  PDF_TEMPLATES?: R2Bucket;
 };
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
-
-const CHINESE_FONT_URL = "https://cdn.jsdelivr.net/fontsource/fonts/noto-sans-tc@latest/chinese-traditional-400-normal.woff2";
-
-function bytesToBase64(bytes: Uint8Array): string {
-  let binary = "";
-  for (let i = 0; i < bytes.length; i += 4096) {
-    binary += String.fromCharCode(...bytes.slice(i, i + 4096));
-  }
-  return btoa(binary);
-}
 
 const PAGE_W = 595;
 const PAGE_H = 842;
 const MARGIN = 45;
-
-// ── Font selection helpers ──
-// Noto Sans TC WOFF2 has known glyph-encoding issues with ASCII in pdf-lib.
-// Fix: ASCII → StandardFonts.Helvetica, everything else → CJK font.
-// drawMixed() splits text into ASCII/non-ASCII segments per character.
-
-function isAsciiChar(ch: string): boolean { return ch.charCodeAt(0) <= 0x7F; }
-
-function segmentText(text: string): { text: string; useCjk: boolean }[] {
-  const segments: { text: string; useCjk: boolean }[] = [];
-  if (!text) return segments;
-  let cur = "", curAscii: boolean | null = null;
-  for (const ch of text) {
-    const ascii = isAsciiChar(ch);
-    if (curAscii === null) { curAscii = ascii; }
-    else if (ascii !== curAscii) {
-      segments.push({ text: cur, useCjk: !curAscii });
-      cur = ""; curAscii = ascii;
-    }
-    cur += ch;
-  }
-  if (cur) segments.push({ text: cur, useCjk: curAscii === null ? false : !curAscii });
-  return segments;
-}
-
-// Render text with mixed CJK+ASCII — splits into segments and uses the right font for each.
-function drawMixed(
-  page: any,
-  text: string,
-  opts: { x: number; y: number; size: number; cjkFont: any; asciiFont: any; color?: any },
-) {
-  const clean = text.replace(/[\n\r\t]/g, ' ');
-  const segments = segmentText(clean);
-  let x = opts.x;
-  for (const seg of segments) {
-    const font = seg.useCjk ? opts.cjkFont : opts.asciiFont;
-    page.drawText(seg.text, {
-      x, y: opts.y, size: opts.size, font,
-      ...(opts.color ? { color: opts.color } : {}),
-    });
-    x += font.widthOfTextAtSize(seg.text, opts.size);
-  }
-}
-
-// Compute total width of mixed text.
-function widthOfText(text: string, cjkFont: any, asciiFont: any, size: number): number {
-  const segments = segmentText(text);
-  let w = 0;
-  for (const seg of segments) {
-    const font = seg.useCjk ? cjkFont : asciiFont;
-    w += font.widthOfTextAtSize(seg.text, size);
-  }
-  return w;
-}
 
 export async function onRequest(context: { request: Request; env: Env }) {
   const { request, env } = context;
@@ -156,20 +92,18 @@ export async function onRequest(context: { request: Request; env: Env }) {
       }
     }
 
-    // Load CJK font (Noto Sans TC WOFF2)
-    const fontResp = await fetch(CHINESE_FONT_URL, { headers: { Accept: "*/*" } });
+    // Load CJK font (Noto Sans TC WOFF2) — direct CDN fetch, reliable for CJK rendering
+    const FONT_CDN = "https://cdn.jsdelivr.net/fontsource/fonts/noto-sans-tc@latest/chinese-traditional-400-normal.woff2";
+    const fontResp = await fetch(FONT_CDN, { headers: { Accept: "*/*" } });
     if (!fontResp.ok) throw new Error("Failed to load Chinese font");
     const fontBytes = await fontResp.arrayBuffer();
 
     const pdf = await PDFDocument.create();
     pdf.registerFontkit(fontkit);
     const cjkFont = await pdf.embedFont(fontBytes);
-    // Standard PDF Helvetica — built into every PDF reader, no encoding issues with ASCII
     const asciiFont = await pdf.embedFont(StandardFonts.Helvetica);
-    // Helvetica Bold for numbers in bought/sold notes (where we previously used 12pt bold)
-    const asciiBold = await pdf.embedFont(StandardFonts.HelveticaBold);
 
-    const fonts = { cjk: cjkFont, ascii: asciiFont, asciiBold };
+    const fonts = { cjk: cjkFont, ascii: asciiFont, asciiBold: asciiFont };
 
     if (docType === "share_certificate") {
       await buildShareCertificate(pdf, fonts, company as any, transaction, shareholders);
@@ -180,7 +114,7 @@ export async function onRequest(context: { request: Request; env: Env }) {
     }
 
     const bytes = await pdf.save();
-    const pdfBase64 = bytesToBase64(bytes);
+    const pdfBase64 = uint8ToBase64(bytes);
 
     return new Response(JSON.stringify({ pdf: pdfBase64 }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -198,19 +132,19 @@ async function buildInstrumentOfTransfer(
   pdf: PDFDocument, fonts: { cjk: any; ascii: any; asciiBold: any },
   company: any, transaction: any, allTransactions: any[],
 ) {
-  const { cjk: cjkFont, ascii: asciiFont } = fonts;
+  const { cjk, ascii } = fonts;
   const page = pdf.addPage([PAGE_W, PAGE_H]);
 
   drawMixed(page, "股份轉讓文書 / Instrument of Transfer", {
-    x: MARGIN, y: PAGE_H - 50, size: 15, cjkFont, asciiFont,
+    x: MARGIN, y: PAGE_H - 50, size: 15, cjk, ascii,
   });
   page.drawLine({ start: { x: MARGIN, y: PAGE_H - 58 }, end: { x: PAGE_W - MARGIN, y: PAGE_H - 58 }, color: rgb(0.3, 0.3, 0.3), thickness: 1 });
 
   let y = PAGE_H - 80;
 
   const drawLine = (label: string, value: string) => {
-    drawMixed(page, label, { x: MARGIN, y, size: 10, cjkFont, asciiFont, color: rgb(0.3, 0.3, 0.3) });
-    drawMixed(page, value || "__________________________", { x: MARGIN + 140, y, size: 10, cjkFont, asciiFont });
+    drawMixed(page, label, { x: MARGIN, y, size: 10, cjk, ascii, color: rgb(0.3, 0.3, 0.3) });
+    drawMixed(page, value || "__________________________", { x: MARGIN + 140, y, size: 10, cjk, ascii });
     y -= 22;
   };
 
@@ -221,7 +155,7 @@ async function buildInstrumentOfTransfer(
 
   y -= 12;
   drawMixed(page, "轉讓詳情 / Transfer Details", {
-    x: MARGIN, y, size: 12, cjkFont, asciiFont,
+    x: MARGIN, y, size: 12, cjk, ascii,
   });
   page.drawLine({ start: { x: MARGIN, y: y - 4 }, end: { x: PAGE_W - MARGIN, y: y - 4 }, color: rgb(0.5, 0.5, 0.5), thickness: 0.5 });
   y -= 20;
@@ -244,26 +178,26 @@ async function buildInstrumentOfTransfer(
 
   y -= 20;
   drawMixed(page, "轉讓人簽署 / Signed by Transferor:", {
-    x: MARGIN, y, size: 10, cjkFont, asciiFont,
+    x: MARGIN, y, size: 10, cjk, ascii,
   });
   drawMixed(page, "____________________________", {
-    x: MARGIN + 200, y, size: 10, cjkFont, asciiFont,
+    x: MARGIN + 200, y, size: 10, cjk, ascii,
   });
   y -= 25;
   drawMixed(page, "受讓人簽署 / Signed by Transferee:", {
-    x: MARGIN, y, size: 10, cjkFont, asciiFont,
+    x: MARGIN, y, size: 10, cjk, ascii,
   });
   drawMixed(page, "____________________________", {
-    x: MARGIN + 200, y, size: 10, cjkFont, asciiFont,
+    x: MARGIN + 200, y, size: 10, cjk, ascii,
   });
   y -= 25;
   drawMixed(page, "日期 Date: ____/____/________", {
-    x: MARGIN, y, size: 10, cjkFont, asciiFont,
+    x: MARGIN, y, size: 10, cjk, ascii,
   });
 
   // Footer
   drawMixed(page, `由 Muse Labs Engineering Limited 秘書系統生成 | ${new Date().toISOString().slice(0, 10)}`, {
-    x: MARGIN, y: 30, size: 7, cjkFont, asciiFont, color: rgb(0.6, 0.6, 0.6),
+    x: MARGIN, y: 30, size: 7, cjk, ascii, color: rgb(0.6, 0.6, 0.6),
   });
 }
 
@@ -273,7 +207,7 @@ async function buildBoughtSoldNote(
   pdf: PDFDocument, fonts: { cjk: any; ascii: any; asciiBold: any },
   company: any, transaction: any, allTransactions: any[],
 ) {
-  const { cjk: cjkFont, ascii: asciiFont, asciiBold } = fonts;
+  const { cjk, ascii, asciiBold } = fonts;
   const page = pdf.addPage([PAGE_W, PAGE_H]);
   const halfH = PAGE_H / 2;
   const labelX = MARGIN + 5;
@@ -296,21 +230,21 @@ async function buildBoughtSoldNote(
   const lineStart = (PAGE_W - lineW) / 2;
 
   const drawRow = (label: string, value: string, yPos: number, size = 12) => {
-    drawMixed(page, label, { x: labelX, y: yPos, size, cjkFont, asciiFont, color: rgb(0, 0, 0) });
-    drawMixed(page, value || "", { x: valueX, y: yPos, size, cjkFont, asciiFont, color: rgb(0, 0, 0) });
+    drawMixed(page, label, { x: labelX, y: yPos, size, cjk, ascii, color: rgb(0, 0, 0) });
+    drawMixed(page, value || "", { x: valueX, y: yPos, size, cjk, ascii, color: rgb(0, 0, 0) });
   };
 
   // ═══ SOLD NOTE — TOP half ═══
   let y = PAGE_H - 50;
 
   // Title: 16pt bold, centered
-  const soldNoteW = widthOfText("Sold Note", cjkFont, asciiFont, 16);
+  const soldNoteW = widthOfText("Sold Note", cjk, ascii, 16);
   drawMixed(page, "Sold Note", {
-    x: PAGE_W / 2 - soldNoteW / 2, y, size: 16, cjkFont, asciiFont,
+    x: PAGE_W / 2 - soldNoteW / 2, y, size: 16, cjk, ascii,
   });
   y -= 4;
   drawMixed(page, "賣出票據", {
-    x: PAGE_W / 2 - widthOfText("賣出票據", cjkFont, asciiFont, 11) / 2, y, size: 11, cjkFont, asciiFont,
+    x: PAGE_W / 2 - widthOfText("賣出票據", cjk, ascii, 11) / 2, y, size: 11, cjk, ascii,
   });
   y -= 22;
 
@@ -332,16 +266,16 @@ async function buildBoughtSoldNote(
   y -= 10;
   // Transferor signature: text + underline to right margin
   const tfText = `(Transferor)  ${fromName}`;
-  drawMixed(page, tfText, { x: labelX, y, size: 12, cjkFont, asciiFont });
-  const tfW = widthOfText(tfText, cjkFont, asciiFont, 12);
+  drawMixed(page, tfText, { x: labelX, y, size: 12, cjk, ascii });
+  const tfW = widthOfText(tfText, cjk, ascii, 12);
   const sigEnd = labelX + tfW + 10;
   page.drawLine({ start: { x: sigEnd, y: y + 3 }, end: { x: PAGE_W - MARGIN, y: y + 3 }, color: rgb(0, 0, 0), thickness: 0.6 });
   y -= 16;
-  drawMixed(page, coName, { x: sigEnd, y, size: 8, cjkFont, asciiFont });
+  drawMixed(page, coName, { x: sigEnd, y, size: 8, cjk, ascii });
   y -= 14;
 
   drawMixed(page, `Hong Kong, Dated  ${txDate}`, {
-    x: labelX, y, size: 12, cjkFont, asciiFont,
+    x: labelX, y, size: 12, cjk, ascii,
   });
   y -= 24;
 
@@ -353,11 +287,11 @@ async function buildBoughtSoldNote(
   // ═══ BOUGHT NOTE — BOTTOM half ═══
   // Title: 16pt bold, centered
   drawMixed(page, "Bought Note", {
-    x: PAGE_W / 2 - widthOfText("Bought Note", cjkFont, asciiFont, 16) / 2, y, size: 16, cjkFont, asciiFont,
+    x: PAGE_W / 2 - widthOfText("Bought Note", cjk, ascii, 16) / 2, y, size: 16, cjk, ascii,
   });
   y -= 4;
   drawMixed(page, "買入票據", {
-    x: PAGE_W / 2 - widthOfText("買入票據", cjkFont, asciiFont, 11) / 2, y, size: 11, cjkFont, asciiFont,
+    x: PAGE_W / 2 - widthOfText("買入票據", cjk, ascii, 11) / 2, y, size: 11, cjk, ascii,
   });
   y -= 22;
 
@@ -379,18 +313,18 @@ async function buildBoughtSoldNote(
   y -= 10;
   // Transferee signature: text + underline to right margin
   const teeText = `(Transferee)  ${toName}`;
-  drawMixed(page, teeText, { x: labelX, y, size: 12, cjkFont, asciiFont });
-  const teeW = widthOfText(teeText, cjkFont, asciiFont, 12);
+  drawMixed(page, teeText, { x: labelX, y, size: 12, cjk, ascii });
+  const teeW = widthOfText(teeText, cjk, ascii, 12);
   const teeEnd = labelX + teeW + 10;
   page.drawLine({ start: { x: teeEnd, y: y + 3 }, end: { x: PAGE_W - MARGIN, y: y + 3 }, color: rgb(0, 0, 0), thickness: 0.6 });
   y -= 18;
   drawMixed(page, `Hong Kong, Dated  ${txDate}`, {
-    x: labelX, y, size: 12, cjkFont, asciiFont,
+    x: labelX, y, size: 12, cjk, ascii,
   });
 
   // Footer
   drawMixed(page, `Generated by Muse Labs | ${new Date().toISOString().slice(0, 10)}`, {
-    x: MARGIN, y: 20, size: 7, cjkFont, asciiFont, color: rgb(0.6, 0.6, 0.6),
+    x: MARGIN, y: 20, size: 7, cjk, ascii, color: rgb(0.6, 0.6, 0.6),
   });
 }
 
@@ -399,7 +333,7 @@ async function buildShareCertificate(
   pdf: PDFDocument, fonts: { cjk: any; ascii: any; asciiBold: any },
   company: any, transaction: any, shareholders: any[],
 ) {
-  const { cjk: cjkFont, ascii: asciiFont, asciiBold } = fonts;
+  const { cjk, ascii, asciiBold } = fonts;
   const page = pdf.addPage([PAGE_W, PAGE_H]);
 
   // Ornate border
@@ -416,33 +350,33 @@ async function buildShareCertificate(
 
   // Header — mixed CJK + ASCII, use CJK font (has both)
   drawMixed(page, "股票證書 / SHARE CERTIFICATE", {
-    x: PAGE_W / 2 - 150, y, size: 16, cjkFont, asciiFont,
+    x: PAGE_W / 2 - 150, y, size: 16, cjk, ascii,
   });
   y -= 28;
   page.drawLine({ start: { x: 80, y }, end: { x: PAGE_W - 80, y }, color: rgb(0.1, 0.3, 0.1), thickness: 1 });
   y -= 24;
 
   drawMixed(page, `公司名稱: ${company.name || "________________________________"}`, {
-    x: 50, y, size: 10, cjkFont, asciiFont,
+    x: 50, y, size: 10, cjk, ascii,
   });
   y -= 18;
   if (company.chinese_name) {
     drawMixed(page, `中文名稱: ${company.chinese_name}`, {
-      x: 50, y, size: 10, cjkFont, asciiFont,
+      x: 50, y, size: 10, cjk, ascii,
     });
     y -= 18;
   }
   drawMixed(page, `商業登記號碼: ${company.company_number || "________________"}`, {
-    x: 50, y, size: 10, cjkFont, asciiFont,
+    x: 50, y, size: 10, cjk, ascii,
   });
   y -= 18;
   drawMixed(page, `註冊辦事處地址: ${company.address || company.registered_office || "________________________________"}`, {
-    x: 50, y, size: 10, cjkFont, asciiFont,
+    x: 50, y, size: 10, cjk, ascii,
   });
 
   y -= 30;
   drawMixed(page, "茲證明 / THIS IS TO CERTIFY that", {
-    x: 50, y, size: 10, cjkFont, asciiFont, color: rgb(0.3, 0.3, 0.3),
+    x: 50, y, size: 10, cjk, ascii, color: rgb(0.3, 0.3, 0.3),
   });
   y -= 24;
 
@@ -453,30 +387,30 @@ async function buildShareCertificate(
 
   // Holder name — could be Chinese or English, drawMixed auto-detects
   drawMixed(page, holderName, {
-    x: PAGE_W / 2 - 80, y, size: 13, cjkFont, asciiFont,
+    x: PAGE_W / 2 - 80, y, size: 13, cjk, ascii,
   });
   y -= 22;
   drawMixed(page, "is/are the registered holder(s) of", {
-    x: 50, y, size: 10, cjkFont, asciiFont, color: rgb(0.3, 0.3, 0.3),
+    x: 50, y, size: 10, cjk, ascii, color: rgb(0.3, 0.3, 0.3),
   });
   y -= 22;
   // Share count + class — drawMixed handles CJK/ASCII splitting
   const shareText = `${shares} ${shareClass} Share(s)`;
   drawMixed(page, shareText, {
-    x: PAGE_W / 2 - 60, y, size: 13, cjkFont, asciiFont,
+    x: PAGE_W / 2 - 60, y, size: 13, cjk, ascii,
   });
   y -= 22;
   drawMixed(page, `of HK$ ${tx.price_per_share || "____"} each fully paid`, {
-    x: 50, y, size: 10, cjkFont, asciiFont, color: rgb(0.3, 0.3, 0.3),
+    x: 50, y, size: 10, cjk, ascii, color: rgb(0.3, 0.3, 0.3),
   });
   y -= 22;
   drawMixed(page, "in the above-named Company", {
-    x: 50, y, size: 10, cjkFont, asciiFont, color: rgb(0.3, 0.3, 0.3),
+    x: 50, y, size: 10, cjk, ascii, color: rgb(0.3, 0.3, 0.3),
   });
 
   y -= 30;
   drawMixed(page, `證書編號 Certificate No: ${tx.instrument_number || "______________"}`, {
-    x: 50, y, size: 9, cjkFont, asciiFont, color: rgb(0.4, 0.4, 0.4),
+    x: 50, y, size: 9, cjk, ascii, color: rgb(0.4, 0.4, 0.4),
   });
 
   // Signature area
@@ -485,19 +419,19 @@ async function buildShareCertificate(
   page.drawLine({ start: { x: PAGE_W - 200, y }, end: { x: PAGE_W - 50, y }, color: rgb(0.1, 0.1, 0.1), thickness: 0.5 });
   y -= 14;
   drawMixed(page, "董事 Director", {
-    x: 50, y, size: 8, cjkFont, asciiFont, color: rgb(0.4, 0.4, 0.4),
+    x: 50, y, size: 8, cjk, ascii, color: rgb(0.4, 0.4, 0.4),
   });
   drawMixed(page, "公司秘書 Secretary", {
-    x: PAGE_W - 200, y, size: 8, cjkFont, asciiFont, color: rgb(0.4, 0.4, 0.4),
+    x: PAGE_W - 200, y, size: 8, cjk, ascii, color: rgb(0.4, 0.4, 0.4),
   });
 
   y -= 24;
   drawMixed(page, `簽發日期 Issue Date: ${tx.transaction_date || "________________"}`, {
-    x: 50, y, size: 9, cjkFont, asciiFont,
+    x: 50, y, size: 9, cjk, ascii,
   });
 
   // Footer
   drawMixed(page, "由 Muse Labs Engineering Limited 秘書系統生成", {
-    x: PAGE_W / 2 - 100, y: 30, size: 7, cjkFont, asciiFont, color: rgb(0.6, 0.6, 0.6),
+    x: PAGE_W / 2 - 100, y: 30, size: 7, cjk, ascii, color: rgb(0.6, 0.6, 0.6),
   });
 }

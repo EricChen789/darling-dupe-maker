@@ -6,6 +6,7 @@ import { PDFDocument, StandardFonts } from "pdf-lib";
 import {
   corsHeaders, jsonResp, uint8ToBase64
 } from "./_pdf-utils";
+import { enableNeedAppearances } from "./_acroform";
 import { verifyAuthRequest, type Env } from "./_auth";
 
 interface Officer {
@@ -66,10 +67,10 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
     if (!templateObj) return jsonResp({ error: `Template not found: ${TEMPLATE}` }, 404);
 
     const pdfDoc = await PDFDocument.load(await templateObj.arrayBuffer());
+    enableNeedAppearances(pdfDoc);
     // Skip CJK font embedding for NN6 (large template, limited CPU)
     // Use Helvetica only — ASCII fields still render correctly
     const asciiFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
-    const cjk = asciiFont; // fallback for ASCII-only
     const form = pdfDoc.getForm();
 
     const setF = (name: string, value?: string) => {
@@ -165,7 +166,7 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
     setF("fill_15_P.1", data.presentorAddress);
 
     // Don't flatten — saves CPU for large templates
-    const pdfBytes = await pdfDoc.save();
+    const pdfBytes = await pdfDoc.save({ updateFieldAppearances: false });
     return jsonResp({ pdf: uint8ToBase64(new Uint8Array(pdfBytes)) });
   } catch (err: any) {
     console.error("NN6 generation error:", err);

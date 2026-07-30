@@ -14,9 +14,10 @@ const corsHeaders = {
 const CHINESE_FONT_URL = "https://cdn.jsdelivr.net/fontsource/fonts/noto-sans-tc@latest/chinese-traditional-400-normal.woff2";
 
 function uint8ToBase64(bytes: Uint8Array): string {
+  const CHUNK = 0x8000; // 32KB chunks — avoids O(n²) string building
   let binary = "";
-  for (let i = 0; i < bytes.length; i++) {
-    binary += String.fromCharCode(bytes[i]);
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
   }
   return btoa(binary);
 }

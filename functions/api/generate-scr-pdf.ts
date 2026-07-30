@@ -131,11 +131,15 @@ export async function onRequest(context: { request: Request; env: Env }) {
       });
     }
 
+    // R2 bucket binding (use same pattern as other endpoints)
+    const r2Bucket = (env as any).PDF_TEMPLATES || (env as any).R2 || env.R2;
+    if (!r2Bucket) throw new Error("R2 bucket not available");
+
     // Fetch company, SCR data, template, and font in parallel
     const [company, scrResult, templateObj, fontResp] = await Promise.all([
       env.DB.prepare("SELECT * FROM companies WHERE id = ?").bind(companyId).first(),
       env.DB.prepare("SELECT * FROM significant_controllers WHERE company_id = ? ORDER BY created_at").bind(companyId).all(),
-      env.R2.get("pdf-templates/scr-template-bg.pdf"),
+      r2Bucket.get("scr-template-bg.pdf"),
       fetch(CHINESE_FONT_URL, { headers: { Accept: '*/*' } }),
     ]);
 

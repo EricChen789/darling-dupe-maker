@@ -31,9 +31,9 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
     const templateObj = await r2Bucket.get(TEMPLATE);
     if (!templateObj) return jsonResp({ error: `Template not found: ${TEMPLATE}` }, 404);
 
-    const pdfDoc = await PDFDocument.load(await templateObj.arrayBuffer());
+    const pdfDoc = await PDFDocument.load(await templateObj.arrayBuffer(), { ignoreEncryption: true });
     // Skip CJK font embedding — saves CPU for large templates (avoid error 1102)
-    const helv = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    // (Helvetica embedding removed — unused, saves CPU)
     const form = pdfDoc.getForm();
 
     const setF = (name: string, value?: string, align?: 'left' | 'center' | 'right') => {
@@ -100,7 +100,8 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
 
     // Don't flatten — saves CPU for large templates; NeedAppearances lets reader rebuild
     enableNeedAppearances(pdfDoc);
-    const pdfBytes = await pdfDoc.save();
+    // useObjectStreams: false saves significant CPU on large templates
+    const pdfBytes = await pdfDoc.save({ useObjectStreams: false });
     return jsonResp({ pdf: uint8ToBase64(new Uint8Array(pdfBytes)) });
   } catch (err: any) {
     console.error("NN7 generation error:", err);

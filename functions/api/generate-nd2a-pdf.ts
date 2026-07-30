@@ -181,7 +181,7 @@ function fillND2A(pdfDoc: PDFDocument, data: ND2AData) {
   // Natural appointment → P.2, P.6, P.7  (detailed pages)
   // Natural cessation   → P.4              (cessation page)
   // Corporate           → P.3, P.5, P.7     (corporate pages)
-  const officers = data.officers;
+  const officers = data.officers || [];
   let natApptIdx = 0;
   let natCessIdx = 0;
   let corpIdx = 0;

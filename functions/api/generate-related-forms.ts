@@ -241,8 +241,9 @@ export async function onRequest(context: any) {
 
         if (formCode === "IRC3111A") {
           // Dynamically import IRC3111A generator
+          const r2Bucket = (env as any).PDF_TEMPLATES || (env as any).R2;
           const { generateIRC3111APdf } = await import("./generate-irc3111a-pdf");
-          const pdfBytes = await generateIRC3111APdf(linkedData);
+          const pdfBytes = await generateIRC3111APdf(linkedData, r2Bucket);
           results.push({
             form_code: formCode,
             pdf: uint8ToBase64(new Uint8Array(pdfBytes)),

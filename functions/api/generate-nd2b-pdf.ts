@@ -4,13 +4,21 @@
 //         changeType, newAddress, effectiveDate, signerName, signDate,
 //         presentorName, presentorAddress, presentorContact }
 // resp: { pdf: '<base64>' }
+//
+// ⚠️ CPU优化（2026-07-30）：改用 _acroform.ts 底层 helpers，去掉 CJK 字体嵌入 + flatten()
+// 仿 NN6 Helvetica-only 模式，消除冷启动 503
 
-import { PDFDocument, PDFName } from "pdf-lib";
+import { PDFDocument } from "pdf-lib";
 import {
   corsHeaders, jsonResp, uint8ToBase64,
-  fetchAndEmbedFont, parseEnglishName
+  parseEnglishName
 } from "./_pdf-utils";
 import { verifyAuthRequest, type Env } from "./_auth";
+import {
+  createFormHelpers,
+  rebuildAcroFormFields,
+  enableNeedAppearances,
+} from "./_acroform";
 
 const TEMPLATE = "ND2B-template.pdf";
 
@@ -32,25 +40,9 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
     if (!templateObj) return jsonResp({ error: `Template not found: ${TEMPLATE}` }, 404);
 
     const pdfDoc = await PDFDocument.load(await templateObj.arrayBuffer());
-    const { cjk } = await fetchAndEmbedFont(pdfDoc, env as any);
-    const form = pdfDoc.getForm();
 
-    const setF = (name: string, value?: string, align?: 'left' | 'center' | 'right') => {
-      if (value == null || value === "") return;
-      try {
-        const tf = form.getTextField(name);
-        tf.setText(String(value));
-        if (cjk) tf.updateAppearances(cjk);
-        if (align === 'right') {
-          (tf as any).acroField?.dict?.set(PDFName.of('Q'), 2);
-        } else if (align === 'center') {
-          (tf as any).acroField?.dict?.set(PDFName.of('Q'), 1);
-        }
-      } catch { /* skip */ }
-    };
-    const checkF = (name: string) => {
-      try { form.getCheckBox(name).check(); } catch { /* skip */ }
-    };
+    // Use low-level AcroForm helpers (no CJK font embedding → no CPU timeout)
+    const { setText, check } = createFormHelpers(pdfDoc);
 
     const br8 = (data.brNumber || "").replace(/[^0-9A-Za-z]/g, "").slice(0, 8);
 
@@ -58,49 +50,52 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
     const { surname, otherNames } = parseEnglishName(data.nameEnglish || "");
 
     // === PAGE 1 (P.1) — 公司資料 & 申報人資料 ===
-    setF("fill_1_P.1", br8);
-    setF("fill_2_P.1", data.companyName);
+    setText("fill_1_P.1", br8);
+    setText("fill_2_P.1", data.companyName);
 
     const isNatural = (data.identity || "natural") === "natural";
     const role = data.role;
 
     if (isNatural) {
-      checkF(role === "secretary" ? "cb_1_P.1" : "cb_2_P.1");
-      setF("fill_3_P.1", data.nameChinese);
-      setF("fill_4_P.1", surname);
-      setF("fill_5_P.1", otherNames);
-      setF("fill_7_P.1", data.idNumber, 'right');
+      check(role === "secretary" ? "cb_1_P.1" : "cb_2_P.1", true);
+      setText("fill_3_P.1", data.nameChinese);
+      setText("fill_4_P.1", surname);
+      setText("fill_5_P.1", otherNames);
+      setText("fill_7_P.1", data.idNumber, 'right');
 
       // P.2: 變更詳情（地址變更）
       if (data.changeType === "address" && data.newAddress) {
-        setF("fill_19_P.2", data.newAddress);
+        setText("fill_19_P.2", data.newAddress);
       }
 
       // P.6: PI-ND2B 受保護資料
-      checkF(role === "secretary" ? "cb_1_P.6" : "cb_2_P.6");
-      setF("fill_2_P.6", data.nameChinese);
-      setF("fill_3_P.6", surname);
-      setF("fill_4_P.6", otherNames);
+      check(role === "secretary" ? "cb_1_P.6" : "cb_2_P.6", true);
+      setText("fill_2_P.6", data.nameChinese);
+      setText("fill_3_P.6", surname);
+      setText("fill_4_P.6", otherNames);
       if (data.newAddress) {
-        setF("fill_9_P.6", data.newAddress);
+        setText("fill_9_P.6", data.newAddress);
       }
     }
 
     // 提交人（P.1 底部）
-    setF("fill_8_P.1", data.presentorName);
-    setF("fill_9_P.1", data.presentorAddress);
-    setF("fill_10_P.1", data.presentorContact);
+    setText("fill_8_P.1", data.presentorName);
+    setText("fill_9_P.1", data.presentorAddress);
+    setText("fill_10_P.1", data.presentorContact);
 
     // P.3 簽署
-    setF("fill_30_P.3", data.signerName);
-    setF("fill_31_P.3", data.signDate);
+    setText("fill_30_P.3", data.signerName);
+    setText("fill_31_P.3", data.signDate);
 
     // BR on all pages
     for (let pi = 2; pi <= pdfDoc.getPageCount(); pi++) {
-      setF(`fill_1_P.${pi}`, br8);
+      setText(`fill_1_P.${pi}`, br8);
     }
 
-    form.flatten();
+    // Skip flatten() — use NeedAppearances instead (saves CPU, avoids 503)
+    rebuildAcroFormFields(pdfDoc);
+    enableNeedAppearances(pdfDoc);
+
     const pdfBytes = await pdfDoc.save();
     return jsonResp({ pdf: uint8ToBase64(new Uint8Array(pdfBytes)) });
   } catch (err: any) {

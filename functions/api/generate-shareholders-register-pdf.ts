@@ -2,8 +2,10 @@
 // Register of Members (ROM) — uses Paul Tang RTF template as background PDF
 // Overlays real data on top via pdf-lib (same pattern as SCR)
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
-import fontkit from "@pdf-lib/fontkit";
 import { verifyAuthRequest, type Env as AuthEnv } from './_auth';
+import {
+  uint8ToBase64, fetchAndEmbedFont,
+} from './_pdf-utils';
 
 type Env = AuthEnv & {
   DB: D1Database;
@@ -14,8 +16,6 @@ const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
-
-const CHINESE_FONT_URL = "https://cdn.jsdelivr.net/fontsource/fonts/noto-sans-tc@latest/chinese-traditional-400-normal.woff2";
 
 // Landscape A4
 const PW = 842, PH = 595;
@@ -205,19 +205,17 @@ export async function onRequest(context: { request: Request; env: Env }) {
       });
     }
 
-    // ── Fetch data + template + font in parallel ──
-    const [company, rolesResult, txResult, fontResp, templateObj] = await Promise.all([
+    // ── Fetch data + template in parallel ──
+    const [company, rolesResult, txResult, templateObj] = await Promise.all([
       env.DB.prepare("SELECT * FROM companies WHERE id = ?").bind(companyId).first(),
       env.DB.prepare("SELECT * FROM person_company_roles WHERE company_id = ? AND role = 'shareholder'")
         .bind(companyId).all(),
       env.DB.prepare("SELECT * FROM share_transactions WHERE company_id = ? ORDER BY transaction_date")
         .bind(companyId).all(),
-      fetch(CHINESE_FONT_URL, { headers: { Accept: "*/*" } }),
       env.PDF_TEMPLATES.get("rom-template-bg.pdf"),
     ]);
 
     if (!company) throw new Error("Company not found");
-    if (!fontResp.ok) throw new Error("Failed to load Chinese font");
     if (!templateObj) throw new Error("ROM template not found in R2");
 
     const roles = (rolesResult.results || []) as any[];
@@ -244,14 +242,11 @@ export async function onRequest(context: { request: Request; env: Env }) {
       }
     }
 
-    // Fonts
-    const fontBytes = await fontResp.arrayBuffer();
+    // Fonts — use R2-first shared helper (avoids CDN fetch CPU timeout)
     const templateBytes = new Uint8Array(await templateObj.arrayBuffer());
 
     const pdf = await PDFDocument.create();
-    pdf.registerFontkit(fontkit);
-    const cjkFont = await pdf.embedFont(fontBytes);
-    const asciiFont = await pdf.embedFont(StandardFonts.Helvetica);
+    const { cjk: cjkFont, ascii: asciiFont } = await fetchAndEmbedFont(pdf, env as any);
     const fo = { cjk: cjkFont, ascii: asciiFont };
 
     // Load template PDF

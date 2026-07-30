@@ -110,14 +110,28 @@ export function drawMixed(
   let x = opts.x;
   for (const s of segs) {
     const font = s.useCjk ? opts.cjk : opts.ascii;
-    page.drawText(s.text, {
-      x,
-      y: opts.y,
-      size: opts.size,
-      font,
-      ...(opts.color ? { color: opts.color } : {}),
-    });
-    x += font.widthOfTextAtSize(s.text, opts.size);
+    try {
+      page.drawText(s.text, {
+        x,
+        y: opts.y,
+        size: opts.size,
+        font,
+        ...(opts.color ? { color: opts.color } : {}),
+      });
+      x += font.widthOfTextAtSize(s.text, opts.size);
+    } catch (_e) {
+      // Fallback: if CJK font can't encode the text (e.g., Helvetica fallback for CJK chars),
+      // try ASCII font — will render tofu but won't crash the PDF
+      try {
+        page.drawText(s.text, {
+          x, y: opts.y, size: opts.size, font: opts.ascii,
+          ...(opts.color ? { color: opts.color } : {}),
+        });
+        x += opts.ascii.widthOfTextAtSize(s.text, opts.size);
+      } catch (_e2) {
+        // Skip character entirely if neither font works
+      }
+    }
   }
 }
 
@@ -144,14 +158,21 @@ export function drawMixedRight(
   let x = opts.x - totalW;
   for (const s of segs) {
     const font = s.useCjk ? opts.cjk : opts.ascii;
-    page.drawText(s.text, {
-      x,
-      y: opts.y,
-      size: opts.size,
-      font,
-      ...(opts.color ? { color: opts.color } : {}),
-    });
-    x += font.widthOfTextAtSize(s.text, opts.size);
+    try {
+      page.drawText(s.text, {
+        x, y: opts.y, size: opts.size, font,
+        ...(opts.color ? { color: opts.color } : {}),
+      });
+      x += font.widthOfTextAtSize(s.text, opts.size);
+    } catch (_e) {
+      try {
+        page.drawText(s.text, {
+          x, y: opts.y, size: opts.size, font: opts.ascii,
+          ...(opts.color ? { color: opts.color } : {}),
+        });
+        x += opts.ascii.widthOfTextAtSize(s.text, opts.size);
+      } catch (_e2) { /* skip */ }
+    }
   }
 }
 

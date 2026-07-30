@@ -45,7 +45,7 @@ _RTF_CERTIFICATE = os.path.join(_RTF_DIR, 'Testing Share Certificate.rtf')
 
 # Register RTF templates (Paul Tang reference samples)
 _RTF_REGISTER_DIR = os.path.join(os.path.dirname(__file__), '..', '..', '秘书系统文件', 'rod rom')
-_RTF_ROM = os.path.join(_RTF_REGISTER_DIR, 'Testing ROM.doc')
+_RTF_ROM = os.path.join(_RTF_REGISTER_DIR, 'Register of members.doc')
 _RTF_ROD = os.path.join(_RTF_REGISTER_DIR, 'Testing ROD.rtf')
 
 # python-docx for register DOCX generation
@@ -78,6 +78,66 @@ def close_db(e):
     db = g.pop('db', None)
     if db:
         db.close()
+
+# ─── Cloud Write-Through Sync ────────────────────────────────────────────
+# Best-effort: every local write pushes to cloud in a background thread.
+# Set SYNC_ENABLED=false to disable.
+
+CLOUD_SYNC_BASE = "https://secretary-system-9cl.pages.dev"
+CLOUD_SYNC_SECRET = "d54891cbb3df4705dec96bef87297447df29ee64bebf7413d1186786f777ecb8"
+CLOUD_SYNC_SUB = "f0e8d7c6-b5a4-4932-8180-abcdef123456"
+CLOUD_SYNC_EMAIL = "admin@localhost"
+SYNC_ENABLED = os.environ.get("SYNC_ENABLED", "true").lower() == "true"
+
+SYNC_TABLES = {
+    "companies", "persons", "presenters", "significant_controllers",
+    "person_company_roles", "shareholders", "officers", "share_transactions",
+    "resolutions", "reminders", "nar1_filings", "change_events",
+    "form_linkages", "company_versions", "form_history",
+}
+
+_sync_token = None
+_sync_token_lock = threading.Lock()
+
+def _get_sync_token():
+    """Generate self-signed JWT for cloud API writes (matches sync_tool.py)."""
+    global _sync_token
+    with _sync_token_lock:
+        if _sync_token is not None:
+            return _sync_token
+        header = {"alg": "HS256", "typ": "JWT"}
+        now = int(time.time())
+        payload = {"sub": CLOUD_SYNC_SUB, "email": CLOUD_SYNC_EMAIL,
+                   "iat": now, "exp": now + 3600}
+        header_b64 = base64.urlsafe_b64encode(
+            json.dumps(header).encode()).rstrip(b"=").decode()
+        payload_b64 = base64.urlsafe_b64encode(
+            json.dumps(payload).encode()).rstrip(b"=").decode()
+        signing_input = f"{header_b64}.{payload_b64}"
+        sig = hmac.new(CLOUD_SYNC_SECRET.encode(),
+                       signing_input.encode(), hashlib.sha256).digest()
+        sig_b64 = base64.urlsafe_b64encode(sig).rstrip(b"=").decode()
+        _sync_token = f"{signing_input}.{sig_b64}"
+        return _sync_token
+
+def _sync_to_cloud(method, path, body=None):
+    """Fire-and-forget sync to cloud. Silent failure — best-effort only."""
+    if not SYNC_ENABLED:
+        return
+    def _do():
+        try:
+            token = _get_sync_token()
+            url = f"{CLOUD_SYNC_BASE}{path}"
+            data = json.dumps(body).encode("utf-8") if body else None
+            req = urllib.request.Request(url, data=data, method=method)
+            req.add_header("Content-Type", "application/json")
+            req.add_header("Authorization", f"Bearer {token}")
+            req.add_header("User-Agent",
+                           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) LocalDev/1.0")
+            urllib.request.urlopen(req, timeout=10)
+        except Exception:
+            pass
+    threading.Thread(target=_do, daemon=True).start()
 
 # ─── CORS ───
 @app.after_request
@@ -1464,13 +1524,114 @@ def generate_shareholders_register_pdf():
         if key:
             tx_by_person.setdefault(key, []).append(t)
 
-    # ── Try RTF template → Word COM Find & Replace → PDF first ──
+    # ── Helper: cover unused SH2 for single shareholder ──
+    def _cover_sh2_if_single(pdf_bytes, n_shareholders):
+        if n_shareholders != 1:
+            return pdf_bytes
+        import fitz as _fitz
+        _d = _fitz.open(stream=pdf_bytes, filetype="pdf")
+        areas = _d[0].search_for("Full Name")
+        if len(areas) >= 2:
+            _sh2_y = areas[1].y0 - 8
+            _d[0].draw_rect(
+                _fitz.Rect(0, _sh2_y, _d[0].rect.width, _d[0].rect.height),
+                color=None, fill=(1, 1, 1), width=0)
+            # Save to temp file then read back (stream write() unreliable)
+            import tempfile as _tf
+            _tmp = _tf.mktemp(suffix='.pdf')
+            _d.save(_tmp, deflate=True)
+            _d.close()
+            with open(_tmp, 'rb') as _f:
+                pdf_bytes = _f.read()
+            try:
+                os.unlink(_tmp)
+            except:
+                pass
+        else:
+            _d.close()
+        return pdf_bytes
+
+    # ── Helper: draw missing bottom border for transaction sub-table ──
+    def _fix_tx_table_borders(pdf_bytes):
+        """Add missing bottom border and column dividers to transaction sub-tables.
+        Uses PyMuPDF to search for the grey-header transaction table area
+        and draws proper borders below the data rows."""
+        import fitz as _f2
+        _d = _f2.open(stream=pdf_bytes, filetype="pdf")
+        for pi in range(_d.page_count):
+            page = _d[pi]
+            # Search for the tx table grey-header text "CertNo" to locate table area
+            areas = page.search_for("CertNo")
+            if not areas:
+                continue
+            # For each tx sub-table found
+            for area in areas:
+                tx_top = area.y0  # top of tx sub-table header
+                # Find the bottom of the data area: search for the data row below header
+                # Look for text below tx_top+10 in the same x-range
+                data_bottom = tx_top + 38  # default: 3 rows × ~13pt
+                # Find all text blocks below the header to determine actual bottom
+                blocks = page.get_text("dict")["blocks"]
+                for b in blocks:
+                    if "lines" not in b:
+                        continue
+                    by0 = b["bbox"][1]
+                    if by0 > tx_top + 10 and by0 < tx_top + 80:
+                        # This is a data row — update bottom
+                        data_bottom = max(data_bottom, b["bbox"][3] + 6)
+                # Draw bottom border line
+                page.draw_line(
+                    _f2.Point(28, data_bottom),
+                    _f2.Point(567, data_bottom),
+                    color=(0, 0, 0), width=0.5)
+                # Draw column divider lines from header bottom to bottom border
+                # Find header column positions from grey-header text
+                hdr_text = page.get_textbox(area)
+                # Get all text spans in the header row for column positions
+                hdr_blocks = page.get_text("dict", clip=_f2.Rect(28, tx_top - 2, 567, tx_top + 20))["blocks"]
+                col_xs = set()
+                for b2 in hdr_blocks:
+                    if "lines" not in b2:
+                        continue
+                    for line in b2["lines"]:
+                        for span in line["spans"]:
+                            # Record left edge of each text span as column start
+                            col_xs.add(round(span["bbox"][0]))
+                # Add right edge too
+                col_xs.add(567)
+                # Draw vertical lines at column boundaries
+                prev_x = 28
+                for cx in sorted(col_xs):
+                    if cx > prev_x + 15:  # min column width
+                        page.draw_line(
+                            _f2.Point(prev_x, tx_top),
+                            _f2.Point(prev_x, data_bottom),
+                            color=(0.5, 0.5, 0.5), width=0.2)
+                        prev_x = cx
+                    elif cx > prev_x:
+                        prev_x = cx
+        # Save to temp file then read back
+        import tempfile as _tf
+        _tmp = _tf.mktemp(suffix=".pdf")
+        _d.save(_tmp, deflate=True)
+        _d.close()
+        with open(_tmp, "rb") as _f:
+            pdf_bytes = _f.read()
+        try:
+            os.unlink(_tmp)
+        except:
+            pass
+        return pdf_bytes
+
+    # ── Try RTF/DOC template first (Paul Tang "new version", handles any number) ──
     if _HAS_WORD_COM:
         pdf_bytes = _rtf_rom_to_pdf(db, company_id)
         if pdf_bytes:
+            pdf_bytes = _cover_sh2_if_single(pdf_bytes, len(roles))
+            pdf_bytes = _fix_tx_table_borders(pdf_bytes)
             return jsonify({'pdf': base64.b64encode(pdf_bytes).decode('ascii')})
 
-    # ── Try DOCX → Word COM → PDF ──
+    # ── Fallback: DOCX → Word COM → PDF ──
     if _HAS_WORD_COM and _HAS_DOCX:
         docx_path = _build_rom_register_docx(db, company_id)
         if docx_path:
@@ -1480,6 +1641,8 @@ def generate_shareholders_register_pdf():
             except:
                 pass
             if pdf_bytes:
+                pdf_bytes = _cover_sh2_if_single(pdf_bytes, len(roles))
+                pdf_bytes = _fix_tx_table_borders(pdf_bytes)
                 return jsonify({'pdf': base64.b64encode(pdf_bytes).decode('ascii')})
 
     # ── Fallback: fpdf2 ──
@@ -1812,6 +1975,7 @@ def generate_shareholders_register_pdf():
     line_v(PW - M, table_top_y, table_bottom_y, w=0.5)
 
     pdf_bytes = bytes(pdf.output())
+    pdf_bytes = _fix_tx_table_borders(pdf_bytes)
     import base64 as b64
     return jsonify({'pdf': b64.b64encode(pdf_bytes).decode('ascii')})
 
@@ -3669,6 +3833,13 @@ def company_version_snapshot(company_id):
     changed_by = (request.json or {}).get('changed_by', '') if request.is_json else ''
     v = record_company_version(db, company_id, changed_by)
     db.commit()
+    # ── Write-through: sync to cloud ──
+    if v is not None:
+        row = db.execute(
+            "SELECT * FROM company_versions WHERE company_id = ? AND version_no = ?",
+            (company_id, v)).fetchone()
+        if row:
+            _sync_to_cloud("POST", "/api/company_versions", dict(row))
     return jsonify({'success': True, 'version_no': v, 'created': v is not None})
 
 
@@ -3694,6 +3865,11 @@ def table_create(table_name):
         db.execute(f"INSERT INTO {table_name} ({', '.join(keys)}) VALUES ({placeholders})", vals)
         ids.append(data['id'])
     db.commit()
+    # ── Write-through: sync to cloud ──
+    if table_name in SYNC_TABLES:
+        for data in rows:
+            if isinstance(data, dict):
+                _sync_to_cloud("POST", f"/api/{table_name}", data)
     if isinstance(body, list):
         return jsonify({'success': True, 'ids': ids, 'count': len(ids)}), 201
     return jsonify({'success': True, 'id': ids[0] if ids else None}), 201
@@ -3714,6 +3890,9 @@ def table_update(table_name, item_id):
         except Exception as e:
             print(f"[VERSION] snapshot failed: {e}")
     db.commit()
+    # ── Write-through: sync to cloud ──
+    if table_name in SYNC_TABLES:
+        _sync_to_cloud("PUT", f"/api/{table_name}/{item_id}", data)
     return jsonify({'success': True})
 
 @app.route('/api/<table_name>/<item_id>', methods=['DELETE'])
@@ -3751,6 +3930,9 @@ def table_delete(table_name, item_id):
         db.execute(f"DELETE FROM {table_name} WHERE id = ?", (item_id,))
 
     db.commit()
+    # ── Write-through: sync to cloud ──
+    if table_name in SYNC_TABLES:
+        _sync_to_cloud("DELETE", f"/api/{table_name}/{item_id}")
     return jsonify({'success': True})
 
 @app.route('/api/<table_name>', methods=['DELETE'])
@@ -4150,12 +4332,15 @@ def _select_dropdown(doc, fmap, name, value):
 def _calculate_nar1_dates(incorporation_date_str):
     """Calculate NAR1 period and due dates from incorporation date.
 
+    Due date = incorporation anniversary each year (recurring annually).
+    Only returns the next upcoming filing deadline.
+
     Returns dict with:
       - period_start: DD/MM/YYYY (incorporation anniversary this year)
-      - period_end: DD/MM/YYYY (anniversary next year)
-      - due_date: DD/MM/YYYY (period_end + 42 days grace period)
+      - period_end: DD/MM/YYYY (next anniversary = due date)
+      - due_date: DD/MM/YYYY (same as period_end, the next filing deadline)
       - days_remaining: int (days until due_date, negative if overdue)
-      - status: 'ok' | 'grace' | 'late' | 'due_soon'
+      - status: 'ok' | 'grace' | 'due_soon' | 'late'
     """
     from datetime import datetime, timedelta
     today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
@@ -4180,17 +4365,17 @@ def _calculate_nar1_dates(incorporation_date_str):
         period_start = this_year_anniv
         period_end = this_year_anniv.replace(year=today.year + 1)
 
-    # Due date = period_end + 42 days (statutory grace period)
-    due_date = period_end + timedelta(days=42)
+    # Due date = period_end (incorporation anniversary)
+    due_date = period_end
 
     days_remaining = (due_date - today).days
 
     # Determine status
     if days_remaining < 0:
         status = 'late'
-    elif days_remaining <= 7:
+    elif days_remaining <= 30:
         status = 'due_soon'
-    elif days_remaining <= 42:
+    elif days_remaining <= 90:
         status = 'grace'
     else:
         status = 'ok'
@@ -8293,8 +8478,11 @@ def _rtf_rom_to_pdf(db, company_id):
       SH2:        Rows 15-24 (same layout as SH1, offset +11 rows)
       Tx sub-table: Rows 9-13 (SH1), Rows 20-24 (SH2)
 
+    For >2 shareholders, the empty SH2 block (rows 15-24) is copied and
+    appended to the table for each additional shareholder.
+    For 1 shareholder, the unused SH2 block is deleted.
+
     Returns bytes (PDF content) or None on failure.
-    Falls back to DOCX approach if >2 shareholders.
     """
     if not _HAS_WORD_COM:
         return None
@@ -8372,10 +8560,6 @@ def _rtf_rom_to_pdf(db, company_id):
             'txs': person_txs,
         })
 
-    # If >2 shareholders, fall back to DOCX approach
-    if len(shareholders) > 2:
-        return None
-
     # ── Copy .doc to temp file (avoid Chinese path issues with Word COM) ──
     import shutil as _shutil
     tmp_doc = tempfile.mktemp(suffix='.doc')
@@ -8420,14 +8604,35 @@ def _rtf_rom_to_pdf(db, company_id):
             except:
                 pass
 
-            # ── Per-shareholder block fill ──
-            # SH1: label rows 4-5, data rows 6-13  →  base = 4
-            # SH2: label rows 15-16, data rows 17-24 →  base = 15
-            sh_bases = [(4, 9, 13), (15, 20, 24)]  # (label_base, tx_start, tx_end)
+            # ── Duplicate SH2 block for shareholders beyond 2 ──
+            # NOTE: table.Rows(index) fails on merged cells — use Cell() range instead
+            SH2_START = 15   # first row of SH2 block
+            SH2_END = 24     # last row of SH2 block
+            SH_BLOCK_ROWS = SH2_END - SH2_START + 1  # 10 rows per SH block
+            NUM_COLS = 15
+            _sh2_start_pos = table.Cell(SH2_START, 1).Range.Start
+            _sh2_end_pos = table.Cell(SH2_END, NUM_COLS).Range.End
+            _cur_last_row = SH2_END  # track where to paste next block
+            for _ in range(len(shareholders) - 2):
+                # Copy SH2 block using cell-based range
+                doc.Range(_sh2_start_pos, _sh2_end_pos).Copy()
+                # Paste after current last row (cell-based, avoids Rows collection)
+                table.Cell(_cur_last_row, NUM_COLS).Range.Select()
+                word.Selection.Collapse(0)  # wdCollapseEnd
+                word.Selection.Paste()
+                _cur_last_row += SH_BLOCK_ROWS
 
+            # ── Build dynamic sh_bases for all shareholders ──
+            sh_bases = []
+            for i in range(len(shareholders)):
+                if i == 0:
+                    base = 4
+                else:
+                    base = 15 + (i - 1) * SH_BLOCK_ROWS
+                sh_bases.append((base, base + 5, base + 9))
+
+            # ── Fill all shareholders ──
             for i, sh in enumerate(shareholders):
-                if i >= 2:
-                    break
                 base, tx_row_start, tx_row_end = sh_bases[i]
 
                 # Basic info (label row base)
@@ -8581,6 +8786,36 @@ def _build_rom_register_docx(db, company_id):
     HEADER_SIZE = Pt(12)
     TITLE_SIZE = Pt(13)
 
+    # ── Date formatting helper ──
+    def _fmt_date(val):
+        """Normalize a date value to DD/MM/YYYY string."""
+        if not val or val == '-':
+            return '-'
+        val_str = str(val).strip()
+        # Already formatted DD/MM/YYYY
+        if re.match(r'^\d{1,2}/\d{1,2}/\d{4}$', val_str):
+            return val_str
+        # ISO format YYYY-MM-DD
+        if re.match(r'^\d{4}-\d{2}-\d{2}$', val_str):
+            try:
+                dt = datetime.strptime(val_str, '%Y-%m-%d')
+                return dt.strftime('%d/%m/%Y')
+            except:
+                pass
+        # Raw number DDMMYYYY (e.g. 24062026)
+        if re.match(r'^\d{8}$', val_str):
+            try:
+                dt = datetime.strptime(val_str, '%d%m%Y')
+                return dt.strftime('%d/%m/%Y')
+            except:
+                pass
+            try:
+                dt = datetime.strptime(val_str, '%Y%m%d')
+                return dt.strftime('%d/%m/%Y')
+            except:
+                pass
+        return val_str
+
     # ── Helpers ──
     def _set_run(run, name='Arial', size=BODY_SIZE, bold=False, color=None):
         """Set font on a run with proper East-Asian fallback."""
@@ -8623,7 +8858,7 @@ def _build_rom_register_docx(db, company_id):
         shading.set(qn('w:val'), 'clear')
         tcPr.insert(0, shading)
 
-    def _add_horizontal_line(doc, width_pt=1.5):
+    def _add_horizontal_line(doc, width_pt=1.5, color='000000'):
         """Add a thin horizontal line paragraph (bottom border on empty para)."""
         para = doc.add_paragraph()
         para.paragraph_format.space_before = Pt(1)
@@ -8640,7 +8875,7 @@ def _build_rom_register_docx(db, company_id):
         bottom.set(qn('w:val'), 'single')
         bottom.set(qn('w:sz'), str(int(width_pt * 8)))  # eighths of a point
         bottom.set(qn('w:space'), '1')
-        bottom.set(qn('w:color'), '000000')
+        bottom.set(qn('w:color'), color)
         return para
 
     try:
@@ -8798,8 +9033,8 @@ def _build_rom_register_docx(db, company_id):
                     tcBorders.append(b)
                 tcPr.append(tcBorders)
 
-            # Separator (thick + thin)
-            _add_horizontal_line(doc, width_pt=1.0)
+            # Separator (blue, matching Paul Tang Register of members template)
+            _add_horizontal_line(doc, width_pt=1.0, color=BLUE)
             _add_para(doc, '', size=Pt(2), space_after=0)
 
             # --- Security row ---
@@ -8820,7 +9055,7 @@ def _build_rom_register_docx(db, company_id):
             sdv = sec_table.rows[0].cells[3]
             sdv.width = Cm(2)
             sdv.text = ''
-            _add_run(sdv.paragraphs[0], str(date_app), size=LABEL_SIZE, color=BLUE)
+            _add_run(sdv.paragraphs[0], _fmt_date(date_app), size=LABEL_SIZE, color=BLUE)
             # Date Ceased
             row2 = sec_table.add_row()
             sc = row2.cells[2]
@@ -8829,7 +9064,7 @@ def _build_rom_register_docx(db, company_id):
             scv = row2.cells[3]
             scv.text = ''
             if date_cea and date_cea != '-':
-                _add_run(scv.paragraphs[0], str(date_cea), size=LABEL_SIZE, color=BLUE)
+                _add_run(scv.paragraphs[0], _fmt_date(date_cea), size=LABEL_SIZE, color=BLUE)
             for row in sec_table.rows:
                 for cell in row.cells:
                     tcPr = cell._element.get_or_add_tcPr()
@@ -8895,7 +9130,7 @@ def _build_rom_register_docx(db, company_id):
             # ── Row 1: Initial subscription/allotment ──
             initial_balance = int(shares_held) if shares_held else 0
             initial_data = [
-                date_app,
+                _fmt_date(date_app),
                 'Subscription' if initial_balance > 0 else '-',
                 str(initial_balance) if initial_balance > 0 else '-',
                 f"{currency}${issue_price}" if initial_balance > 0 else '-',
@@ -8923,18 +9158,18 @@ def _build_rom_register_docx(db, company_id):
                 if is_in:
                     balance += tx_shares
                     tx_type = 'Transfer In'
-                    counterparty = rget(tx, 'from_name') or ''
+                    counterparty = f"From: {rget(tx, 'from_name') or ''}"
                 elif is_out:
                     balance -= tx_shares
                     tx_type = 'Transfer Out'
-                    counterparty = rget(tx, 'to_name') or ''
+                    counterparty = f"To: {rget(tx, 'to_name') or ''}"
                 else:
                     balance += tx_shares
                     tx_type = 'Allotment'
                     counterparty = ''
 
                 row_data = [
-                    tx_date,
+                    _fmt_date(tx_date),
                     tx_type,
                     str(tx_shares),
                     f"{tx_currency}${tx_price}",
@@ -9785,7 +10020,18 @@ def form_history_save():
         (u['id'], u.get('email', ''), form_type, next_idx, label, json.dumps(form_data, ensure_ascii=False))
     )
     db.commit()
-    return jsonify({'id': cursor.lastrowid, 'label': label, 'submission_index': next_idx}), 201
+    new_id = cursor.lastrowid
+    # ── Write-through: sync to cloud ──
+    _sync_to_cloud("POST", "/api/form_history", {
+        "id": new_id,
+        "user_id": u['id'],
+        "user_email": u.get('email', ''),
+        "form_type": form_type,
+        "submission_index": next_idx,
+        "label": label,
+        "form_data": json.dumps(form_data, ensure_ascii=False),
+    })
+    return jsonify({'id': new_id, 'label': label, 'submission_index': next_idx}), 201
 
 
 @app.route('/api/form-history/<entry_id>', methods=['DELETE'])
@@ -9818,6 +10064,8 @@ def form_history_delete(entry_id):
         new_label = f'{date_part}_{form_type}_{r["submission_index"]}'
         db.execute('UPDATE form_history SET label = ? WHERE id = ?', (new_label, r['id']))
     db.commit()
+    # ── Write-through: sync to cloud ──
+    _sync_to_cloud("DELETE", f"/api/form_history/{entry_id}")
     return jsonify({'ok': True})
 
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -19,10 +19,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { FileText, AlertTriangle, CheckCircle2, XCircle, Upload, X, Image as ImageIcon, User, MapPin, Paperclip } from 'lucide-react';
+import { FileText, AlertTriangle, CheckCircle2, XCircle, Upload, X, Image as ImageIcon, User, MapPin, Paperclip, Search } from 'lucide-react';
 import { Person } from '@/types';
 import { toast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
+import { SearchableSelect } from '@/components/ui/searchable-multiselect';
+import { useOfficers } from '@/hooks/useOfficers';
+import { useCompanies } from '@/hooks/useCompanies';
 
 interface FileUploadSlotProps {
   label: string;
@@ -299,6 +302,82 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave, onGenerateND2
 
   const addressChanged = person && formData.address !== originalAddress && formData.address.trim() !== '';
   const isOfficer = formData.role === 'director' || formData.role === 'secretary' || formData.role === 'authorized_representative';
+
+  // ── 複製地址數據源 ──
+  const { officers = [] } = useOfficers();
+  const { data: companies = [] } = useCompanies();
+  const [addressSourceId, setAddressSourceId] = useState<string>('');
+  const [svcAddressSourceId, setSvcAddressSourceId] = useState<string>('');
+
+  // 合併公司+人員數據源作為可複製地址
+  const addressSourceOptions = useMemo(() => {
+    type AddressSource = { id: string; label: string; sub: string; meta: string; type: 'company' | 'person'; addrFlat: string; addrBuilding: string; addrStreet: string; addrDistrict: string; addrRegion: string };
+    const sources: AddressSource[] = [];
+    // 公司註冊地址
+    for (const c of companies) {
+      if (!c.regFlat && !c.regBuilding && !c.regStreet && !c.regDistrict && !c.regRegion) continue;
+      sources.push({
+        id: `co-${c.id}`,
+        label: `🏢 ${c.name}`,
+        sub: [c.regFlat, c.regBuilding, c.regStreet, c.regDistrict, c.regRegion].filter(Boolean).join(', '),
+        meta: '公司',
+        type: 'company',
+        addrFlat: c.regFlat || '',
+        addrBuilding: c.regBuilding || '',
+        addrStreet: c.regStreet || '',
+        addrDistrict: c.regDistrict || '',
+        addrRegion: c.regRegion || '',
+      });
+    }
+    // 人員通訊地址
+    for (const p of officers) {
+      if (!p.addrFlat && !p.addrBuilding && !p.addrStreet && !p.addrDistrict && !p.addrRegion) continue;
+      // 排除自己（編輯時）
+      if (person && p.id === person.id) continue;
+      sources.push({
+        id: `pe-${p.id}`,
+        label: `👤 ${p.nameEnglish || p.nameChinese}`,
+        sub: [p.addrFlat, p.addrBuilding, p.addrStreet, p.addrDistrict, p.addrRegion].filter(Boolean).join(', '),
+        meta: '人員',
+        type: 'person',
+        addrFlat: p.addrFlat || '',
+        addrBuilding: p.addrBuilding || '',
+        addrStreet: p.addrStreet || '',
+        addrDistrict: p.addrDistrict || '',
+        addrRegion: p.addrRegion || '',
+      });
+    }
+    return sources;
+  }, [companies, officers, person]);
+
+  // 從系統複製地址
+  const fillAddressFromSource = (sourceId: string, target: 'residential' | 'service') => {
+    setAddressSourceId('');
+    setSvcAddressSourceId('');
+    const source = addressSourceOptions.find(s => s.id === sourceId);
+    if (!source) return;
+    if (target === 'residential') {
+      setFormData(prev => ({
+        ...prev,
+        addrFlat: source.addrFlat,
+        addrBuilding: source.addrBuilding,
+        addrStreet: source.addrStreet,
+        addrDistrict: source.addrDistrict,
+        addrRegion: source.addrRegion,
+        address: [source.addrFlat, source.addrBuilding, source.addrStreet, source.addrDistrict, source.addrRegion].filter(Boolean).join(', '),
+      }));
+    } else {
+      setFormData(prev => ({
+        ...prev,
+        svcAddrFlat: source.addrFlat,
+        svcAddrBuilding: source.addrBuilding,
+        svcAddrStreet: source.addrStreet,
+        svcAddrDistrict: source.addrDistrict,
+        svcAddrRegion: source.addrRegion,
+        serviceAddress: [source.addrFlat, source.addrBuilding, source.addrStreet, source.addrDistrict, source.addrRegion].filter(Boolean).join(', '),
+      }));
+    }
+  };
 
   // 由分拆欄位組成完整地址（NP-05）
   const composeAddr = (flat: string, building: string, street: string, district: string, region: string) =>
@@ -584,23 +663,43 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave, onGenerateND2
                   <h4 className="font-semibold text-sm flex items-center gap-2">
                     <MapPin className="h-4 w-4 text-primary" /> 通訊地址（住址） <span className="text-destructive">*</span>
                   </h4>
+                  <SearchableSelect
+                    options={addressSourceOptions}
+                    selected={addressSourceId}
+                    onSelect={id => fillAddressFromSource(id, 'residential')}
+                    placeholder="從系統複製地址..."
+                    searchPlaceholder="搜尋公司或人員..."
+                    emptyText="無匹配地址"
+                    className="mb-1"
+                  />
                   <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1"><Label className="text-xs">室／樓／座</Label><Input value={formData.addrFlat} onChange={(e) => setAddrPart('addrFlat', e.target.value)} placeholder="例如 3樓A室" /></div>
-                    <div className="space-y-1"><Label className="text-xs">大廈</Label><Input value={formData.addrBuilding} onChange={(e) => setAddrPart('addrBuilding', e.target.value)} placeholder="大廈名稱" /></div>
-                    <div className="col-span-2 space-y-1"><Label className="text-xs">街道</Label><Input value={formData.addrStreet} onChange={(e) => setAddrPart('addrStreet', e.target.value)} placeholder="街道及門牌號" /></div>
-                    <div className="space-y-1"><Label className="text-xs">區</Label><Input value={formData.addrDistrict} onChange={(e) => setAddrPart('addrDistrict', e.target.value)} placeholder="例如 中環" /></div>
+                    <div className="space-y-1"><Label className="text-xs" style={{ lineHeight: 1.3 }}>Flat／Floor／Block etc. 室／樓／座等</Label><Input value={formData.addrFlat} onChange={(e) => setAddrPart('addrFlat', e.target.value)} placeholder="例如 Flat A, 12/F" /></div>
+                    <div className="space-y-1"><Label className="text-xs" style={{ lineHeight: 1.3 }}>Building 大廈</Label><Input value={formData.addrBuilding} onChange={(e) => setAddrPart('addrBuilding', e.target.value)} placeholder="大廈名稱" /></div>
+                    <div className="col-span-2 space-y-1"><Label className="text-xs" style={{ lineHeight: 1.3 }}>Street／Estate／Lot／Village etc. 街道／屋苑／地段／村等</Label><Input value={formData.addrStreet} onChange={(e) => setAddrPart('addrStreet', e.target.value)} placeholder="街道及門牌號" /></div>
+                    <div className="space-y-1"><Label className="text-xs" style={{ lineHeight: 1.3 }}>District／City／Province／State／Postal Code etc. 區／市／省／州／郵遞區號等</Label><Input value={formData.addrDistrict} onChange={(e) => setAddrPart('addrDistrict', e.target.value)} placeholder="例如 Central／中環" /></div>
                     <div className="space-y-1">
-                      <Label className="text-xs">地區</Label>
-                      <Select value={formData.addrRegion} onValueChange={(v) => setAddrPart('addrRegion', v)}>
-                        <SelectTrigger><SelectValue placeholder="選擇地區" /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="香港 Hong Kong">香港 Hong Kong</SelectItem>
-                          <SelectItem value="九龍 Kowloon">九龍 Kowloon</SelectItem>
-                          <SelectItem value="新界 New Territories">新界 New Territories</SelectItem>
-                          <SelectItem value="中國內地 Mainland China">中國內地 Mainland China</SelectItem>
-                          <SelectItem value="海外 Overseas">海外 Overseas</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <Label className="text-xs" style={{ lineHeight: 1.3 }}>Country／Region 國家／地區</Label>
+                      <Input
+                        value={formData.addrRegion}
+                        onChange={(e) => setAddrPart('addrRegion', e.target.value)}
+                        placeholder="例如 Hong Kong／香港、BVI、China／中國"
+                        list="region-suggestions"
+                      />
+                      <datalist id="region-suggestions">
+                        <option value="Hong Kong 香港" />
+                        <option value="Kowloon 九龍" />
+                        <option value="New Territories 新界" />
+                        <option value="Mainland China 中國內地" />
+                        <option value="Macau 澳門" />
+                        <option value="Taiwan 台灣" />
+                        <option value="BVI British Virgin Islands" />
+                        <option value="Cayman Islands 開曼群島" />
+                        <option value="Bermuda 百慕達" />
+                        <option value="Singapore 新加坡" />
+                        <option value="United Kingdom 英國" />
+                        <option value="United States 美國" />
+                        <option value="Overseas 海外" />
+                      </datalist>
                     </div>
                     <div className="col-span-2 space-y-1">
                       <Label className="text-xs">完整住址（可直接編輯）</Label>
@@ -620,23 +719,43 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave, onGenerateND2
                   <h4 className="font-semibold text-sm flex items-center gap-2">
                     <MapPin className="h-4 w-4 text-primary" /> 送達地址（服務地址）
                   </h4>
+                  <SearchableSelect
+                    options={addressSourceOptions}
+                    selected={svcAddressSourceId}
+                    onSelect={id => fillAddressFromSource(id, 'service')}
+                    placeholder="從系統複製地址..."
+                    searchPlaceholder="搜尋公司或人員..."
+                    emptyText="無匹配地址"
+                    className="mb-1"
+                  />
                   <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1"><Label className="text-xs">室／樓／座</Label><Input value={formData.svcAddrFlat} onChange={(e) => setSvcAddrPart('svcAddrFlat', e.target.value)} placeholder="例如 3樓A室" /></div>
-                    <div className="space-y-1"><Label className="text-xs">大廈</Label><Input value={formData.svcAddrBuilding} onChange={(e) => setSvcAddrPart('svcAddrBuilding', e.target.value)} placeholder="大廈名稱" /></div>
-                    <div className="col-span-2 space-y-1"><Label className="text-xs">街道</Label><Input value={formData.svcAddrStreet} onChange={(e) => setSvcAddrPart('svcAddrStreet', e.target.value)} placeholder="街道及門牌號" /></div>
-                    <div className="space-y-1"><Label className="text-xs">區</Label><Input value={formData.svcAddrDistrict} onChange={(e) => setSvcAddrPart('svcAddrDistrict', e.target.value)} placeholder="例如 中環" /></div>
+                    <div className="space-y-1"><Label className="text-xs" style={{ lineHeight: 1.3 }}>Flat／Floor／Block etc. 室／樓／座等</Label><Input value={formData.svcAddrFlat} onChange={(e) => setSvcAddrPart('svcAddrFlat', e.target.value)} placeholder="例如 Flat A, 12/F" /></div>
+                    <div className="space-y-1"><Label className="text-xs" style={{ lineHeight: 1.3 }}>Building 大廈</Label><Input value={formData.svcAddrBuilding} onChange={(e) => setSvcAddrPart('svcAddrBuilding', e.target.value)} placeholder="大廈名稱" /></div>
+                    <div className="col-span-2 space-y-1"><Label className="text-xs" style={{ lineHeight: 1.3 }}>Street／Estate／Lot／Village etc. 街道／屋苑／地段／村等</Label><Input value={formData.svcAddrStreet} onChange={(e) => setSvcAddrPart('svcAddrStreet', e.target.value)} placeholder="街道及門牌號" /></div>
+                    <div className="space-y-1"><Label className="text-xs" style={{ lineHeight: 1.3 }}>District／City／Province／State／Postal Code etc. 區／市／省／州／郵遞區號等</Label><Input value={formData.svcAddrDistrict} onChange={(e) => setSvcAddrPart('svcAddrDistrict', e.target.value)} placeholder="例如 Central／中環" /></div>
                     <div className="space-y-1">
-                      <Label className="text-xs">地區</Label>
-                      <Select value={formData.svcAddrRegion} onValueChange={(v) => setSvcAddrPart('svcAddrRegion', v)}>
-                        <SelectTrigger><SelectValue placeholder="選擇地區" /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="香港 Hong Kong">香港 Hong Kong</SelectItem>
-                          <SelectItem value="九龍 Kowloon">九龍 Kowloon</SelectItem>
-                          <SelectItem value="新界 New Territories">新界 New Territories</SelectItem>
-                          <SelectItem value="中國內地 Mainland China">中國內地 Mainland China</SelectItem>
-                          <SelectItem value="海外 Overseas">海外 Overseas</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <Label className="text-xs" style={{ lineHeight: 1.3 }}>Country／Region 國家／地區</Label>
+                      <Input
+                        value={formData.svcAddrRegion}
+                        onChange={(e) => setSvcAddrPart('svcAddrRegion', e.target.value)}
+                        placeholder="例如 Hong Kong／香港、BVI、China／中國"
+                        list="region-suggestions-svc"
+                      />
+                      <datalist id="region-suggestions-svc">
+                        <option value="Hong Kong 香港" />
+                        <option value="Kowloon 九龍" />
+                        <option value="New Territories 新界" />
+                        <option value="Mainland China 中國內地" />
+                        <option value="Macau 澳門" />
+                        <option value="Taiwan 台灣" />
+                        <option value="BVI British Virgin Islands" />
+                        <option value="Cayman Islands 開曼群島" />
+                        <option value="Bermuda 百慕達" />
+                        <option value="Singapore 新加坡" />
+                        <option value="United Kingdom 英國" />
+                        <option value="United States 美國" />
+                        <option value="Overseas 海外" />
+                      </datalist>
                     </div>
                     <div className="col-span-2 space-y-1">
                       <div className="flex items-center justify-between">

@@ -208,9 +208,7 @@ export async function onRequest(context: { request: Request; env: Env }) {
     // ═══ P.2: Signer ═══
     const signerName = rget(data, 'signerName') || rget(data, 'presentorName') || rget(data, 'presenterName') || DEFAULT_PRESENTER.name;
     setF('fill_2_P.2', signerName);
-    const sd = rget(data, 'signDateDay');
-    const sm = rget(data, 'signDateMonth');
-    const sy = rget(data, 'signDateYear');
+    // Use same sign date as P.1 (sd/sm/sy declared above)
     if (sd && sm && sy) {
       setF('fill_3_P.2', `${sd}/${sm}/${sy}`);
     }

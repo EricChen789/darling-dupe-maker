@@ -405,7 +405,7 @@ addRoute("DELETE", "/api/storage/:bucket/:file*", async (_req, env, user, params
 
 // ─── Table CRUD routes ───
 
-const TABLES = ["companies", "officers", "shareholders", "persons", "person_company_roles", "presenters", "significant_controllers", "company_logs", "reminders", "resolutions", "secretary_templates", "share_transactions", "user_roles", "email_templates", "email_logs", "invoices", "whatsapp_logs", "whatsapp_queue", "company_versions", "change_events", "nar1_filings", "form_linkages"];
+const TABLES = ["companies", "officers", "shareholders", "persons", "person_company_roles", "presenters", "significant_controllers", "company_logs", "reminders", "resolutions", "secretary_templates", "share_transactions", "user_roles", "email_templates", "email_logs", "invoices", "whatsapp_logs", "whatsapp_queue", "company_versions", "change_events", "nar1_filings", "form_linkages", "form_history"];
 
 for (const table of TABLES) {
   addRoute("GET", `/api/${table}`, async (req, env, user) => {

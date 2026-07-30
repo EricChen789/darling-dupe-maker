@@ -1,116 +1,24 @@
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
-import fontkit from "@pdf-lib/fontkit";
 import { verifyAuthRequest, type Env as AuthEnv } from './_auth';
+import {
+  corsHeaders, jsonResp, uint8ToBase64,
+  drawMixed, drawMixedRight, widthOfText, segmentText, wrapText,
+  fetchAndEmbedFont, type EmbeddedFonts,
+} from './_pdf-utils';
 
 type Env = AuthEnv & {
   DB: D1Database;
+  PDF_TEMPLATES?: R2Bucket;
+  R2?: R2Bucket;
 };
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
-
-const CHINESE_FONT_URL = "https://cdn.jsdelivr.net/fontsource/fonts/noto-sans-tc@latest/chinese-traditional-400-normal.woff2";
-
-function uint8ToBase64(bytes: Uint8Array): string {
-  const CHUNK = 0x8000; // 32KB chunks — avoids O(n²) string building
-  let binary = "";
-  for (let i = 0; i < bytes.length; i += CHUNK) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
-  }
-  return btoa(binary);
-}
 
 // Landscape A4 — matching RTF sample
 const PAGE_W = 842;
 const PAGE_H = 595;
 const MARGIN = 30;
-const CONTENT_W = PAGE_W - MARGIN * 2; // ~782pt
 
 // RTF colour constants
-const BLUE = rgb(0, 0, 1);
-const GREY_HDR = rgb(227 / 255, 227 / 255, 227 / 255);
-const LINE_DARK = rgb(0.4, 0.4, 0.4);
 const LINE_LIGHT = rgb(0.82, 0.82, 0.82);
-
-// ── Mixed-font helpers (ASCII → Helvetica, everything else → CJK font) ──
-function isAsciiChar(ch: string): boolean { return ch.charCodeAt(0) <= 0x7F; }
-
-function segmentText(text: string): { text: string; useCjk: boolean }[] {
-  const segments: { text: string; useCjk: boolean }[] = [];
-  if (!text) return segments;
-  let cur = "", curAscii: boolean | null = null;
-  for (const ch of text) {
-    const ascii = isAsciiChar(ch);
-    if (curAscii === null) { curAscii = ascii; }
-    else if (ascii !== curAscii) {
-      segments.push({ text: cur, useCjk: !curAscii });
-      cur = ""; curAscii = ascii;
-    }
-    cur += ch;
-  }
-  if (cur) segments.push({ text: cur, useCjk: curAscii === null ? false : !curAscii });
-  return segments;
-}
-
-function drawMixed(page: any, text: string, opts: { x: number; y: number; size: number; cjk: any; ascii: any; color?: any }) {
-  const clean = text.replace(/[\n\r\t]/g, ' ');
-  const segs = segmentText(clean);
-  let x = opts.x;
-  for (const s of segs) {
-    const font = s.useCjk ? opts.cjk : opts.ascii;
-    page.drawText(s.text, { x, y: opts.y, size: opts.size, font, ...(opts.color ? { color: opts.color } : {}) });
-    x += font.widthOfTextAtSize(s.text, opts.size);
-  }
-}
-
-function drawMixedRight(page: any, text: string, opts: { x: number; y: number; size: number; cjk: any; ascii: any; color?: any }) {
-  const clean = text.replace(/[\n\r\t]/g, ' ');
-  const segs = segmentText(clean);
-  let totalW = 0;
-  for (const s of segs) {
-    totalW += (s.useCjk ? opts.cjk : opts.ascii).widthOfTextAtSize(s.text, opts.size);
-  }
-  let x = opts.x - totalW;
-  for (const s of segs) {
-    const font = s.useCjk ? opts.cjk : opts.ascii;
-    page.drawText(s.text, { x, y: opts.y, size: opts.size, font, ...(opts.color ? { color: opts.color } : {}) });
-    x += font.widthOfTextAtSize(s.text, opts.size);
-  }
-}
-
-function widthOfText(text: string, cjk: any, ascii: any, size: number): number {
-  let w = 0;
-  for (const s of segmentText(text)) w += (s.useCjk ? cjk : ascii).widthOfTextAtSize(s.text, size);
-  return w;
-}
-
-function wrapText(text: string, cjk: any, ascii: any, fontSize: number, maxWidth: number): string[] {
-  const lines: string[] = [];
-  const paragraphs = text.split('\n');
-  for (const para of paragraphs) {
-    if (!para) { lines.push(""); continue; }
-    if (widthOfText(para, cjk, ascii, fontSize) <= maxWidth) {
-      lines.push(para);
-      continue;
-    }
-    let start = 0;
-    while (start < para.length) {
-      let lo = start + 1, hi = para.length;
-      while (lo < hi) {
-        const mid = Math.floor((lo + hi + 1) / 2);
-        if (widthOfText(para.slice(start, mid), cjk, ascii, fontSize) <= maxWidth) lo = mid;
-        else hi = mid - 1;
-      }
-      if (lo === start) lo = start + 1;
-      lines.push(para.slice(start, lo));
-      start = lo;
-    }
-  }
-  if (lines.length === 0) lines.push("");
-  return lines;
-}
 
 // ── Paul Tang page header (black & white) ──
 function drawPageHeader(page: any, f: { cjk: any; ascii: any },
@@ -214,14 +122,12 @@ export async function onRequest(context: { request: Request; env: Env }) {
       });
     }
 
-    const [company, rolesResult, fontResp] = await Promise.all([
+    const [company, rolesResult] = await Promise.all([
       env.DB.prepare("SELECT * FROM companies WHERE id = ?").bind(companyId).first(),
       env.DB.prepare("SELECT * FROM person_company_roles WHERE company_id = ? AND role = 'secretary'").bind(companyId).all(),
-      fetch(CHINESE_FONT_URL, { headers: { Accept: "*/*" } }),
     ]);
 
     if (!company) throw new Error("Company not found");
-    if (!fontResp.ok) throw new Error("Failed to load Chinese font");
 
     const roles = (rolesResult.results || []) as any[];
     const personIds = roles.map((r: any) => r.person_id).filter(Boolean);
@@ -235,11 +141,8 @@ export async function onRequest(context: { request: Request; env: Env }) {
     const personMap = new Map<string, any>();
     personsResult.forEach((p: any) => personMap.set(p.id, p));
 
-    const fontBytes = await fontResp.arrayBuffer();
     const pdf = await PDFDocument.create();
-    pdf.registerFontkit(fontkit);
-    const cjkFont = await pdf.embedFont(fontBytes);
-    const asciiFont = await pdf.embedFont(StandardFonts.Helvetica);
+    const { cjk: cjkFont, ascii: asciiFont } = await fetchAndEmbedFont(pdf, env as any);
     const f = { cjk: cjkFont, ascii: asciiFont };
 
     // ── Register of Secretaries — Landscape, ROD-style layout ──

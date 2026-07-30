@@ -5,6 +5,18 @@
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 
+// ═══ Default Presenter (Twinsail Consultants Limited) ═══
+// Used as fallback when presentorName is not provided in request
+export const DEFAULT_PRESENTER = {
+  name: 'Twinsail Consultants Limited',
+  address: 'Room 1203, 12/F, Wing On Centre, 111 Connaught Road Central, Hong Kong',
+  contact: '電話: +852 2521 3888  傳真: +852 2521 3999  電郵: info@twinsail.com',
+  phone: '+852 2521 3888',
+  fax: '+852 2521 3999',
+  email: 'info@twinsail.com',
+  reference: 'TS-2026-001',
+};
+
 // ═══ CORS ═══
 export const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -103,6 +115,7 @@ export function drawMixed(
     cjk: any;
     ascii: any;
     color?: any;
+    bold?: boolean;
   }
 ): void {
   const clean = (text || "").replace(/[\n\r\t]/g, " ");
@@ -110,23 +123,21 @@ export function drawMixed(
   let x = opts.x;
   for (const s of segs) {
     const font = s.useCjk ? opts.cjk : opts.ascii;
+    const drawOpts = { x, y: opts.y, size: opts.size, font, ...(opts.color ? { color: opts.color } : {}) };
     try {
-      page.drawText(s.text, {
-        x,
-        y: opts.y,
-        size: opts.size,
-        font,
-        ...(opts.color ? { color: opts.color } : {}),
-      });
+      page.drawText(s.text, drawOpts);
+      if (opts.bold) {
+        page.drawText(s.text, { ...drawOpts, x: x + 0.5 });
+      }
       x += font.widthOfTextAtSize(s.text, opts.size);
     } catch (_e) {
-      // Fallback: if CJK font can't encode the text (e.g., Helvetica fallback for CJK chars),
-      // try ASCII font — will render tofu but won't crash the PDF
+      // Fallback: if CJK font can't encode the text, try ASCII font
       try {
-        page.drawText(s.text, {
-          x, y: opts.y, size: opts.size, font: opts.ascii,
-          ...(opts.color ? { color: opts.color } : {}),
-        });
+        const fallbackOpts = { x, y: opts.y, size: opts.size, font: opts.ascii, ...(opts.color ? { color: opts.color } : {}) };
+        page.drawText(s.text, fallbackOpts);
+        if (opts.bold) {
+          page.drawText(s.text, { ...fallbackOpts, x: x + 0.5 });
+        }
         x += opts.ascii.widthOfTextAtSize(s.text, opts.size);
       } catch (_e2) {
         // Skip character entirely if neither font works
@@ -146,6 +157,7 @@ export function drawMixedRight(
     cjk: any;
     ascii: any;
     color?: any;
+    bold?: boolean;
   }
 ): void {
   const clean = (text || "").replace(/[\n\r\t]/g, " ");
@@ -158,18 +170,20 @@ export function drawMixedRight(
   let x = opts.x - totalW;
   for (const s of segs) {
     const font = s.useCjk ? opts.cjk : opts.ascii;
+    const drawOpts = { x, y: opts.y, size: opts.size, font, ...(opts.color ? { color: opts.color } : {}) };
     try {
-      page.drawText(s.text, {
-        x, y: opts.y, size: opts.size, font,
-        ...(opts.color ? { color: opts.color } : {}),
-      });
+      page.drawText(s.text, drawOpts);
+      if (opts.bold) {
+        page.drawText(s.text, { ...drawOpts, x: x + 0.5 });
+      }
       x += font.widthOfTextAtSize(s.text, opts.size);
     } catch (_e) {
       try {
-        page.drawText(s.text, {
-          x, y: opts.y, size: opts.size, font: opts.ascii,
-          ...(opts.color ? { color: opts.color } : {}),
-        });
+        const fallbackOpts = { x, y: opts.y, size: opts.size, font: opts.ascii, ...(opts.color ? { color: opts.color } : {}) };
+        page.drawText(s.text, fallbackOpts);
+        if (opts.bold) {
+          page.drawText(s.text, { ...fallbackOpts, x: x + 0.5 });
+        }
         x += opts.ascii.widthOfTextAtSize(s.text, opts.size);
       } catch (_e2) { /* skip */ }
     }

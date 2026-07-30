@@ -4,7 +4,8 @@
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { verifyAuthRequest, type Env as AuthEnv } from './_auth';
 import {
-  uint8ToBase64, fetchAndEmbedFont,
+  uint8ToBase64, fetchAndEmbedFont, rget,
+  segmentText, drawMixed, drawMixedRight, widthOfText,
 } from './_pdf-utils';
 
 type Env = AuthEnv & {
@@ -77,82 +78,7 @@ const TX_COL_X = {
   distinct: 440,
 };
 
-// ── Helpers ──
-
-function uint8ToBase64(bytes: Uint8Array): string {
-  let binary = "";
-  const chunk = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunk) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
-  }
-  return btoa(binary);
-}
-
-function rget(row: any, key: string, dflt: any = null): any {
-  const v = row ? row[key] : undefined;
-  return v !== null && v !== undefined ? v : dflt;
-}
-
-function isAsciiChar(ch: string): boolean { return ch.charCodeAt(0) <= 0x7F; }
-
-function segmentText(text: string): { text: string; useCjk: boolean }[] {
-  const segments: { text: string; useCjk: boolean }[] = [];
-  if (!text) return segments;
-  let cur = "", curAscii: boolean | null = null;
-  for (const ch of text) {
-    const ascii = isAsciiChar(ch);
-    if (curAscii === null) curAscii = ascii;
-    else if (ascii !== curAscii) {
-      segments.push({ text: cur, useCjk: !curAscii });
-      cur = ""; curAscii = ascii;
-    }
-    cur += ch;
-  }
-  if (cur) segments.push({ text: cur, useCjk: curAscii === null ? false : !curAscii });
-  return segments;
-}
-
-function widthOfText(text: string, cjk: any, ascii: any, size: number): number {
-  let w = 0;
-  for (const s of segmentText(text || "")) w += (s.useCjk ? cjk : ascii).widthOfTextAtSize(s.text, size);
-  return w;
-}
-
-function drawMixed(page: any, text: string, opts: {
-  x: number; y: number; size: number; cjk: any; ascii: any;
-  color?: any; bold?: boolean;
-}) {
-  const clean = (text || "").replace(/[\n\r\t]/g, ' ');
-  const segs = segmentText(clean);
-  let x = opts.x;
-  for (const s of segs) {
-    const font = s.useCjk ? opts.cjk : opts.ascii;
-    page.drawText(s.text, { x, y: opts.y, size: opts.size, font, ...(opts.color ? { color: opts.color } : {}) });
-    if (opts.bold) {
-      page.drawText(s.text, { x: x + 0.5, y: opts.y, size: opts.size, font, ...(opts.color ? { color: opts.color } : {}) });
-    }
-    x += font.widthOfTextAtSize(s.text, opts.size);
-  }
-}
-
-function drawMixedRight(page: any, text: string, opts: {
-  x: number; y: number; size: number; cjk: any; ascii: any;
-  color?: any; bold?: boolean;
-}) {
-  const clean = (text || "").replace(/[\n\r\t]/g, ' ');
-  const segs = segmentText(clean);
-  let totalW = 0;
-  for (const s of segs) totalW += (s.useCjk ? opts.cjk : opts.ascii).widthOfTextAtSize(s.text, opts.size);
-  let x = opts.x - totalW;
-  for (const s of segs) {
-    const font = s.useCjk ? opts.cjk : opts.ascii;
-    page.drawText(s.text, { x, y: opts.y, size: opts.size, font, ...(opts.color ? { color: opts.color } : {}) });
-    if (opts.bold) {
-      page.drawText(s.text, { x: x + 0.5, y: opts.y, size: opts.size, font, ...(opts.color ? { color: opts.color } : {}) });
-    }
-    x += font.widthOfTextAtSize(s.text, opts.size);
-  }
-}
+// ── Helpers (shared helpers from _pdf-utils) ──
 
 // Draw white rectangle to cover marker, then overlay real text
 function drawOverlay(page: any, pos: Pos, text: string, fo: { cjk: any; ascii: any }) {
@@ -414,6 +340,27 @@ export async function onRequest(context: { request: Request; env: Env }) {
         drawOverlay(page, POSITIONS.co_name, coName, fo);
         drawOverlay(page, POSITIONS.co_br, br, fo);
         drawOverlay(page, POSITIONS.report_date, reportDate, fo);
+      }
+    }
+
+    // ── Cover unused SH2 on last page if odd number of shareholders ──
+    if (shareholders.length % 2 === 1) {
+      // Cover SH2 name/addr/security markers
+      const sh2CoverW = 500, sh2CoverH = 16;
+      page.drawRectangle({
+        x: 90, y: POSITIONS.sh2_name.y - 14, width: sh2CoverW, height: sh2CoverH, color: WHITE,
+      });
+      page.drawRectangle({
+        x: 90, y: POSITIONS.sh2_addr.y - 14, width: sh2CoverW, height: sh2CoverH, color: WHITE,
+      });
+      page.drawRectangle({
+        x: 90, y: POSITIONS.sh2_security.y - 14, width: sh2CoverW, height: sh2CoverH, color: WHITE,
+      });
+      // Cover SH2 transaction data area
+      for (const dy of SH2_DATA_Y) {
+        page.drawRectangle({
+          x: 25, y: dy - 12, width: 795, height: 15, color: WHITE,
+        });
       }
     }
 

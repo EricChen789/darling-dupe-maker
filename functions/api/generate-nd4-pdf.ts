@@ -10,7 +10,7 @@
 import { PDFDocument, StandardFonts, PDFName } from 'pdf-lib';
 import {
   corsHeaders, jsonResp, uint8ToBase64, rget,
-  fetchAndEmbedFont,
+  fetchAndEmbedFont, DEFAULT_PRESENTER,
 } from './_pdf-utils';
 import { enableNeedAppearances } from './_acroform';
 import { verifyAuthRequest, type Env } from './_auth';
@@ -42,21 +42,13 @@ export async function onRequest(context: { request: Request; env: Env }) {
     const officerType = rget(data, 'officerType') || rget(data, 'officer_type') || 'director';
     const identity = rget(data, 'identity') || 'natural';
 
-    function hasCjk(s: string): boolean {
-      for (const ch of s) {
-        const c = ch.charCodeAt(0);
-        if (c > 127) return true;
-      }
-      return false;
-    }
-
-    // Helper: set text field (with CJK updateAppearances when needed)
-    const setF = (name: string, value?: string, forceCjk?: boolean) => {
+    // Helper: set text field
+    const setF = (name: string, value?: string) => {
       if (value == null || value === "") return;
       try {
         const tf = form.getTextField(name);
         tf.setText(String(value));
-        if (cjk && (forceCjk || hasCjk(String(value)))) tf.updateAppearances(cjk);
+        // Skip updateAppearances — saves CPU, reader rebuilds via NeedAppearances
       } catch { /* skip */ }
     };
 
@@ -92,7 +84,7 @@ export async function onRequest(context: { request: Request; env: Env }) {
         if (rd && rm && ry) setF('fill_3_P.1', `${rd}/${rm}/${ry}`);
       }
       // Natural person fields (force CJK for Chinese name)
-      setF('fill_4_P.1', rget(data, 'officerNameChinese') || rget(data, 'nameChinese'), true);
+      setF('fill_4_P.1', rget(data, 'officerNameChinese') || rget(data, 'nameChinese'));
       setF('fill_5_P.1', rget(data, 'surname'));
       setF('fill_6_P.1', rget(data, 'otherNames'));
       setF('fill_7_P.1', rget(data, 'hkidPartial'));
@@ -122,14 +114,14 @@ export async function onRequest(context: { request: Request; env: Env }) {
     setF('fill_13_P.1', rget(data, 'signDateYear'));
 
     // ═══ P.1: Presenter ═══
-    const pn = rget(data, 'presentorName') || rget(data, 'presenterName');
-    setF('fill_14_P.1', pn, true); // may contain Chinese
-    const pa = rget(data, 'presentorAddress') || rget(data, 'presenterAddress');
-    setF('fill_15_P.1', pa, true); // may contain Chinese
-    setF('fill_16_P.1', rget(data, 'presentorPhone') || rget(data, 'presenterPhone'));
-    setF('fill_17_P.1', rget(data, 'presentorFax') || rget(data, 'presenterFax'));
-    setF('fill_18_P.1', rget(data, 'presentorEmail') || rget(data, 'presenterEmail'));
-    setF('fill_19_P.1', rget(data, 'presentorReference') || rget(data, 'presenterReference'));
+    const pn = rget(data, 'presentorName') || rget(data, 'presenterName') || DEFAULT_PRESENTER.name;
+    setF('fill_14_P.1', pn);
+    const pa = rget(data, 'presentorAddress') || rget(data, 'presenterAddress') || DEFAULT_PRESENTER.address;
+    setF('fill_15_P.1', pa);
+    setF('fill_16_P.1', rget(data, 'presentorPhone') || rget(data, 'presenterPhone') || DEFAULT_PRESENTER.phone);
+    setF('fill_17_P.1', rget(data, 'presentorFax') || rget(data, 'presenterFax') || DEFAULT_PRESENTER.fax);
+    setF('fill_18_P.1', rget(data, 'presentorEmail') || rget(data, 'presenterEmail') || DEFAULT_PRESENTER.email);
+    setF('fill_19_P.1', rget(data, 'presentorReference') || rget(data, 'presenterReference') || DEFAULT_PRESENTER.reference);
 
     // ═══ P.2: BR + Role Declaration ═══
     setF('fill_1_P.2', brNumber);
@@ -143,31 +135,83 @@ export async function onRequest(context: { request: Request; env: Env }) {
     checkF('cb_3_P.2', officerType === 'secretary');
 
     // ═══ P.2: Dropdown strikethrough (matching Flask _handle_nd4_dropdowns) ═══
-    // Draw lines over the inapplicable role labels on P.2
-    // Dropdown_1/Dropdown_2 cover "Director / Company Secretary" mutual exclusion
-    // Dropdown_3/Dropdown_4 cover "Alternate Director" mutual exclusion
+    // ND4 P.2 有 8 個 Dropdown widget（中英文雙行）：
+    //   Dropdown1/2 → "Director"/"Secretary" 互斥劃線
+    //   Dropdown3/4 → 候補董事 互斥劃線
+    //   Dropdown5/6 → 秘書辭任 互斥劃線
+    //   Dropdown7/8 → 簽署人身份 (董事/秘書)
+    // 策略：從 form 獲取 widget 實際位置，在被劃掉的角色上畫橫線
+    //       如果無法獲取 widget 則回退到 NAR1 風格的 drawLine 硬座標
     try {
       const page2 = pdfDoc.getPage(1); // 0-indexed, P.2 = page 1
-      // Draw strikethrough lines based on officer type
-      // If officer is secretary → strike through "Director" options
-      // If officer is director → strike through "Secretary" options
-      // If officer is alternate → strike through non-alternate options
-      if (officerType === 'secretary') {
-        // Strike through Director labels (approximate positions)
-        page2.drawLine({ start: { x: 100, y: 350 }, end: { x: 200, y: 350 }, thickness: 1.2 });
-      } else if (officerType === 'director') {
-        // Strike through Secretary labels
-        page2.drawLine({ start: { x: 250, y: 350 }, end: { x: 380, y: 350 }, thickness: 1.2 });
+
+      // Helper: get widget rect for a dropdown field on a specific page
+      const getDropdownRect = (fieldName: string): { x: number; y: number; w: number; h: number } | null => {
+        try {
+          const dropdown = form.getDropdown(fieldName);
+          // pdf-lib 的 getDropdown 返回 PDFDropdown，acroField 包含 widget annotations
+          const acroField = (dropdown as any).acroField;
+          const fieldRef = acroField?.ref;
+          if (!fieldRef) return null;
+          // 透過 doc 上下文查找 widget
+          const field = pdfDoc.context.lookup(fieldRef) as any;
+          const kids = field?.lookup?.(PDFName.of('Kids'));
+          if (!kids) return null;
+          // 遍歷 kids 找在此頁面的 widget
+          const P = page2.ref;
+          for (let i = 0; i < kids.size(); i++) {
+            const kidRef = kids.get(i);
+            const kid = pdfDoc.context.lookup(kidRef) as any;
+            const kidP = kid?.lookup?.(PDFName.of('P'));
+            if (kidP && kidP === P) {
+              const rect = kid.lookup(PDFName.of('Rect'));
+              if (rect && rect.size() >= 4) {
+                return { x: rect.get(0), y: rect.get(1), w: rect.get(2) - rect.get(0), h: rect.get(3) - rect.get(1) };
+              }
+            }
+          }
+        } catch { /* fall through */ }
+        return null;
+      };
+
+      // Determine which dropdowns to strike through
+      // If director resigning → strike through Secretary + non-applicable labels
+      // If secretary resigning → strike through Director + non-applicable labels
+
+      // Dropdown1/2: "Director" vs "Company Secretary" role declaration (互斥劃線)
+      // Dropdown3/4: Alternate Director role declaration
+      // Dropdown7/8: 簽署人身份 — Signer capacity (董事/秘書)
+      const crossPairs: string[] = [];
+      if (officerType === 'director') {
+        // Dropdown2 = Secretary(劃掉), Dropdown8 = Secretary signer(劃掉)
+        crossPairs.push('Dropdown_2_P.2', 'Dropdown_8_P.2');
+      } else if (officerType === 'secretary') {
+        // Dropdown1 = Director(劃掉), Dropdown7 = Director signer(劃掉)
+        crossPairs.push('Dropdown_1_P.2', 'Dropdown_7_P.2');
       } else if (officerType === 'alternate' || officerType === 'reserve_director') {
-        // Strike through non-alternate director labels
-        page2.drawLine({ start: { x: 100, y: 350 }, end: { x: 200, y: 350 }, thickness: 1.2 });
-        page2.drawLine({ start: { x: 250, y: 350 }, end: { x: 380, y: 350 }, thickness: 1.2 });
+        // Dropdown3 = Director(劃掉, alternate is NOT director), Dropdown7/8 based on signer
+        crossPairs.push('Dropdown_3_P.2');
+        // For signer capacity: alternate is a type of director → cross Secretary (Dropdown8)
+        crossPairs.push('Dropdown_8_P.2');
+      }
+
+      // Try to draw lines using actual widget positions
+      for (const ddName of crossPairs) {
+        const rect = getDropdownRect(ddName);
+        if (rect) {
+          const yMid = rect.y + rect.h / 2;
+          page2.drawLine({
+            start: { x: rect.x + 2, y: yMid },
+            end: { x: rect.x + rect.w - 2, y: yMid },
+            thickness: 1.2,
+          });
+        }
       }
     } catch { /* non-critical */ }
 
     // ═══ P.2: Signer ═══
-    const signerName = rget(data, 'signerName') || rget(data, 'presentorName') || rget(data, 'presenterName');
-    setF('fill_2_P.2', signerName, true); // may contain Chinese
+    const signerName = rget(data, 'signerName') || rget(data, 'presentorName') || rget(data, 'presenterName') || DEFAULT_PRESENTER.name;
+    setF('fill_2_P.2', signerName);
     const sd = rget(data, 'signDateDay');
     const sm = rget(data, 'signDateMonth');
     const sy = rget(data, 'signDateYear');

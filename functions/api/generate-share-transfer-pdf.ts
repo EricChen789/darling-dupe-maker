@@ -1,14 +1,14 @@
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
-import fontkit from "@pdf-lib/fontkit";
 import { verifyAuthRequest, type Env as AuthEnv } from './_auth';
 import {
   corsHeaders, uint8ToBase64,
-  drawMixed, widthOfText,
+  drawMixed, widthOfText, fetchAndEmbedFont,
 } from './_pdf-utils';
 
 type Env = AuthEnv & {
   DB: D1Database;
   PDF_TEMPLATES?: R2Bucket;
+  R2?: R2Bucket;
 };
 
 const PAGE_W = 595;
@@ -92,17 +92,9 @@ export async function onRequest(context: { request: Request; env: Env }) {
       }
     }
 
-    // Load CJK font (Noto Sans TC WOFF2) — direct CDN fetch, reliable for CJK rendering
-    const FONT_CDN = "https://cdn.jsdelivr.net/fontsource/fonts/noto-sans-tc@latest/chinese-traditional-400-normal.woff2";
-    const fontResp = await fetch(FONT_CDN, { headers: { Accept: "*/*" } });
-    if (!fontResp.ok) throw new Error("Failed to load Chinese font");
-    const fontBytes = await fontResp.arrayBuffer();
-
+    // Load CJK font via R2-first shared helper (avoids CDN fetch CPU timeout)
     const pdf = await PDFDocument.create();
-    pdf.registerFontkit(fontkit);
-    const cjkFont = await pdf.embedFont(fontBytes);
-    const asciiFont = await pdf.embedFont(StandardFonts.Helvetica);
-
+    const { cjk: cjkFont, ascii: asciiFont } = await fetchAndEmbedFont(pdf, env as any);
     const fonts = { cjk: cjkFont, ascii: asciiFont, asciiBold: asciiFont };
 
     if (docType === "share_certificate") {

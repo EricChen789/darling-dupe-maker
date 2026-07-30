@@ -5995,21 +5995,15 @@ def _fill_nd4_pdf(data):
     _check(doc, fmap, 'cb_2_P.1', '公眾' in company_type or 'public' in company_type)
     _check(doc, fmap, 'cb_3_P.1', '擔保' in company_type)
 
-    # ── P.1: 身份 toggle（toggle_4=自然人, toggle_5=法人）──
-    _check(doc, fmap, 'toggle_4_P.1', identity == 'natural')
-    _check(doc, fmap, 'toggle_5_P.1', identity == 'corporate')
-
     # ── P.1: 辭任人資料（按身份分區填寫）──
+    # fill_3_P.1 = 辭任生效日期 (Resignation Date) — 所有 officer type 統一用辭任日期
+    resign_day = data.get('resignationDay', '')
+    resign_month = data.get('resignationMonth', '')
+    resign_year = data.get('resignationYear', '')
+    if resign_day and resign_month and resign_year:
+        _set_text(doc, fmap, 'fill_3_P.1', f'{resign_day}/{resign_month}/{resign_year}')
+
     if identity == 'natural':
-        # 辭任生效日期 或 代替 Alternate to（fill_3_P.1 雙用途）
-        if officer_type == 'alternate':
-            _set_cjk('fill_3_P.1', data.get('alternateTo', '') or data.get('officerNameEnglish', ''), align='left')
-        else:
-            resign_day = data.get('resignationDay', '')
-            resign_month = data.get('resignationMonth', '')
-            resign_year = data.get('resignationYear', '')
-            if resign_day and resign_month and resign_year:
-                _set_text(doc, fmap, 'fill_3_P.1', f'{resign_day}/{resign_month}/{resign_year}')
         # 自然人：中文姓名 + 英文姓氏/名字 + HKID + 护照
         _set_cjk('fill_4_P.1', data.get('officerNameChinese', ''), align='center')
         _set_text(doc, fmap, 'fill_5_P.1', data.get('surname', ''))
@@ -6022,17 +6016,17 @@ def _fill_nd4_pdf(data):
         # 法人團體：公司名稱 + 公司編號（fill_9/fill_10 是法人專區）
         _set_cjk('fill_9_P.1', data.get('corporateName', '') or data.get('officerNameEnglish', ''), align='left')
         _set_text(doc, fmap, 'fill_10_P.1', data.get('corporateNumber', '') or data.get('brNumber', ''))
-        # 辭任生效日期（法人也用 fill_3，但填公司名已用 fill_9，日期改用 fill_3）
-        resign_day = data.get('resignationDay', '')
-        resign_month = data.get('resignationMonth', '')
-        resign_year = data.get('resignationYear', '')
-        if resign_day and resign_month and resign_year:
-            _set_text(doc, fmap, 'fill_3_P.1', f'{resign_day}/{resign_month}/{resign_year}')
 
-    # ── P.1: 簽署日期 ──
-    _set_text(doc, fmap, 'fill_11_P.1', data.get('signDateDay', ''))
-    _set_text(doc, fmap, 'fill_12_P.1', data.get('signDateMonth', ''))
-    _set_text(doc, fmap, 'fill_13_P.1', data.get('signDateYear', ''))
+    # ── P.1: 「是否仍然擔任」— 應為「否」(toggle_5_P.1) ──
+    # toggle_4_P.1 = 是/Yes, toggle_5_P.1 = 否/No
+    _check(doc, fmap, 'toggle_5_P.1', True)
+
+    # ── P.1: 簽署日期（默認今天，因為生成後才簽署）──
+    from datetime import date
+    today = date.today()
+    _set_text(doc, fmap, 'fill_11_P.1', data.get('signDateDay', '') or str(today.day).zfill(2))
+    _set_text(doc, fmap, 'fill_12_P.1', data.get('signDateMonth', '') or str(today.month).zfill(2))
+    _set_text(doc, fmap, 'fill_13_P.1', data.get('signDateYear', '') or str(today.year))
 
     # ── P.1: 提交人 ──
     _set_cjk('fill_14_P.1', data.get('presentorName', ''), align='left')

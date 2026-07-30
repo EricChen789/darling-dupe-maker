@@ -138,7 +138,15 @@ function buildFormPayload(
   const ceasedParts = parseDateParts(dateCeasedRaw);
 
   // Default presenter (used across all forms unless overridden)
-  const DEFAULT_PRESENTER = 'Twinsail Consultants Limited';
+  const DEFAULT_PRESENTER = {
+    name: 'Twinsail Consultants Limited',
+    address: 'Room 1203, 12/F, Wing On Centre, 111 Connaught Road Central, Hong Kong',
+    contact: 'Tel: +852 2521 3888  Fax: +852 2521 3999  Email: info@twinsail.com',
+    phone: '+852 2521 3888',
+    fax: '+852 2521 3999',
+    email: 'info@twinsail.com',
+    reference: 'TS-2026-001',
+  };
 
   // ── Address: residential first, fall back to service address ──
   // Structured residential
@@ -221,8 +229,13 @@ function buildFormPayload(
         signDateDay: new Date().getDate().toString().padStart(2, '0'),
         signDateMonth: (new Date().getMonth() + 1).toString().padStart(2, '0'),
         signDateYear: new Date().getFullYear().toString(),
-        // Presenter — default Twinsail Consultants Limited
-        presentorName: DEFAULT_PRESENTER,
+        // Presenter — default Twinsail Consultants Limited (full info)
+        presentorName: DEFAULT_PRESENTER.name,
+        presentorAddress: DEFAULT_PRESENTER.address,
+        presentorPhone: DEFAULT_PRESENTER.phone,
+        presentorFax: DEFAULT_PRESENTER.fax,
+        presentorEmail: DEFAULT_PRESENTER.email,
+        presentorReference: DEFAULT_PRESENTER.reference,
       };
       if (nd4Identity === 'natural') {
         nd4Payload.officerNameChinese = nameChinese;

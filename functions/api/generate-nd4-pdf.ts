@@ -68,50 +68,46 @@ export async function onRequest(context: { request: Request; env: Env }) {
     checkF('cb_2_P.1', companyType.includes('公眾') || companyType.includes('public'));
     checkF('cb_3_P.1', companyType.includes('擔保') || companyType.includes('guarantee'));
 
-    // Identity toggles (toggle_4=natural, toggle_5=corporate)
-    checkF('toggle_4_P.1', identity === 'natural');
-    checkF('toggle_5_P.1', identity === 'corporate');
+    // ═══ P.1: Identity toggle (fill fields based on identity, not checkboxes) ═══
+    // Note: toggle_4_P.1/toggle_5_P.1 are YES/NO for "continue to hold office" question,
+    // NOT identity toggles. See below.
 
     // ═══ P.1: Officer Details (per identity) ═══
+    // fill_3_P.1 = 辭任日期 (Resignation Date) for ALL officer types
+    const rd = rget(data, 'resignationDay');
+    const rm = rget(data, 'resignationMonth');
+    const ry = rget(data, 'resignationYear');
+    const resignDateStr = (rd && rm && ry) ? `${rd}/${rm}/${ry}` : '';
+
     if (identity === 'natural') {
-      // fill_3: resignation date OR alternate name (dual-purpose)
-      if (officerType === 'alternate') {
-        setF('fill_3_P.1', rget(data, 'alternateTo') || rget(data, 'officerNameEnglish'));
-      } else {
-        const rd = rget(data, 'resignationDay');
-        const rm = rget(data, 'resignationMonth');
-        const ry = rget(data, 'resignationYear');
-        if (rd && rm && ry) setF('fill_3_P.1', `${rd}/${rm}/${ry}`);
-      }
-      // Natural person fields (force CJK for Chinese name)
+      setF('fill_3_P.1', resignDateStr);
+      // Natural person fields
       setF('fill_4_P.1', rget(data, 'officerNameChinese') || rget(data, 'nameChinese'));
       setF('fill_5_P.1', rget(data, 'surname'));
       setF('fill_6_P.1', rget(data, 'otherNames'));
       setF('fill_7_P.1', rget(data, 'hkidPartial'));
       setF('fill_8_P.1', rget(data, 'passportCountry'));
-
-      // "Yes" checkbox: confirm this person is/was a company officer
-      // cb_4_P.1 = Yes (common ND4 template layout)
-      checkF('cb_4_P.1', true);
     } else {
       // Corporate body fields
       setF('fill_9_P.1', rget(data, 'corporateName') || rget(data, 'officerNameEnglish'));
       setF('fill_10_P.1', rget(data, 'corporateNumber') || brNumber);
-
-      // Resignation date for corporate (uses fill_3 as well)
-      const rd = rget(data, 'resignationDay');
-      const rm = rget(data, 'resignationMonth');
-      const ry = rget(data, 'resignationYear');
-      if (rd && rm && ry) setF('fill_3_P.1', `${rd}/${rm}/${ry}`);
-
-      // "Yes" checkbox for corporate
-      checkF('cb_4_P.1', true);
+      // Resignation date for corporate
+      setF('fill_3_P.1', resignDateStr);
     }
 
+    // ═══ P.1: "是否仍然擔任" — answer should be NO (person is resigning) ═══
+    // toggle_4_P.1 = Yes / 是 (don't check)
+    // toggle_5_P.1 = No / 否 (CHECK — will NOT continue to hold office)
+    checkF('toggle_5_P.1', true);
+
     // ═══ P.1: Sign Date ═══
-    setF('fill_11_P.1', rget(data, 'signDateDay'));
-    setF('fill_12_P.1', rget(data, 'signDateMonth'));
-    setF('fill_13_P.1', rget(data, 'signDateYear'));
+    const today = new Date();
+    const sd = rget(data, 'signDateDay') || String(today.getDate()).padStart(2, '0');
+    const sm = rget(data, 'signDateMonth') || String(today.getMonth() + 1).padStart(2, '0');
+    const sy = rget(data, 'signDateYear') || String(today.getFullYear());
+    setF('fill_11_P.1', sd);
+    setF('fill_12_P.1', sm);
+    setF('fill_13_P.1', sy);
 
     // ═══ P.1: Presenter ═══
     const pn = rget(data, 'presentorName') || rget(data, 'presenterName') || DEFAULT_PRESENTER.name;

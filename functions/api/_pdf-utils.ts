@@ -10,7 +10,7 @@ import fontkit from "@pdf-lib/fontkit";
 export const DEFAULT_PRESENTER = {
   name: 'Twinsail Consultants Limited',
   address: 'Room 1203, 12/F, Wing On Centre, 111 Connaught Road Central, Hong Kong',
-  contact: '電話: +852 2521 3888  傳真: +852 2521 3999  電郵: info@twinsail.com',
+  contact: 'Tel: +852 2521 3888  Fax: +852 2521 3999  Email: info@twinsail.com',
   phone: '+852 2521 3888',
   fax: '+852 2521 3999',
   email: 'info@twinsail.com',

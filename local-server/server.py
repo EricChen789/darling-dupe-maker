@@ -62,6 +62,7 @@ except ImportError:
 app = Flask(__name__)
 DB_PATH = os.path.join(os.path.dirname(__file__), 'local.db')
 JWT_SECRET = 'local-dev-secret-do-not-use-in-production'
+AI_MOCK = os.environ.get('AI_MOCK', 'true').lower() == 'true'  # 默认 Mock 模式，CI 设 false 调真实 API
 
 # ─── Database ───
 def get_db():
@@ -1127,6 +1128,28 @@ def auth_me():
     if not u:
         return jsonify({'error': 'Not authenticated'}), 401
     return jsonify(u)
+
+
+@app.route('/api/auth/change-password', methods=['POST'])
+def auth_change_password():
+    """修改密码 — 与云端 /api/auth/change-password 100% 对齐"""
+    u = get_user()
+    if not u:
+        return jsonify({'error': 'Not authenticated'}), 401
+    data = request.json or {}
+    current_password = data.get('current_password', '')
+    new_password = data.get('new_password', '')
+    if not current_password or not new_password:
+        return jsonify({'error': 'Current and new password required'}), 400
+    db = get_db()
+    row = db.execute("SELECT password_hash FROM auth_users WHERE id = ?", (u['id'],)).fetchone()
+    if not row or not verify_password(current_password, row['password_hash']):
+        return jsonify({'error': 'Current password is incorrect'}), 401
+    db.execute("UPDATE auth_users SET password_hash = ? WHERE id = ?",
+               (hash_password(new_password), u['id']))
+    db.commit()
+    return jsonify({'success': True})
+
 
 # ─── 用户管理（admin，10.1–10.3；本地 dev 模式不強制鑑權）───
 VALID_ROLES = ('admin', 'moderator', 'user')
@@ -10008,6 +10031,139 @@ def generate_irc3111a_pdf():
         return jsonify({'error': str(e)}), 500
 
 
+# ─── IR1263 PDF 生成（Phase 5.5: 稅務局結束營業通知書）───
+
+def _build_ir1263_pdf(data):
+    """Build IR1263 — Notice of Cessation of Business (稅務局).
+    Free-form layout, Portrait A4, fpdf2. Ported from Cloud TS version."""
+    pdf = create_pdf(landscape=False)
+    pdf.add_page()
+    pdf.set_auto_page_break(auto=False)
+
+    M = 50
+    PW, PH = 595, 842
+    label_x = M
+    value_x = M + 180
+    BLUE = (0, 51, 153)
+
+    co_name = data.get('companyName', data.get('name', ''))
+    br = data.get('brNumber', data.get('br_number', ''))
+    app_date = data.get('applicationDate', data.get('cessationDate', ''))
+
+    def tnr(text, x, y, size=11, bold=False, align='L', color=(0, 0, 0)):
+        style = 'B' if bold else ''
+        pdf.set_font('TNR', style, size)
+        pdf.set_text_color(*color)
+        if align == 'C':
+            tw = pdf.get_string_width(str(text or ''))
+            x = x - tw / 2
+        pdf.set_xy(x, y)
+        pdf.cell(0, size + 4, str(text or ''))
+
+    def tc(text, x, y, size=11, bold=False, color=(0, 0, 0)):
+        style = 'B' if bold else ''
+        pdf.set_font('TC', style, size)
+        pdf.set_text_color(*color)
+        pdf.set_xy(x, y)
+        pdf.cell(0, size + 4, str(text or ''))
+
+    def draw_label(label_cn, label_en, y_pos, size=11):
+        tc(label_cn, label_x, y_pos, size=size, bold=True)
+        tnr(label_en, label_x, y_pos + size + 4, size=size - 2)
+
+    def draw_value(value, y_pos, size=11):
+        y_line = y_pos + 6
+        tnr(str(value or ''), value_x, y_line, size=size)
+        if value:
+            tw = pdf.get_string_width(str(value)) + 4
+        else:
+            tw = PW - value_x - M - 10
+        pdf.set_draw_color(0, 0, 0)
+        pdf.set_line_width(0.5)
+        pdf.line(value_x, y_line + size + 3, min(value_x + tw, PW - M), y_line + size + 3)
+        pdf.set_line_width(0.3)
+
+    # ── Header ──
+    y = PH - 55
+
+    # IRD reference
+    tnr('Inland Revenue Department', PW / 2, y, size=9, align='C', color=BLUE)
+    tc('税 務 局', PW / 2, y + 12, size=9, color=BLUE)
+    y -= 35
+
+    # Form title (centered, blue)
+    tnr('IR1263 — Notice of Cessation of Business', PW / 2, y, size=14, bold=True, align='C', color=BLUE)
+    y -= 20
+    tc('IR1263 — 結束營業通知書', PW / 2, y, size=12, bold=True, color=BLUE)
+    y -= 38
+
+    # Separator line
+    pdf.set_draw_color(*BLUE)
+    pdf.set_line_width(1.2)
+    pdf.line(M, y, PW - M, y)
+    pdf.set_draw_color(0, 0, 0)
+    pdf.set_line_width(0.3)
+    y -= 22
+
+    # ── Company Name ──
+    draw_label('公司名稱', 'Company Name', y)
+    draw_value(co_name, y, size=12)
+    y -= 42
+
+    # ── Business Registration Number ──
+    draw_label('商業登記號碼', 'Business Registration No.', y)
+    draw_value(br, y, size=12)
+    y -= 42
+
+    # ── Date of Cessation ──
+    draw_label('結束營業日期', 'Date of Cessation', y)
+    draw_value(app_date, y, size=12)
+    y -= 50
+
+    # ── Declaration ──
+    tnr('Declaration', label_x, y, size=11, bold=True)
+    tc('聲明', label_x + 70, y, size=11, bold=True)
+    y -= 20
+    declaration = (
+        'I hereby declare that the above-mentioned business has ceased operation. '
+        '本人特此聲明上述業務已結束營業。'
+    )
+    tc(declaration, label_x + 5, y, size=9)
+    y -= 36
+
+    # ── Signature ──
+    draw_label('簽署', 'Signature', y)
+    draw_value('', y, size=11)
+    y -= 42
+
+    # ── Date ──
+    draw_label('日期', 'Date', y)
+    draw_value('', y, size=11)
+    y -= 50
+
+    # ── Footer ──
+    from datetime import date
+    today = date.today().isoformat()
+    tnr(f'Generated by Company Secretary Management System · {today}', PW / 2, y, size=7, align='C')
+
+    return pdf.output()
+
+
+@app.route('/api/generate-ir1263-pdf', methods=['POST'])
+def generate_ir1263_pdf():
+    try:
+        data = request.json
+        if not data:
+            return jsonify({'error': 'Empty request body'}), 400
+        pdf_bytes = _build_ir1263_pdf(data)
+        import base64 as b64
+        return jsonify({'pdf': b64.b64encode(pdf_bytes).decode('ascii')})
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
 # ─── Batch Generation (Phase 5.3: 批量生成關聯表格) ───
 
 def _translate_form_data(primary_data, primary_form, linked_form, db=None):
@@ -10105,8 +10261,7 @@ def generate_related_forms():
                         results.append({'form_code': form_code, 'error': 'ND4 function not available'})
                         continue
                 elif form_code == 'IR1263':
-                    results.append({'form_code': form_code, 'error': 'IR1263 not yet implemented'})
-                    continue
+                    pdf_bytes = _build_ir1263_pdf(linked_data)
                 else:
                     results.append({'form_code': form_code, 'error': f'Unsupported form: {form_code}'})
                     continue
@@ -10127,6 +10282,332 @@ def generate_related_forms():
         return jsonify({'error': str(e)}), 500
 
 
+# ═══════════════════════════════════════════════════════════════
+# AI / OCR Mock 端点（对标云端 Functions，AI_MOCK 默认 true）
+# ═══════════════════════════════════════════════════════════════
+
+# ─── Mock 数据 ───
+_MOCK_BR_DATA = {
+    "companyName": "ABC TESTING COMPANY LIMITED",
+    "chineseName": "ABC 測試有限公司",
+    "brNumber": "12345678",
+    "tradingName": "ABC Testing",
+    "businessNature": "Import and Export",
+    "businessCode": "46210",
+    "companyType": "私人公司 Private company",
+    "registerDate": "01/01/2020",
+}
+
+_MOCK_CI_DATA = {
+    "companyName": "ABC TESTING COMPANY LIMITED",
+    "chineseName": "ABC 測試有限公司",
+    "companyNumber": "1234567",
+    "incorporationDate": "01/01/2020",
+    "companyType": "私人公司 Private company",
+    "jurisdiction": "Hong Kong",
+}
+
+_MOCK_RESOLUTION_DATA = {
+    "companyName": "ABC TESTING COMPANY LIMITED",
+    "chineseName": "ABC 測試有限公司",
+    "brNumber": "12345678",
+    "companyNumber": "1234567",
+    "incorporationDate": "01/01/2020",
+    "companyType": "私人公司 Private company",
+    "jurisdiction": "Hong Kong",
+    "businessNature": "Import and Export",
+    "tradingName": "ABC Testing",
+    "regFlat": "Room 1201, 12/F",
+    "regBuilding": "Tower A, Regent Centre",
+    "regStreet": "63 Wo Yi Hop Road",
+    "regDistrict": "Kwai Chung",
+    "regRegion": "新界 New Territories",
+    "contactPhone": "2123 4567",
+    "contactEmail": "info@abctesting.com.hk",
+    "directors": [
+        {"nameEnglish": "CHAN Tai Man", "nameChinese": "陳大文", "idNumber": "A123456(3)", "address": "Flat A, 1/F, Block 1, Tai Po Garden, Tai Po, N.T.", "identity": "natural"},
+        {"nameEnglish": "LEE Siu Ming", "nameChinese": "李小明", "idNumber": "B654321(2)", "address": "Room 5, 10/F, Kornhill Apartments, Quarry Bay, Hong Kong", "identity": "natural"},
+    ],
+    "secretaries": [
+        {"nameEnglish": "Twinsail Consultants Limited", "nameChinese": "", "idNumber": "", "address": "Room 1201, 12/F, Tower A, Regent Centre, 63 Wo Yi Hop Road, Kwai Chung, N.T.", "identity": "corporate"},
+    ],
+    "shareholders": [
+        {"nameEnglish": "CHAN Tai Man", "nameChinese": "陳大文", "idNumber": "A123456(3)", "address": "Flat A, 1/F, Block 1, Tai Po Garden, Tai Po, N.T.", "shares": 5000, "shareType": "Ordinary", "identity": "natural"},
+        {"nameEnglish": "LEE Siu Ming", "nameChinese": "李小明", "idNumber": "B654321(2)", "address": "Room 5, 10/F, Kornhill Apartments, Quarry Bay, Hong Kong", "shares": 5000, "shareType": "Ordinary", "identity": "natural"},
+    ],
+}
+
+_MOCK_CHAT_RESPONSES = [
+    "根據資料庫記錄，目前共有 3 間公司、5 位董事和 2 位秘書。請問您需要查詢哪一間公司的詳細資料？",
+    "已為您找到相關公司資料。如需生成 NAR1 年報表格，請在公司管理頁面點擊「生成 NAR1」按鈕。",
+    "已成功新增董事記錄。您可以在公司詳情頁面查看和編輯相關資料。",
+    "根據《公司條例》第 622 章，每間私人公司必須在成立周年日後 42 天內提交周年申報表（NAR1）。逾期提交可能會被罰款。",
+    "已為您更新公司資料。如有其他需要，請隨時告訴我。",
+]
+
+# ─── Mock 响应辅助函数 ───
+def _mock_json(data, status=200):
+    return jsonify(data), status
+
+
+def _ai_file_to_mock(form_data, mock_data):
+    """提取上传文件信息并返回 mock 数据（模拟 AI OCR）"""
+    file = form_data.get('file') if form_data else None
+    filename = file.filename if file else '(no file)'
+    print(f"[AI_MOCK] OCR simulated for: {filename}")
+    return mock_data
+
+
+# ─── POST /api/chat-assistant ───
+@app.route('/api/chat-assistant', methods=['POST', 'OPTIONS'])
+def chat_assistant():
+    if request.method == 'OPTIONS':
+        return ('', 204)
+    u = get_user()
+    if not u:
+        return jsonify({'error': 'Not authenticated'}), 401
+
+    try:
+        data = request.json or {}
+        messages = data.get('messages', [])
+
+        if AI_MOCK:
+            # 返回预设 Mock 响应，根据用户最后一条消息选择
+            last_msg = messages[-1]['content'] if messages else ''
+            import random
+            idx = hash(last_msg) % len(_MOCK_CHAT_RESPONSES) if last_msg else 0
+            content = _MOCK_CHAT_RESPONSES[idx]
+            print(f"[AI_MOCK] chat-assistant: returning mock response (AI_MOCK=true)")
+            return jsonify({'content': content})
+
+        # AI_MOCK=false: 调用真实 AI API
+        LOVABLE_API_KEY = os.environ.get('LOVABLE_API_KEY', '')
+        if not LOVABLE_API_KEY:
+            return jsonify({'error': 'LOVABLE_API_KEY not configured'}), 500
+
+        resp = requests.post(
+            'https://ai.gateway.lovable.dev/v1/chat/completions',
+            headers={
+                'Authorization': f'Bearer {LOVABLE_API_KEY}',
+                'Content-Type': 'application/json',
+            },
+            json={
+                'model': 'google/gemini-3-flash-preview',
+                'messages': [
+                    {'role': 'system', 'content': '你是一個公司秘書管理系統的 AI 助手。回覆時使用繁體中文。'},
+                    *messages,
+                ],
+            },
+            timeout=60,
+        )
+        if not resp.ok:
+            return jsonify({'error': f'AI gateway error: {resp.status_code}'}), resp.status_code
+
+        result = resp.json()
+        content = result.get('choices', [{}])[0].get('message', {}).get('content', '抱歉，無法生成回覆。')
+        return jsonify({'content': content})
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+# ─── POST /api/extract-br-info ───
+@app.route('/api/extract-br-info', methods=['POST', 'OPTIONS'])
+def extract_br_info():
+    if request.method == 'OPTIONS':
+        return ('', 204)
+    u = get_user()
+    if not u:
+        return jsonify({'error': 'Not authenticated'}), 401
+
+    try:
+        form_data = request.form if request.form else None
+        extracted = _ai_file_to_mock(form_data, dict(_MOCK_BR_DATA)) if AI_MOCK else None
+
+        if not AI_MOCK:
+            LOVABLE_API_KEY = os.environ.get('LOVABLE_API_KEY', '')
+            if not LOVABLE_API_KEY:
+                return jsonify({'error': 'LOVABLE_API_KEY not configured'}), 500
+
+            file = request.files.get('file')
+            if not file:
+                return jsonify({'error': 'No file uploaded'}), 400
+
+            import base64 as b64
+            file_bytes = file.read()
+            file_b64 = b64.b64encode(file_bytes).decode()
+            mime = file.mimetype or 'application/pdf'
+
+            resp = requests.post(
+                'https://ai.gateway.lovable.dev/v1/chat/completions',
+                headers={
+                    'Authorization': f'Bearer {LOVABLE_API_KEY}',
+                    'Content-Type': 'application/json',
+                },
+                json={
+                    'model': 'google/gemini-2.5-flash',
+                    'messages': [
+                        {'role': 'system', 'content': 'You are a Hong Kong Business Registration certificate data extractor. Extract: companyName, chineseName, brNumber, tradingName, businessNature, businessCode, companyType, registerDate. Return ONLY valid JSON.'},
+                        {'role': 'user', 'content': [
+                            {'type': 'text', 'text': 'Extract company info from this BR certificate.'},
+                            {'type': 'image_url', 'image_url': {'url': f'data:{mime};base64,{file_b64}'}},
+                        ]},
+                    ],
+                },
+                timeout=60,
+            )
+            if not resp.ok:
+                return jsonify({'error': f'AI gateway error: {resp.status_code}'}), resp.status_code
+
+            result = resp.json()
+            content = result.get('choices', [{}])[0].get('message', {}).get('content', '')
+            import re as _re
+            cleaned = _re.sub(r'```json\n?|```\n?', '', content).strip()
+            try:
+                extracted = json.loads(cleaned)
+            except json.JSONDecodeError:
+                return jsonify({'error': '無法解析 AI 回應'}), 500
+
+        return jsonify({'data': extracted})
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+# ─── POST /api/extract-ci-info ───
+@app.route('/api/extract-ci-info', methods=['POST', 'OPTIONS'])
+def extract_ci_info():
+    if request.method == 'OPTIONS':
+        return ('', 204)
+    u = get_user()
+    if not u:
+        return jsonify({'error': 'Not authenticated'}), 401
+
+    try:
+        form_data = request.form if request.form else None
+        extracted = _ai_file_to_mock(form_data, dict(_MOCK_CI_DATA)) if AI_MOCK else None
+
+        if not AI_MOCK:
+            LOVABLE_API_KEY = os.environ.get('LOVABLE_API_KEY', '')
+            if not LOVABLE_API_KEY:
+                return jsonify({'error': 'LOVABLE_API_KEY not configured'}), 500
+
+            file = request.files.get('file')
+            if not file:
+                return jsonify({'error': 'No file uploaded'}), 400
+
+            import base64 as b64
+            file_bytes = file.read()
+            file_b64 = b64.b64encode(file_bytes).decode()
+            mime = file.mimetype or 'application/pdf'
+
+            resp = requests.post(
+                'https://ai.gateway.lovable.dev/v1/chat/completions',
+                headers={
+                    'Authorization': f'Bearer {LOVABLE_API_KEY}',
+                    'Content-Type': 'application/json',
+                },
+                json={
+                    'model': 'google/gemini-2.5-flash',
+                    'messages': [
+                        {'role': 'system', 'content': 'You are a Hong Kong Certificate of Incorporation data extractor. Extract: companyName, chineseName, companyNumber, incorporationDate, companyType, jurisdiction. Return ONLY valid JSON.'},
+                        {'role': 'user', 'content': [
+                            {'type': 'text', 'text': 'Extract info from this CI certificate.'},
+                            {'type': 'image_url', 'image_url': {'url': f'data:{mime};base64,{file_b64}'}},
+                        ]},
+                    ],
+                },
+                timeout=60,
+            )
+            if not resp.ok:
+                return jsonify({'error': f'AI gateway error: {resp.status_code}'}), resp.status_code
+
+            result = resp.json()
+            content = result.get('choices', [{}])[0].get('message', {}).get('content', '')
+            import re as _re
+            cleaned = _re.sub(r'```json\n?|```\n?', '', content).strip()
+            try:
+                extracted = json.loads(cleaned)
+            except json.JSONDecodeError:
+                return jsonify({'error': '無法解析 AI 回應'}), 500
+
+        return jsonify({'data': extracted})
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+# ─── POST /api/extract-resolution-info ───
+@app.route('/api/extract-resolution-info', methods=['POST', 'OPTIONS'])
+def extract_resolution_info():
+    if request.method == 'OPTIONS':
+        return ('', 204)
+    u = get_user()
+    if not u:
+        return jsonify({'error': 'Not authenticated'}), 401
+
+    try:
+        form_data = request.form if request.form else None
+        extracted = _ai_file_to_mock(form_data, dict(_MOCK_RESOLUTION_DATA)) if AI_MOCK else None
+
+        if not AI_MOCK:
+            LOVABLE_API_KEY = os.environ.get('LOVABLE_API_KEY', '')
+            if not LOVABLE_API_KEY:
+                return jsonify({'error': 'LOVABLE_API_KEY not configured'}), 500
+
+            file = request.files.get('file')
+            if not file:
+                return jsonify({'error': 'No file uploaded'}), 400
+
+            import base64 as b64
+            file_bytes = file.read()
+            file_b64 = b64.b64encode(file_bytes).decode()
+            mime = file.mimetype or 'application/pdf'
+
+            resp = requests.post(
+                'https://ai.gateway.lovable.dev/v1/chat/completions',
+                headers={
+                    'Authorization': f'Bearer {LOVABLE_API_KEY}',
+                    'Content-Type': 'application/json',
+                },
+                json={
+                    'model': 'google/gemini-2.5-flash',
+                    'messages': [
+                        {'role': 'system', 'content': 'You are a Hong Kong company document extractor. Extract company info + directors/secretaries/shareholders arrays from uploaded document. Return ONLY valid JSON.'},
+                        {'role': 'user', 'content': [
+                            {'type': 'text', 'text': 'Extract all company information from this document.'},
+                            {'type': 'image_url', 'image_url': {'url': f'data:{mime};base64,{file_b64}'}},
+                        ]},
+                    ],
+                },
+                timeout=60,
+            )
+            if not resp.ok:
+                return jsonify({'error': f'AI gateway error: {resp.status_code}'}), resp.status_code
+
+            result = resp.json()
+            content = result.get('choices', [{}])[0].get('message', {}).get('content', '')
+            import re as _re
+            cleaned = _re.sub(r'```json\n?|```\n?', '', content).strip()
+            try:
+                extracted = json.loads(cleaned)
+            except json.JSONDecodeError:
+                return jsonify({'error': '無法解析 AI 回應'}), 500
+
+        return jsonify({'data': extracted})
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
 if __name__ == '__main__':
     init_db()
     auto_migrate()
@@ -10138,6 +10619,8 @@ if __name__ == '__main__':
     print("[SERVER] Local API running at http://localhost:5000")
     print("[SERVER] Admin account: admin@localhost / admin123")
     print("[SERVER] Register new accounts at /api/auth/register (no admin required)")
+    ai_mock_status = "MOCK (AI_MOCK=true)" if AI_MOCK else "LIVE (AI_MOCK=false)"
+    print(f"[SERVER] AI/OCR endpoints: {ai_mock_status}")
     if RESEND_API_KEY:
         print(f"[SERVER] Email: Resend API configured (onboarding@resend.dev)")
     elif SMTP_HOST:

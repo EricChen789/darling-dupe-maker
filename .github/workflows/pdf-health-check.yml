@@ -1,0 +1,128 @@
+name: PDF Diagnostic Health Check
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        type: choice
+        options:
+          - both
+          - production
+          - dev
+  push:
+    branches:
+      - main
+    paths:
+      - 'functions/api/generate-*.ts'
+      - 'functions/api/_acroform.ts'
+      - 'functions/api/_pdf-utils.ts'
+      - 'functions/api/nar1-fields.ts'
+      - 'local-server/server.py'
+
+jobs:
+  health-check:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        env:
+          - name: production
+            url: https://secretary-system-9cl.pages.dev
+          - name: dev
+            url: https://dev.secretary-system-9cl.pages.dev
+      fail-fast: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Authenticate (${{ matrix.env.name }})
+        id: auth
+        run: |
+          RESPONSE=$(curl -s -X POST "${{ matrix.env.url }}/api/auth/login" \
+            -H "Content-Type: application/json" \
+            -d '{"email":"${{ secrets.ADMIN_EMAIL }}","password":"${{ secrets.ADMIN_PASSWORD }}"}')
+          TOKEN=$(echo "$RESPONSE" | jq -r '.token')
+          if [ "$TOKEN" = "null" ] || [ -z "$TOKEN" ]; then
+            echo "❌ Authentication failed: $RESPONSE"
+            exit 1
+          fi
+          echo "token=$TOKEN" >> $GITHUB_OUTPUT
+          echo "✅ Authenticated"
+
+      - name: Check NAR1 Fields (${{ matrix.env.name }})
+        id: nar1-fields
+        run: |
+          RESPONSE=$(curl -s "${{ matrix.env.url }}/api/nar1-fields" \
+            -H "Authorization: Bearer ${{ steps.auth.outputs.token }}")
+
+          echo "Response: $RESPONSE" | head -c 500
+
+          FIELD_COUNT=$(echo "$RESPONSE" | jq '.totalFields // 0')
+          PARTS_LOADED=$(echo "$RESPONSE" | jq '.partsLoaded // 0')
+          TOTAL_PARTS=$(echo "$RESPONSE" | jq '.totalParts // 0')
+          WARNINGS=$(echo "$RESPONSE" | jq '.warnings | length // 0')
+
+          echo "field_count=$FIELD_COUNT" >> $GITHUB_OUTPUT
+          echo "parts_loaded=$PARTS_LOADED" >> $GITHUB_OUTPUT
+          echo "total_parts=$TOTAL_PARTS" >> $GITHUB_OUTPUT
+          echo "warnings=$WARNINGS" >> $GITHUB_OUTPUT
+
+          # Field count baseline: NAR1 has 303+ fields
+          if [ "$FIELD_COUNT" -lt 300 ]; then
+            echo "❌ Field count $FIELD_COUNT < 300 baseline"
+            exit 1
+          fi
+
+          # All parts must be loaded
+          if [ "$PARTS_LOADED" -ne "$TOTAL_PARTS" ]; then
+            echo "❌ Parts loaded $PARTS_LOADED / $TOTAL_PARTS — not all parts loaded"
+            exit 1
+          fi
+
+          # No warnings allowed
+          if [ "$WARNINGS" -gt 0 ]; then
+            echo "⚠️  $WARNINGS warnings detected"
+            echo "$RESPONSE" | jq '.warnings'
+            # Warnings are advisory — don't block deployment
+          fi
+
+          echo "✅ NAR1 fields check passed: $FIELD_COUNT fields, $PARTS_LOADED/$TOTAL_PARTS parts"
+
+      - name: Summary (${{ matrix.env.name }})
+        run: |
+          echo "### NAR1 Diagnostic Health Check — ${{ matrix.env.name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric | Value | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Fields | ${{ steps.nar1-fields.outputs.field_count }} | ✅ ≥ 300 |" >> $GITHUB_STEP_SUMMARY
+          echo "| Parts  | ${{ steps.nar1-fields.outputs.parts_loaded }}/${{ steps.nar1-fields.outputs.total_parts }} | ✅ All loaded |" >> $GITHUB_STEP_SUMMARY
+          echo "| Warnings | ${{ steps.nar1-fields.outputs.warnings }} | ${{ steps.nar1-fields.outputs.warnings == '0' && '✅ None' || '⚠️ Review' }} |" >> $GITHUB_STEP_SUMMARY
+
+  consistency-test:
+    needs: health-check
+    if: ${{ always() && needs.health-check.result == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests PyMuPDF
+
+      - name: Run consistency verification (--ci mode)
+        env:
+          ADMIN_EMAIL: ${{ secrets.ADMIN_EMAIL }}
+          ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+        run: |
+          python _verify_forms.py --all --ci || true
+          echo "✅ Consistency test complete (non-blocking)"

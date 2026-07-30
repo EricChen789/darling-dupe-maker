@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -37,6 +37,9 @@ import { CompanyChronicleTab } from './CompanyChronicleTab';
 import { PersonnelSection } from './PersonnelChangeTab';
 import { DocGenerationTab } from './DocGenerationTab';
 import { CopyFromCompanyDialog } from './CopyFromCompanyDialog';
+import { SearchableSelect } from '@/components/ui/searchable-multiselect';
+import { useOfficers } from '@/hooks/useOfficers';
+import { useCompanies } from '@/hooks/useCompanies';
 import { useSecretaryTemplates } from '@/hooks/useSecretaryTemplates';
 import { useUnassignedChangeEvents, EVENT_TYPE_LABELS } from '@/hooks/useChangeEvents';
 import { useNAR1Status, getNAR1StatusBadge } from '@/hooks/useNAR1Status';
@@ -47,7 +50,10 @@ interface CompanyDetailDialogProps {
   company: Company | null;
 }
 
-const emptyOfficerForm = () => ({ nameEnglish: '', nameChinese: '', identity: 'natural', idNumber: '', email: '', tcspNumber: '', authScope: '', address: '', serviceAddress: '', dateAppointed: '', dateCeased: '', placeIncorporated: '', companyNumberRef: '', dateOfBirth: '' });
+const composeAddr5 = (flat: string, building: string, street: string, district: string, region: string) =>
+  [flat, building, street, district, region].map((s: string) => (s || '').trim()).filter(Boolean).join(', ');
+
+const emptyOfficerForm = () => ({ nameEnglish: '', nameChinese: '', identity: 'natural', idNumber: '', email: '', tcspNumber: '', authScope: '', address: '', addrFlat: '', addrBuilding: '', addrStreet: '', addrDistrict: '', addrRegion: '', serviceAddress: '', svcAddrFlat: '', svcAddrBuilding: '', svcAddrStreet: '', svcAddrDistrict: '', svcAddrRegion: '', dateAppointed: '', dateCeased: '', placeIncorporated: '', companyNumberRef: '', dateOfBirth: '' });
 const emptyShForm = () => ({ name: '', nameEnglish: '', nameChinese: '', shares: 0, identity: 'natural', idNumber: '', address: '', serviceAddress: '', email: '', shareType: '', issuePrice: '', currency: 'HKD', paidUp: '', unpaid: '', placeIncorporated: '', companyNumberRef: '', tcspNumber: '' });
 
 // 股東表單金額輔助：自動格式化 + 計算未繳股本
@@ -228,6 +234,46 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
   const { data: unassignedChanges = [] } = useUnassignedChangeEvents(company?.id);
   const { data: nar1Status } = useNAR1Status(company?.id);
 
+  // ── 系統地址複製數據源 ──
+  const { officers = [] } = useOfficers();
+  const { data: companies = [] } = useCompanies();
+  const [addrCopyId, setAddrCopyId] = useState('');
+  const [svcAddrCopyId, setSvcAddrCopyId] = useState('');
+
+  const addressSourceOptions = useMemo(() => {
+    type AddrSource = { id: string; label: string; sub: string; meta: string; addrFlat: string; addrBuilding: string; addrStreet: string; addrDistrict: string; addrRegion: string };
+    const sources: AddrSource[] = [];
+    for (const c of companies) {
+      if (!c.regFlat && !c.regBuilding && !c.regStreet && !c.regDistrict && !c.regRegion) continue;
+      sources.push({
+        id: `co-${c.id}`, label: `🏢 ${c.name}`,
+        sub: [c.regFlat, c.regBuilding, c.regStreet, c.regDistrict, c.regRegion].filter(Boolean).join(', '),
+        meta: '公司', addrFlat: c.regFlat || '', addrBuilding: c.regBuilding || '', addrStreet: c.regStreet || '', addrDistrict: c.regDistrict || '', addrRegion: c.regRegion || '',
+      });
+    }
+    for (const p of officers) {
+      if (!p.addrFlat && !p.addrBuilding && !p.addrStreet && !p.addrDistrict && !p.addrRegion) continue;
+      sources.push({
+        id: `pe-${p.id}`, label: `👤 ${p.nameEnglish || p.nameChinese}`,
+        sub: [p.addrFlat, p.addrBuilding, p.addrStreet, p.addrDistrict, p.addrRegion].filter(Boolean).join(', '),
+        meta: '人員', addrFlat: p.addrFlat || '', addrBuilding: p.addrBuilding || '', addrStreet: p.addrStreet || '', addrDistrict: p.addrDistrict || '', addrRegion: p.addrRegion || '',
+      });
+    }
+    return sources;
+  }, [companies, officers]);
+
+  const fillAddrFromSource = (sourceId: string, targetForm: 'person' | 'newOfficer', target: 'residential' | 'service') => {
+    setAddrCopyId(''); setSvcAddrCopyId('');
+    const s = addressSourceOptions.find(x => x.id === sourceId);
+    if (!s) return;
+    const setForm = targetForm === 'person' ? setPersonForm : setNewOfficerForm;
+    if (target === 'residential') {
+      setForm(prev => ({ ...prev, addrFlat: s.addrFlat, addrBuilding: s.addrBuilding, addrStreet: s.addrStreet, addrDistrict: s.addrDistrict, addrRegion: s.addrRegion, address: [s.addrFlat, s.addrBuilding, s.addrStreet, s.addrDistrict, s.addrRegion].filter(Boolean).join(', ') }));
+    } else {
+      setForm(prev => ({ ...prev, svcAddrFlat: s.addrFlat, svcAddrBuilding: s.addrBuilding, svcAddrStreet: s.addrStreet, svcAddrDistrict: s.addrDistrict, svcAddrRegion: s.addrRegion, serviceAddress: [s.addrFlat, s.addrBuilding, s.addrStreet, s.addrDistrict, s.addrRegion].filter(Boolean).join(', ') }));
+    }
+  };
+
   useEffect(() => {
     // Only sync form from company when NOT in edit mode, to avoid wiping user input
     // when the companies query refetches in the background.
@@ -318,6 +364,33 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
   const selectPerson = (p: Person, roleLabel: string) => {
     setSelectedSh(null); setEditingShDetail(false);
     setSelectedPerson({ ...p, roleLabel }); setEditingPerson(true);
+    setPersonForm({
+      ...emptyOfficerForm(),
+      nameEnglish: p.nameEnglish || '',
+      nameChinese: p.nameChinese || '',
+      identity: p.identity || 'natural',
+      idNumber: p.idNumber || '',
+      email: p.email || '',
+      tcspNumber: p.tcspNumber || '',
+      authScope: (p as any).authScope || '',
+      address: p.address || '',
+      addrFlat: p.addrFlat || '',
+      addrBuilding: p.addrBuilding || '',
+      addrStreet: p.addrStreet || '',
+      addrDistrict: p.addrDistrict || '',
+      addrRegion: p.addrRegion || '',
+      serviceAddress: p.serviceAddress || '',
+      svcAddrFlat: p.svcAddrFlat || '',
+      svcAddrBuilding: p.svcAddrBuilding || '',
+      svcAddrStreet: p.svcAddrStreet || '',
+      svcAddrDistrict: p.svcAddrDistrict || '',
+      svcAddrRegion: p.svcAddrRegion || '',
+      dateAppointed: (p as any).dateAppointed || '',
+      dateCeased: (p as any).dateCeased || '',
+      placeIncorporated: (p as any).placeIncorporated || '',
+      companyNumberRef: p.companyNumberRef || '',
+      dateOfBirth: (p as any).dateOfBirth || '',
+    });
   };
 
   const selectShareholder = (sh: Shareholder) => {
@@ -408,7 +481,17 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
       email: personForm.email, tcsp_number: personForm.tcspNumber,
       auth_scope: personForm.authScope,
       address: personForm.address,
+      addr_flat: personForm.addrFlat || '',
+      addr_building: personForm.addrBuilding || '',
+      addr_street: personForm.addrStreet || '',
+      addr_district: personForm.addrDistrict || '',
+      addr_region: personForm.addrRegion || '',
       service_address: personForm.serviceAddress || personForm.address || regAddrFull,
+      svc_addr_flat: personForm.svcAddrFlat || '',
+      svc_addr_building: personForm.svcAddrBuilding || '',
+      svc_addr_street: personForm.svcAddrStreet || '',
+      svc_addr_district: personForm.svcAddrDistrict || '',
+      svc_addr_region: personForm.svcAddrRegion || '',
       date_appointed: personForm.dateAppointed || undefined,
       date_ceased: personForm.dateCeased || undefined,
       place_incorporated: personForm.placeIncorporated, company_number_ref: personForm.companyNumberRef,
@@ -464,7 +547,17 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
       email: newOfficerForm.email, tcsp_number: newOfficerForm.tcspNumber,
       auth_scope: newOfficerForm.authScope,
       address: newOfficerForm.address,
+      addr_flat: newOfficerForm.addrFlat || '',
+      addr_building: newOfficerForm.addrBuilding || '',
+      addr_street: newOfficerForm.addrStreet || '',
+      addr_district: newOfficerForm.addrDistrict || '',
+      addr_region: newOfficerForm.addrRegion || '',
       service_address: newOfficerForm.serviceAddress || newOfficerForm.address || regAddrFull,
+      svc_addr_flat: newOfficerForm.svcAddrFlat || '',
+      svc_addr_building: newOfficerForm.svcAddrBuilding || '',
+      svc_addr_street: newOfficerForm.svcAddrStreet || '',
+      svc_addr_district: newOfficerForm.svcAddrDistrict || '',
+      svc_addr_region: newOfficerForm.svcAddrRegion || '',
       date_appointed: newOfficerForm.dateAppointed || undefined,
       date_ceased: newOfficerForm.dateCeased || undefined,
       place_incorporated: newOfficerForm.placeIncorporated, company_number_ref: newOfficerForm.companyNumberRef,
@@ -939,7 +1032,8 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                       <NewOfficerForm form={newOfficerForm} setForm={setNewOfficerForm}
                         onSave={() => handleAddMemberOfficer(memberAddRole)} onCancel={() => setMemberAddRole(null)}
                         isSecretary={memberAddRole === 'secretary'} templates={secretaryTemplates}
-                        showAuthScope={memberAddRole === 'authorized_representative'} />
+                        showAuthScope={memberAddRole === 'authorized_representative'}
+                        addressSourceOptions={addressSourceOptions} fillAddrFromSource={fillAddrFromSource} />
                     )}
                   </div>
                 )}
@@ -1009,7 +1103,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                         <Plus className="h-3.5 w-3.5 mr-1" /> 新增
                       </Button>
                     </div>
-                    {addingOfficer === 'director' && <NewOfficerForm form={newOfficerForm} setForm={setNewOfficerForm} onSave={handleAddOfficer} onCancel={() => setAddingOfficer(null)} />}
+                    {addingOfficer === 'director' && <NewOfficerForm form={newOfficerForm} setForm={setNewOfficerForm} onSave={handleAddOfficer} onCancel={() => setAddingOfficer(null)} addressSourceOptions={addressSourceOptions} fillAddrFromSource={fillAddrFromSource} />}
                     {(() => {
                       const deduped = dedupePersons(activeDirectors);
                       return deduped.length > 0 ? (
@@ -1057,7 +1151,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                     </Button>
                   </div>
                 </div>
-                {addingOfficer === 'secretary' && <NewOfficerForm form={newOfficerForm} setForm={setNewOfficerForm} onSave={handleAddOfficer} onCancel={() => setAddingOfficer(null)} isSecretary templates={secretaryTemplates} />}
+                {addingOfficer === 'secretary' && <NewOfficerForm form={newOfficerForm} setForm={setNewOfficerForm} onSave={handleAddOfficer} onCancel={() => setAddingOfficer(null)} isSecretary templates={secretaryTemplates} addressSourceOptions={addressSourceOptions} fillAddrFromSource={fillAddrFromSource} />}
                 {company.secretaries.length > 0 ? (
                   <div className="grid gap-2">
                     {company.secretaries.map((s, i) => (
@@ -1083,7 +1177,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                     </Button>
                   </div>
                 </div>
-                {addingOfficer === 'authorized_representative' && <NewOfficerForm form={newOfficerForm} setForm={setNewOfficerForm} onSave={handleAddOfficer} onCancel={() => setAddingOfficer(null)} showAuthScope />}
+                {addingOfficer === 'authorized_representative' && <NewOfficerForm form={newOfficerForm} setForm={setNewOfficerForm} onSave={handleAddOfficer} onCancel={() => setAddingOfficer(null)} showAuthScope addressSourceOptions={addressSourceOptions} fillAddrFromSource={fillAddrFromSource} />}
                 {(company.authorizedReps || []).length > 0 ? (
                   <div className="grid gap-2">
                     {(company.authorizedReps || []).map((a, i) => (
@@ -1108,7 +1202,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                     </Button>
                   </div>
                 </div>
-                {addingReserve && <NewOfficerForm form={newOfficerForm} setForm={setNewOfficerForm} onSave={handleAddReserve} onCancel={() => setAddingReserve(false)} />}
+                {addingReserve && <NewOfficerForm form={newOfficerForm} setForm={setNewOfficerForm} onSave={handleAddReserve} onCancel={() => setAddingReserve(false)} addressSourceOptions={addressSourceOptions} fillAddrFromSource={fillAddrFromSource} />}
                 {(() => {
                   const deduped = dedupePersons(company.directors.filter(d => d.isReserve));
                   return deduped.length > 0 ? (
@@ -1303,14 +1397,49 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                   {selectedPerson.roleLabel === '授權代表' && (
                     <div className="col-span-2 space-y-1"><Label className="text-xs">授權範圍 (Scope of Authority)</Label><Textarea value={personForm.authScope} onChange={e => setPersonForm({ ...personForm, authScope: e.target.value })} rows={2} placeholder="例如：代表公司簽署及提交法定文件" /></div>
                   )}
-                  <div className="col-span-2 space-y-1"><Label className="text-xs">居住地址 (Residential)</Label><Textarea value={personForm.address} onChange={e => setPersonForm({ ...personForm, address: e.target.value })} rows={2} /></div>
-                  <div className="col-span-2 space-y-1">
-                    <div className="flex items-center justify-between">
-                      <Label className="text-xs">服務地址 (Service Address)</Label>
-                      <Button type="button" variant="link" size="sm" className="h-auto p-0 text-xs"
-                        onClick={() => setPersonForm({ ...personForm, serviceAddress: regAddrFull })}>同註冊辦事處</Button>
+                  {/* 通訊地址 */}
+                  <div className="col-span-2 border-t pt-2 mt-1">
+                    <div className="flex items-center justify-between mb-1">
+                      <Label className="text-xs font-semibold">通訊地址（住址）<span className="text-destructive">*</span></Label>
                     </div>
-                    <Textarea value={personForm.serviceAddress} onChange={e => setPersonForm({ ...personForm, serviceAddress: e.target.value })} rows={2} placeholder="預設同註冊辦事處地址" />
+                    <SearchableSelect options={addressSourceOptions} selected={addrCopyId} onSelect={id => fillAddrFromSource(id, 'person', 'residential')} placeholder="從系統複製地址..." searchPlaceholder="搜尋公司或人員..." emptyText="無匹配地址" className="mb-1" />
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1"><Label className="text-xs" style={{ lineHeight: 1.3 }}>Flat／Floor／Block etc. 室／樓／座等</Label><Input value={personForm.addrFlat} onChange={e => setPersonForm({ ...personForm, addrFlat: e.target.value, address: composeAddr5(e.target.value, personForm.addrBuilding, personForm.addrStreet, personForm.addrDistrict, personForm.addrRegion) })} placeholder="例如 Flat A, 12/F" /></div>
+                      <div className="space-y-1"><Label className="text-xs" style={{ lineHeight: 1.3 }}>Building 大廈</Label><Input value={personForm.addrBuilding} onChange={e => setPersonForm({ ...personForm, addrBuilding: e.target.value, address: composeAddr5(personForm.addrFlat, e.target.value, personForm.addrStreet, personForm.addrDistrict, personForm.addrRegion) })} placeholder="大廈名稱" /></div>
+                      <div className="col-span-2 space-y-1"><Label className="text-xs" style={{ lineHeight: 1.3 }}>Street／Estate／Lot／Village etc. 街道／屋苑／地段／村等</Label><Input value={personForm.addrStreet} onChange={e => setPersonForm({ ...personForm, addrStreet: e.target.value, address: composeAddr5(personForm.addrFlat, personForm.addrBuilding, e.target.value, personForm.addrDistrict, personForm.addrRegion) })} placeholder="街道及門牌號" /></div>
+                      <div className="space-y-1"><Label className="text-xs" style={{ lineHeight: 1.3 }}>District／City／Province／State／Postal Code etc. 區／市／省／州／郵遞區號等</Label><Input value={personForm.addrDistrict} onChange={e => setPersonForm({ ...personForm, addrDistrict: e.target.value, address: composeAddr5(personForm.addrFlat, personForm.addrBuilding, personForm.addrStreet, e.target.value, personForm.addrRegion) })} placeholder="例如 Central／中環" /></div>
+                      <div className="space-y-1">
+                        <Label className="text-xs" style={{ lineHeight: 1.3 }}>Country／Region 國家／地區</Label>
+                        <Input value={personForm.addrRegion} onChange={e => setPersonForm({ ...personForm, addrRegion: e.target.value, address: composeAddr5(personForm.addrFlat, personForm.addrBuilding, personForm.addrStreet, personForm.addrDistrict, e.target.value) })} placeholder="例如 Hong Kong／香港、BVI" list="cd-region-suggestions" />
+                        <datalist id="cd-region-suggestions">
+                          <option value="Hong Kong 香港" /><option value="Kowloon 九龍" /><option value="New Territories 新界" /><option value="Mainland China 中國內地" /><option value="Macau 澳門" /><option value="Taiwan 台灣" /><option value="BVI British Virgin Islands" /><option value="Cayman Islands 開曼群島" /><option value="Bermuda 百慕達" /><option value="Singapore 新加坡" /><option value="United Kingdom 英國" /><option value="United States 美國" /><option value="Overseas 海外" />
+                        </datalist>
+                      </div>
+                    </div>
+                    <div className="mt-1 space-y-1"><Label className="text-xs">完整住址（可直接編輯）</Label><Textarea value={personForm.address} onChange={e => setPersonForm({ ...personForm, address: e.target.value })} rows={1} placeholder="填寫上方分拆欄位會自動組合，亦可直接編輯此處" /></div>
+                  </div>
+                  {/* 送達地址 */}
+                  <div className="col-span-2 border-t pt-2 mt-1">
+                    <div className="flex items-center justify-between mb-1">
+                      <Label className="text-xs font-semibold">送達地址（服務地址）</Label>
+                      <Button type="button" variant="link" size="sm" className="h-auto p-0 text-xs"
+                        onClick={() => setPersonForm({ ...personForm, svcAddrFlat: personForm.addrFlat, svcAddrBuilding: personForm.addrBuilding, svcAddrStreet: personForm.addrStreet, svcAddrDistrict: personForm.addrDistrict, svcAddrRegion: personForm.addrRegion, serviceAddress: personForm.address })}>同通訊地址</Button>
+                    </div>
+                    <SearchableSelect options={addressSourceOptions} selected={svcAddrCopyId} onSelect={id => fillAddrFromSource(id, 'person', 'service')} placeholder="從系統複製地址..." searchPlaceholder="搜尋公司或人員..." emptyText="無匹配地址" className="mb-1" />
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1"><Label className="text-xs" style={{ lineHeight: 1.3 }}>Flat／Floor／Block etc. 室／樓／座等</Label><Input value={personForm.svcAddrFlat} onChange={e => setPersonForm({ ...personForm, svcAddrFlat: e.target.value, serviceAddress: composeAddr5(e.target.value, personForm.svcAddrBuilding, personForm.svcAddrStreet, personForm.svcAddrDistrict, personForm.svcAddrRegion) })} placeholder="例如 Flat A, 12/F" /></div>
+                      <div className="space-y-1"><Label className="text-xs" style={{ lineHeight: 1.3 }}>Building 大廈</Label><Input value={personForm.svcAddrBuilding} onChange={e => setPersonForm({ ...personForm, svcAddrBuilding: e.target.value, serviceAddress: composeAddr5(personForm.svcAddrFlat, e.target.value, personForm.svcAddrStreet, personForm.svcAddrDistrict, personForm.svcAddrRegion) })} placeholder="大廈名稱" /></div>
+                      <div className="col-span-2 space-y-1"><Label className="text-xs" style={{ lineHeight: 1.3 }}>Street／Estate／Lot／Village etc. 街道／屋苑／地段／村等</Label><Input value={personForm.svcAddrStreet} onChange={e => setPersonForm({ ...personForm, svcAddrStreet: e.target.value, serviceAddress: composeAddr5(personForm.svcAddrFlat, personForm.svcAddrBuilding, e.target.value, personForm.svcAddrDistrict, personForm.svcAddrRegion) })} placeholder="街道及門牌號" /></div>
+                      <div className="space-y-1"><Label className="text-xs" style={{ lineHeight: 1.3 }}>District／City／Province／State／Postal Code etc. 區／市／省／州／郵遞區號等</Label><Input value={personForm.svcAddrDistrict} onChange={e => setPersonForm({ ...personForm, svcAddrDistrict: e.target.value, serviceAddress: composeAddr5(personForm.svcAddrFlat, personForm.svcAddrBuilding, personForm.svcAddrStreet, e.target.value, personForm.svcAddrRegion) })} placeholder="例如 Central／中環" /></div>
+                      <div className="space-y-1">
+                        <Label className="text-xs" style={{ lineHeight: 1.3 }}>Country／Region 國家／地區</Label>
+                        <Input value={personForm.svcAddrRegion} onChange={e => setPersonForm({ ...personForm, svcAddrRegion: e.target.value, serviceAddress: composeAddr5(personForm.svcAddrFlat, personForm.svcAddrBuilding, personForm.svcAddrStreet, personForm.svcAddrDistrict, e.target.value) })} placeholder="例如 Hong Kong／香港、BVI" list="cd-region-suggestions-svc" />
+                        <datalist id="cd-region-suggestions-svc">
+                          <option value="Hong Kong 香港" /><option value="Kowloon 九龍" /><option value="New Territories 新界" /><option value="Mainland China 中國內地" /><option value="Macau 澳門" /><option value="Taiwan 台灣" /><option value="BVI British Virgin Islands" /><option value="Cayman Islands 開曼群島" /><option value="Bermuda 百慕達" /><option value="Singapore 新加坡" /><option value="United Kingdom 英國" /><option value="United States 美國" /><option value="Overseas 海外" />
+                        </datalist>
+                      </div>
+                    </div>
+                    <div className="mt-1 space-y-1"><Label className="text-xs">完整送達地址（可直接編輯）</Label><Textarea value={personForm.serviceAddress} onChange={e => setPersonForm({ ...personForm, serviceAddress: e.target.value })} rows={1} placeholder="填寫上方分拆欄位會自動組合，亦可直接編輯此處" /></div>
                   </div>
                   {personForm.identity === 'corporate' && (
                     <>
@@ -1539,15 +1668,19 @@ function MemberRow({ name, sub, roles, identity, extras, selected, onClick }: {
   );
 }
 
-type OfficerFormType = { nameEnglish: string; nameChinese: string; identity: string; idNumber: string; email: string; tcspNumber: string; authScope: string; address: string; serviceAddress: string; dateAppointed: string; dateCeased: string; placeIncorporated: string; companyNumberRef: string; dateOfBirth: string };
+type OfficerFormType = { nameEnglish: string; nameChinese: string; identity: string; idNumber: string; email: string; tcspNumber: string; authScope: string; address: string; addrFlat: string; addrBuilding: string; addrStreet: string; addrDistrict: string; addrRegion: string; serviceAddress: string; svcAddrFlat: string; svcAddrBuilding: string; svcAddrStreet: string; svcAddrDistrict: string; svcAddrRegion: string; dateAppointed: string; dateCeased: string; placeIncorporated: string; companyNumberRef: string; dateOfBirth: string };
 
-function NewOfficerForm({ form, setForm, onSave, onCancel, isSecretary, templates = [], showAuthScope }: {
+function NewOfficerForm({ form, setForm, onSave, onCancel, isSecretary, templates = [], showAuthScope, addressSourceOptions, fillAddrFromSource }: {
   form: OfficerFormType;
   setForm: (f: OfficerFormType) => void; onSave: () => void; onCancel: () => void;
   isSecretary?: boolean;
   templates?: import('@/hooks/useSecretaryTemplates').SecretaryTemplate[];
   showAuthScope?: boolean;
+  addressSourceOptions: { id: string; label: string; sub: string; meta: string; addrFlat: string; addrBuilding: string; addrStreet: string; addrDistrict: string; addrRegion: string }[];
+  fillAddrFromSource: (sourceId: string, targetForm: 'person' | 'newOfficer', target: 'residential' | 'service') => void;
 }) {
+  const [addrCopyId2, setAddrCopyId2] = useState('');
+  const [svcAddrCopyId2, setSvcAddrCopyId2] = useState('');
   const applyTemplate = (id: string) => {
     const t = templates.find(x => x.id === id);
     if (!t) return;
@@ -1612,8 +1745,42 @@ function NewOfficerForm({ form, setForm, onSave, onCancel, isSecretary, template
         {showAuthScope && (
           <div className="col-span-2 space-y-1"><Label className="text-xs">授權範圍 (Scope of Authority)</Label><Textarea value={form.authScope} onChange={e => setForm({ ...form, authScope: e.target.value })} rows={2} placeholder="例如：代表公司簽署及提交法定文件" /></div>
         )}
-        <div className="col-span-2 space-y-1"><Label className="text-xs">居住地址 <span className="text-destructive">*</span></Label><Textarea value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} rows={2} placeholder="地址 Address" /></div>
-        <div className="col-span-2 space-y-1"><Label className="text-xs">服務地址 (預設同註冊辦事處)</Label><Textarea value={form.serviceAddress} onChange={e => setForm({ ...form, serviceAddress: e.target.value })} rows={2} placeholder="留空則自動使用註冊辦事處地址" /></div>
+        <div className="col-span-2 border-t pt-2 mt-1">
+          <Label className="text-xs font-semibold mb-1">通訊地址（住址）<span className="text-destructive">*</span></Label>
+          <SearchableSelect options={addressSourceOptions} selected={addrCopyId2} onSelect={id => { setAddrCopyId2(''); fillAddrFromSource(id, 'newOfficer', 'residential'); }} placeholder="從系統複製地址..." searchPlaceholder="搜尋公司或人員..." emptyText="無匹配地址" className="mb-1" />
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1"><Label className="text-xs" style={{ lineHeight: 1.3 }}>Flat／Floor／Block etc. 室／樓／座等</Label><Input value={form.addrFlat} onChange={e => setForm({ ...form, addrFlat: e.target.value, address: composeAddr5(e.target.value, form.addrBuilding, form.addrStreet, form.addrDistrict, form.addrRegion) })} placeholder="例如 Flat A, 12/F" /></div>
+            <div className="space-y-1"><Label className="text-xs" style={{ lineHeight: 1.3 }}>Building 大廈</Label><Input value={form.addrBuilding} onChange={e => setForm({ ...form, addrBuilding: e.target.value, address: composeAddr5(form.addrFlat, e.target.value, form.addrStreet, form.addrDistrict, form.addrRegion) })} placeholder="大廈名稱" /></div>
+            <div className="col-span-2 space-y-1"><Label className="text-xs" style={{ lineHeight: 1.3 }}>Street／Estate／Lot／Village etc. 街道／屋苑／地段／村等</Label><Input value={form.addrStreet} onChange={e => setForm({ ...form, addrStreet: e.target.value, address: composeAddr5(form.addrFlat, form.addrBuilding, e.target.value, form.addrDistrict, form.addrRegion) })} placeholder="街道及門牌號" /></div>
+            <div className="space-y-1"><Label className="text-xs" style={{ lineHeight: 1.3 }}>District／City／Province／State／Postal Code etc. 區／市／省／州／郵遞區號等</Label><Input value={form.addrDistrict} onChange={e => setForm({ ...form, addrDistrict: e.target.value, address: composeAddr5(form.addrFlat, form.addrBuilding, form.addrStreet, e.target.value, form.addrRegion) })} placeholder="例如 Central／中環" /></div>
+            <div className="space-y-1">
+              <Label className="text-xs" style={{ lineHeight: 1.3 }}>Country／Region 國家／地區</Label>
+              <Input value={form.addrRegion} onChange={e => setForm({ ...form, addrRegion: e.target.value, address: composeAddr5(form.addrFlat, form.addrBuilding, form.addrStreet, form.addrDistrict, e.target.value) })} placeholder="例如 Hong Kong／香港、BVI" list="no-region-suggestions" />
+              <datalist id="no-region-suggestions"><option value="Hong Kong 香港" /><option value="Kowloon 九龍" /><option value="New Territories 新界" /><option value="Mainland China 中國內地" /><option value="Macau 澳門" /><option value="Taiwan 台灣" /><option value="BVI British Virgin Islands" /><option value="Cayman Islands 開曼群島" /><option value="Bermuda 百慕達" /><option value="Singapore 新加坡" /><option value="United Kingdom 英國" /><option value="United States 美國" /><option value="Overseas 海外" /></datalist>
+            </div>
+          </div>
+          <div className="mt-1 space-y-1"><Label className="text-xs">完整住址（可直接編輯）</Label><Textarea value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} rows={1} placeholder="填寫上方分拆欄位會自動組合，亦可直接編輯此處" /></div>
+        </div>
+        <div className="col-span-2 border-t pt-2 mt-1">
+          <div className="flex items-center justify-between mb-1">
+            <Label className="text-xs font-semibold">送達地址（服務地址）</Label>
+            <Button type="button" variant="link" size="sm" className="h-auto p-0 text-xs"
+              onClick={() => setForm({ ...form, svcAddrFlat: form.addrFlat, svcAddrBuilding: form.addrBuilding, svcAddrStreet: form.addrStreet, svcAddrDistrict: form.addrDistrict, svcAddrRegion: form.addrRegion, serviceAddress: form.address })}>同通訊地址</Button>
+          </div>
+          <SearchableSelect options={addressSourceOptions} selected={svcAddrCopyId2} onSelect={id => { setSvcAddrCopyId2(''); fillAddrFromSource(id, 'newOfficer', 'service'); }} placeholder="從系統複製地址..." searchPlaceholder="搜尋公司或人員..." emptyText="無匹配地址" className="mb-1" />
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1"><Label className="text-xs" style={{ lineHeight: 1.3 }}>Flat／Floor／Block etc. 室／樓／座等</Label><Input value={form.svcAddrFlat} onChange={e => setForm({ ...form, svcAddrFlat: e.target.value, serviceAddress: composeAddr5(e.target.value, form.svcAddrBuilding, form.svcAddrStreet, form.svcAddrDistrict, form.svcAddrRegion) })} placeholder="例如 Flat A, 12/F" /></div>
+            <div className="space-y-1"><Label className="text-xs" style={{ lineHeight: 1.3 }}>Building 大廈</Label><Input value={form.svcAddrBuilding} onChange={e => setForm({ ...form, svcAddrBuilding: e.target.value, serviceAddress: composeAddr5(form.svcAddrFlat, e.target.value, form.svcAddrStreet, form.svcAddrDistrict, form.svcAddrRegion) })} placeholder="大廈名稱" /></div>
+            <div className="col-span-2 space-y-1"><Label className="text-xs" style={{ lineHeight: 1.3 }}>Street／Estate／Lot／Village etc. 街道／屋苑／地段／村等</Label><Input value={form.svcAddrStreet} onChange={e => setForm({ ...form, svcAddrStreet: e.target.value, serviceAddress: composeAddr5(form.svcAddrFlat, form.svcAddrBuilding, e.target.value, form.svcAddrDistrict, form.svcAddrRegion) })} placeholder="街道及門牌號" /></div>
+            <div className="space-y-1"><Label className="text-xs" style={{ lineHeight: 1.3 }}>District／City／Province／State／Postal Code etc. 區／市／省／州／郵遞區號等</Label><Input value={form.svcAddrDistrict} onChange={e => setForm({ ...form, svcAddrDistrict: e.target.value, serviceAddress: composeAddr5(form.svcAddrFlat, form.svcAddrBuilding, form.svcAddrStreet, e.target.value, form.svcAddrRegion) })} placeholder="例如 Central／中環" /></div>
+            <div className="space-y-1">
+              <Label className="text-xs" style={{ lineHeight: 1.3 }}>Country／Region 國家／地區</Label>
+              <Input value={form.svcAddrRegion} onChange={e => setForm({ ...form, svcAddrRegion: e.target.value, serviceAddress: composeAddr5(form.svcAddrFlat, form.svcAddrBuilding, form.svcAddrStreet, form.svcAddrDistrict, e.target.value) })} placeholder="例如 Hong Kong／香港、BVI" list="no-region-suggestions-svc" />
+              <datalist id="no-region-suggestions-svc"><option value="Hong Kong 香港" /><option value="Kowloon 九龍" /><option value="New Territories 新界" /><option value="Mainland China 中國內地" /><option value="Macau 澳門" /><option value="Taiwan 台灣" /><option value="BVI British Virgin Islands" /><option value="Cayman Islands 開曼群島" /><option value="Bermuda 百慕達" /><option value="Singapore 新加坡" /><option value="United Kingdom 英國" /><option value="United States 美國" /><option value="Overseas 海外" /></datalist>
+            </div>
+          </div>
+          <div className="mt-1 space-y-1"><Label className="text-xs">完整送達地址（可直接編輯）</Label><Textarea value={form.serviceAddress} onChange={e => setForm({ ...form, serviceAddress: e.target.value })} rows={1} placeholder="填寫上方分拆欄位會自動組合，亦可直接編輯此處" /></div>
+        </div>
         {form.identity === 'corporate' && (
           <>
             <div className="space-y-1"><Label className="text-xs">TCSP 牌照號碼</Label><Input value={form.tcspNumber} onChange={e => setForm({ ...form, tcspNumber: e.target.value })} placeholder="TC No." /></div>

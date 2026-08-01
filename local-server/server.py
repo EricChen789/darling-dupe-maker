@@ -5996,12 +5996,19 @@ def _fill_nd4_pdf(data):
     _check(doc, fmap, 'cb_3_P.1', '擔保' in company_type)
 
     # ── P.1: 辭任人資料（按身份分區填寫）──
-    # fill_3_P.1 = 辭任生效日期 (Resignation Date) — 所有 officer type 統一用辭任日期
+    # fill_3_P.1 = "代替 Alternate to" — only for alternate directors
+    # fill_11/12/13_P.1 = 辭職日期 (Date of Resignation) — 模板標籤: "辭職日期 Date of Resignation" + "日DD 月MM 年YYYY"
     resign_day = data.get('resignationDay', '')
     resign_month = data.get('resignationMonth', '')
     resign_year = data.get('resignationYear', '')
     if resign_day and resign_month and resign_year:
-        _set_text(doc, fmap, 'fill_3_P.1', f'{resign_day}/{resign_month}/{resign_year}')
+        _set_text(doc, fmap, 'fill_11_P.1', resign_day)
+        _set_text(doc, fmap, 'fill_12_P.1', resign_month)
+        _set_text(doc, fmap, 'fill_13_P.1', resign_year)
+
+    # fill_3_P.1 = "代替 Alternate to" — only for alternate directors
+    if officer_type == 'alternate':
+        _set_text(doc, fmap, 'fill_3_P.1', data.get('alternateTo', '') or data.get('officerNameEnglish', ''))
 
     if identity == 'natural':
         # 自然人：中文姓名 + 英文姓氏/名字 + HKID + 护照
@@ -6020,13 +6027,6 @@ def _fill_nd4_pdf(data):
     # ── P.1: 「是否仍然擔任」— 應為「否」(toggle_5_P.1) ──
     # toggle_4_P.1 = 是/Yes, toggle_5_P.1 = 否/No
     _check(doc, fmap, 'toggle_5_P.1', True)
-
-    # ── P.1: 簽署日期（默認今天，因為生成後才簽署）──
-    from datetime import date
-    today = date.today()
-    _set_text(doc, fmap, 'fill_11_P.1', data.get('signDateDay', '') or str(today.day).zfill(2))
-    _set_text(doc, fmap, 'fill_12_P.1', data.get('signDateMonth', '') or str(today.month).zfill(2))
-    _set_text(doc, fmap, 'fill_13_P.1', data.get('signDateYear', '') or str(today.year))
 
     # ── P.1: 提交人 ──
     _set_cjk('fill_14_P.1', data.get('presentorName', ''), align='left')
@@ -6053,12 +6053,19 @@ def _fill_nd4_pdf(data):
 
     # ── P.2: 簽署 ──
     _set_text(doc, fmap, 'fill_2_P.2', data.get('signerName', '') or data.get('presentorName', ''))
-    sign_date = f"{data.get('signDateDay','')}/{data.get('signDateMonth','')}/{data.get('signDateYear','')}"
-    if sign_date != '//':
-        _set_text(doc, fmap, 'fill_3_P.2', sign_date)
+    sd = data.get('signDateDay', '') or str(date.today().day).zfill(2)
+    sm = data.get('signDateMonth', '') or str(date.today().month).zfill(2)
+    sy = data.get('signDateYear', '') or str(date.today().year)
+    sign_date = f"{sd}/{sm}/{sy}"
+    _set_text(doc, fmap, 'fill_3_P.2', sign_date)
 
     # BR on all pages
     _stamp_br_on_all_pages(doc, br8)
+
+    # Remove blank instruction pages (P.3–P.6), only keep P.1 + P.2
+    # Delete from the end to keep indices stable
+    for pno in range(doc.page_count - 1, 1, -1):
+        doc.delete_page(pno)
 
     pdf_bytes = doc.write(deflate=True)
     doc.close()
@@ -7609,8 +7616,12 @@ def _fill_nd2a_pdf(data, template='ND2A-template.pdf'):
                 _set(f'fill_3_P.{p}', chinese)
                 _set(f'fill_4_P.{p}', surname)
                 _set(f'fill_5_P.{p}', other)
-                # fill_8 = 住址, fill_9 = 國家／地區 (護照簽發國), fill_10 = 通訊地址
-                _set(f'fill_8_P.{p}', officer.get('address', ''))
+                # fill_8 = 住址（五欄地址組合）, fill_9 = 國家／地區 (護照簽發國), fill_10 = 通訊地址
+                addr_p6 = [officer.get('addrFlatBlock', ''), officer.get('addrBuilding', ''),
+                           officer.get('addrStreetEstate', ''), officer.get('addrDistrict', ''),
+                           officer.get('addrRegion', '')]
+                addr_p6_has = [x for x in addr_p6 if x]
+                _set(f'fill_8_P.{p}', ', '.join(addr_p6_has) if addr_p6_has else officer.get('address', ''))
                 if officer.get('passportCountry'):
                     _set(f'fill_9_P.{p}', officer.get('passportCountry', ''))
                 # fill_11 = 身份證號碼（完整號碼，不截斷）
@@ -7727,89 +7738,255 @@ def _fill_nd2a_pdf(data, template='ND2A-template.pdf'):
                 # Should not reach here for natural persons; fallback to P.6-style
                 pass
         else:
-            _set(f'fill_3_P.{p}', officer.get('companyName', officer.get('nameEnglish', '')))
-            _set(f'fill_5_P.{p}', officer.get('companyNumber', ''))
-            _set(f'fill_6_P.{p}', officer.get('placeIncorporated', ''))
-            _set(f'fill_7_P.{p}', officer.get('address', ''))
-            # Appointment/cessation date for corporate officers
-            date_str = None
-            if officer.get('type') == 'appointment':
-                date_str = officer.get('dateAppointed')
-            elif officer.get('type') == 'cessation':
-                date_str = officer.get('dateCeased')
-            if date_str:
-                parts = date_str.split('-')
-                if len(parts) >= 3:
-                    _set(f'fill_9_P.{p}', parts[2])
-                    _set(f'fill_10_P.{p}', parts[1])
-                    _set(f'fill_11_P.{p}', parts[0])
-            # Role: cb_1=秘書, cb_2=董事, cb_3=候補董事
-            role = officer.get('role', 'director')
+            # ── 法人團體 (Body Corporate) ──
+            # P.7 (PI-ND2A) layout is COMPLETELY different from P.3/P.5
+            if p == 7:
+                # ── P.7 (PI-ND2A) 法人團體 ──
+                # PI-ND2A 是為自然人設計的頁面。法人團體無 HKID / 護照，
+                # 只填姓名 + 地址 + 角色，fill_5/6/7/8（HKID/護照）留空。
+                _set(f'fill_2_P.7', officer.get('nameChinese', ''))
+                # English name: company name split into surname+otherNames for P.7
+                eng_full = officer.get('companyName', officer.get('nameEnglish', ''))
+                eng_parts = eng_full.strip().split()
+                if len(eng_parts) > 1:
+                    _set(f'fill_3_P.7', eng_parts[0])  # 首詞→姓氏位
+                    _set(f'fill_4_P.7', ' '.join(eng_parts[1:]))  # 餘詞→名字位
+                else:
+                    _set(f'fill_3_P.7', eng_full)
+                # 法人無 HKID / 護照 → fill_5/6/7/8 全部留空
+                # 五欄地址
+                addr_flat = officer.get('addrFlatBlock', '')
+                addr_bld = officer.get('addrBuilding', '')
+                addr_se = officer.get('addrStreetEstate', '')
+                addr_dist = officer.get('addrDistrict', '')
+                addr_reg = officer.get('addrRegion', '')
+                if any([addr_flat, addr_bld, addr_se, addr_dist, addr_reg]):
+                    _set(f'fill_9_P.7', addr_flat)
+                    _set(f'fill_10_P.7', addr_bld)
+                    _set(f'fill_11_P.7', addr_se)
+                    _set(f'fill_12_P.7', addr_dist)
+                    _set(f'fill_13_P.7', addr_reg)
+                else:
+                    _set(f'fill_9_P.7', officer.get('address', ''))
+                # Role
+                role = officer.get('role', 'director')
+                if role == 'secretary':
+                    _check(f'cb_1_P.7')
+                elif role == 'alternate':
+                    _check(f'cb_3_P.7')
+                else:
+                    _check(f'cb_2_P.7')
+            else:
+                # ── P.3/P.5 法人團體 (Body Corporate) ──
+                # Field mapping verified by 千问 VL (2026-08-01):
+                #   fill_3 = 中文名稱, fill_4 = 英文名稱
+                #   fill_5 = Flat/Floor/Block, fill_6 = Building
+                #   fill_7 = Street/Estate, fill_8 = District/City
+                #   fill_9 = Country/Region, fill_10 = Email
+                #   fill_11 = Business Registration Number (牌照) [right col]
+                #   fill_12 = TCSP Licence No. [left col]
+                #   fill_14/15/16 = Date of Appointment D/M/Y
+                _set(f'fill_3_P.{p}', officer.get('nameChinese', ''))
+                _set(f'fill_4_P.{p}', officer.get('companyName', officer.get('nameEnglish', '')))
+                # 五欄地址：優先使用結構化地址，fallback 到 flat address
+                addr_flat = officer.get('addrFlatBlock', '')
+                addr_bld = officer.get('addrBuilding', '')
+                addr_se = officer.get('addrStreetEstate', '')
+                addr_dist = officer.get('addrDistrict', '')
+                addr_reg = officer.get('addrRegion', '')
+                if any([addr_flat, addr_bld, addr_se, addr_dist, addr_reg]):
+                    _set(f'fill_5_P.{p}', addr_flat)
+                    _set(f'fill_6_P.{p}', addr_bld)
+                    _set(f'fill_7_P.{p}', addr_se)
+                    _set(f'fill_8_P.{p}', addr_dist)
+                    _set(f'fill_9_P.{p}', addr_reg)
+                else:
+                    # Fallback: parse flat address string
+                    addr = officer.get('address', '')
+                    if addr:
+                        _set(f'fill_5_P.{p}', addr)
+                # Email
+                if officer.get('email'):
+                    _set(f'fill_10_P.{p}', officer.get('email', ''))
+                # Business Registration Number (商業登記號碼 = 牌照)
+                if officer.get('companyNumber'):
+                    _set(f'fill_11_P.{p}', officer.get('companyNumber', ''))
+                # TCSP Licence No. (fill_12, left column) — only if applicable
+                if officer.get('tcspLicence'):
+                    _set(f'fill_12_P.{p}', officer.get('tcspLicence', ''))
+                # Appointment/cessation date for corporate officers: fill_14/15/16 = D/M/Y
+                date_str = None
+                if officer.get('type') == 'appointment':
+                    date_str = officer.get('dateAppointed')
+                elif officer.get('type') == 'cessation':
+                    date_str = officer.get('dateCeased')
+                if date_str:
+                    parts = date_str.split('-')
+                    if len(parts) >= 3:
+                        _set(f'fill_14_P.{p}', parts[2])
+                        _set(f'fill_15_P.{p}', parts[1])
+                        _set(f'fill_16_P.{p}', parts[0])
+                # Role: cb_1=秘書, cb_2=董事, cb_3=候補董事
+                role = officer.get('role', 'director')
+                if role == 'secretary':
+                    _check(f'cb_1_P.{p}')
+                elif role == 'alternate':
+                    _check(f'cb_3_P.{p}')
+                else:
+                    _check(f'cb_2_P.{p}')
+                # Type: only cessation needs checkbox (appointment is implicit)
+                if officer.get('type') == 'cessation':
+                    _check(f'cb_4_P.{p}')
+
+                # ── P.3/P.5 法人團體簽署橫線（千问 VL 驗證 2026-08-02）──
+                # 第一簽署：董事(法人團體)的 董事／公司秘書／獲授權人士*
+                #   Dropdown_3=董事, Dropdown_4=公司秘書, Dropdown_5=獲授權人士
+                #   默認由法人團體的董事簽署 → KEEP 董事, CROSS OUT 公司秘書+獲授權人士
+                # 第二簽署：董事Director／公司秘書Company Secretary*
+                #   Dropdown_6=董事, Dropdown_7=公司秘書
+                #   默認董事簽署 → KEEP 董事, CROSS OUT 公司秘書
+                if p in (3, 5):
+                    # First signature: Dropdown_3/4/5 (中英文雙行，不 break)
+                    # KEEP Dropdown_3 (董事), CROSS OUT Dropdown_4+5
+                    for dn in ('Dropdown_3', 'Dropdown_4', 'Dropdown_5'):
+                        key = f'{dn}_P.{p}'
+                        if key not in fmap:
+                            continue
+                        pi = fmap[key]
+                        cross_out = dn in ('Dropdown_4', 'Dropdown_5')
+                        for w in doc[pi].widgets():
+                            if w.field_name == key:
+                                try:
+                                    opt_idx = 1 if cross_out else 0
+                                    doc.xref_set_key(w._annot.xref, 'I', f'[{opt_idx}]')
+                                    val = w.choice_values[opt_idx]
+                                    doc.xref_set_key(w._annot.xref, 'V', fitz.get_pdf_str(val))
+                                    doc.xref_set_key(w._annot.xref, 'F', '4')
+                                    if cross_out:
+                                        doc[pi].draw_line(
+                                            fitz.Point(w.rect.x0 + 2, w.rect.y0 + w.rect.height / 2),
+                                            fitz.Point(w.rect.x1 - 2, w.rect.y0 + w.rect.height / 2),
+                                            color=(0, 0, 0), width=1.0
+                                        )
+                                except Exception:
+                                    pass
+                    # Second signature: Dropdown_6/7 (中英文雙行，不 break)
+                    # KEEP Dropdown_6 (董事), CROSS OUT Dropdown_7 (公司秘書)
+                    for dn in ('Dropdown_6', 'Dropdown_7'):
+                        key = f'{dn}_P.{p}'
+                        if key not in fmap:
+                            continue
+                        pi = fmap[key]
+                        cross_out = (dn == 'Dropdown_7')
+                        for w in doc[pi].widgets():
+                            if w.field_name == key:
+                                try:
+                                    opt_idx = 1 if cross_out else 0
+                                    doc.xref_set_key(w._annot.xref, 'I', f'[{opt_idx}]')
+                                    val = w.choice_values[opt_idx]
+                                    doc.xref_set_key(w._annot.xref, 'V', fitz.get_pdf_str(val))
+                                    doc.xref_set_key(w._annot.xref, 'F', '4')
+                                    if cross_out:
+                                        doc[pi].draw_line(
+                                            fitz.Point(w.rect.x0 + 2, w.rect.y0 + w.rect.height / 2),
+                                            fitz.Point(w.rect.x1 - 2, w.rect.y0 + w.rect.height / 2),
+                                            color=(0, 0, 0), width=1.0
+                                        )
+                                except Exception:
+                                    pass
+
+    # ── PI-ND2A 受保護資料頁（P.7）：始終填入第一個人的完整資料 ──
+    # P.7 是獨立於主表格的受保護資料頁，公眾紀錄不會顯示。
+    # 優先取第一個自然人（完整 HKID + 護照），若無自然人則取第一個法人團體（BR + 成立地）。
+    first_nat = next((o for o in officers if o.get('identity') == 'natural'), None)
+    first_corp = next((o for o in officers if o.get('identity') == 'corporate'), None)
+    pi_subject = first_nat or first_corp  # 優先自然人，fallback 法人
+    if pi_subject and fmap.get('fill_1_P.7') is not None:
+        p = 7
+        is_nat = pi_subject.get('identity') == 'natural'
+        if is_nat:
+            # ── 自然人 PI-ND2A：完整 HKID + 護照 ──
+            eng = pi_subject.get('nameEnglish', '') or ''
+            surname = pi_subject.get('nameSurname', '') or ''
+            other = pi_subject.get('nameOtherNames', '') or pi_subject.get('nameOther', '') or ''
+            if not surname and eng:
+                parts = eng.strip().split()
+                surname = parts[-1] if len(parts) > 1 else (parts[0] if parts else '')
+                other = ' '.join(parts[:-1]) if len(parts) > 1 else ''
+            chinese = pi_subject.get('nameChinese', '')
+            _set(f'fill_2_P.{p}', chinese)
+            _set(f'fill_3_P.{p}', surname)
+            _set(f'fill_4_P.{p}', other)
+            # HKID 完整號碼 + 括號校驗位
+            id_full = pi_subject.get('idNumber', '') or ''
+            if id_full:
+                import re as _re
+                hkid_match = _re.match(r'^([A-Za-z]?\d+)\s*(\([^)]*\))?$', id_full.strip())
+                if hkid_match:
+                    _set(f'fill_5_P.{p}', hkid_match.group(1), align='right')
+                    if hkid_match.group(2):
+                        _set(f'fill_6_P.{p}', hkid_match.group(2))
+                else:
+                    _set(f'fill_5_P.{p}', id_full, align='right')
+            # 護照：簽發國家 + 完整號碼（不截斷）
+            if pi_subject.get('passportCountry'):
+                _set(f'fill_7_P.{p}', pi_subject.get('passportCountry', ''))
+            if pi_subject.get('passportNumber'):
+                _set(f'fill_8_P.{p}', pi_subject['passportNumber'])
+            # 通常住址
+            addr_fb = pi_subject.get('addrFlatBlock', '')
+            addr_bld = pi_subject.get('addrBuilding', '')
+            addr_se = pi_subject.get('addrStreetEstate', '')
+            addr_dist = pi_subject.get('addrDistrict', '')
+            addr_reg = pi_subject.get('addrRegion', '')
+            if any([addr_fb, addr_bld, addr_se, addr_dist, addr_reg]):
+                _set(f'fill_9_P.{p}', addr_fb)
+                _set(f'fill_10_P.{p}', addr_bld)
+                _set(f'fill_11_P.{p}', addr_se)
+                _set(f'fill_12_P.{p}', addr_dist)
+                _set(f'fill_13_P.{p}', addr_reg)
+            else:
+                _set(f'fill_9_P.{p}', pi_subject.get('address', ''))
+            # Role checkbox
+            role = pi_subject.get('role', 'director')
             if role == 'secretary':
                 _check(f'cb_1_P.{p}')
             elif role == 'alternate':
                 _check(f'cb_3_P.{p}')
             else:
                 _check(f'cb_2_P.{p}')
-            # Type: only cessation needs checkbox (appointment is implicit)
-            if officer.get('type') == 'cessation':
-                _check(f'cb_4_P.{p}')
-
-    # ── PI-ND2A 受保護資料頁（P.7）：始終填入第一個自然人的完整資料 ──
-    # P.7 是獨立於主表格的受保護資料頁，公眾紀錄不會顯示。
-    # 此頁顯示完整 HKID 和護照號碼（不截斷），以及董事／候補董事的通常住址。
-    first_nat = next((o for o in officers if o.get('identity') == 'natural'), None)
-    if first_nat and fmap.get('fill_1_P.7') is not None:
-        p = 7
-        eng = first_nat.get('nameEnglish', '') or ''
-        surname = first_nat.get('nameSurname', '') or ''
-        other = first_nat.get('nameOtherNames', '') or first_nat.get('nameOther', '') or ''
-        if not surname and eng:
-            parts = eng.strip().split()
-            surname = parts[-1] if len(parts) > 1 else (parts[0] if parts else '')
-            other = ' '.join(parts[:-1]) if len(parts) > 1 else ''
-        chinese = first_nat.get('nameChinese', '')
-        _set(f'fill_2_P.{p}', chinese)
-        _set(f'fill_3_P.{p}', surname)
-        _set(f'fill_4_P.{p}', other)
-        # HKID 完整號碼 + 括號校驗位
-        id_full = first_nat.get('idNumber', '') or ''
-        if id_full:
-            import re as _re
-            hkid_match = _re.match(r'^([A-Za-z]?\d+)\s*(\([^)]*\))?$', id_full.strip())
-            if hkid_match:
-                _set(f'fill_5_P.{p}', hkid_match.group(1), align='right')
-                if hkid_match.group(2):
-                    _set(f'fill_6_P.{p}', hkid_match.group(2))
+        else:
+            # ── 法人團體 PI-ND2A：只填姓名+地址+角色，不填HKID/護照（公司沒有）──
+            _set(f'fill_2_P.7', pi_subject.get('nameChinese', ''))
+            eng_full = pi_subject.get('companyName', pi_subject.get('nameEnglish', ''))
+            eng_parts = eng_full.strip().split()
+            if len(eng_parts) > 1:
+                _set(f'fill_3_P.7', eng_parts[0])
+                _set(f'fill_4_P.7', ' '.join(eng_parts[1:]))
             else:
-                _set(f'fill_5_P.{p}', id_full, align='right')
-        # 護照：簽發國家 + 完整號碼（不截斷）
-        if first_nat.get('passportCountry'):
-            _set(f'fill_7_P.{p}', first_nat.get('passportCountry', ''))
-        if first_nat.get('passportNumber'):
-            _set(f'fill_8_P.{p}', first_nat['passportNumber'])
-        # 通常住址（僅董事／候補董事需要，秘書可選填）
-        addr_fb = first_nat.get('addrFlatBlock', '')
-        addr_bld = first_nat.get('addrBuilding', '')
-        addr_se = first_nat.get('addrStreetEstate', '')
-        addr_dist = first_nat.get('addrDistrict', '')
-        addr_reg = first_nat.get('addrRegion', '')
-        if any([addr_fb, addr_bld, addr_se, addr_dist, addr_reg]):
-            _set(f'fill_9_P.{p}', addr_fb)
-            _set(f'fill_10_P.{p}', addr_bld)
-            _set(f'fill_11_P.{p}', addr_se)
-            _set(f'fill_12_P.{p}', addr_dist)
-            _set(f'fill_13_P.{p}', addr_reg)
-        else:
-            _set(f'fill_9_P.{p}', first_nat.get('address', ''))
-        # Role checkbox
-        role = first_nat.get('role', 'director')
-        if role == 'secretary':
-            _check(f'cb_1_P.{p}')
-        elif role == 'alternate':
-            _check(f'cb_3_P.{p}')
-        else:
-            _check(f'cb_2_P.{p}')
+                _set(f'fill_3_P.7', eng_full)
+            # 法人團體無 HKID / 護照 → fill_5/6/7/8 留空
+            # Address
+            addr_fb = pi_subject.get('addrFlatBlock', '')
+            addr_bld = pi_subject.get('addrBuilding', '')
+            addr_se = pi_subject.get('addrStreetEstate', '')
+            addr_dist = pi_subject.get('addrDistrict', '')
+            addr_reg = pi_subject.get('addrRegion', '')
+            if any([addr_fb, addr_bld, addr_se, addr_dist, addr_reg]):
+                _set(f'fill_9_P.7', addr_fb)
+                _set(f'fill_10_P.7', addr_bld)
+                _set(f'fill_11_P.7', addr_se)
+                _set(f'fill_12_P.7', addr_dist)
+                _set(f'fill_13_P.7', addr_reg)
+            else:
+                _set(f'fill_9_P.7', pi_subject.get('address', ''))
+            role = pi_subject.get('role', 'director')
+            if role == 'secretary':
+                _check(f'cb_1_P.7')
+            elif role == 'alternate':
+                _check(f'cb_3_P.7')
+            else:
+                _check(f'cb_2_P.7')
 
     # ── P.1 日期（僅停任，取自第一個 officer） ──
     # fill_11/12/13 = D/M/Y（三個並排窄框），委任不填 P.1 日期
@@ -7858,7 +8035,10 @@ def _fill_nd2a_pdf(data, template='ND2A-template.pdf'):
     _set('fill_18_P.1', data.get('presentorEmail', ''))
     _set('fill_19_P.1', data.get('presentorReference', ''))
 
-    # ⚠️ 不删页：保留模板全部页面（仅 NAR1 可以删空页）
+    # Delete blank pages after P.7 (keep P.1~P.7, P.8+ are blank instruction pages)
+    for pno in range(doc.page_count - 1, 6, -1):
+        doc.delete_page(pno)
+
     pdf_bytes = doc.write(deflate=True)
     doc.close()
     return pdf_bytes

@@ -15,10 +15,10 @@ interface QuickFormDialogProps {
   company: {
     id: string;
     name: string;
-    chinese_name?: string;
-    company_number?: string;
-    ci_number?: string;
-    incorporation_date?: string;
+    chineseName?: string;
+    brNumber?: string;
+    ciNumber?: string;
+    incorporationDate?: string;
     jurisdiction?: string;
   };
   event: {
@@ -119,7 +119,9 @@ function buildFormPayload(
 ): any {
   const { raw } = event;
   const rawRole = raw?.role || 'director';
-  const role = mapRole(rawRole);
+  let role = mapRole(rawRole);
+  // If the person is an alternate director (候補董事), use 'alternate'
+  if (raw?.isReserve) role = 'alternate';
   const today = new Date().toLocaleDateString('en-GB');
 
   // Parse names once
@@ -178,13 +180,14 @@ function buildFormPayload(
     company_id: company.id,
     companyId: company.id,
     companyName: company.name,
-    chineseCompanyName: company.chinese_name || '',
-    brNumber: company.company_number || '',
-    ciNumber: company.ci_number || '',
+    chineseCompanyName: company.chineseName || '',
+    brNumber: company.brNumber || '',
+    ciNumber: company.ciNumber || '',
   };
 
   switch (formKey) {
     case 'nd2a_appoint': {
+      const isCorporate = (raw?.identity || 'natural') === 'corporate';
       const officer: any = {
         nameEnglish: engFull,
         nameSurname: surname,
@@ -197,10 +200,30 @@ function buildFormPayload(
         dateAppointed,
         type: 'appointment',
       };
+      // Corporate-specific fields (P.3/P.5/P.7 法人團體)
+      // Backend mapping: companyName→fill_4, companyNumber→fill_11(BR), tcspLicence→fill_12(牌照號碼)
+      if (isCorporate) {
+        officer.companyName = engFull;  // 公司英文名稱 → fill_4
+        // 法人 companyNumber 用 company_number_ref（非 id_number，後者為 HKID 欄位）
+        const corpBR = rget(raw, 'companyNumberRef', 'company_number_ref') || idNumber || '';
+        officer.companyNumber = corpBR;  // 商業登記號碼 → fill_11
+        officer.placeIncorporated = rget(raw, 'placeIncorporated', 'place_incorporated') || raw?.addrRegion || raw?.addr_region || 'Hong Kong';
+        const tcspLicence = rget(raw, 'tcspNumber', 'tcsp_number') || (raw as any)?.tcsp_number || (raw as any)?.tcspLicence || '';
+        if (tcspLicence) officer.tcspLicence = tcspLicence;  // TCSP 牌照號碼 → fill_12
+      }
+      // Already director (for natural person cb_5/cb_6 on P.2)
+      if (!isCorporate) {
+        const alreadyDir = rget(raw, 'alreadyDirector', 'already_director');
+        if (alreadyDir === 'yes' || alreadyDir === 'no') {
+          officer.alreadyDirector = alreadyDir;
+        } else {
+          officer.alreadyDirector = 'no';  // default: not already a director
+        }
+      }
       // Passport
       if (raw?.passportCountry || raw?.passport_country) officer.passportCountry = rget(raw, 'passportCountry', 'passport_country');
       if (passportNumber) officer.passportNumber = passportNumber;
-      // Structured address (preferred by backend for P.2 fill_10~14)
+      // Structured address (preferred by backend for P.2 fill_10~14 / P.7 fill_9~13)
       if (addrFlatBlock || addrBuilding || addrStreetEstate || addrDistrict || addrRegion) {
         officer.addrFlatBlock = addrFlatBlock;
         officer.addrBuilding = addrBuilding;
@@ -212,7 +235,19 @@ function buildFormPayload(
       if (role === 'alternate') {
         officer.alternateTo = rget(raw, 'alternateTo', 'alternate_to');
       }
-      return { ...base, officers: [officer] };
+      // Signer (defaults to the appointee) & presenter
+      return {
+        ...base,
+        officers: [officer],
+        signerName: engFull,
+        signDate: today.split('/').reverse().join('-'),  // DD/MM/YYYY → YYYY-MM-DD
+        presentorName: DEFAULT_PRESENTER.name,
+        presentorAddress: DEFAULT_PRESENTER.address,
+        presentorPhone: DEFAULT_PRESENTER.phone,
+        presentorFax: DEFAULT_PRESENTER.fax,
+        presentorEmail: DEFAULT_PRESENTER.email,
+        presentorReference: DEFAULT_PRESENTER.reference,
+      };
     }
     case 'nd4_cease': {
       // ND4 backend expects flat top-level keys (NOT officers[] array)
@@ -295,9 +330,9 @@ function buildFormPayload(
       const dateParts = parseDateParts(txDate);
       return {
         company_id: company.id,
-        brNumber: company.company_number || '',
+        brNumber: company.brNumber || '',
         fields: {
-          'fill_1_P.1': (company.company_number || '').replace(/[^0-9A-Za-z]/g, '').slice(0, 8),
+          'fill_1_P.1': (company.brNumber || '').replace(/[^0-9A-Za-z]/g, '').slice(0, 8),
           'fill_2_P.1': company.name,
           'fill_3_P.1': txDate,
           'fill_4_P.1': dateParts.day,
@@ -390,7 +425,7 @@ export function QuickFormDialog({ open, onOpenChange, company, event }: QuickFor
         <div className="space-y-3 py-2">
           <div className="text-sm text-muted-foreground">
             公司：<span className="font-medium text-foreground">{company.name}</span>
-            {company.chinese_name && <span className="text-foreground">（{company.chinese_name}）</span>}
+            {company.chineseName && <span className="text-foreground">（{company.chineseName}）</span>}
           </div>
           <div className="text-sm text-muted-foreground">
             事件類型：<Badge variant="secondary" className="ml-1">{event.type}</Badge>

@@ -6241,27 +6241,26 @@ def _fill_nsc1_pdf(data):
                 c = dict(company)
                 if not br8:
                     br8 = re.sub(r'[^0-9A-Za-z]', '', c.get('company_number', '') or '')[:8]
-                # Auto-fill company fields
-                for k, v in {
-                    'fill_1_P.1': br8,
-                    'fill_2_P.1': c.get('name', ''),
-                }.items():
-                    if not data.get(k.replace('fill_', '').replace('_P.', ''), ''):
-                        _set_text(doc, fmap, k, v)
-                # Presenter info
-                address = ' '.join(filter(None, [
-                    c.get('reg_flat', ''), c.get('reg_building', ''),
-                    c.get('reg_street', ''), c.get('reg_district', ''), c.get('reg_region', '')
-                ]))
-                for k, v in {
-                    'fill_30_P.1': c.get('name', ''),
-                    'fill_31_P.1': address,
-                    'fill_32_P.1': c.get('phone', ''),
-                    'fill_34_P.1': c.get('email', ''),
-                }.items():
-                    _set_text(doc, fmap, k, v)
+                # Auto-fill company header fields (only if not provided by caller)
+                if not data.get('fields', {}).get('fill_1_P.1', ''):
+                    _set_text(doc, fmap, 'fill_1_P.1', br8)
+                if not data.get('fields', {}).get('fill_2_P.1', ''):
+                    _set_text(doc, fmap, 'fill_2_P.1', c.get('name', ''))
         except Exception:
             pass  # DB lookup is best-effort; fall through to manual fields
+
+    # ── Presenter defaults (Twinsail) — fill only if caller hasn't provided them ──
+    presenter_defaults = {
+        'fill_30_P.1': 'Twinsail Consultants Limited',
+        'fill_31_P.1': 'Room 1203, 12/F, Wing On Centre, 111 Connaught Road Central, Hong Kong',
+        'fill_32_P.1': '+852 2521 3888',
+        'fill_33_P.1': '+852 2521 3999',
+        'fill_34_P.1': 'info@twinsail.com',
+        'fill_35_P.1': 'TS-2026-001',
+    }
+    for k, v in presenter_defaults.items():
+        if not data.get('fields', {}).get(k, ''):
+            _set_text(doc, fmap, k, v)
 
     # ── Fill all provided fields ──
     fields = data.get('fields', {})
@@ -6307,6 +6306,58 @@ def _fill_nsc1_pdf(data):
 
     # ── BR on all pages ──
     _stamp_br_on_all_pages(doc, br8)
+
+    # ── P.2: Mark as cash consideration (cb_1 = "wholly for cash") ──
+    _check(doc, fmap, 'cb_1_P.2', True)
+
+    # ── P.3: Signature — Company Secretary (cross out Director) ──
+    # Dropdown1 = Director option, Dropdown2 = Company Secretary option
+    # Index 0 = keep (blank), Index 1 = cross out (line)
+    for dd_name in ('Dropdown1_P.3', 'Dropdown2_P.3'):
+        if dd_name in fmap:
+            pi = fmap[dd_name]
+            for w in doc[pi].widgets():
+                if w.field_name == dd_name:
+                    try:
+                        # Dropdown1 (Director) → index 1 (line = cross out)
+                        # Dropdown2 (Secretary) → index 0 (blank = keep)
+                        idx = 1 if dd_name == 'Dropdown1_P.3' else 0
+                        w.field_value = 'Yes'
+                        doc.xref_set_key(w._annot.xref, 'I', str(idx))
+                    except Exception:
+                        pass
+                    # Draw black line across Director option for safety
+                    if dd_name == 'Dropdown1_P.3':
+                        try:
+                            r = w.rect
+                            page3 = doc[2]
+                            line_y = (r.y0 + r.y1) / 2
+                            page3.draw_line(
+                                fitz.Point(r.x0 + 2, line_y),
+                                fitz.Point(r.x1 - 2, line_y),
+                                color=(0, 0, 0), width=1.0
+                            )
+                        except Exception:
+                            pass
+                    break
+
+    # ── P.3: Signature date = today ──
+    today_str = datetime.now().strftime('%d/%m/%Y')
+    if 'fill_27_P.3' in fmap:
+        _set_text(doc, fmap, 'fill_27_P.3', f'For and on behalf of Twinsail Consultants Limited')
+    if 'fill_28_P.3' in fmap:
+        _set_text(doc, fmap, 'fill_28_P.3', today_str)
+
+    # ── P.3: Continuation sheets counter → "0" (no continuation sheets) ──
+    for cnt_name in ('fill_22_P.3', 'fill_23_P.3', 'fill_24_P.3', 'fill_25_P.3', 'fill_26_P.3'):
+        if cnt_name in fmap:
+            _set_text(doc, fmap, cnt_name, '0')
+
+    # ── Delete empty continuation pages (P.4 onward, 0-indexed: 3..end) ──
+    # Keep pages 0-2 (P.1, P.2, P.3), delete the rest
+    keep_until_page = 2  # 0-indexed: keep P.1(0), P.2(1), P.3(2)
+    for pno in range(doc.page_count - 1, keep_until_page, -1):
+        doc.delete_page(pno)
 
     pdf_bytes = doc.write(deflate=True)
     doc.close()

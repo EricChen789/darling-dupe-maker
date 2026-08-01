@@ -335,9 +335,15 @@ function buildFormPayload(
       const allotParts = parseDateParts(txDate);
       const todayParts = parseDateParts(today);
       const br8 = (company.brNumber || '').replace(/[^0-9A-Za-z]/g, '').slice(0, 8);
+      const allotteeName = raw?.to_name || raw?.toName || '';
       return {
         company_id: company.id,
         brNumber: br8,
+        // Allottee data for Schedule 2 (附表二)
+        allotteeName,
+        allotteeShares: shares,
+        allotteeClass: shareType,
+        allotmentDate: `${allotParts.day}/${allotParts.month}/${allotParts.year}`,
         fields: {
           // ── Page 1: Header ──
           'fill_1_P.1': br8,

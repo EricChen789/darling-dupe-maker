@@ -83,8 +83,10 @@ export async function onRequest(context: { request: Request; env: Env }) {
       if (!fields[name] || !fields[name].trim()) fields[name] = value;
     };
 
-    // Header
+    // Header — BR on every main page fill_1
     setIfEmpty('fill_1_P.1', brNumber);
+    setIfEmpty('fill_1_P.2', brNumber);
+    setIfEmpty('fill_1_P.3', brNumber);
     setIfEmpty('fill_2_P.1', companyName || rget(data, 'companyName') || '');
 
     // ── Presenter defaults (Twinsail) ──
@@ -111,6 +113,8 @@ export async function onRequest(context: { request: Request; env: Env }) {
 
     // ── P.2: Mark as cash consideration ──
     try { form.getCheckBox('cb_1_P.2').check(); } catch { /* skip */ }
+    // ── P.2 §5: 獲配發股份者的詳情列於附表二 / Details of Allottee(s) are listed in Schedule 2 ──
+    try { form.getCheckBox('cb_3_P.2').check(); } catch { /* skip */ }
 
     // ── P.3: Signature — Company Secretary (cross out Director) ──
     // Dropdown1=Director, Dropdown2=Secretary; index 0=keep, index 1=cross out
@@ -125,23 +129,36 @@ export async function onRequest(context: { request: Request; env: Env }) {
       if (opts.length > 0) dd2.select(opts[0]);
     } catch { /* skip */ }
 
-    // P.3: Signature text + date
+    // P.3: Signature date only (signer name left blank per user request)
     const todayStr = new Date().toLocaleDateString('en-GB');
-    try { form.getTextField('fill_27_P.3').setText('For and on behalf of Twinsail Consultants Limited'); } catch { /* skip */ }
     try { form.getTextField('fill_28_P.3').setText(todayStr); } catch { /* skip */ }
 
-    // P.3: Continuation sheets counter → "0"
-    for (const name of ['fill_22_P.3', 'fill_23_P.3', 'fill_24_P.3', 'fill_25_P.3', 'fill_26_P.3']) {
-      try { form.getTextField(name).setText('0'); } catch { /* skip */ }
-    }
+    // P.3: Continuation sheets counter — leave blank (user: don't write 0)
 
     // ── Enable NeedAppearances (reader rebuilds appearances, saves CPU) ──
     enableNeedAppearances(pdfDoc);
 
-    // ── Delete empty continuation pages (P.4+, keep P.1-P.3) ──
+    // ── Page management: keep P.1-P.3 (main form) + P.9-P.10 (Schedule 2), delete rest ──
+    // 14-page template → keep indices 0,1,2 (P.1-3) and 8,9 (P.9-10 = Schedule 2)
+    const keepPages = new Set([0, 1, 2, 8, 9]);
     const allPages = pdfDoc.getPages();
-    for (let i = allPages.length - 1; i >= 3; i--) {
-      pdfDoc.removePage(i);
+    for (let i = allPages.length - 1; i >= 0; i--) {
+      if (!keepPages.has(i)) {
+        pdfDoc.removePage(i);
+      }
+    }
+
+    // ── Schedule 2 (now P.4, index 3): allottee details ──
+    const allotteeName = rget(data, 'allotteeName') || '';
+    if (allotteeName) {
+      const allotDate = rget(data, 'allotmentDate') || todayStr;
+      const [dd, mm, yyyy] = allotDate.split('/');
+      try { form.getTextField('fill_1_P.9').setText(dd || ''); } catch { /* skip */ }
+      try { form.getTextField('fill_2_P.9').setText(mm || ''); } catch { /* skip */ }
+      try { form.getTextField('fill_3_P.9').setText(yyyy || ''); } catch { /* skip */ }
+      try { form.getTextField('fill_4_P.9').setText(brNumber); } catch { /* skip */ }
+      // Allottee name
+      try { form.getTextField('fill_7_P.9').setText(allotteeName); } catch { /* skip */ }
     }
 
     // ── BR stamp on remaining pages ──

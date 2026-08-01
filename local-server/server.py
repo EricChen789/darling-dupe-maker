@@ -6244,6 +6244,11 @@ def _fill_nsc1_pdf(data):
                 # Auto-fill company header fields (only if not provided by caller)
                 if not data.get('fields', {}).get('fill_1_P.1', ''):
                     _set_text(doc, fmap, 'fill_1_P.1', br8)
+                # BR on every main page fill_1
+                if not data.get('fields', {}).get('fill_1_P.2', ''):
+                    _set_text(doc, fmap, 'fill_1_P.2', br8)
+                if not data.get('fields', {}).get('fill_1_P.3', ''):
+                    _set_text(doc, fmap, 'fill_1_P.3', br8)
                 if not data.get('fields', {}).get('fill_2_P.1', ''):
                     _set_text(doc, fmap, 'fill_2_P.1', c.get('name', ''))
         except Exception:
@@ -6309,6 +6314,8 @@ def _fill_nsc1_pdf(data):
 
     # ── P.2: Mark as cash consideration (cb_1 = "wholly for cash") ──
     _check(doc, fmap, 'cb_1_P.2', True)
+    # ── P.2 §5: 獲配發股份者的詳情列於附表二 / Details of Allottee(s) are listed in Schedule 2 ──
+    _check(doc, fmap, 'cb_3_P.2', True)
 
     # ── P.3: Signature — Company Secretary (cross out Director) ──
     # Dropdown1 = Director option, Dropdown2 = Company Secretary option
@@ -6341,23 +6348,31 @@ def _fill_nsc1_pdf(data):
                             pass
                     break
 
-    # ── P.3: Signature date = today ──
+    # ── P.3: Signature date only (signer name left blank per user request) ──
     today_str = datetime.now().strftime('%d/%m/%Y')
-    if 'fill_27_P.3' in fmap:
-        _set_text(doc, fmap, 'fill_27_P.3', f'For and on behalf of Twinsail Consultants Limited')
     if 'fill_28_P.3' in fmap:
         _set_text(doc, fmap, 'fill_28_P.3', today_str)
 
-    # ── P.3: Continuation sheets counter → "0" (no continuation sheets) ──
-    for cnt_name in ('fill_22_P.3', 'fill_23_P.3', 'fill_24_P.3', 'fill_25_P.3', 'fill_26_P.3'):
-        if cnt_name in fmap:
-            _set_text(doc, fmap, cnt_name, '0')
+    # ── P.3: Continuation sheets counter — leave blank (user: don't write 0) ──
 
-    # ── Delete empty continuation pages (P.4 onward, 0-indexed: 3..end) ──
-    # Keep pages 0-2 (P.1, P.2, P.3), delete the rest
-    keep_until_page = 2  # 0-indexed: keep P.1(0), P.2(1), P.3(2)
-    for pno in range(doc.page_count - 1, keep_until_page, -1):
-        doc.delete_page(pno)
+    # ── Page management: keep P.1-P.3 (main form) + P.9-P.10 (Schedule 2), delete rest ──
+    # Keep indices 0,1,2 (P.1-3) and 8,9 (P.9-10 = Schedule 2)
+    keep_indices = {0, 1, 2, 8, 9}
+    for pno in range(doc.page_count - 1, -1, -1):
+        if pno not in keep_indices:
+            doc.delete_page(pno)
+
+    # ── Schedule 2 (now P.4, index 3): allottee details ──
+    allottee_name = (data.get('allotteeName') or '').strip()
+    if allottee_name:
+        allot_date = data.get('allotmentDate', today_str)
+        parts = allot_date.split('/')
+        dd, mm, yyyy = (parts + ['', '', ''])[:3]
+        if 'fill_1_P.9' in fmap: _set_text(doc, fmap, 'fill_1_P.9', dd)
+        if 'fill_2_P.9' in fmap: _set_text(doc, fmap, 'fill_2_P.9', mm)
+        if 'fill_3_P.9' in fmap: _set_text(doc, fmap, 'fill_3_P.9', yyyy)
+        if 'fill_4_P.9' in fmap: _set_text(doc, fmap, 'fill_4_P.9', br8)
+        if 'fill_7_P.9' in fmap: _set_text(doc, fmap, 'fill_7_P.9', allottee_name)
 
     pdf_bytes = doc.write(deflate=True)
     doc.close()

@@ -6355,15 +6355,16 @@ def _fill_nsc1_pdf(data):
 
     # ── P.3: Continuation sheets counter — leave blank (user: don't write 0) ──
 
-    # ── Page management: keep P.1-P.3 (main form) + P.9-P.10 (Schedule 2), delete rest ──
-    # Keep indices 0,1,2 (P.1-3) and 8,9 (P.9-10 = Schedule 2)
-    keep_indices = {0, 1, 2, 8, 9}
+    # ── Page management: keep P.1-P.3 always; P.9-P.10 (Schedule 2) only if allottee data ──
+    allottee_name = (data.get('allotteeName') or '').strip()
+    keep_indices = {0, 1, 2}  # P.1, P.2, P.3
+    if allottee_name:
+        keep_indices.update({8, 9})  # P.9, P.10 = Schedule 2 (附表二)
     for pno in range(doc.page_count - 1, -1, -1):
         if pno not in keep_indices:
             doc.delete_page(pno)
 
     # ── Schedule 2 (now P.4, index 3): allottee details ──
-    allottee_name = (data.get('allotteeName') or '').strip()
     if allottee_name:
         allot_date = data.get('allotmentDate', today_str)
         parts = allot_date.split('/')

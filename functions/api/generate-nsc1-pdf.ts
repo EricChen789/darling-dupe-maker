@@ -138,9 +138,12 @@ export async function onRequest(context: { request: Request; env: Env }) {
     // ── Enable NeedAppearances (reader rebuilds appearances, saves CPU) ──
     enableNeedAppearances(pdfDoc);
 
-    // ── Page management: keep P.1-P.3 (main form) + P.9-P.10 (Schedule 2), delete rest ──
-    // 14-page template → keep indices 0,1,2 (P.1-3) and 8,9 (P.9-10 = Schedule 2)
-    const keepPages = new Set([0, 1, 2, 8, 9]);
+    // ── Page management: keep P.1-P.3 always; P.9-P.10 (Schedule 2) only if allottee data ──
+    const allotteeName = rget(data, 'allotteeName') || '';
+    const keepPages = new Set([0, 1, 2]);  // P.1, P.2, P.3
+    if (allotteeName) {
+      keepPages.add(8).add(9);  // P.9, P.10 = Schedule 2 (附表二)
+    }
     const allPages = pdfDoc.getPages();
     for (let i = allPages.length - 1; i >= 0; i--) {
       if (!keepPages.has(i)) {
@@ -149,7 +152,6 @@ export async function onRequest(context: { request: Request; env: Env }) {
     }
 
     // ── Schedule 2 (now P.4, index 3): allottee details ──
-    const allotteeName = rget(data, 'allotteeName') || '';
     if (allotteeName) {
       const allotDate = rget(data, 'allotmentDate') || todayStr;
       const [dd, mm, yyyy] = allotDate.split('/');

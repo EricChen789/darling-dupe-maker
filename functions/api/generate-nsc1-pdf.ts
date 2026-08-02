@@ -153,6 +153,8 @@ export async function onRequest(context: { request: Request; env: Env }) {
     // Set MK/BG (light blue background) on ALL text field widgets, delete old AP stream,
     // enable NeedAppearances — the PDF reader regenerates appearances with blue bg.
     // This makes all editable fields visually blue, matching standard PDF form appearance.
+    // ⚠️ Use a SINGLE shared MK object (not one per widget) to stay within Workers CPU limit.
+    const sharedBlueMK = pdfDoc.context.obj({ BG: [0.91, 0.93, 0.96] });
     for (const field of form.getFields()) {
       const name = field.getName();
       // ── Text fields: set MK/BG blue + delete AP (ALL fields, not just filled ones) ──
@@ -161,9 +163,7 @@ export async function onRequest(context: { request: Request; env: Env }) {
         const widgets = tf.acroField.getWidgets();
         for (const w of widgets) {
           try {
-            // Set MK dict with BG (light blue background)
-            w.dict.set(PDFName.of('MK'), pdfDoc.context.obj({ BG: [0.91, 0.93, 0.96] }));
-            // Delete old AP so reader regenerates with our MK/BG color
+            w.dict.set(PDFName.of('MK'), sharedBlueMK);
             w.dict.delete(PDFName.of('AP'));
           } catch { /* skip unmodifiable widget */ }
         }

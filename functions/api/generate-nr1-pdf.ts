@@ -118,8 +118,8 @@ export async function onRequest(context: { request: Request; env: Env }) {
     // ── Signer Capacity: use template dropdown to strike through ──
     // Dropdown1_P.1 rect=(156.6,656.9,223.1,670.2) = 董事旁
     // Dropdown2_P.1 rect=(226.1,656.9,371.2,670.2) = 公司秘书旁
-    // 每个 dropdown 有 2 个选项: [0]=空白, [1]=横线
-    // 用 selectDropdown 设值 + drawLine 画线保底（对齐 Flask NAR1 P.8 模式）
+    // 每个 dropdown 有 2 个选项(元组格式): [0]=(Yes, 空白), [1]=(Yes, 横线)
+    // 用 pdf-lib 低层 API 设 /I 索引 + drawLine 画线保底
     if (data.signerCapacity === "director" || data.signerCapacity === "secretary") {
       const page1 = pdfDoc.getPage(0); // P.1
       // Page height 841.68, dropdown y_mid ≈ 663.6 → pdf-lib y ≈ 178.1
@@ -128,10 +128,20 @@ export async function onRequest(context: { request: Request; env: Env }) {
         "Dropdown2_P.1": { x0: 228.1, x1: 369.2, yMid: 178.1 },
       };
 
+      const pdfForm = pdfDoc.getForm();
       for (const ddName of ["Dropdown1_P.1", "Dropdown2_P.1"]) {
         const isCross = (ddName === (data.signerCapacity === "director" ? "Dropdown2_P.1" : "Dropdown1_P.1"));
-        // Set dropdown value
-        selectDropdown(ddName, isCross ? "—" : " ");
+        try {
+          const dd = pdfForm.getDropdown(ddName);
+          const dict = (dd as any).acroField?.dict;
+          if (dict) {
+            // Set /I to [0] (keep) or [1] (cross out)
+            const iVal = isCross ? 1 : 0;
+            dict.set(PDFName.of("I"), pdfDoc.context.obj([iVal]));
+            // Set /V to export value (both options export 'Yes' for NR1 tuples)
+            dict.set(PDFName.of("V"), PDFString.of("Yes"));
+          }
+        } catch (_) { /* non-critical */ }
         // Draw visible line as fallback guarantee
         if (isCross) {
           const pos = ddPositions[ddName];

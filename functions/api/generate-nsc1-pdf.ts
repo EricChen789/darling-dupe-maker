@@ -20,10 +20,10 @@
 //   P.2 y=219  fill_12~16   = Allottees Row3
 //   P.2 y=504  fill_17      = Large text area
 
-import { PDFDocument } from 'pdf-lib';
+import { PDFDocument, PDFName, PDFString, rgb, StandardFonts } from 'pdf-lib';
 import {
   corsHeaders, jsonResp, uint8ToBase64, rget,
-  DEFAULT_PRESENTER, buildBlueFieldAppearances, fetchAndEmbedFont
+  DEFAULT_PRESENTER
 } from './_pdf-utils';
 import { verifyAuthRequest, type Env } from './_auth';
 
@@ -47,8 +47,9 @@ export async function onRequest(context: { request: Request; env: Env }) {
     const templateBytes = new Uint8Array(await templateObj.arrayBuffer());
     const pdfDoc = await PDFDocument.load(templateBytes);
 
-    // Embed fonts: Helvetica (built-in) + Noto Sans TC (R2 → CDN fallback)
-    const { cjk, ascii: helv } = await fetchAndEmbedFont(pdfDoc, env as any);
+    // Embed fonts: Helvetica only (built-in, fast)
+    // CJK rendering is left to the PDF reader via NeedAppearances + widget DA strings
+    const helv = await pdfDoc.embedFont(StandardFonts.Helvetica);
 
     const form = pdfDoc.getForm();
 
@@ -118,17 +119,23 @@ export async function onRequest(context: { request: Request; env: Env }) {
     // ── P.2 §5: 獲配發股份者的詳情列於附表二 / Details of Allottee(s) are listed in Schedule 2 ──
     try { form.getCheckBox('cb_3_P.2').check(); } catch { /* skip */ }
 
-    // ── P.3: Signature — Company Secretary (cross out Director) ──
-    // Dropdown1=Director, Dropdown2=Secretary; index 0=keep, index 1=cross out
+    // ── P.3: Signature — Company Secretary signs (cross out Director) ──
+    // Both dropdowns have options with export value 'Yes', distinguished by /I index
+    // /I 0 = keep (blank display), /I 1 = cross out (strike-through line display)
+    // Low-level dict API required — pdf-lib select() can't disambiguate by index
     try {
-      const dd1 = form.getDropdown('Dropdown1_P.3');
-      dd1.select(['Yes']);  // Cross out Director
+      const dd1 = form.getDropdown('Dropdown1_P.3');  // Director
+      dd1.acroField.dict.set(PDFName.of('I'), pdfDoc.context.obj([1])); // strike
+      dd1.acroField.dict.set(PDFName.of('V'), PDFString.of('Yes'));
+      const w1 = dd1.acroField.getWidgets();
+      if (w1.length > 0) w1[0].dict.delete(PDFName.of('AP')); // force regen
     } catch { /* skip */ }
     try {
-      const dd2 = form.getDropdown('Dropdown2_P.3');
-      // For pdf-lib, select the first option to keep Secretary
-      const opts = dd2.getOptions();
-      if (opts.length > 0) dd2.select(opts[0]);
+      const dd2 = form.getDropdown('Dropdown2_P.3');  // Secretary
+      dd2.acroField.dict.set(PDFName.of('I'), pdfDoc.context.obj([0])); // keep
+      dd2.acroField.dict.set(PDFName.of('V'), PDFString.of('Yes'));
+      const w2 = dd2.acroField.getWidgets();
+      if (w2.length > 0) w2[0].dict.delete(PDFName.of('AP')); // force regen
     } catch { /* skip */ }
 
     // P.3: Signature date — use caller-provided signDate, fallback to today
@@ -139,10 +146,47 @@ export async function onRequest(context: { request: Request; env: Env }) {
 
     // P.3: Continuation sheets counter — leave blank (user: don't write 0)
 
-    // ── Build blue widget appearances (real AP streams, works in all readers) ──
-    // This replaces enableNeedAppearances + MK/BG — we embed actual blue-background
-    // appearance streams and remove NeedAppearances so readers show our blue boxes.
-    buildBlueFieldAppearances(pdfDoc, helv, cjk);
+    // ── Build blue field appearances via MK/BG + delete AP + NeedAppearances ──
+    // Set MK/BG (blue background) on each widget, delete old AP stream,
+    // enable NeedAppearances — the PDF reader regenerates appearances with blue bg.
+    for (const field of form.getFields()) {
+      const name = field.getName();
+      // ── Text fields: set MK/BG blue + delete AP ──
+      try {
+        const tf = form.getTextField(name);
+        const value = tf.getText();
+        if (value) {
+          const widgets = tf.acroField.getWidgets();
+          for (const w of widgets) {
+            try {
+              // Set MK dict with BG (blue background)
+              w.dict.set(PDFName.of('MK'), pdfDoc.context.obj({ BG: [0.91, 0.93, 0.96] }));
+              // Delete old AP so reader regenerates with our MK/BG color
+              w.dict.delete(PDFName.of('AP'));
+            } catch { /* skip unmodifiable widget */ }
+          }
+        }
+        continue;
+      } catch {}
+      // ── Checkboxes: delete old AP so NeedAppearances regenerates it correctly ──
+      try {
+        const cb = form.getCheckBox(name);
+        if (cb.isChecked()) {
+          const widgets = cb.acroField.getWidgets();
+          for (const w of widgets) {
+            try { w.dict.delete(PDFName.of('AP')); } catch { /* skip */ }
+          }
+        }
+        continue;
+      } catch {}
+    }
+    // Enable NeedAppearances — reader will regenerate APs with our MK/BG blue backgrounds
+    try {
+      const acroForm = pdfDoc.catalog.lookup(PDFName.of('AcroForm')) as any;
+      if (acroForm && typeof acroForm.set === 'function') {
+        acroForm.set(PDFName.of('NeedAppearances'), PDFName.of('true'));
+      }
+    } catch { /* ignore */ }
 
     // ── Page management: keep P.1-P.3 always, plus any pages referenced in fields ──
     const allPages = pdfDoc.getPages();
@@ -179,10 +223,10 @@ export async function onRequest(context: { request: Request; env: Env }) {
       try { form.getTextField('fill_7_P.9').setText(allotteeName); } catch { /* skip */ }
     }
 
-    // ── BR stamp on remaining pages ──
+    // ── BR stamp on every page (top-right, backup in case fill_1 widget missing) ──
     if (brNumber) {
       for (const page of pdfDoc.getPages()) {
-        page.drawText(brNumber, { x: 500, y: 820, size: 8, font: helv });
+        page.drawText(brNumber, { x: 465, y: 828, size: 9, font: helv, color: rgb(0, 0, 0) });
       }
     }
 

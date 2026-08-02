@@ -83,6 +83,9 @@ export async function onRequest(context: { request: Request; env: Env }) {
 
     // Fill defaults for unfilled fields
     const setIfEmpty = (name: string, value: string) => {
+      // Guard: don't set empty/whitespace values — they'd be skipped by the fill loop
+      // and would prevent future calls (e.g. from DB lookup) from filling the field.
+      if (!value || !value.trim()) return;
       if (!fields[name] || !fields[name].trim()) fields[name] = value;
     };
 

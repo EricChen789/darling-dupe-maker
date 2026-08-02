@@ -51,7 +51,7 @@ export default function NDR1GeneratorForm({ onBack, initialCompanyId }: NDR1Gene
     appChineseName: '', appSurname: '', appOtherNames: '',
     appBodyCorpName: '',
     appAddrFlat: '', appAddrBuilding: '', appAddrStreet: '', appAddrDistrict: '', appAddrCountry: '',
-    appEmail: '', appFax: '',
+    appEmail: '', appFax: '', appTel: '',
     // P.3 獲提名自然人（僅公司自身申請時需要）
     nomChineseName: '', nomSurname: '', nomOtherNames: '',
     nomAddrFlat: '', nomAddrBuilding: '', nomAddrStreet: '', nomAddrDistrict: '', nomAddrCountry: '',
@@ -65,17 +65,49 @@ export default function NDR1GeneratorForm({ onBack, initialCompanyId }: NDR1Gene
     [companies, selectedCompanyId]
   );
 
+  // Split address string into 3 lines (by comma or newline)
+  const splitAddr3 = (addr: string): [string, string, string] => {
+    if (!addr) return ['', '', ''];
+    const parts = addr.split(/[,，\n]/).map(s => s.trim()).filter(Boolean);
+    if (parts.length <= 1) return [addr, '', ''];
+    if (parts.length === 2) return [parts[0], parts[1], ''];
+    if (parts.length === 3) return [parts[0], parts[1], parts[2]];
+    // 4+ parts: line1=flat/room, line2=middle (building+street), line3=last two (district, country)
+    return [parts[0], parts.slice(1, -2).join(', '), parts.slice(-2).join(', ')];
+  };
+
   const handleCompanySelect = (companyId: string) => {
     setSelectedCompanyId(companyId);
     const company = companies.find(c => c.id === companyId);
     if (company) {
+      // Build presenter address: prefer structured fields, fallback to flat address split
+      const hasStructured = company.regFlat || company.regBuilding || company.regStreet || company.regDistrict || company.regRegion;
+      let presAddr: [string, string, string];
+      if (hasStructured) {
+        presAddr = [company.regFlat, [company.regBuilding, company.regStreet].filter(Boolean).join(', '), [company.regDistrict, company.regRegion].filter(Boolean).join(', ')];
+      } else {
+        // Fallback: split flat address into 3 lines (commas / newlines)
+        presAddr = splitAddr3(company.address || '');
+      }
       setFormData(prev => ({
         ...prev, brNumber: company.brNumber, companyName: company.name,
-        // 公司自身作申請人時：用公司名填入法人名稱
+        // 公司自身作申請人時：用公司名填入法人名稱 + 公司地址/聯絡
         appBodyCorpName: company.name,
-        // 提交人默認用公司名
+        appAddrFlat: company.regFlat || '',
+        appAddrBuilding: company.regBuilding || '',
+        appAddrStreet: company.regStreet || '',
+        appAddrDistrict: company.regDistrict || '',
+        appAddrCountry: company.regRegion || '',
+        appEmail: company.email || '',
+        appTel: company.phone || '',
+        // 提交人默認用公司名 + 公司地址
         presenterNameEN: company.name,
         presenterNameCN: company.chineseName || '',
+        presenterAddress1: presAddr[0],
+        presenterAddress2: presAddr[1],
+        presenterAddress3: presAddr[2],
+        presenterTel: company.phone || '',
+        presenterEmail: company.email || '',
       }));
     }
   };
@@ -94,11 +126,25 @@ export default function NDR1GeneratorForm({ onBack, initialCompanyId }: NDR1Gene
 
   // ── 申請人身份變更 ──
   const setApplicantCapacity = (capacity: string) => {
-    setFormData(prev => ({
-      ...prev,
-      applicantCapacity: capacity,
-      applicantType: capacity === 'company' ? 'corporate' : 'natural',
-    }));
+    setFormData(prev => {
+      const next = {
+        ...prev,
+        applicantCapacity: capacity,
+        applicantType: capacity === 'company' ? 'corporate' : 'natural',
+      };
+      // 選擇「本公司」時自動填入公司資料到 P.2 申請人欄
+      if (capacity === 'company' && selectedCompany) {
+        next.appBodyCorpName = selectedCompany.name;
+        next.appAddrFlat = selectedCompany.regFlat || '';
+        next.appAddrBuilding = selectedCompany.regBuilding || '';
+        next.appAddrStreet = selectedCompany.regStreet || '';
+        next.appAddrDistrict = selectedCompany.regDistrict || '';
+        next.appAddrCountry = selectedCompany.regRegion || '';
+        next.appEmail = selectedCompany.email || '';
+        next.appTel = selectedCompany.phone || '';
+      }
+      return next;
+    });
   };
 
   // ── PersonPicker: 從公司人員/提交人中選擇 → 填入 P.1 提交人 + P.2 申請人 ──
@@ -147,11 +193,14 @@ export default function NDR1GeneratorForm({ onBack, initialCompanyId }: NDR1Gene
 
   // ── 選擇提交人(Presenter) → 填入 P.1 提交人資料 ──
   const handlePresenterSelect = (p: Presenter) => {
+    const [a1, a2, a3] = splitAddr3(p.address || '');
     setFormData(prev => ({
       ...prev,
       presenterNameCN: (p as any).nameChinese || '',
       presenterNameEN: p.nameEnglish || p.name || '',
-      presenterAddress1: p.address || '',
+      presenterAddress1: a1,
+      presenterAddress2: a2,
+      presenterAddress3: a3,
       presenterTel: p.phone || '',
       presenterFax: p.fax || '',
       presenterEmail: p.email || '',
@@ -378,8 +427,9 @@ export default function NDR1GeneratorForm({ onBack, initialCompanyId }: NDR1Gene
             <div><Label className="text-xs">區／市／省／州等 District / City / Province / State etc.</Label><Input value={formData.appAddrDistrict} onChange={e => update('appAddrDistrict', e.target.value)} className="mt-1 h-8 text-sm" /></div>
             <div><Label className="text-xs">國家／地區 Country / Region</Label><Input value={formData.appAddrCountry} onChange={e => update('appAddrCountry', e.target.value)} className="mt-1 h-8 text-sm" /></div>
           </div>
-          <div className="grid grid-cols-2 gap-3 mt-3">
+          <div className="grid grid-cols-3 gap-3 mt-3">
             <div><Label className="text-xs">電郵地址 Email Address</Label><Input value={formData.appEmail} onChange={e => update('appEmail', e.target.value)} className="mt-1 h-8 text-sm" /></div>
+            <div><Label className="text-xs">電話 Tel</Label><Input value={formData.appTel} onChange={e => update('appTel', e.target.value)} className="mt-1 h-8 text-sm" /></div>
             <div><Label className="text-xs">圖文傳真號碼 Fax Number</Label><Input value={formData.appFax} onChange={e => update('appFax', e.target.value)} className="mt-1 h-8 text-sm" /></div>
           </div>
         </div>

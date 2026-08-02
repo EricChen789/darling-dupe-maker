@@ -6,7 +6,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Plus, Pencil, Trash2, Save, X } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
-import { usePresenterList, useCreatePresenter, useDeletePresenter, Presenter } from '@/hooks/usePresenters';
+import { usePresenterList, useCreatePresenter, useUpdatePresenter, useDeletePresenter, Presenter } from '@/hooks/usePresenters';
 
 const empty = (): Partial<Presenter> => ({
   name: '', address: '', contact: '',
@@ -16,7 +16,8 @@ const empty = (): Partial<Presenter> => ({
 
 export const PresenterManagement = () => {
   const { data: presenters = [], isLoading } = usePresenterList();
-  const upsert = useCreatePresenter();
+  const create = useCreatePresenter();
+  const update = useUpdatePresenter();
   const del = useDeletePresenter();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
@@ -43,7 +44,8 @@ export const PresenterManagement = () => {
       toast({ title: '請填寫名稱', variant: 'destructive' });
       return;
     }
-    upsert.mutate(form as any, {
+    const mutate = editingId ? update : create;
+    mutate.mutate(form as any, {
       onSuccess: () => {
         toast({ title: editingId ? '已更新' : '已新增' });
         cancel();

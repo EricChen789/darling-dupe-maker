@@ -2,7 +2,7 @@
 // Import from individual function files to avoid duplicating these helpers.
 // Usage: import { segmentText, drawMixed, ... } from "./_pdf-utils";
 
-import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import { PDFDocument, StandardFonts, rgb, PDFName, PDFTextField } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 
 // ═══ Default Presenter (Twinsail Consultants Limited) ═══
@@ -512,4 +512,145 @@ export function personLabel(person: any): string {
   const cn = (person.name_chinese || "").trim();
   if (en && cn) return `${en}（${cn}）`;
   return en || cn || "—";
+}
+
+// ═══ Blue Widget Appearance — Custom AP Stream ═══
+// Build actual appearance streams (Form XObject) with a light-blue background
+// rectangle + text for every filled text-field widget.
+//
+// Unlike MK/BG (which only *some* PDF readers respect), this embeds a real
+// /AP stream that every reader renders — matching the local PyMuPDF
+// _set_widget_cjk_ap blue-box appearance.
+//
+// Call AFTER filling in field values with setText(), BEFORE pdfDoc.save().
+// Also removes NeedAppearances so readers show our blue appearances.
+export function buildBlueFieldAppearances(
+  pdfDoc: PDFDocument,
+  asciiFont: any,  // embedded Helvetica PDFFont
+  cjkFont?: any,   // optional embedded CJK PDFFont (for Chinese text)
+) {
+  const form = pdfDoc.getForm();
+  const fields = form.getFields();
+  const helvRef = asciiFont.ref;
+  const cjkRef = cjkFont?.ref ?? helvRef;
+
+  for (const field of fields) {
+    if (!(field instanceof PDFTextField)) continue;
+    try {
+      const value = String(field.getText() ?? '');
+      if (!value) continue;
+
+      const cjk = hasCjk(value);
+      // If CJK but no CJK font available, skip — Helvetica can't encode it
+      if (cjk && !cjkFont) continue;
+
+      const fontRef = cjk ? cjkRef : helvRef;
+      const fontName = cjk ? '/F1' : '/F1';
+
+      const widgets = field.acroField.getWidgets();
+      for (const widget of widgets) {
+        try {
+          const rect = widget.getRectangle();
+          const w = rect.width;
+          const h = rect.height;
+          if (w <= 2 || h <= 2) continue;
+
+          // Font size from the field's DA string
+          const da = field.acroField.getDefaultAppearance() ?? '/Helv 10 Tf 0 g';
+          const sizeMatch = String(da).match(/(\d+(?:\.\d+)?)\s+Tf/);
+          const fontSize = sizeMatch ? parseFloat(sizeMatch[1]) : 10;
+
+          // Position text in the widget
+          const textX = 2;
+          const textY = Math.max(2, h * 0.15);
+
+          // ── Build appearance content stream ──
+          let drawText: string;
+          if (cjk) {
+            // CJK: hex-encode as UTF-16BE (CID font expects this)
+            const hex = Array.from(new TextEncoder().encode(value))
+              .map(b => b.toString(16).padStart(2, '0'))
+              .join('');
+            // Wrap in UTF-16BE BOM + hex
+            drawText = `<FEFF${hex}> Tj`;
+          } else {
+            // ASCII: PDF literal string
+            const escaped = String(value)
+              .replace(/\\/g, '\\\\')
+              .replace(/\(/g, '\\(')
+              .replace(/\)/g, '\\)')
+              .replace(/[\n\r\t]/g, ' ');
+            drawText = `(${escaped}) Tj`;
+          }
+
+          const content = [
+            '/Tx BMC',
+            'q',
+            '0.91 0.93 0.96 rg',
+            `0 0 ${w.toFixed(1)} ${h.toFixed(1)} re`,
+            'f',
+            'Q',
+            'BT',
+            `/F1 ${fontSize} Tf`,
+            '0 0 0 rg',
+            `${textX.toFixed(1)} ${textY.toFixed(1)} Td`,
+            drawText,
+            'ET',
+            'EMC',
+          ].join('\n');
+          const contentBytes = new TextEncoder().encode(content);
+
+          // ── Wrap as Form XObject stream ──
+          const streamDict = pdfDoc.context.obj({
+            Type: PDFName.of('XObject'),
+            Subtype: PDFName.of('Form'),
+            FormType: 1,
+            BBox: [0, 0, w, h],
+            Resources: { Font: { F1: fontRef } },
+          }) as any;
+          const apStream = pdfDoc.context.stream(contentBytes, streamDict);
+
+          // Set /AP /N on the widget
+          const apDict = pdfDoc.context.obj({ N: apStream }) as any;
+          widget.dict.set(PDFName.of('AP'), apDict);
+        } catch { /* skip unmodifiable widget */ }
+      }
+    } catch { /* skip inaccessible field */ }
+  }
+
+  // Remove NeedAppearances — we built appearances for all filled fields
+  try {
+    const acroForm = pdfDoc.catalog.lookup(PDFName.of('AcroForm')) as any;
+    if (acroForm && typeof acroForm.delete === 'function') {
+      acroForm.delete(PDFName.of('NeedAppearances'));
+    }
+  } catch { /* ignore */ }
+}
+
+// ═══ Deprecated: MK/BG fallback — kept for backward compat ═══
+// Prefer buildBlueFieldAppearances() which builds real AP streams.
+export function setBlueWidgetBackgrounds(pdfDoc: PDFDocument) {
+  const form = pdfDoc.getForm();
+  const fields = form.getFields();
+  const blueBg = pdfDoc.context.obj([0.91, 0.93, 0.96]);
+
+  for (const field of fields) {
+    if (!(field instanceof PDFTextField)) continue;
+    try {
+      const widgets = field.acroField.getWidgets();
+      for (const widget of widgets) {
+        try {
+          const mk = widget.dict.get(PDFName.of('MK'));
+          if (mk && typeof (mk as any).set === 'function') {
+            (mk as any).set(PDFName.of('BG'), blueBg);
+          } else {
+            widget.dict.set(
+              PDFName.of('MK'),
+              pdfDoc.context.obj({ BG: [0.91, 0.93, 0.96] }),
+            );
+          }
+        } catch { /* skip */ }
+      }
+    } catch { /* skip */ }
+  }
 }

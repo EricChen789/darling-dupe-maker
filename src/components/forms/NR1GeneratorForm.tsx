@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -12,6 +12,7 @@ import { useSaveFormHistory } from '@/hooks/useFormHistory';
 import FormHistorySelector from './FormHistorySelector';
 import PresenterSelector from './PresenterSelector';
 import RelatedFormsPrompt from './RelatedFormsPrompt';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import type { Presenter } from '@/hooks/usePresenters';
 
 interface NR1GeneratorFormProps {
@@ -20,8 +21,13 @@ interface NR1GeneratorFormProps {
 }
 
 export default function NR1GeneratorForm({ onBack, initialCompanyId }: NR1GeneratorFormProps) {
+  // NR1: 更改注册办事处地址通知书 — 支持签署人身份选择 + 电邮/电话生效日期条件化
   const { data: companies = [] } = useCompanies();
   const [selectedCompanyId, setSelectedCompanyId] = useState('');
+  const selectedCompany = useMemo(
+    () => companies.find(c => c.id === selectedCompanyId),
+    [companies, selectedCompanyId]
+  );
   const [generating, setGenerating] = useState(false);
   const [showRelatedPrompt, setShowRelatedPrompt] = useState(false);
   const [relatedLinkages, setRelatedLinkages] = useState<any[]>([]);
@@ -44,14 +50,15 @@ export default function NR1GeneratorForm({ onBack, initialCompanyId }: NR1Genera
     addressEffectiveMonth: mm,
     addressEffectiveYear: yyyy,
     email: '',
-    emailEffectiveDay: dd,
-    emailEffectiveMonth: mm,
-    emailEffectiveYear: yyyy,
+    emailEffectiveDay: '',
+    emailEffectiveMonth: '',
+    emailEffectiveYear: '',
     phone: '',
-    phoneEffectiveDay: dd,
-    phoneEffectiveMonth: mm,
-    phoneEffectiveYear: yyyy,
+    phoneEffectiveDay: '',
+    phoneEffectiveMonth: '',
+    phoneEffectiveYear: '',
     signerName: '',
+    signerCapacity: '', // "director" | "secretary" | ""
     signDateDay: dd,
     signDateMonth: mm,
     signDateYear: yyyy,
@@ -190,12 +197,14 @@ export default function NR1GeneratorForm({ onBack, initialCompanyId }: NR1Genera
         <div>
           <h3 className="font-semibold mb-3">2(b) 新電郵地址（如適用）</h3>
           <div className="grid grid-cols-2 gap-4">
-            <div><Label>電郵地址</Label><Input value={formData.email} onChange={e => update('email', e.target.value)} className="mt-1" /></div>
+            <div><Label>電郵地址</Label><Input value={formData.email} onChange={e => update('email', e.target.value)} placeholder="如無變更可留空" className="mt-1" /></div>
+            {formData.email.trim() && (
             <div className="grid grid-cols-3 gap-2">
-              <div><Label>生效日</Label><Input value={formData.emailEffectiveDay} onChange={e => update('emailEffectiveDay', e.target.value)} className="mt-1" /></div>
-              <div><Label>月</Label><Input value={formData.emailEffectiveMonth} onChange={e => update('emailEffectiveMonth', e.target.value)} className="mt-1" /></div>
-              <div><Label>年</Label><Input value={formData.emailEffectiveYear} onChange={e => update('emailEffectiveYear', e.target.value)} className="mt-1" /></div>
+              <div><Label>生效日 (DD)</Label><Input value={formData.emailEffectiveDay} onChange={e => update('emailEffectiveDay', e.target.value)} className="mt-1" /></div>
+              <div><Label>月 (MM)</Label><Input value={formData.emailEffectiveMonth} onChange={e => update('emailEffectiveMonth', e.target.value)} className="mt-1" /></div>
+              <div><Label>年 (YYYY)</Label><Input value={formData.emailEffectiveYear} onChange={e => update('emailEffectiveYear', e.target.value)} className="mt-1" /></div>
             </div>
+            )}
           </div>
         </div>
 
@@ -203,18 +212,46 @@ export default function NR1GeneratorForm({ onBack, initialCompanyId }: NR1Genera
         <div>
           <h3 className="font-semibold mb-3">2(c) 新聯絡電話號碼（如適用）</h3>
           <div className="grid grid-cols-2 gap-4">
-            <div><Label>電話號碼</Label><Input value={formData.phone} onChange={e => update('phone', e.target.value)} placeholder="+852 xxxx xxxx" className="mt-1" /></div>
+            <div><Label>電話號碼</Label><Input value={formData.phone} onChange={e => update('phone', e.target.value)} placeholder="如無變更可留空" className="mt-1" /></div>
+            {formData.phone.trim() && (
             <div className="grid grid-cols-3 gap-2">
-              <div><Label>生效日</Label><Input value={formData.phoneEffectiveDay} onChange={e => update('phoneEffectiveDay', e.target.value)} className="mt-1" /></div>
-              <div><Label>月</Label><Input value={formData.phoneEffectiveMonth} onChange={e => update('phoneEffectiveMonth', e.target.value)} className="mt-1" /></div>
-              <div><Label>年</Label><Input value={formData.phoneEffectiveYear} onChange={e => update('phoneEffectiveYear', e.target.value)} className="mt-1" /></div>
+              <div><Label>生效日 (DD)</Label><Input value={formData.phoneEffectiveDay} onChange={e => update('phoneEffectiveDay', e.target.value)} className="mt-1" /></div>
+              <div><Label>月 (MM)</Label><Input value={formData.phoneEffectiveMonth} onChange={e => update('phoneEffectiveMonth', e.target.value)} className="mt-1" /></div>
+              <div><Label>年 (YYYY)</Label><Input value={formData.phoneEffectiveYear} onChange={e => update('phoneEffectiveYear', e.target.value)} className="mt-1" /></div>
             </div>
+            )}
           </div>
         </div>
 
         {/* Signature */}
         <div>
           <h3 className="font-semibold mb-3">簽署</h3>
+          {/* Signer picker from company personnel */}
+          {selectedCompany && (selectedCompany.directors.length > 0 || selectedCompany.secretaries.length > 0) && (
+            <div className="mb-3">
+              <Select onValueChange={(id) => {
+                const allPeople = [
+                  ...(selectedCompany.directors || []).map(d => ({ ...d, _role: 'director' as const })),
+                  ...(selectedCompany.secretaries || []).map(s => ({ ...s, _role: 'secretary' as const })),
+                ];
+                const person = allPeople.find(p => p.id === id);
+                if (person) {
+                  update('signerName', person.nameEnglish || person.nameChinese || '');
+                  update('signerCapacity', person._role);
+                }
+              }}>
+                <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="從公司人員選擇簽署人..." /></SelectTrigger>
+                <SelectContent>
+                  {(selectedCompany.directors || []).map(d => (
+                    <SelectItem key={d.id} value={d.id}>{d.nameEnglish || d.nameChinese || '?'} — 董事</SelectItem>
+                  ))}
+                  {(selectedCompany.secretaries || []).map(s => (
+                    <SelectItem key={s.id} value={s.id}>{s.nameEnglish || s.nameChinese || '?'} — 公司秘書</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-4">
             <div><Label>簽署人姓名</Label><Input value={formData.signerName} onChange={e => update('signerName', e.target.value)} className="mt-1" /></div>
             <div className="grid grid-cols-3 gap-2">
@@ -223,6 +260,25 @@ export default function NR1GeneratorForm({ onBack, initialCompanyId }: NR1Genera
               <div><Label>年 (YYYY)</Label><Input value={formData.signDateYear} onChange={e => update('signDateYear', e.target.value)} className="mt-1" /></div>
             </div>
           </div>
+        </div>
+
+        {/* Signer Capacity */}
+        <div>
+          <h3 className="font-semibold mb-3">簽署人身份（刪去不適用者）</h3>
+          <RadioGroup
+            value={formData.signerCapacity}
+            onValueChange={(v) => update('signerCapacity', v)}
+            className="flex gap-6"
+          >
+            <label className="flex items-center gap-2 cursor-pointer">
+              <RadioGroupItem value="director" />
+              <span>董事 Director</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <RadioGroupItem value="secretary" />
+              <span>公司秘書 Company Secretary</span>
+            </label>
+          </RadioGroup>
         </div>
 
         {/* Presentor */}

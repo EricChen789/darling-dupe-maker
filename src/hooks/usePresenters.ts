@@ -51,6 +51,15 @@ export function useCreatePresenter() {
   });
 }
 
+export function useUpdatePresenter() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...data }: Partial<Presenter> & { id: string }) =>
+      api({ method: 'PUT', body: data, id }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['presenters'] }),
+  });
+}
+
 export function useDeletePresenter() {
   const qc = useQueryClient();
   return useMutation({

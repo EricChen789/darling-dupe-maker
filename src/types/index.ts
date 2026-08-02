@@ -27,6 +27,9 @@ export interface Company {
   status?: 'active' | 'inactive' | 'deregistered';
   email?: string;
   phone?: string;
+  fax?: string;
+  /** Flat address string — fallback when structured fields (regFlat etc.) are empty */
+  address?: string;
   /**
    * NAR1 簽署人 — 儲存所選秘書或董事的 person_company_roles.id（即 Person.id）。
    * 為空時系統自動 fallback：第一個秘書 → 第一個董事。

@@ -20,12 +20,11 @@
 //   P.2 y=219  fill_12~16   = Allottees Row3
 //   P.2 y=504  fill_17      = Large text area
 
-import { PDFDocument, StandardFonts } from 'pdf-lib';
+import { PDFDocument } from 'pdf-lib';
 import {
   corsHeaders, jsonResp, uint8ToBase64, rget,
-  DEFAULT_PRESENTER
+  DEFAULT_PRESENTER, buildBlueFieldAppearances, fetchAndEmbedFont
 } from './_pdf-utils';
-import { enableNeedAppearances } from './_acroform';
 import { verifyAuthRequest, type Env } from './_auth';
 
 const TEMPLATE = "NSC1-template.pdf";
@@ -47,7 +46,10 @@ export async function onRequest(context: { request: Request; env: Env }) {
 
     const templateBytes = new Uint8Array(await templateObj.arrayBuffer());
     const pdfDoc = await PDFDocument.load(templateBytes);
-    const helv = await pdfDoc.embedFont(StandardFonts.Helvetica);
+
+    // Embed fonts: Helvetica (built-in) + Noto Sans TC (R2 → CDN fallback)
+    const { cjk, ascii: helv } = await fetchAndEmbedFont(pdfDoc, env as any);
+
     const form = pdfDoc.getForm();
 
     // ── BR number ──
@@ -129,29 +131,44 @@ export async function onRequest(context: { request: Request; env: Env }) {
       if (opts.length > 0) dd2.select(opts[0]);
     } catch { /* skip */ }
 
-    // P.3: Signature date only (signer name left blank per user request)
+    // P.3: Signature date — use caller-provided signDate, fallback to today
+    const signDate = rget(data, 'signDate') || '';
     const todayStr = new Date().toLocaleDateString('en-GB');
-    try { form.getTextField('fill_28_P.3').setText(todayStr); } catch { /* skip */ }
+    const finalSignDate = signDate || todayStr;
+    try { form.getTextField('fill_28_P.3').setText(finalSignDate); } catch { /* skip */ }
 
     // P.3: Continuation sheets counter — leave blank (user: don't write 0)
 
-    // ── Enable NeedAppearances (reader rebuilds appearances, saves CPU) ──
-    enableNeedAppearances(pdfDoc);
+    // ── Build blue widget appearances (real AP streams, works in all readers) ──
+    // This replaces enableNeedAppearances + MK/BG — we embed actual blue-background
+    // appearance streams and remove NeedAppearances so readers show our blue boxes.
+    buildBlueFieldAppearances(pdfDoc, helv, cjk);
 
-    // ── Page management: keep P.1-P.3 always; P.9-P.10 (Schedule 2) only if allottee data ──
+    // ── Page management: keep P.1-P.3 always, plus any pages referenced in fields ──
+    const allPages = pdfDoc.getPages();
+    const keepPages = new Set([0, 1, 2]);  // P.1, P.2, P.3 always kept
+    for (const name of Object.keys(fields)) {
+      const m = name.match(/_P\.?(\d+)$/);
+      if (m) {
+        const pageIdx = parseInt(m[1]) - 1;  // P.1 → index 0
+        if (pageIdx >= 0 && pageIdx < allPages.length) {
+          keepPages.add(pageIdx);
+        }
+      }
+    }
+    // Also keep Schedule 2 pages if allottee data present (P.9-P.10 → index 8-9)
     const allotteeName = rget(data, 'allotteeName') || '';
-    const keepPages = new Set([0, 1, 2]);  // P.1, P.2, P.3
     if (allotteeName) {
       keepPages.add(8).add(9);  // P.9, P.10 = Schedule 2 (附表二)
     }
-    const allPages = pdfDoc.getPages();
     for (let i = allPages.length - 1; i >= 0; i--) {
       if (!keepPages.has(i)) {
         pdfDoc.removePage(i);
       }
     }
 
-    // ── Schedule 2 (now P.4, index 3): allottee details ──
+    // ── Schedule 2 (P.9-P.10): allottee details (for QuickFormDialog simple case) ──
+    // NSC1GeneratorForm sends these fields directly, this is the fallback auto-fill
     if (allotteeName) {
       const allotDate = rget(data, 'allotmentDate') || todayStr;
       const [dd, mm, yyyy] = allotDate.split('/');
@@ -159,7 +176,6 @@ export async function onRequest(context: { request: Request; env: Env }) {
       try { form.getTextField('fill_2_P.9').setText(mm || ''); } catch { /* skip */ }
       try { form.getTextField('fill_3_P.9').setText(yyyy || ''); } catch { /* skip */ }
       try { form.getTextField('fill_4_P.9').setText(brNumber); } catch { /* skip */ }
-      // Allottee name
       try { form.getTextField('fill_7_P.9').setText(allotteeName); } catch { /* skip */ }
     }
 

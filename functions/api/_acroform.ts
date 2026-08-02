@@ -165,6 +165,11 @@ export function buildHelvDA(originalDA: string | undefined): string {
   return `/Helv ${size} Tf 0 g`;
 }
 
+/** Build /DA with a forced font size (useful for shrinking oversized fields). */
+export function buildHelvDAWithSize(originalDA: string | undefined, forcedSize: number): string {
+  return `/Helv ${forcedSize} Tf 0 g`;
+}
+
 // ═══ Adobe-safe text ═══
 // Strip non-ASCII characters for fields that may break in Adobe Reader.
 

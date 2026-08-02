@@ -240,6 +240,8 @@ function mapToCompany(
     status: (((c as any).status as 'active' | 'inactive' | 'deregistered') || 'active'),
     email: ((c as any).email as string) || '',
     phone: ((c as any).phone as string) || '',
+    fax: ((c as any).fax as string) || '',
+    address: ((c as any).address as string) || '',
   };
 }
 

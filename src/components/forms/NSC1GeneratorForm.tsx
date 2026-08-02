@@ -34,8 +34,13 @@ export default function NSC1GeneratorForm({ onBack, initialCompanyId }: NSC1Gene
     brNumber: '', companyName: '',
     allotmentFromDay: dd, allotmentFromMonth: mm, allotmentFromYear: yyyy,
     allotmentToDay: dd, allotmentToMonth: mm, allotmentToYear: yyyy,
-    presentorName: '', presentorAddress: '', presentorTel: '', presentorFax: '',
-    presentorEmail: '', presentorReference: '',
+    // Default presenter = Twinsail (company secretary firm)
+    presentorName: 'Twinsail Consultants Limited',
+    presentorAddress: 'Room 1203, 12/F, Wing On Centre, 111 Connaught Road Central, Hong Kong',
+    presentorTel: '+852 2521 3888',
+    presentorFax: '+852 2521 3999',
+    presentorEmail: 'info@twinsail.com',
+    presentorReference: 'TS-2026-001',
     signDay: dd, signMonth: mm, signYear: yyyy,
   });
 
@@ -51,12 +56,13 @@ export default function NSC1GeneratorForm({ onBack, initialCompanyId }: NSC1Gene
         ...prev,
         brNumber: company.brNumber || '',
         companyName: company.name || '',
-        presentorName: company.name || '',
-        presentorAddress: [company.regFlat, company.regBuilding, company.regStreet, company.regDistrict, company.regRegion].filter(Boolean).join(', '),
-        presentorTel: company.phone || '',
-        presentorEmail: company.email || '',
-        presentorFax: company.fax || '',
-        presentorReference: '',
+        // Presenter defaults to Twinsail (company secretary firm), not the company
+        presentorName: 'Twinsail Consultants Limited',
+        presentorAddress: 'Room 1203, 12/F, Wing On Centre, 111 Connaught Road Central, Hong Kong',
+        presentorTel: '+852 2521 3888',
+        presentorFax: '+852 2521 3999',
+        presentorEmail: 'info@twinsail.com',
+        presentorReference: 'TS-2026-001',
       }));
     }
   };
@@ -184,10 +190,19 @@ export default function NSC1GeneratorForm({ onBack, initialCompanyId }: NSC1Gene
         { page: 2, text: `${formData.signDay} / ${formData.signMonth} / ${formData.signYear}`, x: 395, y: 768, fontsize: 10 },
       ];
 
-      const resp = await fetch(`/api/generate-template-pdf`, {
+      const resp = await fetch(`/api/generate-nsc1-pdf`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ template: 'NSC1-template.pdf', fields, checkboxes, brNumber: formData.brNumber, overlays, fieldMinFontSize: { 'fill_31_P.1': 10 } }),
+        body: JSON.stringify({
+          company_id: selectedCompanyId,
+          brNumber: formData.brNumber,
+          companyName: formData.companyName,
+          signDate: `${formData.signDay}/${formData.signMonth}/${formData.signYear}`,
+          allotmentFromDate: `${formData.allotmentFromDay}/${formData.allotmentFromMonth}/${formData.allotmentFromYear}`,
+          allotmentToDate: `${formData.allotmentToDay}/${formData.allotmentToMonth}/${formData.allotmentToYear}`,
+          fields,
+          checkboxes,
+        }),
       });
       const result = await resp.json();
       if (!resp.ok) throw new Error(result.error || 'Unknown error');

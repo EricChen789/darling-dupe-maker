@@ -60,13 +60,23 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
     checkF("cb_3_P.1", appCapacity === "member");
 
     // ═══ P.1 左下角: Presenter info ═══
+    // setTextSz: shrink font on narrow 77pt phone/fax widgets using pdf-lib's setFontSize + updateAppearances
+    const setTextSz = (name: string, value: any, size: number) => {
+      if (value === null || value === undefined || value === "") return;
+      try {
+        const field = form.getTextField(name);
+        field.setFontSize(size);
+        field.setText(String(value));
+        field.updateAppearances(asciiFont);
+      } catch { /* skip */ }
+    };
     setF("fill_3_P.1", data.presenterNameCN);
     setF("fill_4_P.1", data.presenterNameEN);
-    setF("fill_5_P.1", data.presenterAddress1);
-    setF("fill_6_P.1", data.presenterAddress2);
-    setF("fill_7_P.1", data.presenterAddress3);
-    setF("fill_8_P.1", data.presenterTel);
-    setF("fill_9_P.1", data.presenterFax);
+    setTextSz("fill_5_P.1", data.presenterAddress1, 7);
+    setTextSz("fill_6_P.1", data.presenterAddress2, 7);
+    setTextSz("fill_7_P.1", data.presenterAddress3, 7);
+    setTextSz("fill_8_P.1", data.presenterTel, 8);
+    setTextSz("fill_9_P.1", data.presenterFax, 8);
     setF("fill_10_P.1", data.presenterEmail);
     setF("fill_11_P.1", data.presenterReference);
 
@@ -101,7 +111,9 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
     setF("fill_9_P.2", data.appAddrDistrict);
     setF("fill_10_P.2", data.appAddrCountry);
     setF("fill_11_P.2", data.appEmail);
-    if (data.appFax || data.appTel) setF("fill_12_P.2", data.appFax || data.appTel);
+    // fill_12_P.2 = Fax (with phone fallback)
+    const appFaxOrPhone = data.appFax || data.appTel || data.appPhone || "";
+    if (appFaxOrPhone) setF("fill_12_P.2", appFaxOrPhone);
 
     // ═══ P.3: C. Nominated Natural Person (only if applicant is the company) ═══
     if (appCapacity === "company") {
@@ -138,9 +150,17 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
     }
     setF("fill_3_P.4", signDate);
 
-    // P.4 declarations
-    checkF("cb_1_P.4", true);  // 已獲全體成員書面同意
-    checkF("cb_2_P.4", true);  // 已遵守公司條例要求
+    // ═══ P.4: Signer Capacity checkboxes (mutually exclusive) ═══
+    // cb_1_P.4 = Natural Person Applicant named in Section 2B
+    // cb_2_P.4 = Director/Company Secretary/Authorized Person of Body Corporate
+    const isCorporateApplicant = (appType === "corporate" || appCapacity === "company");
+    checkF("cb_1_P.4", !isCorporateApplicant);
+    checkF("cb_2_P.4", isCorporateApplicant);
+    // Explicitly uncheck the other (template may have both pre-set)
+    try {
+      if (isCorporateApplicant) form.getCheckBox("cb_1_P.4").uncheck();
+      else form.getCheckBox("cb_2_P.4").uncheck();
+    } catch { /* ignore if uncheck not supported */ }
 
     // ── Stamp BR on all pages ──
     for (let pi = 2; pi <= pdfDoc.getPageCount(); pi++) {

@@ -188,6 +188,17 @@ export async function onRequest(context: { request: Request; env: Env }) {
       }
     } catch { /* ignore */ }
 
+    // ── BR stamp on every page BEFORE page removal ──
+    // MUST be done before removePage() — otherwise pdf-lib may not render drawText
+    // on remaining pages (matching proven pattern in NAR1 & ND4).
+    if (brNumber) {
+      for (const page of pdfDoc.getPages()) {
+        try {
+          page.drawText(brNumber, { x: 465, y: 828, size: 9, font: helv, color: rgb(0, 0, 0) });
+        } catch { /* skip */ }
+      }
+    }
+
     // ── Page management: keep P.1-P.3 always, plus any pages referenced in fields ──
     const allPages = pdfDoc.getPages();
     const keepPages = new Set([0, 1, 2]);  // P.1, P.2, P.3 always kept
@@ -221,13 +232,6 @@ export async function onRequest(context: { request: Request; env: Env }) {
       try { form.getTextField('fill_3_P.9').setText(yyyy || ''); } catch { /* skip */ }
       try { form.getTextField('fill_4_P.9').setText(brNumber); } catch { /* skip */ }
       try { form.getTextField('fill_7_P.9').setText(allotteeName); } catch { /* skip */ }
-    }
-
-    // ── BR stamp on every page (top-right, backup in case fill_1 widget missing) ──
-    if (brNumber) {
-      for (const page of pdfDoc.getPages()) {
-        page.drawText(brNumber, { x: 465, y: 828, size: 9, font: helv, color: rgb(0, 0, 0) });
-      }
     }
 
     const pdfBytes = new Uint8Array(await pdfDoc.save());

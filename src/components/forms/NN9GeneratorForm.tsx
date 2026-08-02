@@ -246,7 +246,7 @@ export default function NN9GeneratorForm({ onBack }: NN9GeneratorFormProps) {
         </div>
 
         <div><h3 className="font-semibold mb-3">提交人資料</h3>
-          <PresenterSelector
+          <PresenterSelector companyId={selectedCompanyId}
             currentData={{ name: formData.presentorName, address: formData.presentorAddress, phone: formData.presentorPhone, fax: formData.presentorFax, email: formData.presentorEmail, reference: formData.presentorReference }}
             onSelect={(p: Presenter) => {
               update('presentorName', p.name);

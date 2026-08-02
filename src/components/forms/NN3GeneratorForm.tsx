@@ -288,7 +288,7 @@ export default function NN3GeneratorForm({ onBack }: NN3GeneratorFormProps) {
         {/* Presentor */}
         <div><h3 className="font-semibold mb-3">提交人資料 Presentor's Reference</h3>
           {selectedCompany && <p className="text-xs text-primary mb-3">已從 {selectedCompany.name} 自動填入，可修改</p>}
-          <PresenterSelector
+          <PresenterSelector companyId={selectedCompanyId}
             currentData={{ name: formData.presentorName, address: formData.presentorAddress, phone: formData.presentorPhone, fax: formData.presentorFax, email: formData.presentorEmail, reference: formData.presentorReference }}
             onSelect={(p: Presenter) => {
               update('presentorName', p.name);

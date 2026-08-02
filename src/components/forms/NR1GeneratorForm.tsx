@@ -228,7 +228,7 @@ export default function NR1GeneratorForm({ onBack, initialCompanyId }: NR1Genera
         {/* Presentor */}
         <div>
           <h3 className="font-semibold mb-3">提交人資料</h3>
-          <PresenterSelector
+          <PresenterSelector companyId={selectedCompanyId}
             currentData={{ name: formData.presentorName, address: formData.presentorAddress, contact: formData.presentorContact }}
             onSelect={(p: Presenter) => {
               update('presentorName', p.name);

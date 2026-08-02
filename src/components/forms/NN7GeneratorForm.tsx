@@ -448,7 +448,7 @@ export default function NN7GeneratorForm({ onBack, prefillPerson }: NN7Generator
         {/* Signature & Presentor */}
         <div>
           <h3 className="font-semibold mb-3">簽署及提交人</h3>
-          <PresenterSelector
+          <PresenterSelector companyId={selectedCompanyId}
             currentData={{ name: formData.presentorName, address: formData.presentorAddress, phone: formData.presentorPhone, fax: formData.presentorFax, email: formData.presentorEmail, reference: formData.presentorReference }}
             onSelect={(p: Presenter) => {
               update('presentorName', p.name);

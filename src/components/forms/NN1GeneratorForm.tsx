@@ -401,7 +401,7 @@ export default function NN1GeneratorForm({ onBack }: NN1GeneratorFormProps) {
         {/* Presentor Data */}
         <div><h3 className="font-semibold mb-3">提交人資料</h3>
           <p className="text-xs text-muted-foreground mb-3">Presentor's Reference{selectedCompany && <span className="ml-2 text-primary">（已從 {selectedCompany.name} 自動填入，可修改）</span>}</p>
-          <PresenterSelector
+          <PresenterSelector companyId={selectedCompanyId}
             currentData={{ nameChinese: formData.presentorNameChinese, nameEnglish: formData.presentorNameEnglish, address: formData.presentorAddress, phone: formData.presentorPhone, fax: formData.presentorFax, email: formData.presentorEmail, reference: formData.presentorReference }}
             onSelect={(p: Presenter) => {
               update('presentorNameChinese', p.name);

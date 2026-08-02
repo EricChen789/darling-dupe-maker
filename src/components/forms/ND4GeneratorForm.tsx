@@ -31,7 +31,7 @@ export default function ND4GeneratorForm({ onBack, initialCompanyId }: ND4Genera
     officerNameChinese: '', officerNameEnglish: '',
     identity: 'natural' as 'natural' | 'corporate',
     hkidPartial: '', passportCountry: '', passportPartial: '',
-    resignationDay: dd, resignationMonth: mm, resignationYear: yyyy,
+    resignationDay: '', resignationMonth: '', resignationYear: '',
     signerName: '', signerCapacity: '',
     signDateDay: dd, signDateMonth: mm, signDateYear: yyyy,
     presentorName: '', presentorAddress: '', presentorPhone: '', presentorFax: '', presentorEmail: '', presentorReference: '',
@@ -104,12 +104,13 @@ export default function ND4GeneratorForm({ onBack, initialCompanyId }: ND4Genera
         }
       }
 
-      // ND4 template AcroForm field mapping (verified against template 2026-07-14):
-      //   cb_1=秘書 cb_2=董事 cb_3=候補董事
+      // ND4 template AcroForm field mapping (verified against template labels 2026-07-30):
       //   fill_3="代替 Alternate to"  fill_4=中文姓名  fill_5=英文姓氏  fill_6=英文名字
-      //   fill_7=HKID號碼  fill_8=護照號碼
-      //   fill_9=簽署人  fill_10=身份  fill_11/12/13=辭職日期D/M/Y
-      //   fill_14=提交人姓名  fill_15=提交人地址  fill_16=電話  fill_17=傳真  fill_18=電郵  fill_19=參考編號
+      //   fill_7=HKID號碼  fill_8=護照簽發國  fill_9=法人公司名  fill_10=法人公司編號
+      //   fill_11/12/13=辭職日期D/M/Y  fill_14=提交人姓名  fill_15=提交人地址
+      //   fill_16=電話  fill_17=傳真  fill_18=電郵  fill_19=參考編號
+      const resignDateStr = (formData.resignationDay && formData.resignationMonth && formData.resignationYear)
+        ? `${formData.resignationDay}/${formData.resignationMonth}/${formData.resignationYear}` : '';
       const fields: Record<string, string> = {
         'fill_1_P.1': formData.brNumber,
         'fill_2_P.1': formData.companyName,
@@ -121,7 +122,7 @@ export default function ND4GeneratorForm({ onBack, initialCompanyId }: ND4Genera
         'fill_7_P.1': formData.hkidPartial || '',
         'fill_8_P.1': formData.passportCountry || '',
         'fill_8b_P.1': formData.passportPartial || '',
-        // Resignation effective date
+        // Resignation effective date (fill_11/12/13 = 辭職日期 D/M/Y)
         'fill_11_P.1': formData.resignationDay,
         'fill_12_P.1': formData.resignationMonth,
         'fill_13_P.1': formData.resignationYear,
@@ -145,20 +146,17 @@ export default function ND4GeneratorForm({ onBack, initialCompanyId }: ND4Genera
         fields['fill_3_P.1'] = formData.officerNameEnglish || '';
       }
       const checkboxes: string[] = [];
-      // Officer type checkbox: cb_1=秘書 cb_2=董事 cb_3=候補董事
-      if (formData.officerType === 'secretary') checkboxes.push('cb_1_P.1');
-      else if (formData.officerType === 'alternate') checkboxes.push('cb_3_P.1');
-      else checkboxes.push('cb_2_P.1');
-      // Identity toggle
-      if (formData.identity === 'natural') checkboxes.push('toggle_4_P.1');
-      else checkboxes.push('toggle_5_P.1');
-      // Resignation notice type on P.2
-      checkboxes.push('cb_1_P.2');
+      // P.1: "是否仍然擔任" — 辭任必然是「否」(toggle_5_P.1 = No)
+      checkboxes.push('toggle_5_P.1');
+      // P.2: Officer role checkboxes
+      if (formData.officerType === 'director') checkboxes.push('cb_1_P.2');
+      else if (formData.officerType === 'alternate') checkboxes.push('cb_2_P.2');
+      else if (formData.officerType === 'secretary') checkboxes.push('cb_3_P.2');
 
       const resp = await fetch(`/api/generate-template-pdf`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ template: 'ND4-template.pdf', fields, checkboxes, brNumber: formData.brNumber, keepWidgets: true, alignCenterFields: ['fill_4_P.1'], fieldMinFontSize: { 'fill_15_P.1': 10 } }),
+        body: JSON.stringify({ template: 'ND4-template.pdf', fields, checkboxes, brNumber: formData.brNumber, keepWidgets: true, removePages: [5, 4, 3, 2], alignCenterFields: ['fill_4_P.1'], fieldMinFontSize: { 'fill_15_P.1': 10 } }),
       });
       const result = await resp.json();
       if (!resp.ok) throw new Error(result.error || 'Unknown error');
@@ -268,7 +266,7 @@ export default function ND4GeneratorForm({ onBack, initialCompanyId }: ND4Genera
         </div>
 
         <div><h3 className="font-semibold mb-3">提交人資料</h3>
-          <PresenterSelector
+          <PresenterSelector companyId={selectedCompanyId}
             currentData={{ name: formData.presentorName, address: formData.presentorAddress, phone: formData.presentorPhone, fax: formData.presentorFax, email: formData.presentorEmail, reference: formData.presentorReference }}
             onSelect={(p: Presenter) => {
               update('presentorName', p.name);

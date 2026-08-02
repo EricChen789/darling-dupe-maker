@@ -1118,7 +1118,7 @@ export default function NN6GeneratorForm({ onBack }: NN6GeneratorFormProps) {
         {/* ── 簽署及提交人 ── */}
         <div>
           <h3 className="font-semibold mb-3">簽署及提交人</h3>
-          <PresenterSelector
+          <PresenterSelector companyId={selectedCompanyId}
             currentData={{ name: presentorName, address: presentorAddress, phone: presentorPhone, fax: presentorFax, email: presentorEmail, reference: presentorReference }}
             onSelect={(p: Presenter) => {
               setPresentorName(p.name);

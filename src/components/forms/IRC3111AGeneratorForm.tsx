@@ -214,7 +214,7 @@ export default function IRC3111AGeneratorForm({ onBack, initialCompanyId }: IRC3
         {/* Presentor */}
         <div>
           <h3 className="font-semibold mb-3">提交人資料</h3>
-          <PresenterSelector
+          <PresenterSelector companyId={selectedCompanyId}
             currentData={{ name: formData.presentorName, address: formData.presentorAddress, contact: formData.presentorContact }}
             onSelect={(p: Presenter) => {
               update('presentorName', p.name);

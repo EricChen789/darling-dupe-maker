@@ -328,7 +328,7 @@ export default function NSC1GeneratorForm({ onBack, initialCompanyId }: NSC1Gene
         {/* ── Presentor ── */}
         <div>
           <h3 className="font-semibold mb-3">提交人資料（P.1 底部 + P.3 簽署）</h3>
-          <PresenterSelector
+          <PresenterSelector companyId={selectedCompanyId}
             currentData={{ name: formData.presentorName, address: formData.presentorAddress, phone: formData.presentorTel, fax: formData.presentorFax, email: formData.presentorEmail, reference: formData.presentorReference }}
             onSelect={(p: Presenter) => {
               update('presentorName', p.name);

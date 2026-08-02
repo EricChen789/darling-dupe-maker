@@ -13,6 +13,7 @@ import { Person } from '@/types';
 import { downloadBase64Pdf } from '@/lib/downloadPdf';
 import PresenterSelector from './PresenterSelector';
 import type { Presenter } from '@/hooks/usePresenters';
+import { recordChangeEvent } from '@/lib/changeEvents';
 
 // ── 香港 18 區（繁體，用於下拉選單） ──
 const HK_DISTRICTS = [
@@ -24,6 +25,36 @@ const HK_DISTRICTS = [
 ];
 
 const HK_REGIONS = ['香港', '九龍', '新界'];
+
+// ── 提取变更值用于 change_event 记录 ──
+function getChangeValue(changeType: string, formData: any): Record<string, any> | null {
+  switch (changeType) {
+    case 'address': {
+      const addr: Record<string, string> = {};
+      if (formData.newFlat) addr.addr_flat = formData.newFlat;
+      if (formData.newBuilding) addr.addr_building = formData.newBuilding;
+      if (formData.newStreet) addr.addr_street = formData.newStreet;
+      if (formData.newDistrict) addr.addr_district = formData.newDistrict;
+      if (formData.newRegion) addr.addr_region = formData.newRegion;
+      return Object.keys(addr).length > 0 ? addr : null;
+    }
+    case 'name': {
+      const name: Record<string, string> = {};
+      const fullEng = [formData.newNameSurname, formData.newNameOtherNames].filter(Boolean).join(' ').trim();
+      if (fullEng) name.name_english = fullEng;
+      if (formData.newNameChinese) name.name_chinese = formData.newNameChinese;
+      if (formData.newAliasEnglish) name.alias_english = formData.newAliasEnglish;
+      if (formData.newAliasChinese) name.alias_chinese = formData.newAliasChinese;
+      return Object.keys(name).length > 0 ? name : null;
+    }
+    case 'id':
+      return formData.newIdNumber ? { id_number: formData.newIdNumber } : null;
+    case 'contact':
+      return formData.newEmail ? { email: formData.newEmail } : null;
+    default:
+      return null;
+  }
+}
 
 // ── 地址欄位值型別 ──
 interface AddressValues {
@@ -332,17 +363,52 @@ export default function ND2BGeneratorForm({ onBack, prefillPerson, prefillNewAdd
     setGenerating(true);
     try {
       const token = localStorage.getItem("secretary_jwt") || "";
+      const payload = {
+        ...formData,
+        companyId: selectedCompanyId,
+        personId: selectedPersonId,
+        debug,
+      };
       const resp = await fetch(`/api/generate-nd2b-pdf`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ ...formData, debug }),
+        body: JSON.stringify(payload),
       });
       const result = await resp.json();
       if (!resp.ok) throw new Error(result.error);
 
       downloadBase64Pdf(result.pdf, `ND2B-${formData.companyName || 'form'}.pdf`);
       saveFormHistory({ formType: 'ND2B', formData: { formData, selectedCompanyId, selectedPersonId } });
-      toast({ title: '生成成功', description: 'ND2B 表格已下載' });
+
+      // Record change events to Supabase (fire-and-forget)
+      if (selectedCompanyId && selectedPersonId && formData.changeTypes.length > 0) {
+        for (const ct of formData.changeTypes) {
+          const eventType = {
+            address: 'person_address_change',
+            name: 'person_name_change',
+            id: 'person_id_change',
+            contact: 'person_contact_change',
+          }[ct];
+          const newValue = getChangeValue(ct, formData);
+          if (eventType && newValue) {
+            recordChangeEvent({
+              company_id: selectedCompanyId,
+              person_id: selectedPersonId,
+              event_type: eventType,
+              role: formData.role,
+              new_value: newValue,
+              related_form_type: 'ND2B',
+              change_date: formData.effectiveDate,
+            });
+          }
+        }
+      }
+
+      const changeCount = formData.changeTypes.length;
+      const changeDesc = changeCount > 0
+        ? `已記錄 ${changeCount} 項變更：${formData.changeTypes.map((t: string) => ({address:'地址', name:'姓名', id:'證件', contact:'聯絡'}[t] || t)).join('、')}`
+        : '';
+      toast({ title: '生成成功', description: `ND2B 表格已下載${changeDesc ? ' · ' + changeDesc : ''}` });
     } catch (err: any) {
       toast({ title: '生成失敗', description: err.message, variant: 'destructive' });
     } finally {
@@ -531,7 +597,7 @@ export default function ND2BGeneratorForm({ onBack, prefillPerson, prefillNewAdd
         {/* Signature & Presentor */}
         <div>
           <h3 className="font-semibold mb-3">簽署及提交人</h3>
-          <PresenterSelector
+          <PresenterSelector companyId={selectedCompanyId}
             currentData={{ name: formData.presentorName, address: formData.presentorAddress, phone: formData.presentorPhone, fax: formData.presentorFax, email: formData.presentorEmail, reference: formData.presentorReference }}
             onSelect={(p: Presenter) => {
               update('presentorName', p.name);

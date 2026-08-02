@@ -303,13 +303,43 @@ export default function ND2AGeneratorForm({ onBack, initialCompanyId }: ND2AGene
                     <div><Label>護照簽發國家／地區</Label><Input value={officer.passportCountry} onChange={e => updateOfficer(idx, 'passportCountry', e.target.value)} placeholder="如：HKSAR" className="mt-1" /></div>
                     <div><Label>護照號碼</Label><Input value={officer.passportNumber} onChange={e => updateOfficer(idx, 'passportNumber', e.target.value)} className="mt-1" /></div>
                     <div className="col-span-2">
-                      <Label>住址</Label>
-                      <div className="grid grid-cols-3 gap-2 mt-1">
-                        <Input placeholder="室樓座" value={officer.addrFlatBlock} onChange={e => updateOfficer(idx, 'addrFlatBlock', e.target.value)} />
-                        <Input placeholder="大廈" value={officer.addrBuilding} onChange={e => updateOfficer(idx, 'addrBuilding', e.target.value)} />
-                        <Input placeholder="街道屋苑" value={officer.addrStreetEstate} onChange={e => updateOfficer(idx, 'addrStreetEstate', e.target.value)} />
-                        <Input placeholder="區" value={officer.addrDistrict} onChange={e => updateOfficer(idx, 'addrDistrict', e.target.value)} />
-                        <Input placeholder="地區" value={officer.addrRegion} onChange={e => updateOfficer(idx, 'addrRegion', e.target.value)} />
+                      <Label>住址 Residential Address</Label>
+                      <div className="grid grid-cols-2 gap-3 mt-1">
+                        <div className="space-y-1">
+                          <Label className="text-xs" style={{ lineHeight: 1.3 }}>Flat／Floor／Block etc. 室／樓／座等</Label>
+                          <Input placeholder="例如 Flat A, 12/F" value={officer.addrFlatBlock} onChange={e => updateOfficer(idx, 'addrFlatBlock', e.target.value)} />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs" style={{ lineHeight: 1.3 }}>Building 大廈</Label>
+                          <Input placeholder="大廈名稱" value={officer.addrBuilding} onChange={e => updateOfficer(idx, 'addrBuilding', e.target.value)} />
+                        </div>
+                        <div className="col-span-2 space-y-1">
+                          <Label className="text-xs" style={{ lineHeight: 1.3 }}>Street／Estate／Lot／Village etc. 街道／屋苑／地段／村等</Label>
+                          <Input placeholder="街道及門牌號" value={officer.addrStreetEstate} onChange={e => updateOfficer(idx, 'addrStreetEstate', e.target.value)} />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs" style={{ lineHeight: 1.3 }}>District／City／Province／State／Postal Code etc. 區／市／省／州／郵遞區號等</Label>
+                          <Input placeholder="例如 Central／中環" value={officer.addrDistrict} onChange={e => updateOfficer(idx, 'addrDistrict', e.target.value)} />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs" style={{ lineHeight: 1.3 }}>Country／Region 國家／地區</Label>
+                          <Input placeholder="例如 Hong Kong／香港" value={officer.addrRegion} onChange={e => updateOfficer(idx, 'addrRegion', e.target.value)} list="nd2a-region-suggestions" />
+                          <datalist id="nd2a-region-suggestions">
+                            <option value="Hong Kong 香港" />
+                            <option value="Kowloon 九龍" />
+                            <option value="New Territories 新界" />
+                            <option value="Mainland China 中國內地" />
+                            <option value="Macau 澳門" />
+                            <option value="Taiwan 台灣" />
+                            <option value="BVI" />
+                            <option value="Cayman Islands" />
+                            <option value="Bermuda" />
+                            <option value="Singapore 新加坡" />
+                            <option value="United Kingdom 英國" />
+                            <option value="United States 美國" />
+                            <option value="Other 其他" />
+                          </datalist>
+                        </div>
                       </div>
                     </div>
                   </>
@@ -345,7 +375,7 @@ export default function ND2AGeneratorForm({ onBack, initialCompanyId }: ND2AGene
           <h3 className="font-semibold mb-3">簽署及提交人</h3>
 
           <div className="mb-4">
-            <PresenterSelector
+            <PresenterSelector companyId={selectedCompanyId}
               currentData={{ name: presentorName, address: presentorAddress, phone: presentorPhone, fax: presentorFax, email: presentorEmail, reference: presentorReference }}
               onSelect={(p: Presenter) => {
                 setPresentorName(p.name);

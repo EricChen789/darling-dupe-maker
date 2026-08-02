@@ -13,7 +13,6 @@ import { useCompanies } from '@/hooks/useCompanies';
 import { useUserRole } from '@/hooks/useUserRole';
 import { ReminderCalendar } from '@/components/reminders/ReminderCalendar';
 
-function addDays(d: Date, days: number) { const c = new Date(d); c.setDate(c.getDate() + days); return c; }
 function fmtISO(d: Date) { return d.toISOString().slice(0, 10); }
 function statusColor(s: string) {
   if (s === 'completed') return 'default';
@@ -74,14 +73,13 @@ export default function Reminders() {
         const thisYear = new Date();
         thisYear.setMonth(inc.getMonth(), inc.getDate());
         if (thisYear < new Date()) thisYear.setFullYear(thisYear.getFullYear() + 1);
-        const due = addDays(thisYear, 42);
-        const dueStr = fmtISO(due);
+        const dueStr = fmtISO(thisYear);
         const exists = reminders.some(r => r.company_id === c.id && r.reminder_type === 'NAR1' && r.due_date === dueStr);
         if (exists) continue;
         await upsert.mutateAsync({
           company_id: c.id, reminder_type: 'NAR1',
           title: `${c.name} — NAR1 周年申報`, due_date: dueStr, status: 'pending',
-          notes: `成立周年 ${fmtISO(thisYear)} + 42 日`,
+          notes: `成立周年 ${fmtISO(thisYear)}`,
         });
         created++;
       }

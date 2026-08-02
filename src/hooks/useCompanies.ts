@@ -313,6 +313,16 @@ async function findOrCreatePerson(input: {
   passportNumber?: string;
   placeIncorporated?: string;
   companyNumberRef?: string;
+  addr_flat?: string;
+  addr_building?: string;
+  addr_street?: string;
+  addr_district?: string;
+  addr_region?: string;
+  svc_addr_flat?: string;
+  svc_addr_building?: string;
+  svc_addr_street?: string;
+  svc_addr_district?: string;
+  svc_addr_region?: string;
 }): Promise<string> {
   const identity = input.identity || 'natural';
   const nameEng = (input.nameEnglish || '').trim();
@@ -331,6 +341,16 @@ async function findOrCreatePerson(input: {
       if (input.placeIncorporated) corpPatch.place_incorporated = input.placeIncorporated;
       if (input.passportNumber) corpPatch.passport_number = input.passportNumber;
       if (input.email) corpPatch.email = input.email;
+      if (input.addr_flat !== undefined) corpPatch.addr_flat = input.addr_flat;
+      if (input.addr_building !== undefined) corpPatch.addr_building = input.addr_building;
+      if (input.addr_street !== undefined) corpPatch.addr_street = input.addr_street;
+      if (input.addr_district !== undefined) corpPatch.addr_district = input.addr_district;
+      if (input.addr_region !== undefined) corpPatch.addr_region = input.addr_region;
+      if (input.svc_addr_flat !== undefined) corpPatch.svc_addr_flat = input.svc_addr_flat;
+      if (input.svc_addr_building !== undefined) corpPatch.svc_addr_building = input.svc_addr_building;
+      if (input.svc_addr_street !== undefined) corpPatch.svc_addr_street = input.svc_addr_street;
+      if (input.svc_addr_district !== undefined) corpPatch.svc_addr_district = input.svc_addr_district;
+      if (input.svc_addr_region !== undefined) corpPatch.svc_addr_region = input.svc_addr_region;
       if (Object.keys(corpPatch).length > 0) {
         await supabase.from('persons').update(corpPatch as any).eq('id', personId);
       }
@@ -377,6 +397,16 @@ async function findOrCreatePerson(input: {
       passport_number: input.passportNumber || '',
       place_incorporated: input.placeIncorporated || '',
       company_number_ref: input.companyNumberRef || '',
+      addr_flat: input.addr_flat || '',
+      addr_building: input.addr_building || '',
+      addr_street: input.addr_street || '',
+      addr_district: input.addr_district || '',
+      addr_region: input.addr_region || '',
+      svc_addr_flat: input.svc_addr_flat || '',
+      svc_addr_building: input.svc_addr_building || '',
+      svc_addr_street: input.svc_addr_street || '',
+      svc_addr_district: input.svc_addr_district || '',
+      svc_addr_region: input.svc_addr_region || '',
     } as any)
     .select('id').single();
   if (error) throw error;
@@ -642,7 +672,7 @@ export function useUpdateCompany() {
 export function useAddOfficer() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (data: { company_id: string; name_english: string; name_chinese?: string; role: string; identity?: string; id_number?: string; email?: string; tcsp_number?: string; address?: string; service_address?: string; date_appointed?: string; date_ceased?: string; place_incorporated?: string; company_number_ref?: string; is_reserve?: boolean; date_of_birth?: string; auth_scope?: string }) => {
+    mutationFn: async (data: { company_id: string; name_english: string; name_chinese?: string; role: string; identity?: string; id_number?: string; email?: string; tcsp_number?: string; address?: string; addr_flat?: string; addr_building?: string; addr_street?: string; addr_district?: string; addr_region?: string; service_address?: string; svc_addr_flat?: string; svc_addr_building?: string; svc_addr_street?: string; svc_addr_district?: string; svc_addr_region?: string; date_appointed?: string; date_ceased?: string; place_incorporated?: string; company_number_ref?: string; is_reserve?: boolean; date_of_birth?: string; auth_scope?: string }) => {
       const today = new Date().toLocaleDateString('en-GB');
       const personId = await findOrCreatePerson({
         identity: data.identity,
@@ -653,6 +683,16 @@ export function useAddOfficer() {
         serviceAddress: data.service_address,
         placeIncorporated: data.place_incorporated,
         companyNumberRef: data.company_number_ref,
+        addr_flat: data.addr_flat,
+        addr_building: data.addr_building,
+        addr_street: data.addr_street,
+        addr_district: data.addr_district,
+        addr_region: data.addr_region,
+        svc_addr_flat: data.svc_addr_flat,
+        svc_addr_building: data.svc_addr_building,
+        svc_addr_street: data.svc_addr_street,
+        svc_addr_district: data.svc_addr_district,
+        svc_addr_region: data.svc_addr_region,
       });
       const personPatch: Record<string, any> = {};
       if (data.date_of_birth) personPatch.date_of_birth = data.date_of_birth;
@@ -661,6 +701,16 @@ export function useAddOfficer() {
       if (data.place_incorporated) personPatch.place_incorporated = data.place_incorporated;
       if (data.company_number_ref) personPatch.company_number_ref = data.company_number_ref;
       if ((data as any).passport_number) personPatch.passport_number = (data as any).passport_number;
+      if (data.addr_flat !== undefined) personPatch.addr_flat = data.addr_flat;
+      if (data.addr_building !== undefined) personPatch.addr_building = data.addr_building;
+      if (data.addr_street !== undefined) personPatch.addr_street = data.addr_street;
+      if (data.addr_district !== undefined) personPatch.addr_district = data.addr_district;
+      if (data.addr_region !== undefined) personPatch.addr_region = data.addr_region;
+      if (data.svc_addr_flat !== undefined) personPatch.svc_addr_flat = data.svc_addr_flat;
+      if (data.svc_addr_building !== undefined) personPatch.svc_addr_building = data.svc_addr_building;
+      if (data.svc_addr_street !== undefined) personPatch.svc_addr_street = data.svc_addr_street;
+      if (data.svc_addr_district !== undefined) personPatch.svc_addr_district = data.svc_addr_district;
+      if (data.svc_addr_region !== undefined) personPatch.svc_addr_region = data.svc_addr_region;
       if (Object.keys(personPatch).length > 0) {
         await supabase.from('persons').update(personPatch as any).eq('id', personId);
       }
@@ -701,7 +751,7 @@ export function useAddOfficer() {
 export function useUpdateOfficer() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: { name_english?: string; name_chinese?: string; identity?: string; id_number?: string; email?: string; tcsp_number?: string; address?: string; service_address?: string; date_appointed?: string; date_ceased?: string; place_incorporated?: string; company_number_ref?: string; is_reserve?: boolean; date_of_birth?: string; auth_scope?: string } }) => {
+    mutationFn: async ({ id, data }: { id: string; data: { name_english?: string; name_chinese?: string; identity?: string; id_number?: string; email?: string; tcsp_number?: string; address?: string; addr_flat?: string; addr_building?: string; addr_street?: string; addr_district?: string; addr_region?: string; service_address?: string; svc_addr_flat?: string; svc_addr_building?: string; svc_addr_street?: string; svc_addr_district?: string; svc_addr_region?: string; date_appointed?: string; date_ceased?: string; place_incorporated?: string; company_number_ref?: string; is_reserve?: boolean; date_of_birth?: string; auth_scope?: string } }) => {
       // id is person_company_roles.id — first lookup the person_id, company_id, role
       const { data: roleRow, error: e1 } = await supabase
         .from('person_company_roles').select('person_id, company_id, role').eq('id', id).single();
@@ -719,6 +769,16 @@ export function useUpdateOfficer() {
       if (data.email !== undefined) personUpdate.email = data.email;
       if (data.tcsp_number !== undefined) personUpdate.tcsp_number = data.tcsp_number;
       if (data.address !== undefined) personUpdate.address = data.address;
+      if (data.addr_flat !== undefined) personUpdate.addr_flat = data.addr_flat;
+      if (data.addr_building !== undefined) personUpdate.addr_building = data.addr_building;
+      if (data.addr_street !== undefined) personUpdate.addr_street = data.addr_street;
+      if (data.addr_district !== undefined) personUpdate.addr_district = data.addr_district;
+      if (data.addr_region !== undefined) personUpdate.addr_region = data.addr_region;
+      if (data.svc_addr_flat !== undefined) personUpdate.svc_addr_flat = data.svc_addr_flat;
+      if (data.svc_addr_building !== undefined) personUpdate.svc_addr_building = data.svc_addr_building;
+      if (data.svc_addr_street !== undefined) personUpdate.svc_addr_street = data.svc_addr_street;
+      if (data.svc_addr_district !== undefined) personUpdate.svc_addr_district = data.svc_addr_district;
+      if (data.svc_addr_region !== undefined) personUpdate.svc_addr_region = data.svc_addr_region;
       if (data.place_incorporated !== undefined) personUpdate.place_incorporated = data.place_incorporated;
       if (data.company_number_ref !== undefined) personUpdate.company_number_ref = data.company_number_ref;
       if (data.date_of_birth !== undefined) personUpdate.date_of_birth = data.date_of_birth;

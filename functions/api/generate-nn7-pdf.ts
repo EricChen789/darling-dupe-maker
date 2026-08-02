@@ -7,7 +7,7 @@
 import { PDFDocument, PDFName, StandardFonts } from "pdf-lib";
 import {
   corsHeaders, jsonResp, uint8ToBase64,
-  parseEnglishName
+  parseEnglishName, DEFAULT_PRESENTER
 } from "./_pdf-utils";
 import { enableNeedAppearances } from "./_acroform";
 import { verifyAuthRequest, type Env } from "./_auth";
@@ -85,9 +85,9 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
     }
 
     // Presenter
-    setF("fill_8_P.1", data.presentorName);
-    setF("fill_9_P.1", data.presentorAddress);
-    setF("fill_10_P.1", data.presentorContact);
+    setF("fill_8_P.1", data.presentorName || DEFAULT_PRESENTER.name);
+    setF("fill_9_P.1", data.presentorAddress || DEFAULT_PRESENTER.address);
+    setF("fill_10_P.1", data.presentorContact || DEFAULT_PRESENTER.contact);
 
     // P.3 Signer
     setF("fill_30_P.3", data.signerName);

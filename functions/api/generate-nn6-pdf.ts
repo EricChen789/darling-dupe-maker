@@ -4,7 +4,7 @@
 
 import { PDFDocument, StandardFonts } from "pdf-lib";
 import {
-  corsHeaders, jsonResp, uint8ToBase64
+  corsHeaders, jsonResp, uint8ToBase64, DEFAULT_PRESENTER
 } from "./_pdf-utils";
 import { enableNeedAppearances } from "./_acroform";
 import { verifyAuthRequest, type Env } from "./_auth";
@@ -161,9 +161,9 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
     const sd = (data.signDate || "").split(/[-/]/);
     if (sd.length >= 3) setF("fill_11_P.1", `${sd[2]}/${sd[1]}/${sd[0]}`);
     setF("fill_12_P.1", data.signerName);
-    setF("fill_13_P.1", data.presentorName);
-    setF("fill_14_P.1", data.presentorContact);
-    setF("fill_15_P.1", data.presentorAddress);
+    setF("fill_13_P.1", data.presentorName || DEFAULT_PRESENTER.name);
+    setF("fill_14_P.1", data.presentorContact || DEFAULT_PRESENTER.contact);
+    setF("fill_15_P.1", data.presentorAddress || DEFAULT_PRESENTER.address);
 
     // Don't flatten — saves CPU for large templates
     const pdfBytes = await pdfDoc.save({ updateFieldAppearances: false });

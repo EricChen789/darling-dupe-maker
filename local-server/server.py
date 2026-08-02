@@ -4029,6 +4029,149 @@ def _apply_form_changes_to_company(data, form_code):
             print(f"[FORM SYNC] {form_code} → company {company_id}: {event_type} {list(changes.keys())}")
 
 
+def _apply_nd2b_changes_to_person(data):
+    """After generating ND2B, apply person-level changes: address, name, ID, contact.
+    Updates the persons table and records change_events for NAR1 tracking."""
+    company_id = data.get('companyId') or data.get('company_id') or data.get('selectedCompanyId', '')
+    person_id = data.get('personId') or data.get('person_id') or data.get('selectedPersonId', '')
+    if not company_id or not person_id:
+        print(f"[ND2B SYNC] Skipping — missing company_id({company_id}) or person_id({person_id})")
+        return
+
+    db = get_db()
+    person = db.execute("SELECT * FROM persons WHERE id = ?", (person_id,)).fetchone()
+    if not person:
+        print(f"[ND2B SYNC] Person not found: {person_id}")
+        return
+
+    change_types = data.get('changeTypes', [])
+    if isinstance(change_types, str):
+        change_types = [change_types] if change_types else []
+    # backward compat
+    old_ct = data.get('changeType', '')
+    if old_ct and old_ct not in change_types:
+        change_types.append(old_ct)
+
+    if not change_types:
+        return
+
+    changes = {}
+    events = []
+    effective_date = data.get('effectiveDate', '')
+
+    for ct in change_types:
+        if ct == 'address':
+            fmap = {
+                'addr_flat': data.get('newFlat', ''),
+                'addr_building': data.get('newBuilding', ''),
+                'addr_street': data.get('newStreet', ''),
+                'addr_district': data.get('newDistrict', ''),
+                'addr_region': data.get('newRegion', ''),
+            }
+            addr_changes = {}
+            for col, val in fmap.items():
+                if val and val != (person[col] or ''):
+                    changes[col] = val
+                    addr_changes[col] = val
+            if addr_changes:
+                events.append(('person_address_change', addr_changes))
+
+        elif ct == 'name':
+            new_chinese = data.get('newNameChinese', '')
+            new_surname = data.get('newNameSurname', '')
+            new_other = data.get('newNameOtherNames', '')
+            new_english = f"{new_surname} {new_other}".strip() if new_surname or new_other else ''
+
+            name_changes = {}
+            # Move old name to previous_name if new name differs
+            if new_chinese and new_chinese != (person['name_chinese'] or ''):
+                if person['name_chinese'] and not person['previous_name_chinese']:
+                    changes['previous_name_chinese'] = person['name_chinese']
+                    name_changes['previous_name_chinese'] = person['name_chinese']
+                elif person['name_chinese'] and not person['alias_chinese']:
+                    changes['alias_chinese'] = person['name_chinese']
+                    name_changes['alias_chinese'] = person['name_chinese']
+                changes['name_chinese'] = new_chinese
+                name_changes['name_chinese'] = new_chinese
+
+            if new_english and new_english != (person['name_english'] or ''):
+                if person['name_english'] and not person['previous_name_english']:
+                    changes['previous_name_english'] = person['name_english']
+                    name_changes['previous_name_english'] = person['name_english']
+                elif person['name_english'] and not person['alias_english']:
+                    changes['alias_english'] = person['name_english']
+                    name_changes['alias_english'] = person['name_english']
+                changes['name_english'] = new_english
+                name_changes['name_english'] = new_english
+
+            new_alias_eng = data.get('newAliasEnglish', '')
+            new_alias_cn = data.get('newAliasChinese', '')
+            if new_alias_eng:
+                changes['alias_english'] = new_alias_eng
+                name_changes['alias_english'] = new_alias_eng
+            if new_alias_cn:
+                changes['alias_chinese'] = new_alias_cn
+                name_changes['alias_chinese'] = new_alias_cn
+
+            if name_changes:
+                events.append(('person_name_change', name_changes))
+
+        elif ct == 'id':
+            id_changes = {}
+            new_id = data.get('newIdNumber', '')
+            if new_id and new_id != (person['id_number'] or ''):
+                changes['id_number'] = new_id
+                id_changes['id_number'] = new_id
+            new_passport = data.get('passportNumber', '')
+            if new_passport and new_passport != (person['passport_number'] or ''):
+                changes['passport_number'] = new_passport
+                id_changes['passport_number'] = new_passport
+            if id_changes:
+                events.append(('person_id_change', id_changes))
+
+        elif ct == 'contact':
+            new_email = data.get('newEmail', '')
+            if new_email and new_email != (person['email'] or ''):
+                changes['email'] = new_email
+                events.append(('person_contact_change', {'email': new_email}))
+
+    # Apply changes to persons table
+    if changes:
+        sets = ', '.join([f"{k} = ?" for k in changes.keys()])
+        vals = list(changes.values()) + [person_id]
+        db.execute(f"UPDATE persons SET {sets} WHERE id = ?", vals)
+        db.commit()
+        print(f"[ND2B SYNC] person {person_id}: updated {list(changes.keys())}")
+
+        # Record change events
+        today = datetime.now().strftime('%d/%m/%Y')
+        for evt_type, evt_changes in events:
+            evt_id = str(uuid.uuid4())
+            db.execute(
+                "INSERT INTO change_events (id, company_id, event_type, person_id, role, "
+                "new_value, change_date, related_form_type) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (evt_id, company_id, evt_type, person_id,
+                 data.get('role', ''),
+                 json.dumps(evt_changes, ensure_ascii=False),
+                 effective_date or today, 'ND2B')
+            )
+            db.commit()
+
+        # Create company log entry
+        log_id = str(uuid.uuid4())
+        person_name = person['name_english'] or person['name_chinese'] or 'Unknown'
+        company_name_hint = data.get('companyName', '')
+        db.execute(
+            "INSERT INTO company_logs (id, company_id, company_name_hint, doc_type, doc_date, notes, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, datetime('now'))",
+            (log_id, company_id, company_name_hint, 'ND2B', effective_date or today,
+             f"ND2B 更改詳情 — {person_name}: {', '.join(change_types)}")
+        )
+        db.commit()
+        print(f"[ND2B SYNC] change_events + log created for {person_name}")
+
+
 # ─── Special routes ───
 @app.route('/api/persons/cleanup-orphans', methods=['POST'])
 def cleanup_orphan_persons():
@@ -5781,12 +5924,14 @@ def _stamp_br_on_all_pages(doc, br_text):
 
 
 def _fill_ndr1_pdf(data):
-    """填充 NDR1 PDF 模板，返回 bytes（仿照 NAR1 模式）
+    """填充 NDR1 PDF 模板，返回 bytes
 
-    模板實際佈局（從 PDF 提取）：
-    P.1: BR + 公司名 + 聲明勾選 + 申請人資料（中英文名/地址/電話/傳真/電郵/參考編號）
-    P.2-P.3: 自然人申請人詳情（姓名/地址/電郵/傳真）
-    P.4: 簽署人 + 日期
+    模板實際佈局（千问 VL + PyMuPDF 驗證）：
+    P.1: BR + 公司名 + 撤銷條件(6項文字) + A.申請人身份(cb_1~3) + 提交人資料(fill_3~11)
+    P.2: B.申請人資料 — 自然人(中文名/英文姓/英文名) 或 法人團體(公司名) + 地址5欄 + 電郵/傳真
+    P.3: C.獲提名自然人資料 — 僅當申請人為「上述公司」時填寫
+    P.4: 簽署人 + 日期 + 聲明勾選 + Dropdown劃線
+    P.5-P.8: 指引頁（無 widgets）
     """
     template_path = os.path.join(os.path.dirname(__file__), '..', 'public', 'templates', 'NDR1-template.pdf')
     doc = fitz.open(template_path)
@@ -5810,7 +5955,6 @@ def _fill_ndr1_pdf(data):
         vstr = str(value)
         cjk_n = sum(1 for c in vstr if ord(c) > 127)
         if cjk_n == 0 or not _tpl_cjk_fontfile:
-            # Pure ASCII or no CJK font — use standard _set_text
             return _set_text(doc, fmap, name, value)
         pi = fmap[name]
         for w in doc[pi].widgets():
@@ -5833,33 +5977,104 @@ def _fill_ndr1_pdf(data):
         return False
 
     br8 = re.sub(r'[^0-9A-Za-z]', '', data.get('brNumber', '') or '')[:8]
+    app_capacity = data.get('applicantCapacity', '')  # 'company' | 'director' | 'member'
 
-    # ── P.1: 公司資料 ──
+    # ═══ P.1: 公司資料 ═══
     _set_text(doc, fmap, 'fill_1_P.1', br8)
     _set_text(doc, fmap, 'fill_2_P.1', data.get('companyName', ''))
 
-    # 聲明勾選
-    _check(doc, fmap, 'cb_1_P.1', data.get('noOngoingBusiness'))
-    _check(doc, fmap, 'cb_2_P.1', data.get('noOutstandingLiabilities'))
-    _check(doc, fmap, 'cb_3_P.1', data.get('noLegalProceedings'))
+    # ═══ P.1: A.申請人身份 checkbox（cb_1~cb_3_P.1）═══
+    # cb_1 = 上述公司 (the above named company)
+    # cb_2 = 上述公司的一名董事 (a director of the above named company)
+    # cb_3 = 上述公司的一名成員 (a member of the above named company)
+    _check(doc, fmap, 'cb_1_P.1', app_capacity == 'company')
+    _check(doc, fmap, 'cb_2_P.1', app_capacity == 'director')
+    _check(doc, fmap, 'cb_3_P.1', app_capacity == 'member')
 
-    # ── P.1 左下角：申請人資料 ──
-    _set_cjk_ap('fill_3_P.1', data.get('applicantNameCN', ''), align='left')
-    _set_text(doc, fmap, 'fill_4_P.1', data.get('applicantNameEN', ''))
-    _set_cjk_ap('fill_5_P.1', data.get('applicantAddress', ''), min_fs=9, valign='bottom')
-    _set_cjk_ap('fill_6_P.1', data.get('applicantAddress2', ''), min_fs=9, valign='bottom')
-    _set_cjk_ap('fill_7_P.1', data.get('applicantAddress3', ''), min_fs=9, valign='bottom')
-    _set_text(doc, fmap, 'fill_8_P.1', data.get('applicantTel', ''))
-    _set_text(doc, fmap, 'fill_9_P.1', data.get('applicantFax', ''))
-    _set_text(doc, fmap, 'fill_10_P.1', data.get('applicantEmail', ''))
-    _set_text(doc, fmap, 'fill_11_P.1', data.get('applicantReference', ''))
+    # ═══ P.1 左下角：提交人資料 Presentor's Reference ═══
+    _set_cjk_ap('fill_3_P.1', data.get('presenterNameCN', ''), align='left')
+    _set_text(doc, fmap, 'fill_4_P.1', data.get('presenterNameEN', ''))
+    _set_cjk_ap('fill_5_P.1', data.get('presenterAddress1', ''), min_fs=9, valign='bottom')
+    _set_cjk_ap('fill_6_P.1', data.get('presenterAddress2', ''), min_fs=9, valign='bottom')
+    _set_cjk_ap('fill_7_P.1', data.get('presenterAddress3', ''), min_fs=9, valign='bottom')
+    _set_text(doc, fmap, 'fill_8_P.1', data.get('presenterTel', ''))
+    _set_text(doc, fmap, 'fill_9_P.1', data.get('presenterFax', ''))
+    _set_text(doc, fmap, 'fill_10_P.1', data.get('presenterEmail', ''))
+    _set_text(doc, fmap, 'fill_11_P.1', data.get('presenterReference', ''))
 
-    # ── P.4: 簽署人 + 日期 ──
+    # ═══ P.2: B.申請人資料 ═══
+    app_type = data.get('applicantType', 'natural')  # 'natural' | 'corporate'
+    _set_text(doc, fmap, 'fill_1_P.2', br8)
+
+    if app_type == 'corporate' or app_capacity == 'company':
+        # 法人團體 — 只填法人名稱 (fill_5_P.2) + 地址 + 聯絡
+        body_name = data.get('appBodyCorpName', '') or data.get('companyName', '')
+        _set_cjk_ap('fill_5_P.2', body_name, align='center')
+        # 自然人姓名三欄留空（不填）
+    else:
+        # 自然人 — 填中文名/英文姓/英文名 (fill_2~fill_4_P.2)
+        cn = data.get('appChineseName', '')
+        surname = data.get('appSurname', '')
+        other = data.get('appOtherNames', '')
+        # Fallback: parse from legacy/flat field
+        if not surname and not other:
+            en = data.get('appName', '') or data.get('applicantNameEN', '')
+            if en:
+                surname, other = _parse_english_name(en)
+        if not cn:
+            cn = data.get('applicantNameCN', '')
+        _set_cjk_ap('fill_2_P.2', cn, align='center')
+        _set_text(doc, fmap, 'fill_3_P.2', surname)
+        _set_text(doc, fmap, 'fill_4_P.2', other)
+
+    # P.2 地址（5 欄，fill_6~fill_10_P.2）
+    _set_text(doc, fmap, 'fill_6_P.2', data.get('appAddrFlat', ''))
+    _set_text(doc, fmap, 'fill_7_P.2', data.get('appAddrBuilding', ''))
+    _set_text(doc, fmap, 'fill_8_P.2', data.get('appAddrStreet', ''))
+    _set_text(doc, fmap, 'fill_9_P.2', data.get('appAddrDistrict', ''))
+    _set_text(doc, fmap, 'fill_10_P.2', data.get('appAddrCountry', ''))
+
+    # P.2 聯絡
+    _set_text(doc, fmap, 'fill_11_P.2', data.get('appEmail', ''))
+    fax_or_phone = data.get('appFax', '') or data.get('appTel', '')
+    if fax_or_phone:
+        _set_text(doc, fmap, 'fill_12_P.2', fax_or_phone)
+
+    # ═══ P.3: C.獲提名自然人資料（僅當申請人是「上述公司」）═══
+    if app_capacity == 'company':
+        nom_cn = data.get('nomChineseName', '')
+        nom_surname = data.get('nomSurname', '')
+        nom_other = data.get('nomOtherNames', '')
+        # Fallback from flat fields
+        if not nom_surname and not nom_other:
+            nom_en = data.get('nomName', '') or data.get('nomNameEnglish', '')
+            if nom_en:
+                nom_surname, nom_other = _parse_english_name(nom_en)
+
+        _set_cjk_ap('fill_2_P.3', nom_cn, align='center')
+        _set_text(doc, fmap, 'fill_3_P.3', nom_surname)
+        _set_text(doc, fmap, 'fill_4_P.3', nom_other)
+
+        _set_text(doc, fmap, 'fill_6_P.3', data.get('nomAddrFlat', ''))
+        _set_text(doc, fmap, 'fill_7_P.3', data.get('nomAddrBuilding', ''))
+        _set_text(doc, fmap, 'fill_8_P.3', data.get('nomAddrStreet', ''))
+        _set_text(doc, fmap, 'fill_9_P.3', data.get('nomAddrDistrict', ''))
+        _set_text(doc, fmap, 'fill_10_P.3', data.get('nomAddrCountry', ''))
+
+        _set_text(doc, fmap, 'fill_11_P.3', data.get('nomEmail', ''))
+        nom_fax = data.get('nomFax', '')
+        if nom_fax:
+            _set_text(doc, fmap, 'fill_12_P.3', nom_fax)
+    # else: P.3 不填（自然人/董事/成員申請人不需要 Section 2C）
+
+    # ═══ P.4: 簽署 ═══
+    _set_text(doc, fmap, 'fill_1_P.4', br8)
     _set_text(doc, fmap, 'fill_2_P.4', data.get('signerName', ''))
+
     sign_date = data.get('signDate', '')
     if sign_date and '-' in sign_date:
         parts = sign_date.split('-')
-        sign_date = f'{parts[2]}/{parts[1]}/{parts[0]}'  # YYYY-MM-DD → DD/MM/YYYY
+        sign_date = f'{parts[2]}/{parts[1]}/{parts[0]}'
     elif not sign_date:
         dd = data.get('signDateDay', '')
         mm = data.get('signDateMonth', '')
@@ -5868,45 +6083,35 @@ def _fill_ndr1_pdf(data):
             sign_date = f'{dd}/{mm}/{yy}'
     _set_text(doc, fmap, 'fill_3_P.4', sign_date)
 
-    # ── P.2-P.3: 自然人申請人詳情（選人後自動填入）──
-    person = data.get('selectedPerson')
-    if person:
-        cn = person.get('nameChinese', '')
-        en = person.get('nameEnglish', '')
-        surname, other = _parse_english_name(en) if en else ('', '')
-        address = person.get('address', '')
-        flat = person.get('addrFlat', '')
-        building = person.get('addrBuilding', '')
-        street = person.get('addrStreet', '')
-        district = person.get('addrDistrict', '')
-        region = person.get('addrRegion', '')
-        email = person.get('email', '')
-        tel = person.get('phone', '')
+    # ═══ P.4: 聲明勾選 ═══
+    _check(doc, fmap, 'cb_1_P.4', data.get('cb_1_P.4', True))   # 已獲全體成員書面同意
+    _check(doc, fmap, 'cb_2_P.4', data.get('cb_2_P.4', True))   # 已遵守公司條例要求
 
-        # P.2: 第1位自然人申請人
-        _set_text(doc, fmap, 'fill_1_P.2', br8)
-        _set_cjk_ap('fill_2_P.2', cn, align='center')
-        _set_text(doc, fmap, 'fill_3_P.2', surname)
-        _set_text(doc, fmap, 'fill_4_P.2', other)
-        # Parse address if individual fields are empty
-        if not any([flat, building, street, district, region]) and address:
-            parsed = _parse_address(address)
-            flat = flat or parsed.get('flat', '')
-            building = building or parsed.get('building', '') or parsed.get('block', '')
-            street = street or parsed.get('street', '')
-            district = district or parsed.get('district', '')
-            region = region or parsed.get('country', '')
-        _set_text(doc, fmap, 'fill_6_P.2', flat)
-        _set_text(doc, fmap, 'fill_7_P.2', building)
-        _set_text(doc, fmap, 'fill_8_P.2', street)
-        _set_text(doc, fmap, 'fill_9_P.2', district)
-        _set_text(doc, fmap, 'fill_10_P.2', region)
-        _set_text(doc, fmap, 'fill_11_P.2', email)
-        if tel:
-            _set_text(doc, fmap, 'fill_12_P.2', tel)
+    # P.4 Dropdown 劃線（簽署人身份: director→劃Secretary, secretary→劃Director）
+    signer_role = data.get('signerRole', 'director')
+    # Dropdown 在P.4有6個（中英文雙行，每行三個）：前3個是Director行，後3個是Secretary行
+    p4_widgets = []
+    for w in doc[3].widgets():
+        if w.field_name.startswith('Dropdown'):
+            p4_widgets.append(w)
+    dir_drops = sorted([w for w in p4_widgets if w.rect[0] > 380], key=lambda w: w.rect[1])
+    sec_drops = sorted([w for w in p4_widgets if w.rect[0] < 380], key=lambda w: w.rect[1])
+    # 選中劃線值（/I 1 = strike through line visible）
+    for w in dir_drops:
+        _select_dropdown(doc, fmap, w.field_name, 'Yes')
+    for w in sec_drops:
+        _select_dropdown(doc, fmap, w.field_name, 'Yes')
+    # 然後畫線（draw_line）保底：director→劃secretary行, secretary→劃director行
+    for w in (sec_drops if signer_role == 'director' else dir_drops):
+        rect = w.rect
+        doc[3].draw_line((rect.x0, rect.y0 + rect.height / 2), (rect.x1, rect.y0 + rect.height / 2), color=(0, 0, 0), width=1.5)
 
     # BR on all pages
     _stamp_br_on_all_pages(doc, br8)
+
+    # Delete blank instruction pages (P.5-P.8)
+    for pno in range(doc.page_count - 1, 3, -1):
+        doc.delete_page(pno)
 
     pdf_bytes = doc.write(deflate=True)
     doc.close()
@@ -8190,9 +8395,63 @@ def _fill_nd2b_pdf(data, template='ND2B-template.pdf'):
                 break
 
     br8 = (data.get('brNumber', '') or '').replace(r'[^0-9A-Za-z]', '')[:8]
-    name_parts = (data.get('nameEnglish', '') or '').strip().split()
-    surname = name_parts[-1] if len(name_parts) > 1 else (name_parts[0] if name_parts else '')
-    other = ' '.join(name_parts[:-1]) if len(name_parts) > 1 else ''
+    # Prefer explicit surname/otherNames from frontend, fall back to parsing nameEnglish
+    surname = data.get('nameSurname', '')
+    other = data.get('nameOtherNames', '')
+    if not surname and not other:
+        name_parts = (data.get('nameEnglish', '') or '').strip().split()
+        surname = name_parts[0] if name_parts else ''  # First word = surname (Chinese convention)
+        other = ' '.join(name_parts[1:]) if len(name_parts) > 1 else ''
+
+    # ── Parse change types (support both new array and old string) ──
+    change_types = data.get('changeTypes', [])
+    if isinstance(change_types, str):
+        change_types = [change_types] if change_types else []
+    # backward compat: old singular changeType
+    old_ct = data.get('changeType', '')
+    if old_ct and old_ct not in change_types:
+        change_types.append(old_ct)
+
+    # ── Parse effective date for D/M/Y fields ──
+    eff_date = data.get('effectiveDate', '')
+    eff_day = eff_month = eff_year = ''
+    if eff_date:
+        # Try YYYY-MM-DD
+        parts = eff_date.split('-')
+        if len(parts) == 3:
+            eff_day, eff_month, eff_year = parts[2], parts[1], parts[0]
+        else:
+            # Try DD/MM/YYYY
+            parts = eff_date.split('/')
+            if len(parts) == 3:
+                eff_day, eff_month, eff_year = parts[0], parts[1], parts[2]
+
+    # ── Build new address string ──
+    new_addr_parts = [
+        data.get('newFlat', ''),
+        data.get('newBuilding', ''),
+        data.get('newStreet', ''),
+        data.get('newDistrict', ''),
+        data.get('newRegion', '')
+    ]
+    new_address = ', '.join(p for p in new_addr_parts if p)
+    # backward compat: old newAddress single string
+    if not new_address:
+        new_address = data.get('newAddress', '')
+
+    # ── Build new English name ──
+    new_surname = data.get('newNameSurname', '')
+    new_other = data.get('newNameOtherNames', '')
+    new_english = f"{new_surname} {new_other}".strip()
+    new_chinese = data.get('newNameChinese', '')
+    # backward compat: old newNameEnglish single string
+    if not new_english:
+        old_new_name = data.get('newNameEnglish', '')
+        if old_new_name:
+            nparts = old_new_name.strip().split()
+            new_surname = nparts[0] if nparts else ''
+            new_other = ' '.join(nparts[1:]) if len(nparts) > 1 else ''
+            new_english = old_new_name
 
     # P.1: Company info
     _set('fill_1_P.1', br8)
@@ -8215,19 +8474,112 @@ def _fill_nd2b_pdf(data, template='ND2B-template.pdf'):
         if data.get('passportNumber'):
             _set('fill_7c_P.1', _parse_passport_partial(data['passportNumber']))
 
-        # P.2: Change details
-        if data.get('changeType') == 'address' and data.get('newAddress'):
-            _set('fill_19_P.2', data.get('newAddress', ''))
+        # ── P.2: Change details (multi-type support) ──
+        # Effective date fills (shared across all change rows)
+        if eff_day:
+            _set('fill_5_P.2', eff_day)
+            _set('fill_4_P.2', eff_month)
+            _set('fill_3_P.2', eff_year)
 
-        # P.6: Protected Information
+        # (a) 姓名更改 Name Change
+        if 'name' in change_types:
+            # Old name (current) — fill_2 is description row for item 14
+            current_name = data.get('nameEnglish', '') or f"{surname} {other}".strip()
+            _set('fill_2_P.2', current_name)
+            # New Chinese name
+            if new_chinese:
+                _set('fill_6_P.2', new_chinese)
+            # New English name
+            if new_english:
+                _set('fill_7_P.2', new_english)
+            # Name change effective date
+            if eff_day:
+                _set('fill_10_P.2', eff_day)
+                _set('fill_9_P.2', eff_month)
+                _set('fill_8_P.2', eff_year)
+
+        # (b) 別名 Alias
+        new_alias_eng = data.get('newAliasEnglish', '')
+        new_alias_cn = data.get('newAliasChinese', '')
+        if new_alias_eng or new_alias_cn:
+            alias_text = f"{new_alias_eng} {new_alias_cn}".strip()
+            _set('fill_12_P.2', alias_text)
+            if eff_day:
+                _set('fill_15_P.2', eff_day)
+                _set('fill_14_P.2', eff_month)
+                _set('fill_13_P.2', eff_year)
+
+        # (d) 通訊地址更改 Address Change
+        if 'address' in change_types:
+            _set('fill_19_P.2', data.get('newFlat', ''))
+            _set('fill_20_P.2', data.get('newBuilding', ''))
+            _set('fill_21_P.2', data.get('newStreet', ''))
+            _set('fill_22_P.2', data.get('newDistrict', ''))
+            _set('fill_23_P.2', data.get('newRegion', ''))
+            # backward compat: old newAddress single string → fill_19
+            if not data.get('newFlat') and data.get('newAddress'):
+                _set('fill_19_P.2', data.get('newAddress', ''))
+            if eff_day:
+                _set('fill_26_P.2', eff_day)
+                _set('fill_25_P.2', eff_month)
+                _set('fill_24_P.2', eff_year)
+
+        # (f) 聯絡資料更改 Contact Change
+        if 'contact' in change_types:
+            new_email = data.get('newEmail', '')
+            if new_email:
+                _set('fill_27_P.2', new_email)
+                if eff_day:
+                    _set('fill_30_P.2', eff_day)
+                    _set('fill_29_P.2', eff_month)
+                    _set('fill_28_P.2', eff_year)
+
+        # (g) 證件號碼更改 ID Change
+        if 'id' in change_types:
+            new_id = data.get('newIdNumber', '')
+            if new_id:
+                _set('fill_35_P.2', new_id, align='right')
+                if eff_day:
+                    _set('fill_34_P.2', eff_day)
+                    _set('fill_33_P.2', eff_month)
+                    _set('fill_32_P.2', eff_year)
+            # Passport change
+            new_passport = data.get('passportNumber', '')
+            new_passport_country = data.get('passportPlaceOfIssue', '') or data.get('passportCountry', '')
+            if new_passport:
+                _set('fill_37_P.2', _parse_passport_partial(new_passport))
+            if new_passport_country:
+                _set('fill_36_P.2', new_passport_country)
+            if (new_passport or new_passport_country) and eff_day:
+                _set('fill_39_P.2', eff_day)
+                _set('fill_38_P.2', eff_month)
+                _set('fill_37_P.2', eff_year)  # year for passport row
+
+        # ── P.6: Protected Information (PI-ND2B) ──
         if role == 'secretary':
             _check('cb_1_P.6')
         else:
             _check('cb_2_P.6')
+        # Current values (mirror P.1)
         _set('fill_2_P.6', data.get('nameChinese', ''))
         _set('fill_3_P.6', surname)
         _set('fill_4_P.6', other)
-        _set('fill_9_P.6', data.get('newAddress', ''))
+        # New values (mirror changes)
+        if 'address' in change_types and new_address:
+            _set('fill_9_P.6', new_address)
+        elif data.get('newAddress'):
+            _set('fill_9_P.6', data.get('newAddress', ''))
+        # HKID (new if changed, else current)
+        if 'id' in change_types and data.get('newIdNumber'):
+            _set('fill_5_P.6', data.get('newIdNumber', ''), align='right')
+        else:
+            _set('fill_5_P.6', data.get('idNumber', ''), align='right')
+        # Passport
+        ppoi = data.get('passportPlaceOfIssue', '') or data.get('passportCountry', '')
+        if 'id' in change_types and ppoi:
+            _set('fill_7_P.6', ppoi)
+        elif ppoi:
+            _set('fill_7_P.6', ppoi)
 
     # ── P.1 提交人信息 ──
     # fill_8 = 提交人名稱, fill_9 = 提交人地址
@@ -8243,6 +8595,10 @@ def _fill_nd2b_pdf(data, template='ND2B-template.pdf'):
     _set('fill_30_P.3', data.get('signerName', ''))
     _set('fill_31_P.3', data.get('signDate', ''))
 
+    # BR on all pages
+    for pi in range(2, doc.page_count + 1):
+        _set(f'fill_1_P.{pi}', br8)
+
     # ⚠️ 不删页：保留模板全部页面（仅 NAR1 可以删空页）
     pdf_bytes = doc.write(deflate=True)
     doc.close()
@@ -8256,6 +8612,7 @@ def generate_nd2b_pdf():
         if not data:
             return jsonify({'error': 'Empty request body'}), 400
         pdf_bytes = _fill_nd2b_pdf(data)
+        _apply_nd2b_changes_to_person(data)  # Apply changes to person record
         import base64 as b64
         return jsonify({'pdf': b64.b64encode(pdf_bytes).decode('ascii')})
     except Exception as e:
@@ -8273,6 +8630,7 @@ def generate_nn7_pdf():
         if not data:
             return jsonify({'error': 'Empty request body'}), 400
         pdf_bytes = _fill_nd2b_pdf(data, template='NN7-template.pdf')
+        _apply_nd2b_changes_to_person(data)  # Apply changes to person record
         import base64 as b64
         return jsonify({'pdf': b64.b64encode(pdf_bytes).decode('ascii')})
     except Exception as e:

@@ -235,14 +235,22 @@ CREATE TABLE IF NOT EXISTS secretary_templates (
 
 CREATE TABLE IF NOT EXISTS share_transactions (
   id TEXT PRIMARY KEY,
-  company_id TEXT REFERENCES companies(id) ON DELETE CASCADE,
-  shareholder_id TEXT REFERENCES shareholders(id) ON DELETE CASCADE,
-  transaction_type TEXT DEFAULT '',
-  shares INTEGER DEFAULT 0,
-  price TEXT DEFAULT '',
-  transaction_date TEXT DEFAULT '',
-  notes TEXT DEFAULT '',
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  transaction_date TEXT NOT NULL DEFAULT '',
+  transaction_type TEXT NOT NULL DEFAULT 'transfer',
+  from_person_id TEXT,
+  from_name TEXT NOT NULL DEFAULT '',
+  to_person_id TEXT,
+  to_name TEXT NOT NULL DEFAULT '',
+  shares INTEGER NOT NULL DEFAULT 0,
+  share_type TEXT NOT NULL DEFAULT '',
+  currency TEXT NOT NULL DEFAULT 'HKD',
+  price_per_share TEXT NOT NULL DEFAULT '',
+  total_consideration TEXT NOT NULL DEFAULT '',
+  instrument_number TEXT NOT NULL DEFAULT '',
+  notes TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 -- Indexes

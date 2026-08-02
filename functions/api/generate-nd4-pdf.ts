@@ -73,14 +73,28 @@ export async function onRequest(context: { request: Request; env: Env }) {
     // NOT identity toggles. See below.
 
     // ═══ P.1: Officer Details (per identity) ═══
-    // fill_3_P.1 = 辭任日期 (Resignation Date) for ALL officer types
+    // Template labels verified 2026-07-30:
+    //   fill_3_P.1 = "代替 Alternate to" (label at x=405)
+    //   fill_11/12/13_P.1 = "辭職日期 Date of Resignation" + "日DD 月MM 年YYYY" (label at y=614)
     const rd = rget(data, 'resignationDay');
     const rm = rget(data, 'resignationMonth');
     const ry = rget(data, 'resignationYear');
     const resignDateStr = (rd && rm && ry) ? `${rd}/${rm}/${ry}` : '';
 
+    // Resignation date → fill_11/12/13_P.1 (NOT fill_3_P.1)
+    if (rd && rm && ry) {
+      setF('fill_11_P.1', rd);
+      setF('fill_12_P.1', rm);
+      setF('fill_13_P.1', ry);
+    }
+
+    // fill_3_P.1 = "代替 Alternate to" — only for alternate directors
+    if (officerType === 'alternate' || officerType === 'reserve_director') {
+      const altTo = rget(data, 'alternateTo') || rget(data, 'officerNameEnglish');
+      setF('fill_3_P.1', altTo);
+    }
+
     if (identity === 'natural') {
-      setF('fill_3_P.1', resignDateStr);
       // Natural person fields
       setF('fill_4_P.1', rget(data, 'officerNameChinese') || rget(data, 'nameChinese'));
       setF('fill_5_P.1', rget(data, 'surname'));
@@ -91,23 +105,12 @@ export async function onRequest(context: { request: Request; env: Env }) {
       // Corporate body fields
       setF('fill_9_P.1', rget(data, 'corporateName') || rget(data, 'officerNameEnglish'));
       setF('fill_10_P.1', rget(data, 'corporateNumber') || brNumber);
-      // Resignation date for corporate
-      setF('fill_3_P.1', resignDateStr);
     }
 
     // ═══ P.1: "是否仍然擔任" — answer should be NO (person is resigning) ═══
     // toggle_4_P.1 = Yes / 是 (don't check)
     // toggle_5_P.1 = No / 否 (CHECK — will NOT continue to hold office)
     checkF('toggle_5_P.1', true);
-
-    // ═══ P.1: Sign Date ═══
-    const today = new Date();
-    const sd = rget(data, 'signDateDay') || String(today.getDate()).padStart(2, '0');
-    const sm = rget(data, 'signDateMonth') || String(today.getMonth() + 1).padStart(2, '0');
-    const sy = rget(data, 'signDateYear') || String(today.getFullYear());
-    setF('fill_11_P.1', sd);
-    setF('fill_12_P.1', sm);
-    setF('fill_13_P.1', sy);
 
     // ═══ P.1: Presenter ═══
     const pn = rget(data, 'presentorName') || rget(data, 'presenterName') || DEFAULT_PRESENTER.name;
@@ -205,13 +208,15 @@ export async function onRequest(context: { request: Request; env: Env }) {
       }
     } catch { /* non-critical */ }
 
-    // ═══ P.2: Signer ═══
+    // ═══ P.2: Signer + Sign Date ═══
     const signerName = rget(data, 'signerName') || rget(data, 'presentorName') || rget(data, 'presenterName') || DEFAULT_PRESENTER.name;
     setF('fill_2_P.2', signerName);
-    // Use same sign date as P.1 (sd/sm/sy declared above)
-    if (sd && sm && sy) {
-      setF('fill_3_P.2', `${sd}/${sm}/${sy}`);
-    }
+    // Sign date on P.2 (defaults to today since form is generated before signing)
+    const today = new Date();
+    const sd2 = rget(data, 'signDateDay') || String(today.getDate()).padStart(2, '0');
+    const sm2 = rget(data, 'signDateMonth') || String(today.getMonth() + 1).padStart(2, '0');
+    const sy2 = rget(data, 'signDateYear') || String(today.getFullYear());
+    setF('fill_3_P.2', `${sd2}/${sm2}/${sy2}`);
 
     // ═══ BR stamp on all pages ═══
     if (brNumber) {
@@ -219,6 +224,15 @@ export async function onRequest(context: { request: Request; env: Env }) {
       for (const page of pdfDoc.getPages()) {
         page.drawText(brNumber, { x: 500, y: 820, size: 8, font: stampFont });
       }
+    }
+
+    // ═══ Remove blank instruction pages (P.3–P.6) ═══
+    // ND4 template only has real form fields on P.1 and P.2.
+    // Pages 3-6 are white instruction/reference pages — delete them.
+    const totalPages = pdfDoc.getPageCount();
+    // Remove from the end to keep indices stable
+    for (let i = totalPages - 1; i >= 2; i--) {
+      pdfDoc.removePage(i);
     }
 
     // Skip flatten — saves CPU; NeedAppearances lets PDF reader rebuild appearances

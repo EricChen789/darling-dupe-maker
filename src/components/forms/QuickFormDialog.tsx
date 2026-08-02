@@ -34,6 +34,7 @@ const FORM_CONFIGS: Record<string, { label: string; endpoint: string; icon: stri
   nd4_cease: { label: 'ND4 辭任通知書', endpoint: '/api/generate-nd4-pdf', icon: '📋' },
   bought_sold_note: { label: '買賣票據', endpoint: '/api/generate-share-transfer-pdf', icon: '💰' },
   instrument_of_transfer: { label: '轉讓文書', endpoint: '/api/generate-share-transfer-pdf', icon: '📄' },
+  share_certificate: { label: '股票證書', endpoint: '/api/generate-share-transfer-pdf', icon: '🏷️' },
   nsc1: { label: 'NSC1 配發申報書', endpoint: '/api/generate-nsc1-pdf', icon: '📋' },
 };
 
@@ -47,10 +48,15 @@ function getFormOptions(eventType: string, raw: any): { key: string; config: typ
   } else if (eventType === 'transfer') {
     opts.push({ key: 'bought_sold_note', config: FORM_CONFIGS.bought_sold_note });
     opts.push({ key: 'instrument_of_transfer', config: FORM_CONFIGS.instrument_of_transfer });
-  } else if (eventType === 'allotment' || eventType === 'shareholder_add') {
+    opts.push({ key: 'share_certificate', config: FORM_CONFIGS.share_certificate });
+  } else if (eventType === 'allotment' || eventType === 'shareholder_add' || eventType === 'capital_increase') {
     opts.push({ key: 'nsc1', config: FORM_CONFIGS.nsc1 });
+    opts.push({ key: 'share_certificate', config: FORM_CONFIGS.share_certificate });
   } else if (eventType === 'shareholder_remove') {
     opts.push({ key: 'bought_sold_note', config: FORM_CONFIGS.bought_sold_note });
+  } else if (eventType === 'repurchase') {
+    opts.push({ key: 'bought_sold_note', config: FORM_CONFIGS.bought_sold_note });
+    opts.push({ key: 'share_certificate', config: FORM_CONFIGS.share_certificate });
   }
 
   // Also allow for personnel roles
@@ -367,6 +373,23 @@ function buildFormPayload(
           'fill_19_P.1': '0.00',
         },
         checkboxes: ['cb_1_P.1'],
+      };
+    }
+    case 'share_certificate': {
+      const txDate = raw?.transaction_date || raw?.transactionDate || today;
+      return {
+        ...base,
+        companyId: company.id,
+        documentType: 'share_certificate',
+        from_name: raw?.from_name || raw?.fromName || '',
+        to_name: raw?.to_name || raw?.toName || '',
+        shares: raw?.shares || 0,
+        share_type: raw?.share_type || raw?.shareType || 'Ordinary',
+        price_per_share: raw?.price_per_share || raw?.pricePerShare || '',
+        total_consideration: raw?.total_consideration || raw?.totalConsideration || '',
+        transaction_date: txDate,
+        instrument_number: raw?.instrument_number || raw?.instrumentNumber || '',
+        currency: raw?.currency || 'HKD',
       };
     }
     default:

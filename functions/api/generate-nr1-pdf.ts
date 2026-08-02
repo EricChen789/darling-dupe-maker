@@ -1,6 +1,6 @@
 import { PDFDocument } from "pdf-lib";
 import { verifyAuthRequest, type Env as AuthEnv } from './_auth';
-import { corsHeaders, uint8ToBase64 } from './_pdf-utils';
+import { corsHeaders, uint8ToBase64, DEFAULT_PRESENTER } from './_pdf-utils';
 import {
   collectFormFields,
   rebuildAcroFormFields,
@@ -104,9 +104,9 @@ export async function onRequest(context: { request: Request; env: Env }) {
       setText("fill_19_P.1", `${data.signDateDay || ""}/${data.signDateMonth || ""}/${data.signDateYear || ""}`);
 
       // Presentor
-      setText("fill_20_P.1", data.presentorName);
-      setText("fill_21_P.1", data.presentorAddress);
-      setText("fill_22_P.1", data.presentorContact);
+      setText("fill_20_P.1", data.presentorName || DEFAULT_PRESENTER.name);
+      setText("fill_21_P.1", data.presentorAddress || DEFAULT_PRESENTER.address);
+      setText("fill_22_P.1", data.presentorContact || DEFAULT_PRESENTER.contact);
 
       // Region dropdown
       if (data.region) {

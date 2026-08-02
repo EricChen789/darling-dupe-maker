@@ -25,6 +25,7 @@ export async function onRequest(context: { request: Request; env: Env }) {
       fields?: Record<string, unknown>;
       checkboxes?: string[];
       brNumber?: string;
+      removePages?: number[];  // 0-indexed page indices to delete (max→min is safest)
     };
 
     const template = data.template || "";
@@ -75,6 +76,17 @@ export async function onRequest(context: { request: Request; env: Env }) {
       const helv = await pdfDoc.embedFont(StandardFonts.Helvetica);
       for (const page of pdfDoc.getPages()) {
         page.drawText(brNumber, { x: 500, y: 820, size: 8, font: helv });
+      }
+    }
+
+    // 移除指定頁面（倒序刪除以防索引偏移）
+    const removePages = data.removePages || [];
+    if (removePages.length > 0) {
+      const sorted = [...removePages].sort((a, b) => b - a); // descending
+      for (const idx of sorted) {
+        if (idx >= 0 && idx < pdfDoc.getPageCount()) {
+          pdfDoc.removePage(idx);
+        }
       }
     }
 

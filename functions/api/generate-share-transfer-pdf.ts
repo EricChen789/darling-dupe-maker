@@ -92,6 +92,25 @@ export async function onRequest(context: { request: Request; env: Env }) {
       }
     }
 
+    // ── Auto-generate certificate number if missing (for share_certificate docType) ──
+    if (docType === "share_certificate" && transaction && !transaction.instrument_number) {
+      const br = (company as any).company_number || '00000000';
+      const brSuffix = br.replace(/[^0-9A-Za-z]/g, '').slice(0, 8);
+      // Count existing certificates for this company to generate sequential number
+      const certCount = await env.DB.prepare(
+        "SELECT COUNT(*) as cnt FROM share_transactions WHERE company_id = ? AND instrument_number != ''"
+      ).bind(companyId).first();
+      const seq = String(((certCount as any)?.cnt || 0) + 1).padStart(4, '0');
+      const certNo = `SC-${brSuffix}-${seq}`;
+      transaction.instrument_number = certNo;
+      // Persist the certificate number back to the transaction
+      try {
+        await env.DB.prepare(
+          "UPDATE share_transactions SET instrument_number = ? WHERE id = ?"
+        ).bind(certNo, transaction.id).run();
+      } catch { /* non-critical */ }
+    }
+
     // Load CJK font via R2-first shared helper (avoids CDN fetch CPU timeout)
     const pdf = await PDFDocument.create();
     const { cjk: cjkFont, ascii: asciiFont } = await fetchAndEmbedFont(pdf, env as any);

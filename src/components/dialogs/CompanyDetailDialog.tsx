@@ -22,7 +22,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Company, Person, Shareholder } from '@/types';
 import {
   Building2, Users, UserCheck, Briefcase, ArrowLeft, User, ShieldCheck, Copy,
-  Edit, Save, X, Plus, Trash2, Upload, FileText, Download, Loader2, Paperclip, UsersRound, UserCog, UserPlus, FileClock, History, FileOutput,
+  Edit, Save, X, Plus, Trash2, Upload, FileText, Download, Loader2, Paperclip, UsersRound, UserCog, UserPlus, FileClock, History, FileOutput, Landmark,
 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
@@ -36,6 +36,7 @@ import { RegistersTab } from './RegistersTab';
 import { CompanyChronicleTab } from './CompanyChronicleTab';
 import { PersonnelSection } from './PersonnelChangeTab';
 import { DocGenerationTab } from './DocGenerationTab';
+import { ShareCapitalTab } from './ShareCapitalTab';
 import { CopyFromCompanyDialog } from './CopyFromCompanyDialog';
 import { SearchableSelect } from '@/components/ui/searchable-multiselect';
 import { useOfficers } from '@/hooks/useOfficers';
@@ -309,6 +310,16 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
       authScope: source.authScope || '',
       address: source.address || '',
       serviceAddress: source.serviceAddress || '',
+      addrFlat: source.addrFlat || '',
+      addrBuilding: source.addrBuilding || '',
+      addrStreet: source.addrStreet || '',
+      addrDistrict: source.addrDistrict || '',
+      addrRegion: source.addrRegion || '',
+      svcAddrFlat: source.svcAddrFlat || '',
+      svcAddrBuilding: source.svcAddrBuilding || '',
+      svcAddrStreet: source.svcAddrStreet || '',
+      svcAddrDistrict: source.svcAddrDistrict || '',
+      svcAddrRegion: source.svcAddrRegion || '',
       dateAppointed: source.dateAppointed || '',
       dateCeased: source.dateCeased || '', placeIncorporated: source.placeIncorporated || '',
       companyNumberRef: source.companyNumberRef || '',
@@ -516,7 +527,8 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
       onError: (err: any) => {
         console.error('[handleDeleteOfficer] error:', err);
         const msg = err?.message || err?.error || String(err);
-        toast({ title: '刪除失敗', description: msg, variant: 'destructive' });
+        const status = err?.status ? ` (HTTP ${err.status})` : '';
+        toast({ title: '刪除失敗', description: `${msg}${status}`, variant: 'destructive' });
       },
     });
   };
@@ -585,7 +597,17 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
       identity: newOfficerForm.identity, id_number: newOfficerForm.idNumber,
       email: newOfficerForm.email, tcsp_number: newOfficerForm.tcspNumber,
       address: newOfficerForm.address,
+      addr_flat: newOfficerForm.addrFlat || '',
+      addr_building: newOfficerForm.addrBuilding || '',
+      addr_street: newOfficerForm.addrStreet || '',
+      addr_district: newOfficerForm.addrDistrict || '',
+      addr_region: newOfficerForm.addrRegion || '',
       service_address: newOfficerForm.serviceAddress || newOfficerForm.address || regAddrFull,
+      svc_addr_flat: newOfficerForm.svcAddrFlat || '',
+      svc_addr_building: newOfficerForm.svcAddrBuilding || '',
+      svc_addr_street: newOfficerForm.svcAddrStreet || '',
+      svc_addr_district: newOfficerForm.svcAddrDistrict || '',
+      svc_addr_region: newOfficerForm.svcAddrRegion || '',
       date_appointed: newOfficerForm.dateAppointed || undefined,
       date_ceased: newOfficerForm.dateCeased || undefined,
       place_incorporated: newOfficerForm.placeIncorporated, company_number_ref: newOfficerForm.companyNumberRef,
@@ -611,7 +633,17 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
       email: newOfficerForm.email, tcsp_number: newOfficerForm.tcspNumber,
       auth_scope: newOfficerForm.authScope,
       address: newOfficerForm.address,
+      addr_flat: newOfficerForm.addrFlat || '',
+      addr_building: newOfficerForm.addrBuilding || '',
+      addr_street: newOfficerForm.addrStreet || '',
+      addr_district: newOfficerForm.addrDistrict || '',
+      addr_region: newOfficerForm.addrRegion || '',
       service_address: newOfficerForm.serviceAddress || newOfficerForm.address || regAddrFull,
+      svc_addr_flat: newOfficerForm.svcAddrFlat || '',
+      svc_addr_building: newOfficerForm.svcAddrBuilding || '',
+      svc_addr_street: newOfficerForm.svcAddrStreet || '',
+      svc_addr_district: newOfficerForm.svcAddrDistrict || '',
+      svc_addr_region: newOfficerForm.svcAddrRegion || '',
       date_appointed: newOfficerForm.dateAppointed || undefined,
       place_incorporated: newOfficerForm.placeIncorporated, company_number_ref: newOfficerForm.companyNumberRef,
       date_of_birth: newOfficerForm.dateOfBirth || undefined,
@@ -810,6 +842,9 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                 <TabsTrigger value="shareholders" className="gap-1.5">
                   <Briefcase className="h-3.5 w-3.5" /> 股東
                   <Badge variant="secondary" className="text-xs ml-1">{activeShareholders.length}</Badge>
+                </TabsTrigger>
+                <TabsTrigger value="sharecapital" className="gap-1.5">
+                  <Landmark className="h-3.5 w-3.5" /> 股本
                 </TabsTrigger>
                 <TabsTrigger value="authreps" className="gap-1.5">
                   <UserCog className="h-3.5 w-3.5" /> 授權代表
@@ -1293,6 +1328,11 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                 })()}
               </TabsContent>
 
+              {/* Tab: 股本 (Share Capital) */}
+              <TabsContent value="sharecapital">
+                <ShareCapitalTab company={company} />
+              </TabsContent>
+
               {/* Tab: SCR (重要控制人) */}
               <TabsContent value="scr">
                 <SCRTab company={company} />
@@ -1416,7 +1456,6 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                         </datalist>
                       </div>
                     </div>
-                    <div className="mt-1 space-y-1"><Label className="text-xs">完整住址（可直接編輯）</Label><Textarea value={personForm.address} onChange={e => setPersonForm({ ...personForm, address: e.target.value })} rows={1} placeholder="填寫上方分拆欄位會自動組合，亦可直接編輯此處" /></div>
                   </div>
                   {/* 送達地址 */}
                   <div className="col-span-2 border-t pt-2 mt-1">
@@ -1439,7 +1478,6 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                         </datalist>
                       </div>
                     </div>
-                    <div className="mt-1 space-y-1"><Label className="text-xs">完整送達地址（可直接編輯）</Label><Textarea value={personForm.serviceAddress} onChange={e => setPersonForm({ ...personForm, serviceAddress: e.target.value })} rows={1} placeholder="填寫上方分拆欄位會自動組合，亦可直接編輯此處" /></div>
                   </div>
                   {personForm.identity === 'corporate' && (
                     <>
@@ -1759,7 +1797,6 @@ function NewOfficerForm({ form, setForm, onSave, onCancel, isSecretary, template
               <datalist id="no-region-suggestions"><option value="Hong Kong 香港" /><option value="Kowloon 九龍" /><option value="New Territories 新界" /><option value="Mainland China 中國內地" /><option value="Macau 澳門" /><option value="Taiwan 台灣" /><option value="BVI British Virgin Islands" /><option value="Cayman Islands 開曼群島" /><option value="Bermuda 百慕達" /><option value="Singapore 新加坡" /><option value="United Kingdom 英國" /><option value="United States 美國" /><option value="Overseas 海外" /></datalist>
             </div>
           </div>
-          <div className="mt-1 space-y-1"><Label className="text-xs">完整住址（可直接編輯）</Label><Textarea value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} rows={1} placeholder="填寫上方分拆欄位會自動組合，亦可直接編輯此處" /></div>
         </div>
         <div className="col-span-2 border-t pt-2 mt-1">
           <div className="flex items-center justify-between mb-1">
@@ -1779,7 +1816,6 @@ function NewOfficerForm({ form, setForm, onSave, onCancel, isSecretary, template
               <datalist id="no-region-suggestions-svc"><option value="Hong Kong 香港" /><option value="Kowloon 九龍" /><option value="New Territories 新界" /><option value="Mainland China 中國內地" /><option value="Macau 澳門" /><option value="Taiwan 台灣" /><option value="BVI British Virgin Islands" /><option value="Cayman Islands 開曼群島" /><option value="Bermuda 百慕達" /><option value="Singapore 新加坡" /><option value="United Kingdom 英國" /><option value="United States 美國" /><option value="Overseas 海外" /></datalist>
             </div>
           </div>
-          <div className="mt-1 space-y-1"><Label className="text-xs">完整送達地址（可直接編輯）</Label><Textarea value={form.serviceAddress} onChange={e => setForm({ ...form, serviceAddress: e.target.value })} rows={1} placeholder="填寫上方分拆欄位會自動組合，亦可直接編輯此處" /></div>
         </div>
         {form.identity === 'corporate' && (
           <>

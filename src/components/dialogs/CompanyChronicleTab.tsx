@@ -17,9 +17,12 @@ import { useCompanyLogs, useCreateCompanyLog, type CompanyLog } from '@/hooks/us
 import {
   ArrowUp, ArrowDown, ArrowRight, Plus, Camera, History, FileText,
   Loader2, Pencil, Trash2, Save, X, Filter, Coins, Users, GitBranch,
-  UserPlus, UserMinus, TrendingUp, FileOutput,
+  UserPlus, UserMinus, TrendingUp, FileOutput, Download,
 } from 'lucide-react';
 import { QuickFormDialog } from '@/components/forms/QuickFormDialog';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { downloadBase64Pdf } from '@/lib/downloadPdf';
+import { ShareTransactionForm } from '@/components/forms/ShareTransactionForm';
 
 // ── 日期工具 ──
 function fmtDate(s?: string): string {
@@ -336,6 +339,41 @@ export function CompanyChronicleTab({ company }: { company: Company }) {
     });
   };
 
+  // ── 凭证 PDF 生成 ──
+  const genCert = async (tx: ShareTransaction, docType: string) => {
+    try {
+      const token = localStorage.getItem('secretary_jwt') || '';
+      const resp = await fetch('/api/generate-share-transfer-pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ companyId: tx.company_id, transactionId: tx.id, documentType: docType }),
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({ error: resp.statusText }));
+        throw new Error(err.error || `HTTP ${resp.status}`);
+      }
+      const result = await resp.json();
+      if (result.pdf) {
+        const typeLabel = docType === 'bought_sold_note' ? 'BoughtSoldNote' : docType === 'instrument_of_transfer' ? 'InstrumentOfTransfer' : 'ShareCertificate';
+        downloadBase64Pdf(result.pdf, `${typeLabel}_${tx.instrument_number || tx.id}.pdf`);
+        toast({ title: '憑證已生成', description: 'PDF 已下載' });
+        // 同步寫入公司日誌
+        const certTypeMap: Record<string, string> = { bought_sold_note: '買賣票據', instrument_of_transfer: '轉讓文書', share_certificate: '股票證書' };
+        createLog.mutate({
+          company_id: company.id,
+          company_name_hint: company.name,
+          doc_type: 'SHARE_CERTIFICATE',
+          doc_date: new Date().toISOString().slice(0, 10),
+          source_folder: '公司誌',
+          notes: `已生成${certTypeMap[docType] || docType}：${tx.from_name || '新發行'} → ${tx.to_name || '—'}，${(tx.shares || 0).toLocaleString()} 股`,
+          html_content: `<p>已生成${certTypeMap[docType] || docType}</p><p>${tx.from_name || '新發行'} → ${tx.to_name || '—'}，${(tx.shares || 0).toLocaleString()} 股</p>`,
+        });
+      }
+    } catch (e: any) {
+      toast({ title: '生成失敗', description: e.message, variant: 'destructive' });
+    }
+  };
+
   const handleSnapshot = () => {
     createSnapshot.mutate(company.id, {
       onSuccess: (r) => {
@@ -454,57 +492,13 @@ export function CompanyChronicleTab({ company }: { company: Company }) {
 
       {/* ── 新增/編輯交易表單 ── */}
       {editingTx && (
-        <div className="rounded-md border border-primary/50 bg-primary/5 p-3 grid grid-cols-2 gap-2">
-          <div className="space-y-1"><Label className="text-xs">交易日期</Label>
-            <Input type="date" value={editingTx.transaction_date || ''}
-              onChange={e => setEditingTx({ ...editingTx, transaction_date: e.target.value })} /></div>
-          <div className="space-y-1"><Label className="text-xs">交易類型</Label>
-            <Select value={editingTx.transaction_type || 'transfer'}
-              onValueChange={v => setEditingTx({ ...editingTx, transaction_type: v })}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="transfer">轉讓 Transfer</SelectItem>
-                <SelectItem value="allotment">配發 Allotment</SelectItem>
-                <SelectItem value="repurchase">購回 Repurchase</SelectItem>
-                <SelectItem value="capital_increase">增資 Capital Increase</SelectItem>
-              </SelectContent>
-            </Select></div>
-          <div className="space-y-1"><Label className="text-xs">轉讓人 From</Label>
-            <Input value={editingTx.from_name || ''} placeholder="若為新發行可留空"
-              onChange={e => setEditingTx({ ...editingTx, from_name: e.target.value })} /></div>
-          <div className="space-y-1"><Label className="text-xs">受讓人 To</Label>
-            <Input value={editingTx.to_name || ''}
-              onChange={e => setEditingTx({ ...editingTx, to_name: e.target.value })} /></div>
-          <div className="space-y-1"><Label className="text-xs">股數</Label>
-            <Input type="number" value={editingTx.shares ?? 0}
-              onChange={e => setEditingTx({ ...editingTx, shares: Number(e.target.value) || 0 })} /></div>
-          <div className="space-y-1"><Label className="text-xs">股份類別</Label>
-            <Input value={editingTx.share_type || ''} placeholder="Ordinary"
-              onChange={e => setEditingTx({ ...editingTx, share_type: e.target.value })} /></div>
-          <div className="space-y-1"><Label className="text-xs">每股價格</Label>
-            <Input value={editingTx.price_per_share || ''}
-              onChange={e => setEditingTx({ ...editingTx, price_per_share: e.target.value })} /></div>
-          <div className="space-y-1"><Label className="text-xs">總代價</Label>
-            <Input value={editingTx.total_consideration || ''}
-              onChange={e => setEditingTx({ ...editingTx, total_consideration: e.target.value })} /></div>
-          <div className="space-y-1"><Label className="text-xs">文件編號</Label>
-            <Input value={editingTx.instrument_number || ''}
-              onChange={e => setEditingTx({ ...editingTx, instrument_number: e.target.value })} /></div>
-          <div className="space-y-1"><Label className="text-xs">貨幣</Label>
-            <Input value={editingTx.currency || 'HKD'}
-              onChange={e => setEditingTx({ ...editingTx, currency: e.target.value })} /></div>
-          <div className="col-span-2 space-y-1"><Label className="text-xs">備註</Label>
-            <Textarea rows={2} value={editingTx.notes || ''}
-              onChange={e => setEditingTx({ ...editingTx, notes: e.target.value })} /></div>
-          <div className="col-span-2 flex gap-2 justify-end">
-            <Button variant="ghost" size="sm" onClick={() => setEditingTx(null)}>
-              <X className="h-3.5 w-3.5 mr-1" /> 取消
-            </Button>
-            <Button size="sm" onClick={saveTx} disabled={upsertTx.isPending}>
-              <Save className="h-3.5 w-3.5 mr-1" /> 儲存
-            </Button>
-          </div>
-        </div>
+        <ShareTransactionForm
+          tx={editingTx}
+          onChange={setEditingTx}
+          onSave={saveTx}
+          onCancel={() => setEditingTx(null)}
+          saving={upsertTx.isPending}
+        />
       )}
 
       <Separator />
@@ -653,6 +647,25 @@ export function CompanyChronicleTab({ company }: { company: Company }) {
                       )}
                       {isShareTx && (
                         <>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="sm" className="h-6 px-1.5 text-xs"
+                                onClick={e => e.stopPropagation()}>
+                                <FileText className="h-3 w-3 mr-0.5" /> 憑證
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="start" className="min-w-[180px]">
+                              <DropdownMenuItem onClick={e => { e.stopPropagation(); genCert(event.raw as ShareTransaction, 'bought_sold_note'); }}>
+                                <Download className="h-3.5 w-3.5 mr-2" /> 買賣票據
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={e => { e.stopPropagation(); genCert(event.raw as ShareTransaction, 'instrument_of_transfer'); }}>
+                                <Download className="h-3.5 w-3.5 mr-2" /> 轉讓文書
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={e => { e.stopPropagation(); genCert(event.raw as ShareTransaction, 'share_certificate'); }}>
+                                <Download className="h-3.5 w-3.5 mr-2" /> 股票證書
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                           <Button variant="ghost" size="sm" className="h-6 px-1.5 text-xs"
                             onClick={e => { e.stopPropagation(); setEditingTx(event.raw as ShareTransaction); }}>
                             <Pencil className="h-3 w-3 mr-1" /> 編輯

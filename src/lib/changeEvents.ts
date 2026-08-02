@@ -58,4 +58,9 @@ export const EVENT_FORM_MAP: Record<string, string> = {
   company_phone_change: 'NR1',
   reserve_director_appoint: 'ND2A',
   reserve_director_cease: 'ND4',
+  // ND2B person-level changes
+  person_address_change: 'ND2B',
+  person_name_change: 'ND2B',
+  person_id_change: 'ND2B',
+  person_contact_change: 'ND2B',
 };

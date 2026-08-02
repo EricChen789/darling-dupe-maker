@@ -5,7 +5,7 @@
 
 import { PDFDocument } from 'pdf-lib';
 import {
-  corsHeaders, jsonResp, uint8ToBase64, rget,
+  corsHeaders, jsonResp, uint8ToBase64, rget, DEFAULT_PRESENTER,
 } from './_pdf-utils';
 import { verifyAuthRequest, type Env } from './_auth';
 import { enableNeedAppearances } from './_acroform';
@@ -70,9 +70,9 @@ export async function onRequest(context: { request: Request; env: Env }) {
     }
 
     // Presenter
-    fields['fill_13_P.1'] = fields['fill_13_P.1'] || rget(data, 'presentorName') || rget(data, 'presenterName') || '';
-    fields['fill_14_P.1'] = fields['fill_14_P.1'] || rget(data, 'presentorAddress') || rget(data, 'presenterAddress') || '';
-    fields['fill_15_P.1'] = fields['fill_15_P.1'] || rget(data, 'presentorContact') || rget(data, 'presenterContact') || '';
+    fields['fill_13_P.1'] = fields['fill_13_P.1'] || rget(data, 'presentorName') || rget(data, 'presenterName') || DEFAULT_PRESENTER.name;
+    fields['fill_14_P.1'] = fields['fill_14_P.1'] || rget(data, 'presentorAddress') || rget(data, 'presenterAddress') || DEFAULT_PRESENTER.address;
+    fields['fill_15_P.1'] = fields['fill_15_P.1'] || rget(data, 'presentorContact') || rget(data, 'presenterContact') || DEFAULT_PRESENTER.contact;
 
     // Fill all fields
     for (const [name, value] of Object.entries(fields)) {

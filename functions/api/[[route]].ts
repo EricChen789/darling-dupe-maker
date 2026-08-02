@@ -42,7 +42,7 @@ async function base64url(buf: ArrayBuffer): Promise<string> {
   return btoa(str).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-const JWT_TTL_SECONDS = 7 * 24 * 60 * 60; // token 有效期 7 天（配合 verifyJWT 的 exp 檢查，實現過期自動登出）
+const JWT_TTL_SECONDS = 30 * 24 * 60 * 60; // token 有效期 30 天（配合 verifyJWT 的 exp 檢查，實現過期自動登出）
 
 async function signJWT(payload: Record<string, unknown>, secret: string): Promise<string> {
   const enc = new TextEncoder();

@@ -32,19 +32,27 @@ function getAccessToken(): string {
 }
 
 function buildFetch(method: string, body?: any): RequestInit {
-  const opts: RequestInit = {
-    method,
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${getAccessToken()}`,
-    },
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${getAccessToken()}`,
   };
-  if (body) opts.body = JSON.stringify(body);
+  // Only include Content-Type when there's a body (avoids issues with GET/DELETE without body)
+  const hasBody = body !== undefined && body !== null;
+  if (hasBody) {
+    headers["Content-Type"] = "application/json";
+  }
+  const opts: RequestInit = { method, headers };
+  if (hasBody) opts.body = JSON.stringify(body);
   return opts;
 }
 
 async function apiFetch(path: string, options?: RequestInit): Promise<any> {
-  const resp = await fetch(`${API_BASE}${path}`, options);
+  let resp: Response;
+  try {
+    resp = await fetch(`${API_BASE}${path}`, options);
+  } catch (e: any) {
+    console.error(`[API] fetch network error: ${path}`, e.message || e);
+    return { data: null, error: { message: e.message || 'Network error', status: 0 } };
+  }
   if (!resp.ok) {
     const text = await resp.text().catch(() => resp.statusText);
     let err: any;

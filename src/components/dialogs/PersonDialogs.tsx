@@ -10,7 +10,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
+
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Select,
@@ -701,10 +701,6 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave, onGenerateND2
                         <option value="Overseas 海外" />
                       </datalist>
                     </div>
-                    <div className="col-span-2 space-y-1">
-                      <Label className="text-xs">完整住址（可直接編輯）</Label>
-                      <Textarea value={formData.address} onChange={(e) => setFormData({ ...formData, address: e.target.value })} rows={2} placeholder="填寫上方分拆欄位會自動組合，亦可直接編輯此處" />
-                    </div>
                   </div>
                   {addressChanged && isOfficer && (
                     <p className="text-xs text-primary flex items-center gap-1">
@@ -757,19 +753,15 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave, onGenerateND2
                         <option value="Overseas 海外" />
                       </datalist>
                     </div>
-                    <div className="col-span-2 space-y-1">
-                      <div className="flex items-center justify-between">
-                        <Label className="text-xs">完整送達地址（可直接編輯）</Label>
-                        <Button type="button" variant="link" size="sm" className="h-auto p-0 text-xs"
-                          onClick={() => setFormData((prev) => ({
-                            ...prev,
-                            svcAddrFlat: prev.addrFlat, svcAddrBuilding: prev.addrBuilding, svcAddrStreet: prev.addrStreet,
-                            svcAddrDistrict: prev.addrDistrict, svcAddrRegion: prev.addrRegion, serviceAddress: prev.address,
-                          }))}>
-                          同通訊地址
-                        </Button>
-                      </div>
-                      <Textarea value={formData.serviceAddress} onChange={(e) => setFormData({ ...formData, serviceAddress: e.target.value })} rows={2} placeholder="填寫上方分拆欄位會自動組合，亦可直接編輯此處" />
+                    <div className="col-span-2">
+                      <Button type="button" variant="link" size="sm" className="h-auto p-0 text-xs"
+                        onClick={() => setFormData((prev) => ({
+                          ...prev,
+                          svcAddrFlat: prev.addrFlat, svcAddrBuilding: prev.addrBuilding, svcAddrStreet: prev.addrStreet,
+                          svcAddrDistrict: prev.addrDistrict, svcAddrRegion: prev.addrRegion, serviceAddress: prev.address,
+                        }))}>
+                        同通訊地址
+                      </Button>
                     </div>
                   </div>
                 </div>

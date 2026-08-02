@@ -149,29 +149,88 @@ export async function onRequest(context: { request: Request; env: Env }) {
 
     // P.3: Continuation sheets counter — leave blank (user: don't write 0)
 
-    // ── Build blue field appearances via MK/BG + delete AP + NeedAppearances ──
-    // Set MK/BG (light blue background) on ALL text field widgets, delete old AP stream,
-    // enable NeedAppearances — the PDF reader regenerates appearances with blue bg.
-    // This makes all editable fields visually blue, matching standard PDF form appearance.
-    // ⚠️ Use a SINGLE shared MK object (not one per widget) to stay within Workers CPU limit.
-    const sharedBlueMK = pdfDoc.context.obj({ BG: [0.91, 0.93, 0.96] });
+    // ═══ Build blue-background appearance streams for ALL text widgets ═══
+    // pdf-lib's setText() generates APs with WHITE background. We replace them
+    // with APs that have LIGHT BLUE background — matching the standard CR form look.
+    //
+    // Strategy: ONE shared blue-only AP for empty widgets (no text),
+    // individual APs for filled widgets (blue bg + text). This minimises CPU.
+    const encoder = new TextEncoder();
+
+    // ── Shared blue-background AP (for empty widgets) ──
+    // BBox [0,0,1000,1000] — PDF maps this to the widget rect, so the blue
+    // rectangle at (0,0)-(1000,1000) fills the entire widget area regardless of size.
+    const sharedBlueAP = pdfDoc.context.stream(
+      encoder.encode('/Tx BMC\nq\n0.91 0.93 0.96 rg\n0 0 1000 1000 re\nf\nQ\nEMC'),
+      pdfDoc.context.obj({
+        Type: PDFName.of('XObject'),
+        Subtype: PDFName.of('Form'),
+        FormType: 1,
+        BBox: [0, 0, 1000, 1000],
+      })
+    );
+
     for (const field of form.getFields()) {
-      const name = field.getName();
-      // ── Text fields: set MK/BG blue + delete AP (ALL fields, not just filled ones) ──
+      // ── Text fields ──
       try {
-        const tf = form.getTextField(name);
+        const tf = form.getTextField(field.getName());
+        const value = (() => { try { return tf.getText() ?? ''; } catch { return ''; } })();
+        const hasValue = value && String(value).trim();
+
         const widgets = tf.acroField.getWidgets();
         for (const w of widgets) {
           try {
-            w.dict.set(PDFName.of('MK'), sharedBlueMK);
-            w.dict.delete(PDFName.of('AP'));
+            if (hasValue) {
+              // ── Filled widget: create AP with blue bg + text ──
+              const rect = w.getRectangle();
+              const ww = rect.width;
+              const wh = rect.height;
+              if (ww <= 2 || wh <= 2) continue;
+
+              const da = tf.acroField.getDefaultAppearance() ?? '/Helv 10 Tf 0 g';
+              const sizeMatch = String(da).match(/(\d+(?:\.\d+)?)\s+Tf/);
+              const fontSize = sizeMatch ? parseFloat(sizeMatch[1]) : 10;
+              const escaped = String(value).replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
+              const textY = Math.max(2, wh * 0.15);
+
+              const content = [
+                '/Tx BMC',
+                'q',
+                '0.91 0.93 0.96 rg',
+                `0 0 ${ww.toFixed(1)} ${wh.toFixed(1)} re`,
+                'f',
+                'Q',
+                'BT',
+                `/Helv ${fontSize} Tf`,
+                '0 0 0 rg',
+                `2 ${textY.toFixed(1)} Td`,
+                `(${escaped}) Tj`,
+                'ET',
+                'EMC',
+              ].join('\n');
+
+              const streamDict = pdfDoc.context.obj({
+                Type: PDFName.of('XObject'),
+                Subtype: PDFName.of('Form'),
+                FormType: 1,
+                BBox: [0, 0, ww, wh],
+                Resources: { Font: { Helv: helv.ref } },
+              });
+              const apStream = pdfDoc.context.stream(encoder.encode(content), streamDict);
+              const apDict = pdfDoc.context.obj({ N: apStream });
+              w.dict.set(PDFName.of('AP'), apDict);
+            } else {
+              // ── Empty widget: use shared blue AP ──
+              const apDict = pdfDoc.context.obj({ N: sharedBlueAP });
+              w.dict.set(PDFName.of('AP'), apDict);
+            }
           } catch { /* skip unmodifiable widget */ }
         }
         continue;
       } catch {}
-      // ── Checkboxes: delete old AP so NeedAppearances regenerates it correctly ──
+      // ── Checkboxes: delete old AP so NeedAppearances regenerates it ──
       try {
-        const cb = form.getCheckBox(name);
+        const cb = form.getCheckBox(field.getName());
         const widgets = cb.acroField.getWidgets();
         for (const w of widgets) {
           try { w.dict.delete(PDFName.of('AP')); } catch { /* skip */ }
@@ -179,7 +238,7 @@ export async function onRequest(context: { request: Request; env: Env }) {
         continue;
       } catch {}
     }
-    // Enable NeedAppearances — reader will regenerate APs with our MK/BG blue backgrounds
+    // Set NeedAppearances so checkboxes regenerate correctly
     try {
       const acroForm = pdfDoc.catalog.lookup(PDFName.of('AcroForm')) as any;
       if (acroForm && typeof acroForm.set === 'function') {

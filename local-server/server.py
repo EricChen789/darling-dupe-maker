@@ -5623,6 +5623,22 @@ def list_nar1_due_companies():
 
 # ─── NR1 PDF 生成（本地 Python + PyMuPDF） ───
 
+def _set_dropdown_value(doc, fmap, field_name, display_text):
+    """Set a dropdown/combo field to a specific display-text option."""
+    if field_name not in fmap:
+        return False
+    pi = fmap[field_name]
+    for w in doc[pi].widgets():
+        if w.field_name == field_name:
+            try:
+                w.field_value = display_text
+                w.update()
+                return True
+            except Exception:
+                return False
+    return False
+
+
 def _fill_nr1_pdf(data):
     """填充 NR1 PDF 模板，返回 bytes"""
     template_path = os.path.join(os.path.dirname(__file__), '..', 'public', 'templates', 'NR1-template.pdf')
@@ -5646,19 +5662,27 @@ def _fill_nr1_pdf(data):
         'fill_8_P.1': data.get('addressEffectiveMonth', ''),
         'fill_9_P.1': data.get('addressEffectiveYear', ''),
         'fill_10_P.1': data.get('email', ''),
-        'fill_11_P.1': data.get('emailEffectiveDay', ''),
-        'fill_12_P.1': data.get('emailEffectiveMonth', ''),
-        'fill_13_P.1': data.get('emailEffectiveYear', ''),
-        'fill_14_P.1': data.get('phone', ''),
-        'fill_15_P.1': data.get('phoneEffectiveDay', ''),
-        'fill_16_P.1': data.get('phoneEffectiveMonth', ''),
-        'fill_17_P.1': data.get('phoneEffectiveYear', ''),
         'fill_18_P.1': data.get('signerName', ''),
         'fill_19_P.1': f"{data.get('signDateDay','')}/{data.get('signDateMonth','')}/{data.get('signDateYear','')}",
         'fill_20_P.1': data.get('presentorName', ''),
         'fill_21_P.1': data.get('presentorAddress', ''),
         'fill_22_P.1': data.get('presentorContact', ''),
     }
+
+    # Email effective date — only if email is filled
+    if (data.get('email', '') or '').strip():
+        field_map['fill_11_P.1'] = data.get('emailEffectiveDay', '')
+        field_map['fill_12_P.1'] = data.get('emailEffectiveMonth', '')
+        field_map['fill_13_P.1'] = data.get('emailEffectiveYear', '')
+
+    # Phone effective date — only if phone is filled
+    if (data.get('phone', '') or '').strip():
+        field_map['fill_14_P.1'] = data.get('phone', '')
+        field_map['fill_15_P.1'] = data.get('phoneEffectiveDay', '')
+        field_map['fill_16_P.1'] = data.get('phoneEffectiveMonth', '')
+        field_map['fill_17_P.1'] = data.get('phoneEffectiveYear', '')
+    else:
+        field_map['fill_14_P.1'] = data.get('phone', '')
 
     for name, value in field_map.items():
         if name not in fmap:
@@ -5673,21 +5697,41 @@ def _fill_nr1_pdf(data):
                     pass
                 break
 
-    # Region dropdown
-    region = data.get('region', '')
-    if region and 'Dropdown1_P.1' in fmap:
-        pi = fmap['Dropdown1_P.1']
-        for w in doc[pi].widgets():
-            if w.field_name == 'Dropdown1_P.1':
-                try:
-                    for choice_val, _ in (w.choice_values or []):
-                        if choice_val in region or region in choice_val:
-                            w.field_value = choice_val
-                            w.update()
-                            break
-                except Exception:
-                    pass
-                break
+    # ── Signer Capacity: use template dropdown to strike through ──
+    # Dropdown1_P.1 (x≈156) = 董事旁, Dropdown2_P.1 (x≈226) = 公司秘书旁
+    # 每个 dropdown 有 2 个选项: [0]=空白, [1]=横线(字型编码)
+    # 用 xref 直接设 /I 索引 + /V 值 + draw_line 画线保底（对齐 NAR1 P.8 模式）
+    signer_capacity = (data.get('signerCapacity', '') or '').strip()
+    if signer_capacity in ('director', 'secretary'):
+        # director → 划掉公司秘书(Dropdown2), secretary → 划掉董事(Dropdown1)
+        cross_widget = 'Dropdown2_P.1' if signer_capacity == 'director' else 'Dropdown1_P.1'
+        for widget_name in ('Dropdown1_P.1', 'Dropdown2_P.1'):
+            if widget_name not in fmap:
+                continue
+            pi = fmap[widget_name]
+            for w in doc[pi].widgets():
+                if w.field_name == widget_name:
+                    try:
+                        use_dashes = (widget_name == cross_widget)
+                        opt_idx = 1 if use_dashes else 0
+                        # Set /I index and /V value via xref
+                        doc.xref_set_key(w._annot.xref, 'I', f'[{opt_idx}]')
+                        val = w.choice_values[opt_idx]
+                        # NR1 dropdowns store (export, display) tuples; NAR1 stores plain strings
+                        if isinstance(val, tuple):
+                            val = val[0]  # export value e.g. 'Yes'
+                        doc.xref_set_key(w._annot.xref, 'V', fitz.get_pdf_str(val))
+                        doc.xref_set_key(w._annot.xref, 'F', '4')
+                        # Draw visible line through the widget rect as fallback guarantee
+                        if use_dashes:
+                            doc[pi].draw_line(
+                                fitz.Point(w.rect.x0 + 2, w.rect.y0 + w.rect.height / 2),
+                                fitz.Point(w.rect.x1 - 2, w.rect.y0 + w.rect.height / 2),
+                                color=(0, 0, 0), width=1.0
+                            )
+                    except Exception:
+                        pass
+                    break
 
     pdf_bytes = doc.write(deflate=True)
     doc.close()
@@ -5997,10 +6041,10 @@ def _fill_ndr1_pdf(data):
     _set_cjk_ap('fill_5_P.1', data.get('presenterAddress1', ''), min_fs=9, valign='bottom')
     _set_cjk_ap('fill_6_P.1', data.get('presenterAddress2', ''), min_fs=9, valign='bottom')
     _set_cjk_ap('fill_7_P.1', data.get('presenterAddress3', ''), min_fs=9, valign='bottom')
-    _set_text(doc, fmap, 'fill_8_P.1', data.get('presenterTel', ''))
-    _set_text(doc, fmap, 'fill_9_P.1', data.get('presenterFax', ''))
-    _set_text(doc, fmap, 'fill_10_P.1', data.get('presenterEmail', ''))
-    _set_text(doc, fmap, 'fill_11_P.1', data.get('presenterReference', ''))
+    _set_text_size(doc, fmap, 'fill_8_P.1', data.get('presenterTel', ''), 8)
+    _set_text_size(doc, fmap, 'fill_9_P.1', data.get('presenterFax', ''), 8)
+    _set_text_size(doc, fmap, 'fill_10_P.1', data.get('presenterEmail', ''), 8)
+    _set_text_size(doc, fmap, 'fill_11_P.1', data.get('presenterReference', ''), 8)
 
     # ═══ P.2: B.申請人資料 ═══
     app_type = data.get('applicantType', 'natural')  # 'natural' | 'corporate'
@@ -6083,9 +6127,12 @@ def _fill_ndr1_pdf(data):
             sign_date = f'{dd}/{mm}/{yy}'
     _set_text(doc, fmap, 'fill_3_P.4', sign_date)
 
-    # ═══ P.4: 聲明勾選 ═══
-    _check(doc, fmap, 'cb_1_P.4', data.get('cb_1_P.4', True))   # 已獲全體成員書面同意
-    _check(doc, fmap, 'cb_2_P.4', data.get('cb_2_P.4', True))   # 已遵守公司條例要求
+    # ═══ P.4: 簽署人身份 Capacity 勾選（二選一）═══
+    # cb_1_P.4 = 本表格第2B項所述的申請人(自然人)
+    # cb_2_P.4 = 本表格第2B項所述的申請人(法人團體)的董事/公司秘書/授權人
+    is_corporate_applicant = (app_type == 'corporate' or app_capacity == 'company')
+    _check(doc, fmap, 'cb_1_P.4', not is_corporate_applicant)   # 自然人
+    _check(doc, fmap, 'cb_2_P.4', is_corporate_applicant)        # 法人團體代表
 
     # P.4 Dropdown 劃線（簽署人身份: director→劃Secretary, secretary→劃Director）
     signer_role = data.get('signerRole', 'director')

@@ -150,35 +150,31 @@ export async function onRequest(context: { request: Request; env: Env }) {
     // P.3: Continuation sheets counter — leave blank (user: don't write 0)
 
     // ── Build blue field appearances via MK/BG + delete AP + NeedAppearances ──
-    // Set MK/BG (blue background) on each widget, delete old AP stream,
+    // Set MK/BG (light blue background) on ALL text field widgets, delete old AP stream,
     // enable NeedAppearances — the PDF reader regenerates appearances with blue bg.
+    // This makes all editable fields visually blue, matching standard PDF form appearance.
     for (const field of form.getFields()) {
       const name = field.getName();
-      // ── Text fields: set MK/BG blue + delete AP ──
+      // ── Text fields: set MK/BG blue + delete AP (ALL fields, not just filled ones) ──
       try {
         const tf = form.getTextField(name);
-        const value = tf.getText();
-        if (value) {
-          const widgets = tf.acroField.getWidgets();
-          for (const w of widgets) {
-            try {
-              // Set MK dict with BG (blue background)
-              w.dict.set(PDFName.of('MK'), pdfDoc.context.obj({ BG: [0.91, 0.93, 0.96] }));
-              // Delete old AP so reader regenerates with our MK/BG color
-              w.dict.delete(PDFName.of('AP'));
-            } catch { /* skip unmodifiable widget */ }
-          }
+        const widgets = tf.acroField.getWidgets();
+        for (const w of widgets) {
+          try {
+            // Set MK dict with BG (light blue background)
+            w.dict.set(PDFName.of('MK'), pdfDoc.context.obj({ BG: [0.91, 0.93, 0.96] }));
+            // Delete old AP so reader regenerates with our MK/BG color
+            w.dict.delete(PDFName.of('AP'));
+          } catch { /* skip unmodifiable widget */ }
         }
         continue;
       } catch {}
       // ── Checkboxes: delete old AP so NeedAppearances regenerates it correctly ──
       try {
         const cb = form.getCheckBox(name);
-        if (cb.isChecked()) {
-          const widgets = cb.acroField.getWidgets();
-          for (const w of widgets) {
-            try { w.dict.delete(PDFName.of('AP')); } catch { /* skip */ }
-          }
+        const widgets = cb.acroField.getWidgets();
+        for (const w of widgets) {
+          try { w.dict.delete(PDFName.of('AP')); } catch { /* skip */ }
         }
         continue;
       } catch {}

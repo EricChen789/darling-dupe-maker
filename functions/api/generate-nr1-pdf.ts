@@ -116,57 +116,30 @@ export async function onRequest(context: { request: Request; env: Env }) {
     }
 
     // ── Signer Capacity: use template dropdown to strike through ──
-    // Dropdown1_P.1 (x≈156) = 董事旁, Dropdown2_P.1 (x≈226) = 公司秘书旁
+    // Dropdown1_P.1 rect=(156.6,656.9,223.1,670.2) = 董事旁
+    // Dropdown2_P.1 rect=(226.1,656.9,371.2,670.2) = 公司秘书旁
     // 每个 dropdown 有 2 个选项: [0]=空白, [1]=横线
     // 用 selectDropdown 设值 + drawLine 画线保底（对齐 Flask NAR1 P.8 模式）
     if (data.signerCapacity === "director" || data.signerCapacity === "secretary") {
-      const crossField = data.signerCapacity === "director"
-        ? "Dropdown2_P.1"   // 选董事 → 划掉公司秘书
-        : "Dropdown1_P.1";  // 选公司秘书 → 划掉董事
+      const page1 = pdfDoc.getPage(0); // P.1
+      // Page height 841.68, dropdown y_mid ≈ 663.6 → pdf-lib y ≈ 178.1
+      const ddPositions: Record<string, { x0: number; x1: number; yMid: number }> = {
+        "Dropdown1_P.1": { x0: 158.6, x1: 221.1, yMid: 178.1 },
+        "Dropdown2_P.1": { x0: 228.1, x1: 369.2, yMid: 178.1 },
+      };
 
-      // Set both dropdowns to correct options
-      const pdfForm = pdfDoc.getForm();
       for (const ddName of ["Dropdown1_P.1", "Dropdown2_P.1"]) {
-        const isCross = ddName === crossField;
-        // Try to get widget rect from the form for drawLine
-        try {
-          const dd = pdfForm.getDropdown(ddName);
-          const acroField = (dd as any).acroField;
-          const fieldRef = acroField?.ref;
-          if (fieldRef) {
-            const field = pdfDoc.context.lookup(fieldRef) as any;
-            const kids = field?.lookup?.(PDFName.of("Kids"));
-            if (kids) {
-              const page1 = pdfDoc.getPage(0); // P.1
-              const P = page1.ref;
-              for (let i = 0; i < kids.size(); i++) {
-                const kidRef = kids.get(i);
-                const kid = pdfDoc.context.lookup(kidRef) as any;
-                const kidP = kid?.lookup?.(PDFName.of("P"));
-                if (kidP && kidP === P) {
-                  const rect = kid.lookup(PDFName.of("Rect"));
-                  if (rect && rect.size() >= 4) {
-                    const rx = rect.get(0), ry = rect.get(1), rw = rect.get(2) - rect.get(0), rh = rect.get(3) - rect.get(1);
-                    // Set dropdown value via selectDropdown
-                    selectDropdown(ddName, isCross ? "—" : " ");
-                    if (isCross) {
-                      // Draw visible line through widget rect as fallback guarantee
-                      const yMid = ry + rh / 2;
-                      page1.drawLine({
-                        start: { x: rx + 2, y: yMid },
-                        end: { x: rx + rw - 2, y: yMid },
-                        thickness: 1.0,
-                      });
-                    }
-                    break;
-                  }
-                }
-              }
-            }
-          }
-        } catch (_) {
-          // Fallback: just use selectDropdown
-          selectDropdown(ddName, isCross ? "—" : " ");
+        const isCross = (ddName === (data.signerCapacity === "director" ? "Dropdown2_P.1" : "Dropdown1_P.1"));
+        // Set dropdown value
+        selectDropdown(ddName, isCross ? "—" : " ");
+        // Draw visible line as fallback guarantee
+        if (isCross) {
+          const pos = ddPositions[ddName];
+          page1.drawLine({
+            start: { x: pos.x0 + 2, y: pos.yMid },
+            end: { x: pos.x1 - 2, y: pos.yMid },
+            thickness: 1.0,
+          });
         }
       }
     }

@@ -327,11 +327,13 @@ function buildFormPayload(
       };
     }
     case 'nsc1': {
-      // NSC1 P.1 layout (verified by Qwen VL 2026-08-02):
-      //   y=242  Date row: [fill_3=D fill_4=M fill_5=Y] (Return Date)  [fill_6=D fill_7=M fill_8=Y] (Allotment Date)
-      //   y=376  Section B (Share Capital Increase): fill_9=Currency fill_10=Amount
-      //   y=594  Section D (Consideration table): fill_15=Class fill_16=Currency fill_17=Number fill_18=PaidPerShare fill_19=UnpaidPerShare
-      //   y=678  Presenter: fill_30=Name fill_31=Address fill_32=Phone fill_33=Fax fill_34=Email fill_35=Reference
+      // NSC1 P.1 layout (verified by Qwen VL 2026-08-04):
+      //   y=242  Allotment Date FROM/TO: fill_3-5=D/M/Y(FROM)  fill_6-8=D/M/Y(TO)
+      //   y=376  Section B (Total Consideration): fill_9=Currency fill_10=Amount (3 rows)
+      //   y=594  Section D (New Allotment): 3rows×5cols Class|Currency|Number|Paid|Unpaid
+      //   y=678  Presenter: fill_30=Name fill_31=Address fill_32=Phone fill_33=Fax fill_34=Email fill_35=Ref
+      // P.3: Share Capital table (TOTAL post-allotment) — filled by backend from DB
+      // P.7: Schedule 2 — Allottee personal details (name, address, shares)
       const shares = raw?.shares || 0;
       const shareType = raw?.share_type || raw?.shareType || 'Ordinary';
       const pricePerShare = parseFloat(raw?.price_per_share || raw?.pricePerShare || raw?.issuePrice || '1.00');
@@ -339,33 +341,40 @@ function buildFormPayload(
       const currency = raw?.currency || 'HKD';
       const txDate = raw?.transaction_date || raw?.transactionDate || raw?.dateAppointed || today;
       const allotParts = parseDateParts(txDate);
-      const todayParts = parseDateParts(today);
       const br8 = (company.brNumber || '').replace(/[^0-9A-Za-z]/g, '').slice(0, 8);
+      // Allottee data for Schedule 2 (P.7)
       const allotteeName = raw?.to_name || raw?.toName || '';
+      const allotteeNameZh = raw?.to_name_zh || raw?.toNameZh || '';
       return {
         company_id: company.id,
         brNumber: br8,
-        // Allottee data for Schedule 2 (附表二)
+        // Top-level data for backend processing
         allotteeName,
+        allotteeNameZh,
         allotteeShares: shares,
         allotteeClass: shareType,
+        shares,
+        shareClass: shareType,
+        pricePerShare: pricePerShare.toFixed(2),
+        currency,
+        totalConsideration: totalConsideration.toFixed(2),
         allotmentDate: `${allotParts.day}/${allotParts.month}/${allotParts.year}`,
         fields: {
-          // ── Page 1: Header ──
+          // ── P.1 Header ──
           'fill_1_P.1': br8,
           'fill_2_P.1': company.name,
-          // ── Return Date (today) D/M/Y ──
-          'fill_3_P.1': todayParts.day,
-          'fill_4_P.1': todayParts.month,
-          'fill_5_P.1': todayParts.year,
-          // ── Allotment Date (txDate) D/M/Y ──
+          // ── Allotment Date FROM (D/M/Y) ──
+          'fill_3_P.1': allotParts.day,
+          'fill_4_P.1': allotParts.month,
+          'fill_5_P.1': allotParts.year,
+          // ── Allotment Date TO (D/M/Y) — same as FROM for single-date allotment ──
           'fill_6_P.1': allotParts.day,
           'fill_7_P.1': allotParts.month,
           'fill_8_P.1': allotParts.year,
-          // ── Section B: Share Capital Increase ──
+          // ── Section B: Total Consideration (Currency | Amount) ──
           'fill_9_P.1': currency,
           'fill_10_P.1': totalConsideration.toFixed(2),
-          // ── Section D: Consideration Table (Class / Currency / Number / Paid / Unpaid) ──
+          // ── Section D: New Allotment (Class|Currency|Number|Paid|Unpaid) ──
           'fill_15_P.1': shareType,
           'fill_16_P.1': currency,
           'fill_17_P.1': String(shares),

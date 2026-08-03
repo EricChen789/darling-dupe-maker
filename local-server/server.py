@@ -6439,9 +6439,15 @@ def generate_nd4_pdf():
 def _fill_nsc1_pdf(data):
     """填充 NSC1 PDF 模板（股份配發申報書），返回 bytes
 
-    接受前端傳來的完整 fields dict（與 generate-template-pdf 兼容），
-    並附加 CJK 字體支持 + BR 全頁蓋印。
-    亦可接受 company_id 從 DB 自動填入公司資料。
+    Template: NSC1_fillable.pdf (14 pages, 226 widgets)
+    Page structure (verified by Qwen VL 2026-08-04):
+      P.1: BR, Company, Allotment Date FROM/TO, Section B (Currency|Amount),
+           Section D (Class|Currency|Number|Paid|Unpaid), Presenter
+      P.2: BR, Allottees 5-col table, 4 checkboxes, Particulars
+      P.3: BR, Share Capital 6-col table (TOTAL post-allotment),
+           Rights, Continuation counters, Signature
+      P.7: Schedule 2 — Allottee personal details (name, address, shares)
+      P.9-P.10: Share Capital continuation (6-col table)
     """
     template_path = os.path.join(os.path.dirname(__file__), '..', 'public', 'templates', 'NSC1-template.pdf')
     doc = fitz.open(template_path)
@@ -6482,8 +6488,17 @@ def _fill_nsc1_pdf(data):
                 break
         return _set_text(doc, fmap, name, value)
 
-    # ── Auto-populate company data from DB if company_id provided ──
+    # ── Helper: set field if empty ──
+    fields = data.get('fields', {})
+    def _set_if_empty(name, value):
+        if not value or not str(value).strip():
+            return
+        if name in fmap and not fields.get(name, '').strip():
+            _set(name, str(value))
+
+    # ── Auto-populate company data from DB ──
     br8 = re.sub(r'[^0-9A-Za-z]', '', data.get('brNumber', '') or '')[:8]
+    company_name = ''
     company_id = data.get('company_id')
     if company_id:
         try:
@@ -6493,20 +6508,54 @@ def _fill_nsc1_pdf(data):
                 c = dict(company)
                 if not br8:
                     br8 = re.sub(r'[^0-9A-Za-z]', '', c.get('company_number', '') or '')[:8]
-                # Auto-fill company header fields (only if not provided by caller)
-                if not data.get('fields', {}).get('fill_1_P.1', ''):
-                    _set_text(doc, fmap, 'fill_1_P.1', br8)
-                # BR on every main page fill_1
-                if not data.get('fields', {}).get('fill_1_P.2', ''):
-                    _set_text(doc, fmap, 'fill_1_P.2', br8)
-                if not data.get('fields', {}).get('fill_1_P.3', ''):
-                    _set_text(doc, fmap, 'fill_1_P.3', br8)
-                if not data.get('fields', {}).get('fill_2_P.1', ''):
-                    _set_text(doc, fmap, 'fill_2_P.1', c.get('name', ''))
+                company_name = c.get('name', '') or ''
         except Exception:
-            pass  # DB lookup is best-effort; fall through to manual fields
+            pass
 
-    # ── Presenter defaults (Twinsail) — fill only if caller hasn't provided them ──
+    # ── BR on every page via fill_1_P.X widgets ──
+    if br8:
+        for page_no in range(1, doc.page_count + 1):
+            br_field = f'fill_1_P.{page_no}'
+            if br_field in fmap:
+                _set_text(doc, fmap, br_field, br8)
+
+    # ── P.1: Company Name ──
+    _set_if_empty('fill_2_P.1', company_name or data.get('companyName', ''))
+
+    # ── P.1: Allotment Date Range ──
+    # fill_3/4/5 = FROM (D/M/Y), fill_6/7/8 = TO (D/M/Y)
+    today_str = datetime.now().strftime('%d/%m/%Y')
+    allot_date = data.get('allotmentDate', today_str)
+    parts = allot_date.split('/')
+    dd, mm, yyyy = (parts + ['', '', ''])[:3]
+    _set_if_empty('fill_3_P.1', dd)
+    _set_if_empty('fill_4_P.1', mm)
+    _set_if_empty('fill_5_P.1', yyyy)
+    _set_if_empty('fill_6_P.1', dd)
+    _set_if_empty('fill_7_P.1', mm)
+    _set_if_empty('fill_8_P.1', yyyy)
+
+    # ── P.1 Section B: Total consideration by currency ──
+    currency = data.get('currency') or data.get('sectionB_currency') or 'HKD'
+    total_consideration = data.get('totalConsideration') or data.get('sectionB_amount') or ''
+    _set_if_empty('fill_9_P.1', currency)
+    if total_consideration:
+        _set_if_empty('fill_10_P.1', str(total_consideration))
+
+    # ── P.1 Section D: New allotment details (Class|Currency|Number|Paid|Unpaid) ──
+    share_class = data.get('shareClass') or data.get('allotteeClass') or 'Ordinary'
+    shares = data.get('shares') or data.get('allotteeShares') or ''
+    price_per_share = data.get('pricePerShare') or ''
+    unpaid = data.get('unpaidPerShare') or '0.00'
+    _set_if_empty('fill_15_P.1', share_class)
+    _set_if_empty('fill_16_P.1', currency)
+    if shares:
+        _set_if_empty('fill_17_P.1', str(shares))
+    if price_per_share:
+        _set_if_empty('fill_18_P.1', str(price_per_share))
+    _set_if_empty('fill_19_P.1', str(unpaid))
+
+    # ── Presenter defaults (Twinsail) ──
     presenter_defaults = {
         'fill_30_P.1': 'Twinsail Consultants Limited',
         'fill_31_P.1': 'Room 1203, 12/F, Wing On Centre, 111 Connaught Road Central, Hong Kong',
@@ -6516,15 +6565,35 @@ def _fill_nsc1_pdf(data):
         'fill_35_P.1': 'TS-2026-001',
     }
     for k, v in presenter_defaults.items():
-        if not data.get('fields', {}).get(k, ''):
-            _set_text(doc, fmap, k, v)
+        _set_if_empty(k, v)
 
-    # ── Fill all provided fields ──
-    fields = data.get('fields', {})
+    # ── P.3: Share Capital Table (TOTAL post-allotment) ──
+    # Query share_transactions to compute totals per share class
+    if company_id:
+        try:
+            db = get_db()
+            tx_rows = db.execute(
+                "SELECT share_type, currency, COALESCE(SUM(shares), 0) as total_shares "
+                "FROM share_transactions WHERE company_id = ? GROUP BY share_type",
+                (company_id,)
+            ).fetchall()
+            if tx_rows:
+                for i, tx in enumerate(tx_rows):
+                    if i >= 3:
+                        break  # Template has 3 rows max
+                    base = 2 + i * 6  # fill_2, fill_8, fill_14
+                    _set_if_empty(f'fill_{base}_P.3', tx['share_type'] or 'Ordinary')
+                    _set_if_empty(f'fill_{base+1}_P.3', tx['currency'] or 'HKD')
+                    _set_if_empty(f'fill_{base+2}_P.3', str(tx['total_shares']))
+                    # Total amount / paid / unpaid — computed from transactions
+                    # (If detailed amounts aren't available, leave for manual fill)
+        except Exception:
+            pass  # Non-critical; user can fill manually
+
+    # ── Fill all provided fields (after auto-fill, so explicit fields take priority) ──
     for name, value in fields.items():
         if not value:
             continue
-        # Detect CJK fields by content
         vstr = str(value)
         if any(ord(c) > 127 for c in vstr):
             _set(name, vstr)
@@ -6546,6 +6615,16 @@ def _fill_nsc1_pdf(data):
     # ── Checkboxes ──
     for name in (data.get('checkboxes', []) or []):
         _check(doc, fmap, name, True)
+    # Default checkboxes
+    _check(doc, fmap, 'cb_1_P.1', True)   # Share capital increased
+    _check(doc, fmap, 'cb_1_P.2', True)   # Wholly for cash
+    _check(doc, fmap, 'cb_3_P.2', True)   # Allottee details in Schedule 2
+
+    # P.3: cb_1 = allottee details in Schedule 2 (paper)
+    allottee_name = (data.get('allotteeName') or '').strip()
+    allottee_name_zh = (data.get('allotteeNameZh') or '').strip()
+    if allottee_name or allottee_name_zh:
+        _check(doc, fmap, 'cb_1_P.3', True)
 
     # ── Overlays ──
     for ov in (data.get('overlays', []) or []):
@@ -6561,31 +6640,47 @@ def _fill_nsc1_pdf(data):
         except Exception:
             pass
 
-    # ── BR on all pages ──
-    _stamp_br_on_all_pages(doc, br8)
+    # ── P.7: Schedule 2 — Allottee personal details ──
+    if allottee_name or allottee_name_zh:
+        # Allottee 1 name
+        if allottee_name_zh:
+            _set_if_empty('fill_2_P.7', allottee_name_zh)
+        if allottee_name:
+            _set_if_empty('fill_3_P.7', allottee_name)
+            # Parse surname/other names
+            name_parts = allottee_name.strip().split()
+            if len(name_parts) >= 2:
+                _set_if_empty('fill_4_P.7', name_parts[-1])      # surname = last word
+                _set_if_empty('fill_5_P.7', ' '.join(name_parts[:-1]))  # other names
+            else:
+                _set_if_empty('fill_4_P.7', allottee_name)
+        # Address fields
+        for key, field in [('allotteeFlat', 'fill_6_P.7'), ('allotteeBuilding', 'fill_7_P.7'),
+                           ('allotteeStreet', 'fill_8_P.7'), ('allotteeDistrict', 'fill_9_P.7'),
+                           ('allotteeCountry', 'fill_11_P.7')]:
+            val = data.get(key, '')
+            if val:
+                _set_if_empty(field, str(val))
+        # Fallback: flat address string
+        addr = data.get('allotteeAddress', '')
+        if addr and not data.get('allotteeFlat', ''):
+            _set_if_empty('fill_6_P.7', addr)
+        # Shares allotted
+        if shares:
+            _set_if_empty('fill_13_P.7', str(shares))
 
-    # ── P.2: Mark as cash consideration (cb_1 = "wholly for cash") ──
-    _check(doc, fmap, 'cb_1_P.2', True)
-    # ── P.2 §5: 獲配發股份者的詳情列於附表二 / Details of Allottee(s) are listed in Schedule 2 ──
-    _check(doc, fmap, 'cb_3_P.2', True)
-
-    # ── P.3: Signature — Company Secretary (cross out Director) ──
-    # Dropdown1 = Director option, Dropdown2 = Company Secretary option
-    # Index 0 = keep (blank), Index 1 = cross out (line)
+    # ── P.3: Signature — Director crossed out (index 1), Secretary kept (index 0) ──
     for dd_name in ('Dropdown1_P.3', 'Dropdown2_P.3'):
         if dd_name in fmap:
             pi = fmap[dd_name]
             for w in doc[pi].widgets():
                 if w.field_name == dd_name:
                     try:
-                        # Dropdown1 (Director) → index 1 (line = cross out)
-                        # Dropdown2 (Secretary) → index 0 (blank = keep)
                         idx = 1 if dd_name == 'Dropdown1_P.3' else 0
                         w.field_value = 'Yes'
                         doc.xref_set_key(w._annot.xref, 'I', str(idx))
                     except Exception:
                         pass
-                    # Draw black line across Director option for safety
                     if dd_name == 'Dropdown1_P.3':
                         try:
                             r = w.rect
@@ -6600,32 +6695,31 @@ def _fill_nsc1_pdf(data):
                             pass
                     break
 
-    # ── P.3: Signature date only (signer name left blank per user request) ──
-    today_str = datetime.now().strftime('%d/%m/%Y')
+    # ── P.3: Signature date ──
+    sign_date = data.get('signDate') or today_str
     if 'fill_28_P.3' in fmap:
-        _set_text(doc, fmap, 'fill_28_P.3', today_str)
+        _set_text(doc, fmap, 'fill_28_P.3', sign_date)
 
-    # ── P.3: Continuation sheets counter — leave blank (user: don't write 0) ──
-
-    # ── Page management: keep P.1-P.3 always; P.9-P.10 (Schedule 2) only if allottee data ──
-    allottee_name = (data.get('allotteeName') or '').strip()
+    # ── Page management ──
+    # Keep: P.1-P.3 always, P.7 (Schedule 2) if allottee data,
+    #       any pages referenced in fields dict or overlays
     keep_indices = {0, 1, 2}  # P.1, P.2, P.3
-    if allottee_name:
-        keep_indices.update({8, 9})  # P.9, P.10 = Schedule 2 (附表二)
+    if allottee_name or allottee_name_zh:
+        keep_indices.add(6)  # P.7 = Schedule 2 allottee details
+    # Keep pages referenced in fields dict
+    for name in fields:
+        m = re.match(r'_P\.?(\d+)$', name)
+        if m:
+            idx = int(m.group(1)) - 1
+            if 0 <= idx < doc.page_count:
+                keep_indices.add(idx)
+    for ov in (data.get('overlays', []) or []):
+        p = ov.get('page', -1)
+        if 0 <= p < doc.page_count:
+            keep_indices.add(p)
     for pno in range(doc.page_count - 1, -1, -1):
         if pno not in keep_indices:
             doc.delete_page(pno)
-
-    # ── Schedule 2 (now P.4, index 3): allottee details ──
-    if allottee_name:
-        allot_date = data.get('allotmentDate', today_str)
-        parts = allot_date.split('/')
-        dd, mm, yyyy = (parts + ['', '', ''])[:3]
-        if 'fill_1_P.9' in fmap: _set_text(doc, fmap, 'fill_1_P.9', dd)
-        if 'fill_2_P.9' in fmap: _set_text(doc, fmap, 'fill_2_P.9', mm)
-        if 'fill_3_P.9' in fmap: _set_text(doc, fmap, 'fill_3_P.9', yyyy)
-        if 'fill_4_P.9' in fmap: _set_text(doc, fmap, 'fill_4_P.9', br8)
-        if 'fill_7_P.9' in fmap: _set_text(doc, fmap, 'fill_7_P.9', allottee_name)
 
     pdf_bytes = doc.write(deflate=True)
     doc.close()

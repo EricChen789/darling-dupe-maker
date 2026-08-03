@@ -31,7 +31,7 @@
 //   P.3 y=514  Dropdown1    = Director (index 1 = cross out)
 //   P.3 y=534  Dropdown2    = Company Secretary (index 0 = keep)
 
-import { PDFDocument, PDFName, PDFString, PDFDict, rgb, StandardFonts } from 'pdf-lib';
+import { PDFDocument, PDFName, PDFString, rgb, StandardFonts } from 'pdf-lib';
 import {
   corsHeaders, jsonResp, uint8ToBase64, rget,
   DEFAULT_PRESENTER
@@ -127,51 +127,17 @@ export async function onRequest(context: { request: Request; env: Env }) {
     }
 
     // ── Fill all text fields via standard pdf-lib API ──
+    // Call updateAppearances(helv) per filled field to generate a proper
+    // appearance stream with TRANSPARENT background — so underlying table
+    // grid lines are NOT covered up. This is ~20 fields, much cheaper than
+    // save({updateFieldAppearances:true}) which processes ALL ~50+ fields.
     for (const [name, value] of Object.entries(fields)) {
       if (value === null || value === undefined || value === '') continue;
       try {
         const tf = form.getTextField(name);
         tf.setText(String(value));
+        tf.updateAppearances(helv);
       } catch { /* field not in template */ }
-    }
-
-    // ═══ Blue editable fields — MK/BG strategy ═══
-    // Set light blue background on all text widgets via MK dict + NeedAppearances.
-    // The CR source template may already have blue fields; this is a safety net.
-    // We only iterate text fields (skip dropdown/checkbox/radio) to minimize work.
-    const BLUE_RGB = pdfDoc.context.obj([0.91, 0.93, 0.96]);
-    const allFields = form.getFields();
-    for (const field of allFields) {
-      // Only patch text fields — skip dropdowns, checkboxes, radio buttons
-      const acroField = (field as any).acroField;
-      const ft = acroField?.dict?.get?.(PDFName.of('FT')) as any;
-      const isText = ft === PDFName.of('Tx');
-      if (!isText) continue;
-
-      try {
-        const widgets = acroField.getWidgets();
-        for (const w of widgets) {
-          try {
-            const wDict = (w as any).dict;
-            if (!wDict) continue;
-            const mk = wDict.lookup(PDFName.of('MK'), PDFDict);
-            if (mk) mk.set(PDFName.of('BG'), BLUE_RGB);
-          } catch { /* widget not modifiable */ }
-        }
-      } catch { /* field not modifiable */ }
-    }
-
-    // Delete AP on dropdowns so viewers regenerate with correct /I index
-    for (const field of allFields) {
-      const acroField = (field as any).acroField;
-      const ft = acroField?.dict?.get?.(PDFName.of('FT')) as any;
-      if (ft !== PDFName.of('Ch')) continue;
-      try {
-        const widgets = acroField.getWidgets();
-        for (const w of widgets) {
-          try { (w as any).dict?.delete?.(PDFName.of('AP')); } catch { /* skip */ }
-        }
-      } catch { /* skip */ }
     }
 
     // ── Checkboxes ──
@@ -199,21 +165,30 @@ export async function onRequest(context: { request: Request; env: Env }) {
     // P.3: Signature — Company Secretary signs (cross out Director)
     // Both dropdowns have options with export value 'Yes', distinguished by /I index
     // /I 0 = keep (blank display), /I 1 = cross out (strike-through line display)
+    // Delete old AP so viewer regenerates appearance with correct /I index
     try {
       const dd1 = form.getDropdown('Dropdown1_P.3');  // Director → strike
       dd1.acroField.dict.set(PDFName.of('I'), pdfDoc.context.obj([1]));
       dd1.acroField.dict.set(PDFName.of('V'), PDFString.of('Yes'));
+      const w1 = dd1.acroField.getWidgets();
+      if (w1.length > 0) (w1[0] as any).dict?.delete?.(PDFName.of('AP'));
     } catch { /* skip */ }
     try {
       const dd2 = form.getDropdown('Dropdown2_P.3');  // Secretary → keep
       dd2.acroField.dict.set(PDFName.of('I'), pdfDoc.context.obj([0]));
       dd2.acroField.dict.set(PDFName.of('V'), PDFString.of('Yes'));
+      const w2 = dd2.acroField.getWidgets();
+      if (w2.length > 0) (w2[0] as any).dict?.delete?.(PDFName.of('AP'));
     } catch { /* skip */ }
 
     // P.3: Signature date — use caller-provided signDate, fallback to today
     const signDate = rget(data, 'signDate') || '';
     const finalSignDate = signDate || todayStr;
-    try { form.getTextField('fill_28_P.3').setText(finalSignDate); } catch { /* skip */ }
+    try {
+      const tf = form.getTextField('fill_28_P.3');
+      tf.setText(finalSignDate);
+      tf.updateAppearances(helv);
+    } catch { /* skip */ }
 
     // P.3: Continuation sheets counter — leave blank
 

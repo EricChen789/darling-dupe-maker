@@ -37,6 +37,7 @@ import {
   DEFAULT_PRESENTER
 } from './_pdf-utils';
 import { verifyAuthRequest, type Env } from './_auth';
+import { enableNeedAppearances } from './_acroform';
 
 // CR source template filename in R2
 const TEMPLATE = "NSC1-template.pdf";
@@ -135,33 +136,42 @@ export async function onRequest(context: { request: Request; env: Env }) {
     }
 
     // ═══ Blue editable fields — MK/BG strategy ═══
-    // Set light blue background on all text widgets via MK dict.
-    // This works reliably in Adobe Reader. Other viewers may not render it,
-    // but the text values are still filled via setText() above.
+    // Set light blue background on all text widgets via MK dict + NeedAppearances.
+    // The CR source template may already have blue fields; this is a safety net.
+    // We only iterate text fields (skip dropdown/checkbox/radio) to minimize work.
     const BLUE_RGB = pdfDoc.context.obj([0.91, 0.93, 0.96]);
+    const allFields = form.getFields();
+    for (const field of allFields) {
+      // Only patch text fields — skip dropdowns, checkboxes, radio buttons
+      const acroField = (field as any).acroField;
+      const ft = acroField?.dict?.get?.(PDFName.of('FT')) as any;
+      const isText = ft === PDFName.of('Tx');
+      if (!isText) continue;
 
-    for (const field of form.getFields()) {
-      // Text fields: set MK/BG for blue background
       try {
-        const tf = form.getTextField(field.getName());
-        for (const w of tf.acroField.getWidgets()) {
+        const widgets = acroField.getWidgets();
+        for (const w of widgets) {
           try {
-            const mk = w.dict.lookup(PDFName.of('MK'), PDFDict);
+            const wDict = (w as any).dict;
+            if (!wDict) continue;
+            const mk = wDict.lookup(PDFName.of('MK'), PDFDict);
             if (mk) mk.set(PDFName.of('BG'), BLUE_RGB);
-          } catch { /* MK not modifiable, skip */ }
+          } catch { /* widget not modifiable */ }
         }
-        continue;
-      } catch {}
-      // Dropdowns: delete old AP so viewer regenerates with correct /I index
+      } catch { /* field not modifiable */ }
+    }
+
+    // Delete AP on dropdowns so viewers regenerate with correct /I index
+    for (const field of allFields) {
+      const acroField = (field as any).acroField;
+      const ft = acroField?.dict?.get?.(PDFName.of('FT')) as any;
+      if (ft !== PDFName.of('Ch')) continue;
       try {
-        form.getDropdown(field.getName());
-        for (const w of field.acroField.getWidgets()) {
-          try { w.dict.delete(PDFName.of('AP')); } catch { /* skip */ }
+        const widgets = acroField.getWidgets();
+        for (const w of widgets) {
+          try { (w as any).dict?.delete?.(PDFName.of('AP')); } catch { /* skip */ }
         }
-        continue;
-      } catch {}
-      // Checkboxes: keep existing AP — pdf-lib .check() will update AS to /Yes.
-      // Don't delete AP here, or the checkmark won't render visually.
+      } catch { /* skip */ }
     }
 
     // ── Checkboxes ──
@@ -193,15 +203,11 @@ export async function onRequest(context: { request: Request; env: Env }) {
       const dd1 = form.getDropdown('Dropdown1_P.3');  // Director → strike
       dd1.acroField.dict.set(PDFName.of('I'), pdfDoc.context.obj([1]));
       dd1.acroField.dict.set(PDFName.of('V'), PDFString.of('Yes'));
-      const w1 = dd1.acroField.getWidgets();
-      if (w1.length > 0) w1[0].dict.delete(PDFName.of('AP'));
     } catch { /* skip */ }
     try {
       const dd2 = form.getDropdown('Dropdown2_P.3');  // Secretary → keep
       dd2.acroField.dict.set(PDFName.of('I'), pdfDoc.context.obj([0]));
       dd2.acroField.dict.set(PDFName.of('V'), PDFString.of('Yes'));
-      const w2 = dd2.acroField.getWidgets();
-      if (w2.length > 0) w2[0].dict.delete(PDFName.of('AP'));
     } catch { /* skip */ }
 
     // P.3: Signature date — use caller-provided signDate, fallback to today
@@ -243,7 +249,8 @@ export async function onRequest(context: { request: Request; env: Env }) {
       }
     }
 
-    const pdfBytes = new Uint8Array(await pdfDoc.save());
+    enableNeedAppearances(pdfDoc);
+    const pdfBytes = new Uint8Array(await pdfDoc.save({ updateFieldAppearances: false }));
     const filename = `NSC1_${brNumber || 'form'}.pdf`;
 
     return jsonResp({ pdf: uint8ToBase64(pdfBytes), filename });

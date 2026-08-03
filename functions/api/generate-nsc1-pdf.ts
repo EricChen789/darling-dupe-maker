@@ -18,7 +18,7 @@
 //   P.9-P.10: Schedule 2 allottee details
 //   P.11-P.14: Instructions (no widgets)
 
-import { PDFDocument, PDFName, PDFString, PDFTextField, rgb, StandardFonts } from 'pdf-lib';
+import { PDFDocument, PDFName, PDFString, rgb, StandardFonts } from 'pdf-lib';
 import {
   corsHeaders, jsonResp, uint8ToBase64, rget,
   DEFAULT_PRESENTER
@@ -101,14 +101,13 @@ export async function onRequest(context: { request: Request; env: Env }) {
       setIfEmpty('fill_8_P.9', allotteeName);
     }
 
-    // ── Fill all text fields (setText only — transparent APs built later) ──
+    // ── Fill all text fields ──
     for (const [name, value] of Object.entries(fields)) {
       if (value === null || value === undefined || value === '') continue;
       try {
         const tf = form.getTextField(name);
         tf.setText(String(value));
-        // Don't call updateAppearances here — it generates white-background APs
-        // that cover table grid lines. We build transparent APs in post-processing.
+        tf.updateAppearances(helv);
       } catch { /* field not in template */ }
     }
 
@@ -151,19 +150,20 @@ export async function onRequest(context: { request: Request; env: Env }) {
       if (w2.length > 0) (w2[0] as any).dict?.delete?.(PDFName.of('AP'));
     } catch { /* skip */ }
 
-    // P.3: Signature date (setText only — transparent APs built later)
+    // P.3: Signature date
     const signDate = rget(data, 'signDate') || '';
     const finalSignDate = signDate || todayStr;
     try {
       const tf = form.getTextField('fill_28_P.3');
       tf.setText(finalSignDate);
+      tf.updateAppearances(helv);
     } catch { /* skip */ }
 
-    // ── Build transparent AP streams for all filled text fields ──
-    // We build custom appearance streams WITHOUT any background fill rectangle.
-    // This way the template's table grid lines show through the field widgets,
-    // unlike pdf-lib's default updateAppearances() which paints a white background.
-    buildTransparentAppearances(pdfDoc, helv);
+    // ── Strip white backgrounds from text-field appearance streams ──
+    // pdf-lib's updateAppearances() generates APs with a white fill rectangle
+    // (1 1 1 rg ... re f) that covers table grid lines underneath.
+    // We strip that white fill so the template's table lines show through.
+    stripWhiteBackgrounds(pdfDoc);
 
     // ── BR stamp on every page BEFORE page removal ──
     if (brNumber) {
@@ -203,72 +203,51 @@ export async function onRequest(context: { request: Request; env: Env }) {
   }
 }
 
-// ═══ Build transparent AP streams for all filled text fields ═══
-// Unlike pdf-lib's default updateAppearances() (which paints a white background
-// rectangle), this builds appearance streams with NO background fill — so the
-// template's table grid lines show through the field widgets.
-// Call AFTER all setText() calls, BEFORE pdfDoc.save().
-function buildTransparentAppearances(pdfDoc: PDFDocument, font: any) {
+// ═══ Strip white background fill from text-field appearance streams ═══
+// pdf-lib's updateAppearances() generates content streams like:
+//   /Tx BMC q 1 1 1 rg 0 0 W H re f Q BT ... ET EMC
+// The "1 1 1 rg ... re f" fills a white rectangle that covers table lines.
+// We remove that fill operation so the template grid shows through.
+function stripWhiteBackgrounds(pdfDoc: PDFDocument) {
   const form = pdfDoc.getForm();
   const fields = form.getFields();
-  const fontRef = font.ref;
+  // Regex to match the white-background fill block that pdf-lib generates
+  // Pattern: q 1 1 1 rg 0 0 <number> <number> re f Q
+  const whiteFillRe = /\nq\n1 1 1 rg\n0 0 [\d.]{1,6} [\d.]{1,6} re\nf\nQ\n/;
 
   for (const field of fields) {
-    if (!(field instanceof PDFTextField)) continue;
     try {
-      const value = String(field.getText() ?? '');
-      if (!value) continue;
-
       const widgets = field.acroField.getWidgets();
       for (const widget of widgets) {
         try {
-          const rect = widget.getRectangle();
-          const w = rect.width;
-          const h = rect.height;
-          if (w <= 2 || h <= 2) continue;
-
-          // Use font size from the field's DA string, default to 9pt
-          const da = String(field.acroField.getDefaultAppearance() ?? '/Helv 9 Tf 0 g');
-          const sizeMatch = da.match(/(\d+(?:\.\d+)?)\s+Tf/);
-          const fontSize = sizeMatch ? parseFloat(sizeMatch[1]) : 9;
-
-          const textX = 2;
-          const textY = Math.max(2, h * 0.15);
-
-          // Escape PDF literal string special characters
-          const escaped = String(value)
-            .replace(/\\/g, '\\\\')
-            .replace(/\(/g, '\\(')
-            .replace(/\)/g, '\\)')
-            .replace(/[\n\r\t]/g, ' ');
-
-          // Content stream: text only, NO background fill rectangle
-          const content = [
-            '/Tx BMC',
-            'BT',
-            `/F1 ${fontSize} Tf`,
-            '0 0 0 rg',
-            `${textX.toFixed(1)} ${textY.toFixed(1)} Td`,
-            `(${escaped}) Tj`,
-            'ET',
-            'EMC',
-          ].join('\n');
-
-          const contentBytes = new TextEncoder().encode(content);
-          const streamDict = pdfDoc.context.obj({
-            Type: PDFName.of('XObject'),
-            Subtype: PDFName.of('Form'),
-            FormType: 1,
-            BBox: [0, 0, w, h],
-            Resources: { Font: { F1: fontRef } },
-          }) as any;
-          const apStream = pdfDoc.context.stream(contentBytes, streamDict);
-
-          // Set /AP /N on the widget
-          const apDict = pdfDoc.context.obj({ N: apStream }) as any;
-          widget.dict.set(PDFName.of('AP'), apDict);
-        } catch { /* skip unmodifiable widget */ }
+          const apDict = widget.dict.get(PDFName.of('AP'));
+          if (!apDict) continue;
+          const nStream = (apDict as any).get?.(PDFName.of('N'));
+          if (!nStream) continue;
+          // Get the raw content bytes
+          const contents = (nStream as any).contents;
+          if (!contents || contents.length === 0) continue;
+          // Try to decode and strip
+          let contentStr: string;
+          try {
+            contentStr = new TextDecoder('utf-8').decode(contents);
+          } catch {
+            // If not UTF-8, try ASCII
+            contentStr = String.fromCharCode(...Array.from(contents as Uint8Array));
+          }
+          if (!contentStr || contentStr.length < 30) continue;
+          // Strip the white fill block
+          const newContent = contentStr.replace(whiteFillRe, '\n');
+          if (newContent !== contentStr) {
+            const newBytes = new TextEncoder().encode(newContent);
+            // Create a new content stream with the same dictionary
+            const streamDict = (nStream as any).dict;
+            const newStream = pdfDoc.context.stream(newBytes, streamDict);
+            const newApDict = pdfDoc.context.obj({ N: newStream }) as any;
+            widget.dict.set(PDFName.of('AP'), newApDict);
+          }
+        } catch { /* skip individual widget */ }
       }
-    } catch { /* skip inaccessible field */ }
+    } catch { /* skip field */ }
   }
 }

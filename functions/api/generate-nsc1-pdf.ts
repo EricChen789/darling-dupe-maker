@@ -152,7 +152,7 @@ export async function onRequest(context: { request: Request; env: Env }) {
         }
         continue;
       } catch {}
-      // Dropdowns: delete old AP to force regeneration with MK/BG
+      // Dropdowns: delete old AP so viewer regenerates with correct /I index
       try {
         form.getDropdown(field.getName());
         for (const w of field.acroField.getWidgets()) {
@@ -160,14 +160,8 @@ export async function onRequest(context: { request: Request; env: Env }) {
         }
         continue;
       } catch {}
-      // Checkboxes: delete old AP to force regeneration
-      try {
-        form.getCheckBox(field.getName());
-        for (const w of field.acroField.getWidgets()) {
-          try { w.dict.delete(PDFName.of('AP')); } catch { /* skip */ }
-        }
-        continue;
-      } catch {}
+      // Checkboxes: keep existing AP — pdf-lib .check() will update AS to /Yes.
+      // Don't delete AP here, or the checkmark won't render visually.
     }
 
     // ── Checkboxes ──

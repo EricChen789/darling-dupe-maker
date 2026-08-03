@@ -1,32 +1,44 @@
 // POST /api/generate-nsc1-pdf
 // NSC1 — Return of Allotment (股份配發申報書)
 //
+// Uses CR source template (Testing - NSC1_fillable - new form .pdf) which has:
+//   - Standard AcroForm fields with PMingLiU DA font
+//   - Blue field backgrounds via MK/BG strategy (no custom AP stream needed)
+//   - Checkbox names: "Check Box1_P.2", "Check Box2_P.2", "Check Box3_P.2", "Check Box4_P.3"
+//   - Toggle names: "toggle_1_P.1", "toggle_2_P.1"
+//   - Dropdown names: "Dropdown1_P.3", "Dropdown2_P.3"
+//
 // Template widget layout (from PyMuPDF extraction):
 //   P.1 y=121  fill_1       = BR Number
 //   P.1 y=171  fill_2       = Company Name
 //   P.1 y=242  fill_3/4/5   = Return Date  D/M/Y
 //   P.1 y=242  fill_6/7/8   = Allotment Date D/M/Y
-//   P.1 y=313  cb_1         = "share capital increased"
+//   P.1 y=312  toggle_1     = "share capital increased"
 //   P.1 y=376  fill_9/10    = Sec.B Row1: Currency / Amount
 //   P.1 y=400  fill_11/12   = Sec.B Row2: Currency / Amount
 //   P.1 y=424  fill_13/14   = Sec.B Row3
-//   P.1 y=456  cb_2         = "not increased"
-//   P.1 y=594  fill_15~19   = Sec.D Row1: Class/Number/Paid/Unpaid/Total
+//   P.1 y=454  toggle_2     = "not increased"
+//   P.1 y=594  fill_15~19   = Sec.D Row1: Class/Currency/Number/Paid/Unpaid
 //   P.1 y=617  fill_20~24   = Sec.D Row2
 //   P.1 y=640  fill_25~29   = Sec.D Row3
 //   P.1 y=678  fill_30~35   = Presenter: Name/Address/Phone/Fax/Email/Ref
 //   P.2 y=173  fill_2~6     = Allottees Row1 (5 cols)
 //   P.2 y=196  fill_7~11    = Allottees Row2
 //   P.2 y=219  fill_12~16   = Allottees Row3
+//   P.2 y=304  Check Box1   = "wholly for cash"
+//   P.2 y=414  Check Box3   = "allottees in Schedule 2"
 //   P.2 y=504  fill_17      = Large text area
+//   P.3 y=514  Dropdown1    = Director (index 1 = cross out)
+//   P.3 y=534  Dropdown2    = Company Secretary (index 0 = keep)
 
-import { PDFDocument, PDFName, PDFString, rgb, StandardFonts } from 'pdf-lib';
+import { PDFDocument, PDFName, PDFString, PDFDict, rgb, StandardFonts } from 'pdf-lib';
 import {
   corsHeaders, jsonResp, uint8ToBase64, rget,
   DEFAULT_PRESENTER
 } from './_pdf-utils';
 import { verifyAuthRequest, type Env } from './_auth';
 
+// CR source template filename in R2
 const TEMPLATE = "NSC1-template.pdf";
 
 export async function onRequest(context: { request: Request; env: Env }) {
@@ -47,8 +59,7 @@ export async function onRequest(context: { request: Request; env: Env }) {
     const templateBytes = new Uint8Array(await templateObj.arrayBuffer());
     const pdfDoc = await PDFDocument.load(templateBytes);
 
-    // Embed fonts: Helvetica only (built-in, fast)
-    // CJK rendering is left to the PDF reader via NeedAppearances + widget DA strings
+    // Embed Helvetica for drawText BR stamps
     const helv = await pdfDoc.embedFont(StandardFonts.Helvetica);
 
     const form = pdfDoc.getForm();
@@ -83,8 +94,6 @@ export async function onRequest(context: { request: Request; env: Env }) {
 
     // Fill defaults for unfilled fields
     const setIfEmpty = (name: string, value: string) => {
-      // Guard: don't set empty/whitespace values — they'd be skipped by the fill loop
-      // and would prevent future calls (e.g. from DB lookup) from filling the field.
       if (!value || !value.trim()) return;
       if (!fields[name] || !fields[name].trim()) fields[name] = value;
     };
@@ -103,7 +112,20 @@ export async function onRequest(context: { request: Request; env: Env }) {
     setIfEmpty('fill_34_P.1', rget(data, 'presentorEmail') || DEFAULT_PRESENTER.email);
     setIfEmpty('fill_35_P.1', rget(data, 'presentorReference') || DEFAULT_PRESENTER.reference);
 
-    // ── Fill all text fields ──
+    // ── Schedule 2 (P.9-P.10) allottee data ──
+    const allotteeName = rget(data, 'allotteeName') || '';
+    const todayStr = new Date().toLocaleDateString('en-GB');
+    if (allotteeName) {
+      const allotDate = rget(data, 'allotmentDate') || todayStr;
+      const [dd, mm, yyyy] = allotDate.split('/');
+      if (dd) setIfEmpty('fill_1_P.9', dd);
+      if (mm) setIfEmpty('fill_2_P.9', mm);
+      if (yyyy) setIfEmpty('fill_3_P.9', yyyy);
+      setIfEmpty('fill_4_P.9', brNumber);
+      setIfEmpty('fill_7_P.9', allotteeName);
+    }
+
+    // ── Fill all text fields via standard pdf-lib API ──
     for (const [name, value] of Object.entries(fields)) {
       if (value === null || value === undefined || value === '') continue;
       try {
@@ -112,143 +134,91 @@ export async function onRequest(context: { request: Request; env: Env }) {
       } catch { /* field not in template */ }
     }
 
-    // ── Checkboxes ──
-    for (const name of (data.checkboxes || [])) {
-      try { form.getCheckBox(name).check(); } catch { /* skip */ }
-    }
-
-    // ── P.2: Mark as cash consideration ──
-    try { form.getCheckBox('cb_1_P.2').check(); } catch { /* skip */ }
-    // ── P.2 §5: 獲配發股份者的詳情列於附表二 / Details of Allottee(s) are listed in Schedule 2 ──
-    try { form.getCheckBox('cb_3_P.2').check(); } catch { /* skip */ }
-
-    // ── P.3: Signature — Company Secretary signs (cross out Director) ──
-    // Both dropdowns have options with export value 'Yes', distinguished by /I index
-    // /I 0 = keep (blank display), /I 1 = cross out (strike-through line display)
-    // Low-level dict API required — pdf-lib select() can't disambiguate by index
-    try {
-      const dd1 = form.getDropdown('Dropdown1_P.3');  // Director
-      dd1.acroField.dict.set(PDFName.of('I'), pdfDoc.context.obj([1])); // strike
-      dd1.acroField.dict.set(PDFName.of('V'), PDFString.of('Yes'));
-      const w1 = dd1.acroField.getWidgets();
-      if (w1.length > 0) w1[0].dict.delete(PDFName.of('AP')); // force regen
-    } catch { /* skip */ }
-    try {
-      const dd2 = form.getDropdown('Dropdown2_P.3');  // Secretary
-      dd2.acroField.dict.set(PDFName.of('I'), pdfDoc.context.obj([0])); // keep
-      dd2.acroField.dict.set(PDFName.of('V'), PDFString.of('Yes'));
-      const w2 = dd2.acroField.getWidgets();
-      if (w2.length > 0) w2[0].dict.delete(PDFName.of('AP')); // force regen
-    } catch { /* skip */ }
-
-    // P.3: Signature date — use caller-provided signDate, fallback to today
-    const signDate = rget(data, 'signDate') || '';
-    const todayStr = new Date().toLocaleDateString('en-GB');
-    const finalSignDate = signDate || todayStr;
-    try { form.getTextField('fill_28_P.3').setText(finalSignDate); } catch { /* skip */ }
-
-    // P.3: Continuation sheets counter — leave blank (user: don't write 0)
-
-    // ═══ Build blue-background appearance streams for ALL text widgets ═══
-    // pdf-lib's setText() generates APs with WHITE background. We replace them
-    // with APs that have LIGHT BLUE background — matching the standard CR form look.
-    //
-    // Strategy: ONE shared blue-only AP for empty widgets (no text),
-    // individual APs for filled widgets (blue bg + text). This minimises CPU.
-    const encoder = new TextEncoder();
-
-    // ── Shared blue-background AP (for empty widgets) ──
-    // BBox [0,0,1000,1000] — PDF maps this to the widget rect, so the blue
-    // rectangle at (0,0)-(1000,1000) fills the entire widget area regardless of size.
-    const sharedBlueAP = pdfDoc.context.stream(
-      encoder.encode('/Tx BMC\nq\n0.91 0.93 0.96 rg\n0 0 1000 1000 re\nf\nQ\nEMC'),
-      pdfDoc.context.obj({
-        Type: PDFName.of('XObject'),
-        Subtype: PDFName.of('Form'),
-        FormType: 1,
-        BBox: [0, 0, 1000, 1000],
-      })
-    );
+    // ═══ Blue editable fields — MK/BG strategy ═══
+    // Set light blue background on all text widgets via MK dict.
+    // This works reliably in Adobe Reader. Other viewers may not render it,
+    // but the text values are still filled via setText() above.
+    const BLUE_RGB = pdfDoc.context.obj([0.91, 0.93, 0.96]);
 
     for (const field of form.getFields()) {
-      // ── Text fields ──
+      // Text fields: set MK/BG for blue background
       try {
         const tf = form.getTextField(field.getName());
-        const value = (() => { try { return tf.getText() ?? ''; } catch { return ''; } })();
-        const hasValue = value && String(value).trim();
-
-        const widgets = tf.acroField.getWidgets();
-        for (const w of widgets) {
+        for (const w of tf.acroField.getWidgets()) {
           try {
-            if (hasValue) {
-              // ── Filled widget: create AP with blue bg + text ──
-              const rect = w.getRectangle();
-              const ww = rect.width;
-              const wh = rect.height;
-              if (ww <= 2 || wh <= 2) continue;
-
-              const da = tf.acroField.getDefaultAppearance() ?? '/Helv 10 Tf 0 g';
-              const sizeMatch = String(da).match(/(\d+(?:\.\d+)?)\s+Tf/);
-              const fontSize = sizeMatch ? parseFloat(sizeMatch[1]) : 10;
-              const escaped = String(value).replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
-              const textY = Math.max(2, wh * 0.15);
-
-              const content = [
-                '/Tx BMC',
-                'q',
-                '0.91 0.93 0.96 rg',
-                `0 0 ${ww.toFixed(1)} ${wh.toFixed(1)} re`,
-                'f',
-                'Q',
-                'BT',
-                `/Helv ${fontSize} Tf`,
-                '0 0 0 rg',
-                `2 ${textY.toFixed(1)} Td`,
-                `(${escaped}) Tj`,
-                'ET',
-                'EMC',
-              ].join('\n');
-
-              const streamDict = pdfDoc.context.obj({
-                Type: PDFName.of('XObject'),
-                Subtype: PDFName.of('Form'),
-                FormType: 1,
-                BBox: [0, 0, ww, wh],
-                Resources: { Font: { Helv: helv.ref } },
-              });
-              const apStream = pdfDoc.context.stream(encoder.encode(content), streamDict);
-              const apDict = pdfDoc.context.obj({ N: apStream });
-              w.dict.set(PDFName.of('AP'), apDict);
-            } else {
-              // ── Empty widget: use shared blue AP ──
-              const apDict = pdfDoc.context.obj({ N: sharedBlueAP });
-              w.dict.set(PDFName.of('AP'), apDict);
-            }
-          } catch { /* skip unmodifiable widget */ }
+            const mk = w.dict.lookup(PDFName.of('MK'), PDFDict);
+            if (mk) mk.set(PDFName.of('BG'), BLUE_RGB);
+          } catch { /* MK not modifiable, skip */ }
         }
         continue;
       } catch {}
-      // ── Checkboxes: delete old AP so NeedAppearances regenerates it ──
+      // Dropdowns: delete old AP to force regeneration with MK/BG
       try {
-        const cb = form.getCheckBox(field.getName());
-        const widgets = cb.acroField.getWidgets();
-        for (const w of widgets) {
+        form.getDropdown(field.getName());
+        for (const w of field.acroField.getWidgets()) {
+          try { w.dict.delete(PDFName.of('AP')); } catch { /* skip */ }
+        }
+        continue;
+      } catch {}
+      // Checkboxes: delete old AP to force regeneration
+      try {
+        form.getCheckBox(field.getName());
+        for (const w of field.acroField.getWidgets()) {
           try { w.dict.delete(PDFName.of('AP')); } catch { /* skip */ }
         }
         continue;
       } catch {}
     }
-    // Set NeedAppearances so checkboxes regenerate correctly
+
+    // ── Checkboxes ──
+    // P.1: toggle_1 = share capital increased, toggle_2 = not increased
+    // Use data.checkboxes array + also handle CR source naming (Check Box* / toggle_*)
+    const checkboxes: string[] = data.checkboxes || [];
+    // Map old cb_* names to CR source toggle_*/Check Box* names
+    const cbAliases: Record<string, string> = {
+      'cb_1_P.1': 'toggle_1_P.1',
+      'cb_2_P.1': 'toggle_2_P.1',
+      'cb_1_P.2': 'Check Box1_P.2',
+      'cb_2_P.2': 'Check Box2_P.2',
+      'cb_3_P.2': 'Check Box3_P.2',
+      'cb_4_P.3': 'Check Box4_P.3',
+    };
+    for (const name of checkboxes) {
+      const realName = cbAliases[name] || name;
+      try { form.getCheckBox(realName).check(); } catch { /* skip */ }
+    }
+
+    // P.2: Mark as cash consideration + allottees in Schedule 2
+    try { form.getCheckBox('Check Box1_P.2').check(); } catch { /* skip */ }
+    try { form.getCheckBox('Check Box3_P.2').check(); } catch { /* skip */ }
+
+    // P.3: Signature — Company Secretary signs (cross out Director)
+    // Both dropdowns have options with export value 'Yes', distinguished by /I index
+    // /I 0 = keep (blank display), /I 1 = cross out (strike-through line display)
     try {
-      const acroForm = pdfDoc.catalog.lookup(PDFName.of('AcroForm')) as any;
-      if (acroForm && typeof acroForm.set === 'function') {
-        acroForm.set(PDFName.of('NeedAppearances'), PDFName.of('true'));
-      }
-    } catch { /* ignore */ }
+      const dd1 = form.getDropdown('Dropdown1_P.3');  // Director → strike
+      dd1.acroField.dict.set(PDFName.of('I'), pdfDoc.context.obj([1]));
+      dd1.acroField.dict.set(PDFName.of('V'), PDFString.of('Yes'));
+      const w1 = dd1.acroField.getWidgets();
+      if (w1.length > 0) w1[0].dict.delete(PDFName.of('AP'));
+    } catch { /* skip */ }
+    try {
+      const dd2 = form.getDropdown('Dropdown2_P.3');  // Secretary → keep
+      dd2.acroField.dict.set(PDFName.of('I'), pdfDoc.context.obj([0]));
+      dd2.acroField.dict.set(PDFName.of('V'), PDFString.of('Yes'));
+      const w2 = dd2.acroField.getWidgets();
+      if (w2.length > 0) w2[0].dict.delete(PDFName.of('AP'));
+    } catch { /* skip */ }
+
+    // P.3: Signature date — use caller-provided signDate, fallback to today
+    const signDate = rget(data, 'signDate') || '';
+    const finalSignDate = signDate || todayStr;
+    try { form.getTextField('fill_28_P.3').setText(finalSignDate); } catch { /* skip */ }
+
+    // P.3: Continuation sheets counter — leave blank
 
     // ── BR stamp on every page BEFORE page removal ──
     // MUST be done before removePage() — otherwise pdf-lib may not render drawText
-    // on remaining pages (matching proven pattern in NAR1 & ND4).
     if (brNumber) {
       for (const page of pdfDoc.getPages()) {
         try {
@@ -263,33 +233,20 @@ export async function onRequest(context: { request: Request; env: Env }) {
     for (const name of Object.keys(fields)) {
       const m = name.match(/_P\.?(\d+)$/);
       if (m) {
-        const pageIdx = parseInt(m[1]) - 1;  // P.1 → index 0
+        const pageIdx = parseInt(m[1]) - 1;
         if (pageIdx >= 0 && pageIdx < allPages.length) {
           keepPages.add(pageIdx);
         }
       }
     }
     // Also keep Schedule 2 pages if allottee data present (P.9-P.10 → index 8-9)
-    const allotteeName = rget(data, 'allotteeName') || '';
     if (allotteeName) {
-      keepPages.add(8).add(9);  // P.9, P.10 = Schedule 2 (附表二)
+      keepPages.add(8).add(9);
     }
     for (let i = allPages.length - 1; i >= 0; i--) {
       if (!keepPages.has(i)) {
         pdfDoc.removePage(i);
       }
-    }
-
-    // ── Schedule 2 (P.9-P.10): allottee details (for QuickFormDialog simple case) ──
-    // NSC1GeneratorForm sends these fields directly, this is the fallback auto-fill
-    if (allotteeName) {
-      const allotDate = rget(data, 'allotmentDate') || todayStr;
-      const [dd, mm, yyyy] = allotDate.split('/');
-      try { form.getTextField('fill_1_P.9').setText(dd || ''); } catch { /* skip */ }
-      try { form.getTextField('fill_2_P.9').setText(mm || ''); } catch { /* skip */ }
-      try { form.getTextField('fill_3_P.9').setText(yyyy || ''); } catch { /* skip */ }
-      try { form.getTextField('fill_4_P.9').setText(brNumber); } catch { /* skip */ }
-      try { form.getTextField('fill_7_P.9').setText(allotteeName); } catch { /* skip */ }
     }
 
     const pdfBytes = new Uint8Array(await pdfDoc.save());

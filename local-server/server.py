@@ -48,6 +48,14 @@ _RTF_REGISTER_DIR = os.path.join(os.path.dirname(__file__), '..', '..', '秘书�
 _RTF_ROM = os.path.join(_RTF_REGISTER_DIR, 'Register of members.doc')
 _RTF_ROD = os.path.join(_RTF_REGISTER_DIR, 'Testing ROD.rtf')
 
+# DOCX register templates (Paul Tang format)
+_ROM_DOCX_TEMPLATE = os.path.join(
+    os.path.dirname(__file__), '..', '..', '秘书系统文件', '登记册', '股東登記冊_PaulTang格式.docx'
+)
+_SCR_DOCX_TEMPLATE = os.path.join(
+    os.path.dirname(__file__), '..', '..', '秘书系统文件', '登记册', '重要控制人登記冊_PaulTang格式.docx'
+)
+
 # python-docx for register DOCX generation
 try:
     from docx import Document as DocxDocument
@@ -1489,6 +1497,242 @@ def _rom_txn_cols():
     ]
 
 
+# ═══════════════════════════════════════════════════════════════
+# ROM DOCX template fill (Paul Tang format)
+# ═══════════════════════════════════════════════════════════════
+
+def _fmt_date_rom(val):
+    """Normalize a date value to DD/MM/YYYY string for ROM template."""
+    if not val or val == '-':
+        return '-'
+    val_str = str(val).strip()
+    # Already DD/MM/YYYY
+    if re.match(r'^\d{1,2}/\d{1,2}/\d{4}$', val_str):
+        return val_str
+    # ISO format YYYY-MM-DD
+    if re.match(r'^\d{4}-\d{2}-\d{2}$', val_str):
+        try:
+            dt = datetime.strptime(val_str, '%Y-%m-%d')
+            return dt.strftime('%d/%m/%Y')
+        except:
+            pass
+    # Raw number DDMMYYYY
+    if re.match(r'^\d{8}$', val_str):
+        try:
+            dt = datetime.strptime(val_str, '%d%m%Y')
+            return dt.strftime('%d/%m/%Y')
+        except:
+            pass
+        try:
+            dt = datetime.strptime(val_str, '%Y%m%d')
+            return dt.strftime('%d/%m/%Y')
+        except:
+            pass
+    return val_str
+
+
+def _fill_rom_docx_template(db, company_id):
+    """Fill the Paul Tang ROM DOCX template with company & shareholder data.
+
+    Opens 股東登記冊_PaulTang格式.docx, replaces header placeholders
+    with actual data, fills the 18-column table with shareholder rows,
+    and saves to a temp .docx file.
+
+    Returns path to temp .docx, or None on failure.
+    """
+    if not _HAS_DOCX:
+        return None
+    if not os.path.exists(_ROM_DOCX_TEMPLATE):
+        print(f"[ROM] DOCX template not found: {_ROM_DOCX_TEMPLATE}")
+        return None
+
+    from copy import deepcopy
+    from docx.oxml import OxmlElement
+
+    # ── Load data ──
+    company = db.execute("SELECT * FROM companies WHERE id = ?", (company_id,)).fetchone()
+    if not company:
+        return None
+
+    roles = db.execute(
+        "SELECT * FROM person_company_roles WHERE company_id = ? AND role = 'shareholder'",
+        (company_id,)).fetchall()
+
+    person_ids = [r['person_id'] for r in roles]
+    person_map = {}
+    if person_ids:
+        ph = ','.join(['?'] * len(person_ids))
+        persons = db.execute(
+            f"SELECT * FROM persons WHERE id IN ({ph})", person_ids).fetchall()
+        person_map = {p['id']: p for p in persons}
+
+    txs = db.execute(
+        "SELECT * FROM share_transactions WHERE company_id = ? ORDER BY transaction_date",
+        (company_id,)).fetchall()
+
+    co_name = rget(company, 'name') or ''
+    co_br = rget(company, 'company_number') or ''
+    today = datetime.now()
+    report_date = today.strftime('%d %B %Y').upper()
+
+    # ── Build tx_by_person map ──
+    tx_by_person = {}
+    for t in txs:
+        key = (rget(t, 'from_name') or rget(t, 'to_name') or '').strip().upper()
+        if key:
+            tx_by_person.setdefault(key, []).append(t)
+
+    # ── Build shareholder data list ──
+    shareholders = []
+    for role in roles:
+        p = person_map.get(role['person_id'], {})
+        name_en = (rget(p, 'name_english') or rget(p, 'name_chinese') or '(unnamed)')[:80]
+
+        addr, region = _get_person_address(db, p['id'])
+        if not addr:
+            addr = (rget(p, 'address') or '')[:100]
+        if region and region not in (addr or ''):
+            addr = f"{addr}, {region}".strip(', ')
+        addr = (addr or '')[:120]
+
+        occupation = rget(p, 'occupation') or ''
+        date_app = _fmt_date_rom(rget(role, 'date_appointed') or '-')
+        date_cea = _fmt_date_rom(rget(role, 'date_ceased') or '-')
+        shares_held = int(rget(role, 'shares') or 0)
+        cert_no = rget(role, 'certificate_number') or '-'
+        currency = rget(role, 'currency') or 'HKD'
+        issue_price = rget(role, 'issue_price') or '1.00'
+
+        # Calculate total shares including transactions
+        person_name_key = name_en.strip().upper()
+        person_txs = tx_by_person.get(person_name_key, [])
+        total_shares = shares_held
+        for tx in person_txs:
+            tx_shares = int(rget(tx, 'shares') or 0)
+            is_in = (rget(tx, 'to_name') or '').strip().upper() == person_name_key
+            is_out = (rget(tx, 'from_name') or '').strip().upper() == person_name_key
+            if is_in:
+                total_shares += tx_shares
+            elif is_out:
+                total_shares -= tx_shares
+
+        shareholders.append({
+            'full_name': name_en,
+            'addr': addr,
+            'occupation': occupation,
+            'date_app': date_app,
+            'date_cea': date_cea if date_cea else '-',
+            'shares_held': shares_held,
+            'cert_no': cert_no,
+            'currency': currency,
+            'issue_price': issue_price,
+            'total_shares': total_shares,
+            'txs': person_txs,
+        })
+
+    # ── Open template ──
+    doc = DocxDocument(_ROM_DOCX_TEMPLATE)
+
+    # ── Fill header paragraphs ──
+    # P[0]: "Name of Company" → actual company name
+    p0 = doc.paragraphs[0]
+    for run in p0.runs:
+        if 'Name of Company' in run.text:
+            run.text = run.text.replace('Name of Company', co_name)
+            break
+
+    # P[2]: "Company Number  ...  REGISTER OF MEMBERS"
+    p2 = doc.paragraphs[2]
+    for run in p2.runs:
+        if 'Company Number' in run.text:
+            run.text = f'Company Number: {co_br}'
+            break
+    for run in p2.runs:
+        if 'REGISTER OF MEMBERS' in run.text:
+            run.text = f'REGISTER OF MEMBERS as at {report_date}'
+            break
+
+    # ── Fill main table (Table[3] = 18-col data table) ──
+    # Tables 0-2 are placeholder/dummy tables in the template
+    table = doc.tables[3]
+
+    # Save the first data row's XML before deleting it (for cloning)
+    template_tr_xml = deepcopy(table.rows[2]._tr) if len(table.rows) > 2 else None
+
+    # Remove all sample data rows (rows 2, 3, 4… from end to preserve indices)
+    for i in range(len(table.rows) - 1, 1, -1):
+        table._tbl.remove(table.rows[i]._tr)
+
+    if not shareholders:
+        # Add a "no shareholders" row
+        row = table.add_row()
+        row.cells[0].paragraphs[0].add_run('(No shareholders / 尚無股東記錄)')
+        _set_docx_run_font(row.cells[0].paragraphs[0].runs[0], Pt(6))
+    else:
+        for si, sh in enumerate(shareholders):
+            # Clone the template row or reuse for first shareholder
+            if template_tr_xml is not None:
+                new_tr = template_tr_xml if si == 0 else deepcopy(template_tr_xml)
+                table._tbl.append(new_tr)
+            else:
+                table.add_row()
+
+            row = table.rows[-1]
+            cells = row.cells
+
+            # 18-column data map: (col_index, value)
+            cell_data = [
+                (0,  sh['full_name']),                              # Full Name
+                (1,  sh['addr']),                                    # Address
+                (2,  sh['occupation']),                              # Occupation
+                (3,  ''),                                            # Merchant
+                (4,  sh['date_app']),                                # Date Entered as Member
+                (5,  sh['date_cea']),                                # Date Ceasing to be Member
+                (6,  sh['cert_no']),                                 # Cert No (Acq)
+                (7,  '-'),                                           # Distinctive Nos (Acq)
+                (8,  str(sh['shares_held'])),                        # No. of Shares (Acq)
+                (9,  f"{sh['currency']}${sh['issue_price']}"),       # Consideration Paid (Acq)
+                (10, '-'),                                           # Transfer Deed No (Acq)
+                (11, '-'),                                           # Cert No (Xfer)
+                (12, '-'),                                           # Distinctive Nos (Xfer)
+                (13, '-'),                                           # No. of Shares (Xfer)
+                (14, '-'),                                           # Consideration Paid (Xfer)
+                (15, str(sh['total_shares'])),                       # Total Shares Held
+                (16, ''),                                            # Remarks
+                (17, ''),                                            # Entry Made By
+            ]
+
+            for ci, val in cell_data:
+                if ci >= len(cells):
+                    continue
+                cell = cells[ci]
+                # Clear existing content
+                for p in cell.paragraphs:
+                    p.clear()
+                # Add new text
+                run = cell.paragraphs[0].add_run(str(val) if val else '')
+                run.font.size = Pt(6)
+                run.font.name = 'Arial'
+                # Set East-Asian font for CJK rendering
+                _set_cjk_fallback(run, 'DengXian')
+
+    # ── Save to temp file ──
+    tmp_docx = tempfile.mktemp(suffix='.docx')
+    doc.save(tmp_docx)
+    return tmp_docx
+
+
+def _set_cjk_fallback(run, font_name):
+    """Set East-Asian font fallback on a run element for CJK text."""
+    from docx.oxml import OxmlElement
+    rPr = run._element.get_or_add_rPr()
+    rFonts = rPr.find(qn('w:rFonts'))
+    if rFonts is None:
+        rFonts = OxmlElement('w:rFonts')
+        rPr.insert(0, rFonts)
+    rFonts.set(qn('w:eastAsia'), font_name)
+
+
 @app.route('/api/generate-shareholders-register-pdf', methods=['POST'])
 def generate_shareholders_register_pdf():
     """Register of Members (ROM) — matching Paul Tang & Co reference format.
@@ -1623,7 +1867,19 @@ def generate_shareholders_register_pdf():
             pass
         return pdf_bytes
 
-    # ── Try RTF/DOC template first (Paul Tang "new version", handles any number) ──
+    # ── Path 1 (NEW): DOCX template fill → Word COM → PDF (Paul Tang format) ──
+    if _HAS_WORD_COM and _HAS_DOCX:
+        docx_path = _fill_rom_docx_template(db, company_id)
+        if docx_path:
+            pdf_bytes = _docx_to_pdf_via_word(docx_path)
+            try:
+                os.unlink(docx_path)
+            except:
+                pass
+            if pdf_bytes:
+                return jsonify({'pdf': base64.b64encode(pdf_bytes).decode('ascii')})
+
+    # ── Path 2: Old DOC template → Word COM Find & Replace → PDF ──
     if _HAS_WORD_COM:
         pdf_bytes = _rtf_rom_to_pdf(db, company_id)
         if pdf_bytes:
@@ -1631,7 +1887,7 @@ def generate_shareholders_register_pdf():
             pdf_bytes = _fix_tx_table_borders(pdf_bytes)
             return jsonify({'pdf': base64.b64encode(pdf_bytes).decode('ascii')})
 
-    # ── Fallback: DOCX → Word COM → PDF ──
+    # ── Path 3: DOCX built from scratch → Word COM → PDF ──
     if _HAS_WORD_COM and _HAS_DOCX:
         docx_path = _build_rom_register_docx(db, company_id)
         if docx_path:
@@ -1645,7 +1901,7 @@ def generate_shareholders_register_pdf():
                 pdf_bytes = _fix_tx_table_borders(pdf_bytes)
                 return jsonify({'pdf': base64.b64encode(pdf_bytes).decode('ascii')})
 
-    # ── Fallback: fpdf2 ──
+    # ── Path 4: fpdf2 (no external dependencies) ──
     M = 28  # margin
     PW, PH = 595, 842  # A4 portrait in pt
     CW = PW - 2 * M  # content width
@@ -2209,6 +2465,181 @@ def generate_secretaries_register_pdf():
     return jsonify({'pdf': b64.b64encode(pdf_bytes).decode('ascii')})
 
 
+# ═══════════════════════════════════════════════════════════════
+# SCR DOCX template fill (Paul Tang format)
+# ═══════════════════════════════════════════════════════════════
+
+def _build_nature_of_control(sc):
+    """Build a human-readable 'Nature of Control' string from SCR flags."""
+    parts = []
+    if rget(sc, 'nature_shares') or 0:
+        parts.append('>25% shares')
+    if rget(sc, 'nature_voting') or 0:
+        parts.append('>25% voting rights')
+    if rget(sc, 'nature_appoint') or 0:
+        parts.append('>25% appointment rights')
+    if rget(sc, 'nature_influence') or 0:
+        parts.append('Sig. influence')
+    if rget(sc, 'nature_trust') or 0:
+        parts.append('Trust')
+    other = rget(sc, 'nature_other') or ''
+    if other:
+        parts.append(other)
+    return ', '.join(parts) if parts else ''
+
+
+def _fill_scr_docx_template(db, company_id):
+    """Fill the Paul Tang SCR DOCX template with company & controller data.
+
+    Opens 重要控制人登記冊_PaulTang格式.docx, replaces header placeholders
+    with actual data, fills the 7-column controller table, and saves to
+    a temp .docx file.
+
+    Returns path to temp .docx, or None on failure.
+    """
+    if not _HAS_DOCX:
+        return None
+    if not os.path.exists(_SCR_DOCX_TEMPLATE):
+        print(f"[SCR] DOCX template not found: {_SCR_DOCX_TEMPLATE}")
+        return None
+
+    from copy import deepcopy
+    from docx.oxml import OxmlElement
+
+    # ── Load data ──
+    company = db.execute("SELECT * FROM companies WHERE id = ?", (company_id,)).fetchone()
+    if not company:
+        return None
+
+    controllers = db.execute(
+        "SELECT * FROM significant_controllers WHERE company_id = ? ORDER BY created_at",
+        (company_id,)).fetchall()
+
+    co_name = rget(company, 'name') or ''
+    co_br = rget(company, 'company_number') or ''
+
+    # Jurisdiction — default to Hong Kong
+    jurisdiction = (rget(company, 'jurisdiction') or 'Hong Kong').strip()
+    jurisdiction_zh = '香港' if jurisdiction.upper() in ('HONG KONG', 'HK', 'HONGKONG') else jurisdiction
+
+    # ── Open template ──
+    doc = DocxDocument(_SCR_DOCX_TEMPLATE)
+
+    # ── Fill header table (Table[0]) ──
+    t0 = doc.tables[0]
+    # Cell [0,0]: "NAME OF COMPANY: <co_name> | 公司名稱: | COMPANY NUMBER: <br>"
+    cell_header = t0.rows[0].cells[0]
+    for p in cell_header.paragraphs:
+        for run in p.runs:
+            if 'PAUL TANG AND COMPANY LIMITED' in run.text:
+                run.text = run.text.replace('PAUL TANG AND COMPANY LIMITED', co_name)
+            # Replace the template BR number (07281051) with actual BR
+            if '07281051' in run.text:
+                run.text = run.text.replace('07281051', co_br)
+
+    # ── Fill jurisdiction paragraphs ──
+    # P[1]: "JURISDICTION:  HONG KONG"
+    if len(doc.paragraphs) > 1:
+        p1 = doc.paragraphs[1]
+        for run in p1.runs:
+            if 'HONG KONG' in run.text.upper():
+                run.text = run.text.replace(
+                    run.text[run.text.upper().index('HONG KONG'):run.text.upper().index('HONG KONG')+9],
+                    jurisdiction.upper()
+                )
+    # P[2]: Chinese jurisdiction line
+    if len(doc.paragraphs) > 2:
+        p2 = doc.paragraphs[2]
+        for run in p2.runs:
+            if 'HONG KONG' in run.text.upper():
+                run.text = run.text.replace(
+                    run.text[run.text.upper().index('HONG KONG'):run.text.upper().index('HONG KONG')+9],
+                    jurisdiction.upper()
+                )
+
+    # ── Fill data table (Table[1]) ──
+    t1 = doc.tables[1]
+
+    # Save template row XML (row 1 = sample data row)
+    template_tr_xml = deepcopy(t1.rows[1]._tr) if len(t1.rows) > 1 else None
+
+    # Remove all data rows (keep only header row 0)
+    for i in range(len(t1.rows) - 1, 0, -1):
+        t1._tbl.remove(t1.rows[i]._tr)
+
+    if not controllers:
+        # Add empty row
+        row = t1.add_row()
+        row.cells[1].paragraphs[0].add_run('(No significant controllers / 無重要控制人)')
+    else:
+        for si, sc in enumerate(controllers):
+            if template_tr_xml is not None:
+                new_tr = template_tr_xml if si == 0 else deepcopy(template_tr_xml)
+                t1._tbl.append(new_tr)
+            else:
+                t1.add_row()
+
+            row = t1.rows[-1]
+            cells = row.cells
+
+            identity = rget(sc, 'identity') or 'natural'
+            name_en = rget(sc, 'name_english') or rget(sc, 'name_chinese') or '(unnamed)'
+            id_no = rget(sc, 'id_number') or '-'
+            addr = rget(sc, 'address') or rget(sc, 'service_address') or ''
+            date_became = _fmt_date_rom(rget(sc, 'date_became') or '-')
+            created_date = (rget(sc, 'created_at') or '')[:10]
+            entry_date = _fmt_date_rom(created_date) if created_date else '-'
+            nature = _build_nature_of_control(sc)
+            designated = ''
+            if rget(sc, 'is_designated_rep') or 0:
+                rep_name = rget(sc, 'designated_rep_name') or ''
+                rep_contact = rget(sc, 'designated_rep_contact') or ''
+                designated = f'Designated Rep: {rep_name}'
+                if rep_contact:
+                    designated += f' / {rep_contact}'
+
+            # Build ID/PPT string
+            if identity == 'natural':
+                id_str = f'ID/PPT: {id_no} | Natural Person'
+            else:
+                id_str = f'Company No: {id_no} | Legal Entity'
+
+            # Build remarks
+            remarks_parts = []
+            if rget(sc, 'date_ceased'):
+                remarks_parts.append(f'Ceased: {_fmt_date_rom(rget(sc, "date_ceased"))}')
+            if designated:
+                remarks_parts.append(designated)
+            remarks = '; '.join(remarks_parts) if remarks_parts else ('Current / 現任' if identity == 'natural' else 'Current / 現任')
+
+            # 7-column data mapping
+            cell_data = [
+                entry_date,          # [0] Entry Date
+                name_en,             # [1] Name
+                addr,                # [2] Address
+                id_str,              # [3] ID/PPT No.
+                nature,              # [4] Nature of Control
+                f'{date_became} / ', # [5] Becoming Date
+                remarks,             # [6] Remarks
+            ]
+
+            for ci, val in enumerate(cell_data):
+                if ci >= len(cells):
+                    continue
+                cell = cells[ci]
+                for p in cell.paragraphs:
+                    p.clear()
+                run = cell.paragraphs[0].add_run(str(val) if val else '')
+                run.font.size = Pt(7)
+                run.font.name = 'Arial'
+                _set_cjk_fallback(run, 'DengXian')
+
+    # ── Save to temp file ──
+    tmp_docx = tempfile.mktemp(suffix='.docx')
+    doc.save(tmp_docx)
+    return tmp_docx
+
+
 @app.route('/api/generate-scr-pdf', methods=['POST'])
 def generate_scr_pdf():
     """Significant Controllers Register — matching Paul Tang & Co reference format.
@@ -2227,6 +2658,19 @@ def generate_scr_pdf():
         "SELECT * FROM significant_controllers WHERE company_id = ? ORDER BY created_at",
         (company_id,)).fetchall()
 
+    # ── Path 1 (NEW): DOCX template fill → Word COM → PDF (Paul Tang format) ──
+    if _HAS_WORD_COM and _HAS_DOCX:
+        docx_path = _fill_scr_docx_template(db, company_id)
+        if docx_path:
+            pdf_bytes = _docx_to_pdf_via_word(docx_path)
+            try:
+                os.unlink(docx_path)
+            except:
+                pass
+            if pdf_bytes:
+                return jsonify({'pdf': base64.b64encode(pdf_bytes).decode('ascii')})
+
+    # ── Fallback: fpdf2 ──
     M = 28
     PW, PH = 842, 595  # Landscape A4
     CW = PW - 2 * M  # 786pt content width

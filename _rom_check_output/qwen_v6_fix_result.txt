@@ -1,0 +1,24 @@
+1. **Are date values now FULLY visible without truncation? (e.g. '23/04/2026' not '23/04/202')**  
+[**PASS**]  
+All date values such as "23/04/2026", "18/04/2026", and "25/05/2026" are fully visible and correctly displayed in the Date column. There is no truncation, indicating the column width has been adequately adjusted.
+
+2. **Is there still any text overflowing into adjacent columns?**  
+[**PASS**]  
+No text overflow is observed. All entries fit within their respective cells. The alignment of content appears clean, with no visual spillover from one column to another, including in areas like the Remarks column where names such as "To: Timothy" or "From: Alice" are properly contained.
+
+3. **Are counterparty names now in the correct column (Remarks) with proper prefix (To:/From:)?.**  
+[**PASS**]  
+Yes, counterparty names are correctly placed in the **Remarks** column. Examples include:
+- "To: Timothy" for both transfers from LUK Ngai Keung and Physical Beauty & Fitness Holdings Limited.
+- "From: Alice" in the entry dated 25/05/2026.
+These are properly prefixed and located in the Remarks column, avoiding incorrect placement in the Distinctive Nos. (From) field as previously seen.
+
+4. **Are all numeric values properly aligned within their columns?**  
+[**PASS**]  
+Numeric values (e.g., share counts like 5000, 10000, consideration amounts like HKD$1.00, HKD$2.50) are consistently right-aligned within their respective columns. This improves readability and suggests proper formatting of number columns.
+
+5. **Overall score out of 10**  
+[**10/10**]  
+The layout fixes have successfully resolved all previously identified issues. Dates are fully visible, no text overflows, counterparty information is correctly positioned with appropriate prefixes, and numerical data is cleanly aligned. The register is now professionally formatted and suitable for official use.
+
+✅ **Final Verdict: All checks PASS – Excellent layout correction.**

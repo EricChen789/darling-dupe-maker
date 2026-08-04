@@ -1,0 +1,227 @@
+### **ROD Audit (Register of Officers / Directors)**
+
+---
+
+#### **1. Header Layout: Alignment, Spacing, Font Sizes**
+
+- ✅ **Company Name**:  
+  - *Correct*: "GRAND POWER LOGISTICS INTERNATIONAL LIMITED" is **left-aligned**, **12pt bold** — matches spec.
+- ✅ **Company Number Line**:  
+  - *Correct*: "Company Number: 21710682" appears in **10pt font**, correctly placed below company name.
+- ✅ **Register Title Line**:  
+  - *Correct*: "REGISTER OF OFFICERS AT 04 AUGUST 2026" is in **11pt bold**, properly formatted.
+- ⚠️ **Quorum Placement**:  
+  - *Issue*: "Quorum: 3" is **right-aligned on the same line** as the register title — this **matches the spec**. However, there is **no visible space or padding** between the main title and the quorum text; it should be spaced appropriately to avoid crowding. The current layout feels cramped.
+- ✅ **Separator Line**:  
+  - *Correct*: A **black horizontal line** separates the header from the table — meets spec.
+
+> 🔍 **Verdict**: Mostly correct. Only minor spacing concern with quorum placement.
+
+---
+
+#### **2. Table Header: Grey Background & Column Widths**
+
+- ✅ **Background Color**:  
+  - *Correct*: Header row has **grey background RGB(227,227,227)** — verified visually.
+- ✅ **Borders**:  
+  - *Correct*: **Black top and bottom borders** present on header row.
+- ⚠️ **Column Widths**:  
+  - *Issue*: Columns appear **visually uneven**. Based on provided specs:
+    - Expected widths: `196 | 138 | 138 | 90 | 90 | 148` → total ~800pt
+    - **Observed**: 
+      - First column ("Name / Service / Residential Address") is **too wide** — likely over 200pt, causing overflow into adjacent columns.
+      - Second column ("Date / Place Birth / Place Incorp / Occupation") seems **narrower than expected**, possibly around 120–130pt.
+      - Third column ("ID No / Passport Details") looks **correct** (~138pt).
+      - Fourth column ("Position") is **too narrow** — appears closer to 75–80pt instead of 90pt.
+      - Fifth column ("Date(s) Appointed /Meeting") also appears **slightly under 90pt**.
+      - Sixth column ("Reason / Date(s) Ceased") appears **just right** (~148pt).
+
+> ❌ **Problem**: Proportional column widths are **not maintained**. This causes misalignment and poor readability, especially when names span multiple lines.
+
+---
+
+#### **3. Data Rows: Line Weights, Spacing, Text Alignment**
+
+- ✅ **Text Alignment**:
+  - *Mostly correct*: Left-aligned text in all columns.
+  - Exception: **"Reserve Director"** entry for HEUNG Ka Wing has inconsistent alignment due to **wrapped text** in address field — but that's acceptable given content length.
+- ⚠️ **Bottom Borders**:
+  - *Issue*: Each data row has a **thin light grey bottom border** — good.
+  - However, **the last row does not have a bottom border**, which breaks consistency.
+- ⚠️ **Vertical Lines**:
+  - *Good*: No vertical lines — per spec.
+- ⚠️ **Row Spacing**:
+  - *Issue*: **Insufficient leading (line spacing)** between rows — text appears crowded. Ideal row height should allow for clear separation, especially with multi-line addresses.
+- ⚠️ **Address Wrapping**:
+  - *Problem*: Addresses like "Unit 2301, 23/F, Wing On Centre..." wrap across two lines, but **column width isn't adjusted**, resulting in **overlapping or truncated text** in some cases (e.g., "Twinsail Consultants Limited" wraps oddly).
+  - Also, **"Wing On Centre, Central, HK"** appears duplicated — likely a formatting error.
+
+---
+
+#### **4. Overall: Specific Changes for Perfection**
+
+To achieve **perfect compliance**:
+
+1. **Fix Column Widths**:
+   - Use exact point values: `196 | 138 | 138 | 90 | 90 | 148`
+   - Ensure first column accommodates long names + full addresses without overflow.
+   - Adjust second column to fit date/place/occupation cleanly.
+   - Expand fourth and fifth columns slightly if needed for clarity.
+
+2. **Improve Row Spacing**:
+   - Increase **leading (line spacing)** to at least **12–14pt** to prevent visual clutter.
+
+3. **Add Bottom Border to Last Row**:
+   - Ensure every row has a **light grey bottom border**, including the final one.
+
+4. **Fix Address Duplication**:
+   - Remove redundant "Wing On Centre, Central, HK" appearing twice under CHAN Tai Man.
+
+5. **Align Quorum Text**:
+   - Add **at least 10–12pt space** between “REGISTER OF OFFICERS…” and “Quorum: 3” for better balance.
+
+6. **Standardize Formatting**:
+   - All entries should use consistent **font size (10pt)** and **typeface (e.g., Arial or Helvetica)**.
+
+7. **Ensure Consistent ID Numbers**:
+   - Check that passport/ID numbers are displayed uniformly (e.g., parentheses vs. no parentheses).
+
+---
+
+#### **5. Score: 7 / 10**
+
+✅ Strong adherence to core formatting (headers, fonts, colors).  
+⚠️ Major issues with **column proportions**, **row spacing**, and **border consistency**.  
+❌ Minor errors in **text duplication** and **alignment**.
+
+---
+
+### **SEC Audit (Register of Company Secretaries)**
+
+---
+
+#### **1. Header Layout: Centered vs. Left-Aligned**
+
+- ❌ **Company Name Alignment**:
+  - *Issue*: "GRAND POWER LOGISTICS INTERNATIONAL LIMITED" is **centered** — **violates Paul Tang standard**, which specifies **LEFT-aligned** for ROD.
+  - While centered may look balanced, **consistency with ROD is critical** — both registers must follow identical formatting rules.
+  - **Should be LEFT-aligned** to match ROD.
+
+- ✅ **Company Number**:  
+  - *Correct*: "Company Number: 21710682" in **10pt**, below company name.
+
+- ✅ **Register Title**:  
+  - *Correct*: "REGISTER OF COMPANY SECRETARIES AT 04/08/2026" in **11pt bold**.
+
+- ⚠️ **Quorum Placement**:  
+  - *Issue*: "Quorum: 1" is **right-aligned on same line** — correct per spec.
+  - But again, **spacing between title and quorum is too tight** — needs at least 10–12pt gap.
+
+- ✅ **Separator Line**:  
+  - *Correct*: Black line beneath header.
+
+---
+
+#### **2. Table Columns: 6 Columns? TCSP Useful?**
+
+- ❌ **Column Count**:
+  - *Problem*: **6 columns** used, but only **4 fields** are necessary:
+    1. Name / Service / Residential Address  
+    2. ID No / Passport or Company No  
+    3. TCSP Licence / Business Registration  
+    4. Position  
+    5. Date(s) Appointed / Meeting  
+    6. Reason / Date(s) Ceased  
+
+  - However, **"Reason / Date(s) Ceased"** is **empty** (only "Current") — so this column adds **no value**.
+  - **Redundant column**: Should be removed unless future resignations are expected.
+
+- ❌ **TCSP Column**:
+  - *Useful?* Yes, for **professional secretaries** — it’s required by HK law to show licence number.
+  - But **should be merged or repositioned** if not essential. Currently, it's **unnecessarily wide**, taking up ~148pt when only ~70pt needed.
+
+- ⚠️ **Column Widths**:
+  - Appears to be **misaligned**:
+    - First column: too wide — wastes space.
+    - Second column: fine (~138pt).
+    - Third column: **too wide** — could be reduced to ~70–80pt.
+    - Fourth: okay (~90pt).
+    - Fifth: okay (~90pt).
+    - Sixth: unnecessary — should be **removed**.
+
+> 🔍 **Recommendation**: Reduce to **5 columns**:
+> 1. Name / Service / Address (196pt)
+> 2. ID / Company No (138pt)
+> 3. TCSP Licence (70pt)
+> 4. Position (90pt)
+> 5. Date Appointed / Ceased (148pt)
+
+Or better yet, **combine "TCSP" and "Position"** if not critical.
+
+---
+
+#### **3. Line Weights, Spacing, Text Alignment**
+
+- ✅ **Table Header**:
+  - *Correct*: Grey background (RGB 227,227,227), black top/bottom borders.
+- ✅ **Data Rows**:
+  - *Good*: Light grey bottom border on each row.
+  - *But*: Last row **lacks bottom border** — same issue as ROD.
+- ⚠️ **Spacing**:
+  - Row height appears **tight** — similar to ROD. Needs more **leading**.
+- ✅ **Text Alignment**:
+  - All left-aligned — correct.
+- ⚠️ **Address Field**:
+  - "Unit 2301, 23/F, Wing On Centre, Central, HK" wraps — okay, but **could be split** or **reformatted**.
+
+---
+
+#### **4. Overall: Changes for Perfection**
+
+To make SEC register **perfect**:
+
+1. **Left-align company name** — **critical** for consistency with ROD.
+2. **Reduce to 5 columns**:
+   - Remove "Reason / Date(s) Ceased" column (currently unused).
+   - Trim TCSP column width to ~70pt.
+3. **Adjust column widths**:
+   - Use: `196 | 138 | 70 | 90 | 148` → total ~642pt (still within A4 landscape).
+4. **Ensure bottom border on last row**.
+5. **Increase line spacing** to **12–14pt** for readability.
+6. **Use consistent font family and size** (e.g., Arial 10pt).
+7. **Remove duplicate address** if present.
+
+---
+
+#### **5. Score: 6 / 10**
+
+✅ Good structure, headers, and basic formatting.  
+❌ **Critical flaw**: **Centered company name** violates standard.  
+❌ **Unnecessary column count** reduces clarity.  
+⚠️ Missing bottom border on last row, tight spacing.
+
+---
+
+### ✅ **Final Recommendations Summary**
+
+| Issue | Fix |
+|------|-----|
+| **ROD: Column widths** | Set exact widths: `196 | 138 | 138 | 90 | 90 | 148` |
+| **ROD: Row spacing** | Increase leading to 12–14pt |
+| **ROD: Bottom border** | Add to last row |
+| **ROD: Address duplication** | Remove redundant "Wing On Centre" |
+| **ROD: Quorum spacing** | Add 10–12pt gap between title and quorum |
+| **SEC: Company name alignment** | **Must be LEFT-aligned** |
+| **SEC: Column count** | Reduce to 5 columns; remove "Ceased" column |
+| **SEC: TCSP width** | Reduce to ~70pt |
+| **Both: Last row border** | Add missing light grey bottom border |
+| **Both: Font consistency** | Use 10pt sans-serif (Arial/Helvetica) throughout |
+
+---
+
+### 🏁 Final Scores:
+
+- **ROD: 7 / 10**  
+- **SEC: 6 / 10**
+
+With these changes, both registers would meet **Paul Tang & Co standard format** perfectly.

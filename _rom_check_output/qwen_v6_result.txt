@@ -1,0 +1,16 @@
+1. **Vertical table lines continuous without breaks? Is line width consistent?**  
+[ISSUES] – While most vertical lines appear continuous, there are slight inconsistencies in line thickness and alignment, particularly at the junctions between cells in the "Shares Acquired" and "Shares Transferred" sections. Some lines appear thinner or slightly misaligned, especially around the split columns under "Shares Acquired" and "Shares Transferred", suggesting inconsistent rendering or formatting.
+
+2. **Are date values (e.g. 23/04/2026) better aligned with their labels (Date Entered as a Member:)?.**  
+[PASS] – The date values (e.g., 23/04/2026 and 18/04/2026) are now properly right-aligned under their respective labels ("Date Entered as a Member:"), improving visual clarity and alignment compared to previous versions. This enhances readability.
+
+3. **Is column width distribution better? Are No. of Shares and Consideration Paid wide enough?**  
+[ISSUES] – Column widths remain uneven. The "No. of Shares" and "Consideration Paid" columns are still too narrow, causing truncation or awkward spacing, especially when entries like "HKD$1.00" or "5000" are displayed. The "Certificate Number" and "Distinctive Nos." columns also appear cramped. Better distribution is needed for optimal legibility.
+
+4. **Is 'Subscription' in Remarks fully visible without truncation?**  
+[ISSUES] – The word "Subscription" is partially truncated in the Remarks column (appears as "Subscripti"). This indicates insufficient column width for full text display. Despite being intended as a remark, it is not fully visible, which undermines document accuracy and professionalism.
+
+5. **Overall score (compared to previous 7.5/10)**  
+Final Score: **7.0 / 10**
+
+**Summary**: While improvements in date alignment and overall structure are evident, critical issues remain in table line consistency, column width distribution, and text truncation. These flaws reduce usability and professional appearance, resulting in a slight downgrade from the previous version’s score.

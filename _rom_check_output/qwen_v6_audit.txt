@@ -1,0 +1,220 @@
+After a detailed cell-by-cell audit of both shareholders' transaction tables in the **Register of Members** document, the following issues have been identified. The analysis focuses on alignment, overflow, and positioning within the grid cells—particularly for numeric values, text entries, and column headers.
+
+---
+
+### 🔍 **General Observations Before Cell Audit**
+- The layout uses a fixed-width table structure with clear column boundaries.
+- Text is generally **left-aligned**, except where formatting suggests otherwise (e.g., "No. of Shares" may be right-aligned).
+- Font appears to be **standard sans-serif** (likely Arial or Helvetica), size ~10pt.
+- Column widths vary significantly across columns, especially:
+  - `"Certificate Number"` → narrow
+  - `"Distinctive Nos. (From)"` → very narrow
+  - `"Consideration Paid"` → medium width
+  - `"Total Shares Held"` → narrow
+  - `"Remarks"` → moderately wide
+  - `"Entry Made By"` → narrow
+
+We will now analyze each shareholder’s table separately.
+
+---
+
+## ✅ **Shareholder 1: LUK Ngai Keung (HKID: A123456(7))**
+
+### 📊 Table: Shares Acquired / Transferred
+
+| Row | Date       | Certificate Number | Distinctive Nos. (From) | Distinctive Nos. (To) | No. of Shares | Consideration Paid | No. of Transfer Deed | Certificate Number | Distinctive Nos. (From) | Distinctive Nos. (To) | No. of Shares | Consideration Paid | Total Shares Held | Remarks     | Entry Made By |
+|-----|------------|--------------------|-------------------------|------------------------|---------------|----------------------|-----------------------|-------------------|--------------------------|------------------------|---------------|----------------------|-------------------|-------------|---------------|
+| 1   | 23/04/202  | SH-001             |                         |                        | 5000          | HKD$1.00             |                       |                   |                          |                        |               |                      | 5000              | Subscription|               |
+| 2   | 23/04/202  | (0)                |                         |                        |               |                      | TD-001                | SH-001            | Timothy T                |                        | 5000          | HKD$1.00             | 0                 |             |               |
+| 3   | (0)        |                    |                         |                        |               |                      |                       |                   |                          |                        |               |                      | 0                 |             |               |
+
+---
+
+### 🔎 **Cell-by-Cell Audit – Shareholder 1**
+
+#### **Row 1: Shares Acquired (23/04/202)**
+- **Date**: `23/04/202`  
+  ✅ Left-aligned, fully contained. Minor issue: **truncated year** — should be `23/04/2026`, but shows only `23/04/202`. This is likely a typo in data entry, not layout issue.
+- **Certificate Number**: `SH-001`  
+  ✅ Fully contained, left-aligned. No overflow.
+- **Distinctive Nos. (From)**: blank  
+  ✅ Correctly empty, no issue.
+- **Distinctive Nos. (To)**: blank  
+  ✅ Correctly empty.
+- **No. of Shares**: `5000`  
+  ❌ **Misaligned**: Value is **right-aligned** but appears **shifted slightly left**, possibly due to padding or font rendering. It does **not touch the right edge**, but **is not centered**. Appears ~2–3 pixels off from expected right alignment.
+- **Consideration Paid**: `HKD$1.00`  
+  ✅ Left-aligned, fits perfectly. No overflow.
+- **No. of Transfer Deed**: blank  
+  ✅ Correct.
+- **Certificate Number**: blank  
+  ✅ Correct.
+- **Distinctive Nos. (From)**: blank  
+  ✅ Correct.
+- **Distinctive Nos. (To)**: blank  
+  ✅ Correct.
+- **No. of Shares**: blank  
+  ✅ Correct.
+- **Consideration Paid**: blank  
+  ✅ Correct.
+- **Total Shares Held**: `5000`  
+  ✅ Left-aligned, fits well. But **column is too narrow** — if value were larger (e.g., 9999), it would overflow.
+- **Remarks**: `Subscription`  
+  ✅ Fits perfectly. Left-aligned. No overflow.
+- **Entry Made By**: blank  
+  ✅ Correct.
+
+> ⚠️ **Issue Summary – Row 1**:
+> - `No. of Shares`: Not properly aligned; appears **slightly shifted left** (approx. 3px). Should be **right-aligned** for consistency with financial data.
+> - `Date`: Truncated (`23/04/202` instead of `23/04/2026`) — likely a data error, not layout.
+
+---
+
+#### **Row 2: Shares Transferred (TD-001)**
+- **Date**: `23/04/202`  
+  ❌ Same truncation issue as above. Should be `23/04/2026`.
+- **Certificate Number**: `(0)`  
+  ✅ Left-aligned, fits. Parentheses are visible.
+- **Distinctive Nos. (From)**: blank  
+  ✅ Correct.
+- **Distinctive Nos. (To)**: blank  
+  ✅ Correct.
+- **No. of Shares**: blank  
+  ✅ Correct.
+- **Consideration Paid**: blank  
+  ✅ Correct.
+- **No. of Transfer Deed**: `TD-001`  
+  ✅ Fits perfectly, left-aligned. No overflow.
+- **Certificate Number**: `SH-001`  
+  ✅ Fits, no issue.
+- **Distinctive Nos. (From)**: `Timothy T`  
+  ❌ **Overflow detected!**  
+  - Value: `Timothy T`  
+  - Column width is **too narrow** — the last character `'T'` is **cut off by the next column border**.
+  - Overflow: **~1–2 characters** into `"Distinctive Nos. (To)"` column.
+  - Shift: **Right overflow**.
+  - Visual impact: Looks like `"Timothy T"` becomes `"Timothy T"` with trailing part missing.
+- **Distinctive Nos. (To)**: blank  
+  ❌ Affected by overflow from previous cell. Content appears **shifted left** due to overlapping.
+- **No. of Shares**: `5000`  
+  ✅ Fits, left-aligned. No overflow.
+- **Consideration Paid**: `HKD$1.00`  
+  ✅ Fits.
+- **Total Shares Held**: `0`  
+  ✅ Fits.
+- **Remarks**: blank  
+  ✅ Correct.
+- **Entry Made By**: blank  
+  ✅ Correct.
+
+> ⚠️ **Critical Issue – Row 2**:
+> - `"Distinctive Nos. (From)"` column is **too narrow** for name `Timothy T`.
+> - **Overflow**: `Timothy T` spills into `"Distinctive Nos. (To)"` column by ~1–2 characters.
+> - This suggests that **column width must be increased** or names must be abbreviated.
+
+---
+
+#### **Row 3: Blank Row**
+- All fields are empty or `(0)` — no content.
+- ✅ No layout issues.
+
+---
+
+### ✅ **Summary of Issues – Shareholder 1**
+
+| Issue | Column | Value | Problem | Severity |
+|------|--------|-------|--------|---------|
+| 1 | Date | `23/04/202` | Truncated year — missing `6` | Medium (data error) |
+| 2 | No. of Shares (acquired) | `5000` | Not right-aligned; shifted left ~3px | Low |
+| 3 | Distinctive Nos. (From) | `Timothy T` | **Overflows into next column** | **High** |
+| 4 | Distinctive Nos. (To) | blank | Affected by overflow | Medium |
+
+---
+
+## ✅ **Shareholder 2: Physical Beauty & Fitness Holdings Limited (CI: 12345678)**
+
+### 📊 Table: Shares Acquired / Transferred
+
+| Row | Date       | Certificate Number | Distinctive Nos. (From) | Distinctive Nos. (To) | No. of Shares | Consideration Paid | No. of Transfer Deed | Certificate Number | Distinctive Nos. (From) | Distinctive Nos. (To) | No. of Shares | Consideration Paid | Total Shares Held | Remarks     | Entry Made By |
+|-----|------------|--------------------|-------------------------|------------------------|---------------|----------------------|-----------------------|-------------------|--------------------------|------------------------|---------------|----------------------|-------------------|-------------|---------------|
+| 1   | 18/04/202  | SH-002             |                         |                        | 10000         | HKD$1.00             |                       |                   |                          |                        |               |                      | 10000             | Subscription|               |
+| 2   | 18/04/202  | (5000)             |                         |                        |               |                      | TD-002                | SH-002            | Timothy T                |                        | 5000          | HKD$1.00             | 5000              |             |               |
+| 3   | 25/05/202  | (8000)             |                         |                        |               |                      | TD-003                | SH-003            | Alice Wo                 |                        | 3000          | HKD$2.50             | 8000              |             |               |
+
+---
+
+### 🔎 **Cell-by-Cell Audit – Shareholder 2**
+
+#### **Row 1: Shares Acquired (18/04/202)**
+- **Date**: `18/04/202`  
+  ❌ Again, **truncated** — should be `18/04/2026`. Missing `6`.
+- **Certificate Number**: `SH-002`  
+  ✅ Fits, left-aligned.
+- **Distinctive Nos. (From)**: blank  
+  ✅ Correct.
+- **Distinctive Nos. (To)**: blank  
+  ✅ Correct.
+- **No. of Shares**: `10000`  
+  ❌ **Misalignment**: Value is **right-aligned**, but appears **slightly shifted left** (~3–4px). Not centered. Should be flush-right.
+- **Consideration Paid**: `HKD$1.00`  
+  ✅ Fits, no overflow.
+- **No. of Transfer Deed**: blank  
+  ✅ Correct.
+- **Certificate Number**: blank  
+  ✅ Correct.
+- **Distinctive Nos. (From)**: blank  
+  ✅ Correct.
+- **Distinctive Nos. (To)**: blank  
+  ✅ Correct.
+- **No. of Shares**: blank  
+  ✅ Correct.
+- **Consideration Paid**: blank  
+  ✅ Correct.
+- **Total Shares Held**: `10000`  
+  ✅ Fits, but **column is narrow** — could overflow if >9999.
+- **Remarks**: `Subscription`  
+  ✅ Fits, no overflow.
+- **Entry Made By**: blank  
+  ✅ Correct.
+
+> ⚠️ **Issues – Row 1**:
+> - `Date`: Truncated (`18/04/202` → should be `18/04/2026`)
+> - `No. of Shares`: Misaligned (should be right-aligned)
+> - `Total Shares Held`: Narrow column — risk of overflow
+
+---
+
+#### **Row 2: Shares Transferred (TD-002)**
+- **Date**: `18/04/202`  
+  ❌ Truncated again.
+- **Certificate Number**: `(5000)`  
+  ✅ Fits, parentheses visible.
+- **Distinctive Nos. (From)**: blank  
+  ✅ Correct.
+- **Distinctive Nos. (To)**: blank  
+  ✅ Correct.
+- **No. of Shares**: blank  
+  ✅ Correct.
+- **Consideration Paid**: blank  
+  ✅ Correct.
+- **No. of Transfer Deed**: `TD-002`  
+  ✅ Fits, no issue.
+- **Certificate Number**: `SH-002`  
+  ✅ Fits.
+- **Distinctive Nos. (From)**: `Timothy T`  
+  ❌ **Same overflow issue as before** — `Timothy T` overflows into `"Distinctive Nos. (To)"` column by ~1–2 characters.
+- **Distinctive Nos. (To)**: blank  
+  ❌ Affected by overflow — appears shifted.
+- **No. of Shares**: `5000`  
+  ✅ Fits.
+- **Consideration Paid**: `HKD$1.00`  
+  ✅ Fits.
+- **Total Shares Held**: `5000`  
+  ✅ Fits.
+- **Remarks**: blank  
+  ✅ Correct.
+- **Entry Made By**: blank  
+  ✅ Correct.
+
+> ⚠️ **Critical Issue – Row 2**:
+> - `"Distinctive Nos. (From)"` column is **too narrow** → `Timothy T`

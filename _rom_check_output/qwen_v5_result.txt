@@ -1,0 +1,56 @@
+**1. Overall layout proportions: header (company name/number/date), two shareholder sections, footer — are they well-proportioned? Do the two shareholder sections fill the page appropriately? Is the page frame complete?**  
+**[PASS]**  
+The document has a clean and balanced structure. The header includes the company name, number, and date in a clear, top-aligned block, with appropriate spacing. The two shareholder entries are logically separated and each occupies a reasonable portion of the page without crowding. The first shareholder section is shorter than the second due to fewer transactions, but this does not disrupt visual balance. The footer contains only a centered "- 1 -" page indicator, which is standard and unobtrusive. The outer page frame (border) is complete and consistent around all edges, ensuring a professional appearance.
+
+---
+
+**2. Text alignment: Are the labels (Full Name, Address, Occupation in grey serif font) vertically aligned with their values? Are the right-side date labels aligned with date values? Are column headers within their columns?**  
+**[ISSUES]**  
+- The **labels** ("Full Name:", "Address:", "Occupation:") are generally aligned with their corresponding values, but there is slight misalignment in the second shareholder section where "Occupation:" appears slightly lower than the value line.
+- The **date labels** on the right ("Date Entered as a Member:", "Date of Ceasing to be Member:") are **not consistently aligned** with their values—especially in the first shareholder entry, where the date "23/04/2026" is shifted slightly left relative to the label.
+- Column headers in the transaction tables (e.g., "Shares Acquired", "Shares Transferred") are properly centered within their respective spans, but some **column widths appear inconsistent**, causing minor misalignment of data (e.g., "No. of Shares" vs. "Consideration Paid").
+- The **vertical alignment of text within cells** is mostly correct, though some rows have uneven baseline alignment, particularly in the transfer deed numbers (e.g., TD-001, TD-002).
+
+---
+
+**3. Table grid lines: Are the horizontal and vertical lines of the Shares Acquired / Shares Transferred transaction table complete and aligned? Is the 15-column width distribution reasonable? Are line weights consistent?**  
+**[ISSUES]**  
+- The **grid lines are mostly complete**, but there are **inconsistencies in line continuity**—some vertical lines between columns appear broken or missing at row boundaries (e.g., between “Certificate Number” and “Distinctive Nos. (From)”).
+- The **15-column layout** is overly complex and results in **narrow columns**, especially for "Distinctive Nos. (From)" and "(To)", making it hard to read entries like “(0)” or “(5000)”.
+- **Column width distribution is unbalanced**: the "Remarks" and "Entry Made By" columns are too wide compared to others, while key fields like "No. of Shares" and "Consideration Paid" are cramped.
+- **Line weights vary slightly**—horizontal lines are thinner than vertical ones in some areas, suggesting inconsistent stroke settings in the PDF generation.
+- Some **cell borders are misaligned**, particularly at the junctions between "Shares Acquired" and "Shares Transferred" sections, indicating possible table merging issues.
+
+---
+
+**4. Text clarity: Are font sizes appropriate and readable? Are the labels (Times Roman grey small text) clear and professional? Is data text clear?**  
+**[PASS]**  
+- **Font sizes are appropriate**: Labels such as "Full Name:", "Address:", etc., use a smaller, grey Times Roman font that is legible and professionally subdued.
+- **Data text** (e.g., names, dates, share numbers) uses a clear, black sans-serif (likely Helvetica), which contrasts well and is highly readable.
+- **Contrast and spacing** are good—no blurring or pixelation visible.
+- **Labels** like "Certificate Number", "No. of Shares", and "Consideration Paid" are clearly differentiated from data, enhancing readability.
+- Minor issue: The **"Subscriptio"** in Remarks (cut off) suggests truncation, possibly due to cell width limitation, but this is likely a rendering issue rather than font choice.
+
+---
+
+**5. Overall appearance: Does it look like a formal Hong Kong company secretary document (Paul Tang & Co format)? Is the font choice (Times Roman labels + Helvetica data) appropriate? Any obvious layout defects?**  
+**[PASS]**  
+- The document closely resembles the **standard format used by Hong Kong company secretaries**, including Paul Tang & Co.—with structured sections, formal labeling, and transactional detail.
+- The **font pairing (Times Roman for labels, Helvetica for data)** is appropriate and commonly used in legal/business documents for clarity and professionalism.
+- **Overall impression is formal and official**, with proper headings, logical flow, and consistent formatting.
+- **Minor defects** include:
+  - Truncated word "Subscriptio" (should be "Subscription")
+  - Slight misalignment in date fields
+  - Inconsistent table borders
+  - Overly narrow columns in transaction tables
+
+These are **not major flaws**, but they reduce precision in presentation.
+
+---
+
+### **Overall Score: 7.5 / 10**
+
+✅ **Strengths**: Professional layout, correct font choices, readable data, formal tone, good header/footer design.  
+⚠️ **Weaknesses**: Table border inconsistencies, column width imbalance, minor alignment issues, truncated text.  
+
+With minor corrections (e.g., fixing column widths, aligning dates, completing borders), this would be an excellent example of a formal register. As-is, it's acceptable but not flawless.

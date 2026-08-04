@@ -6574,35 +6574,42 @@ def _fill_nsc1_pdf(data):
     if company_id:
         try:
             db = get_db()
-            sc_rows = db.execute(
-                "SELECT class_name, currency, COALESCE(total_number,0) as total_number, "
-                "COALESCE(total_amount,0) as total_amount, COALESCE(paid_up,0) as paid_up, "
-                "COALESCE(unpaid,0) as unpaid "
-                "FROM share_capital WHERE company_id = ?",
-                (company_id,)
-            ).fetchall()
             by_class = {}
-            for sc in sc_rows:
-                cls = (sc['class_name'] or 'Ordinary').strip()
-                cur = (sc['currency'] or 'HKD').strip()
-                if cls not in by_class:
-                    by_class[cls] = {'currency': cur, 'shares': 0, 'paid': 0.0, 'unpaid': 0.0}
-                by_class[cls]['shares'] += int(sc['total_number'] or 0)
-                by_class[cls]['paid'] += float(sc['total_amount'] or 0)
-                by_class[cls]['unpaid'] += float(sc['unpaid'] or 0)
-            # If no share_capital rows, fall back to share_transactions
-            if not by_class:
-                tx_rows = db.execute(
-                    "SELECT share_type, currency, COALESCE(SUM(shares), 0) as total_shares "
-                    "FROM share_transactions WHERE company_id = ? GROUP BY share_type",
+            # Try share_capital table first (production), fall back to share_transactions
+            try:
+                sc_rows = db.execute(
+                    "SELECT class_name, currency, COALESCE(total_number,0) as total_number, "
+                    "COALESCE(total_amount,0) as total_amount, COALESCE(paid_up,0) as paid_up, "
+                    "COALESCE(unpaid,0) as unpaid "
+                    "FROM share_capital WHERE company_id = ?",
                     (company_id,)
                 ).fetchall()
-                for tx in tx_rows:
-                    cls = (tx['share_type'] or 'Ordinary').strip()
-                    cur = (tx['currency'] or 'HKD').strip()
+                for sc in sc_rows:
+                    cls = (sc['class_name'] or 'Ordinary').strip()
+                    cur = (sc['currency'] or 'HKD').strip()
                     if cls not in by_class:
                         by_class[cls] = {'currency': cur, 'shares': 0, 'paid': 0.0, 'unpaid': 0.0}
-                    by_class[cls]['shares'] += int(tx['total_shares'] or 0)
+                    by_class[cls]['shares'] += int(sc['total_number'] or 0)
+                    by_class[cls]['paid'] += float(sc['total_amount'] or 0)
+                    by_class[cls]['unpaid'] += float(sc['unpaid'] or 0)
+            except Exception:
+                pass  # Table may not exist in local SQLite
+            # If no share_capital rows, fall back to share_transactions
+            if not by_class:
+                try:
+                    tx_rows = db.execute(
+                        "SELECT share_type, currency, COALESCE(SUM(shares), 0) as total_shares "
+                        "FROM share_transactions WHERE company_id = ? GROUP BY share_type",
+                        (company_id,)
+                    ).fetchall()
+                    for tx in tx_rows:
+                        cls = (tx['share_type'] or 'Ordinary').strip()
+                        cur = (tx['currency'] or 'HKD').strip()
+                        if cls not in by_class:
+                            by_class[cls] = {'currency': cur, 'shares': 0, 'paid': 0.0, 'unpaid': 0.0}
+                        by_class[cls]['shares'] += int(tx['total_shares'] or 0)
+                except Exception:
+                    pass
             # Add new allotment to totals
             new_class = (data.get('shareClass') or data.get('allotteeClass') or 'Ordinary').strip()
             new_shares = int(data.get('shares') or data.get('allotteeShares') or 0)
@@ -6620,6 +6627,7 @@ def _fill_nsc1_pdf(data):
                 total_shares = sum(v['shares'] for v in by_class.values())
                 total_paid = sum(v['paid'] for v in by_class.values())
                 total_unpaid = sum(v['unpaid'] for v in by_class.values())
+                total_amount = total_paid + total_unpaid
                 single_currency = list(currencies)[0] or 'HKD'
                 _set_if_empty('fill_2_P.3', '普通股 Ordinary')
                 _set_if_empty('fill_3_P.3', single_currency)
@@ -6627,17 +6635,20 @@ def _fill_nsc1_pdf(data):
                 if total_paid > 0:
                     _set_if_empty('fill_5_P.3', f'{total_paid:.2f}')
                 _set_if_empty('fill_6_P.3', f'{total_unpaid:.2f}' if total_unpaid > 0 else '0.00')
+                _set_if_empty('fill_7_P.3', f'{total_amount:.2f}')
             else:
                 for i, (cls_name, v) in enumerate(by_class.items()):
                     if i >= 3:
                         break
                     base = 2 + i * 6  # fill_2, fill_8, fill_14
+                    total = v['paid'] + v['unpaid']
                     _set_if_empty(f'fill_{base}_P.3', cls_name)
                     _set_if_empty(f'fill_{base+1}_P.3', v['currency'] or 'HKD')
                     _set_if_empty(f'fill_{base+2}_P.3', str(v['shares']))
                     if v['paid'] > 0:
                         _set_if_empty(f'fill_{base+3}_P.3', f"{v['paid']:.2f}")
                     _set_if_empty(f'fill_{base+4}_P.3', f"{v['unpaid']:.2f}" if v['unpaid'] > 0 else '0.00')
+                    _set_if_empty(f'fill_{base+5}_P.3', f'{total:.2f}')
         except Exception:
             pass  # Non-critical; user can fill manually
 
@@ -6703,8 +6714,11 @@ def _fill_nsc1_pdf(data):
     if has_allottees:
         _check(doc, fmap, 'cb_1_P.3', True)
         _check(doc, fmap, 'cb_4_P.3', True)
-        # P.3 continuation counters: fill_23 = Schedule 2 page count (P.7 = 1 page)
-        _set_if_empty('fill_23_P.3', '1')
+        # P.3 continuation counters: fill_26 = Schedule 2 page count
+        # (verified by Qwen VL: 5 boxes = A/B/C/Schedule1/Schedule2, fill_26 is rightmost)
+        import math
+        sched2_pages = max(1, math.ceil(len(allottees_list) / 2))
+        _set_if_empty('fill_26_P.3', str(sched2_pages))
 
     # ── Overlays ──
     for ov in (data.get('overlays', []) or []):
@@ -6724,23 +6738,23 @@ def _fill_nsc1_pdf(data):
     if has_allottees:
         # Field specs for each allottee slot (widget name → object key)
         # P.7 widget layout (verified by Qwen VL + PyMuPDF text labels 2026-08-04):
-        #   A1: fill_4=nameZh, fill_5=surname, fill_6=otherNames, fill_7=nameEn(full),
+        #   A1: fill_4=nameZh, fill_5=surname, fill_6=otherNames,
         #       fill_8=flat, fill_9=building, fill_10=street, fill_11=district, fill_12=country,
         #       fill_13=shares, cb_1=jointlyHeld
-        #   A2: fill_15=nameZh, fill_16=surname, fill_17=otherNames, fill_18=nameEn(full),
+        #   A2: fill_15=nameZh, fill_16=surname, fill_17=otherNames,
         #       fill_19=flat, fill_20=building, fill_21=street, fill_22=district, fill_23=country,
         #       fill_24=shares, cb_2=jointlyHeld
-        #   Note: fill_2/3 are section-level (Class of Shares / Total Shares), NOT per-allottee!
+        #   Note: fill_2/3 are section-level, fill_7/18 "英文名稱" removed per user request
         p7_specs_a1 = [
             ('fill_4_P.7', 'nameZh'), ('fill_5_P.7', 'surname'),
-            ('fill_6_P.7', 'otherNames'), ('fill_7_P.7', 'nameEn'),
+            ('fill_6_P.7', 'otherNames'),
             ('fill_8_P.7', 'flat'), ('fill_9_P.7', 'building'),
             ('fill_10_P.7', 'street'), ('fill_11_P.7', 'district'),
             ('fill_12_P.7', 'country'), ('fill_13_P.7', 'shares'),
         ]
         p7_specs_a2 = [
             ('fill_15_P.7', 'nameZh'), ('fill_16_P.7', 'surname'),
-            ('fill_17_P.7', 'otherNames'), ('fill_18_P.7', 'nameEn'),
+            ('fill_17_P.7', 'otherNames'),
             ('fill_19_P.7', 'flat'), ('fill_20_P.7', 'building'),
             ('fill_21_P.7', 'street'), ('fill_22_P.7', 'district'),
             ('fill_23_P.7', 'country'), ('fill_24_P.7', 'shares'),
@@ -6790,13 +6804,18 @@ def _fill_nsc1_pdf(data):
                     _check(doc, fmap, cb_name, True)
                 except Exception:
                     pass
+        # P.7 bottom page counter: "附表二第 _ 頁 Schedule 2 Page _"
+        # Each P.7 fits 2 allottees → pages = ceil(count / 2)
+        import math
+        sched2_pages = max(1, math.ceil(len(allottees_list) / 2))
+        _set_if_empty('fill_26_P.7', str(sched2_pages))
+        _set_if_empty('fill_27_P.7', str(sched2_pages))
         # Only fallback to old top-level logic if allottees list is empty
     elif allottee_name or allottee_name_zh:
         # Allottee 1 name (backward compatibility)
         if allottee_name_zh:
             _set_if_empty('fill_4_P.7', allottee_name_zh)
         if allottee_name:
-            _set_if_empty('fill_7_P.7', allottee_name)  # full English name
             name_parts = allottee_name.strip().split()
             if len(name_parts) >= 2:
                 _set_if_empty('fill_5_P.7', name_parts[0])  # HK: first word = surname

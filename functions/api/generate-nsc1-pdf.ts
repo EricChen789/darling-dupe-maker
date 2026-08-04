@@ -190,22 +190,26 @@ export async function onRequest(context: { request: Request; env: Env }) {
           const allShares = Object.values(byClass).reduce((s, v) => s + v.shares, 0);
           const allPaid = Object.values(byClass).reduce((s, v) => s + v.paid, 0);
           const allUnpaid = Object.values(byClass).reduce((s, v) => s + v.unpaid, 0);
+          const allTotal = allPaid + allUnpaid;
           fields['fill_2_P.3'] = '普通股 Ordinary';
           fields['fill_3_P.3'] = currencies[0] || 'HKD';
           fields['fill_4_P.3'] = String(allShares);
           if (allPaid > 0) fields['fill_5_P.3'] = allPaid.toFixed(2);
           fields['fill_6_P.3'] = allUnpaid > 0 ? allUnpaid.toFixed(2) : '0.00';
+          fields['fill_7_P.3'] = allTotal.toFixed(2);
           totalShares = allShares; totalPaid = allPaid; totalUnpaid = allUnpaid;
         } else {
           let idx = 0;
           for (const [clsName, v] of Object.entries(byClass)) {
             if (idx >= 3) break;
             const base = 2 + idx * 6;
+            const total = v.paid + v.unpaid;
             fields[`fill_${base}_P.3`] = clsName;
             fields[`fill_${base+1}_P.3`] = v.currency || 'HKD';
             fields[`fill_${base+2}_P.3`] = String(v.shares);
             if (v.paid > 0) fields[`fill_${base+3}_P.3`] = v.paid.toFixed(2);
             fields[`fill_${base+4}_P.3`] = v.unpaid > 0 ? v.unpaid.toFixed(2) : '0.00';
+            fields[`fill_${base+5}_P.3`] = total.toFixed(2);
             totalShares += v.shares; totalPaid += v.paid; totalUnpaid += v.unpaid;
             idx++;
           }
@@ -233,22 +237,23 @@ export async function onRequest(context: { request: Request; env: Env }) {
     if (hasAllottees) {
       // Structured allottees list (new format)
       // P.7 widget layout (verified by Qwen VL + PyMuPDF text labels 2026-08-04):
-      //   Allottee 1: fill_4=nameZh, fill_5=surname, fill_6=otherNames, fill_7=nameEn(full),
+      //   Allottee 1: fill_4=nameZh, fill_5=surname, fill_6=otherNames,
       //               fill_8=flat, fill_9=building, fill_10=street, fill_11=district, fill_12=country,
       //               fill_13=shares, cb_1=jointlyHeld
-      //   Allottee 2: fill_15=nameZh, fill_16=surname, fill_17=otherNames, fill_18=nameEn(full),
+      //   Allottee 2: fill_15=nameZh, fill_16=surname, fill_17=otherNames,
       //               fill_19=flat, fill_20=building, fill_21=street, fill_22=district, fill_23=country,
       //               fill_24=shares, cb_2=jointlyHeld
-      //   Note: fill_2/3 are section-level (Class of Shares / Total Shares), NOT per-allottee!
+      //   Note: fill_2/3 are section-level, fill_7/18 "英文名稱" removed per user request
+      //   Each P.7 page fits 2 allottees
       const p7Specs1: [string, string][] = [
         ['fill_4_P.7', 'nameZh'], ['fill_5_P.7', 'surname'], ['fill_6_P.7', 'otherNames'],
-        ['fill_7_P.7', 'nameEn'], ['fill_8_P.7', 'flat'], ['fill_9_P.7', 'building'],
+        ['fill_8_P.7', 'flat'], ['fill_9_P.7', 'building'],
         ['fill_10_P.7', 'street'], ['fill_11_P.7', 'district'], ['fill_12_P.7', 'country'],
         ['fill_13_P.7', 'shares'],
       ];
       const p7Specs2: [string, string][] = [
         ['fill_15_P.7', 'nameZh'], ['fill_16_P.7', 'surname'], ['fill_17_P.7', 'otherNames'],
-        ['fill_18_P.7', 'nameEn'], ['fill_19_P.7', 'flat'], ['fill_20_P.7', 'building'],
+        ['fill_19_P.7', 'flat'], ['fill_20_P.7', 'building'],
         ['fill_21_P.7', 'street'], ['fill_22_P.7', 'district'], ['fill_23_P.7', 'country'],
         ['fill_24_P.7', 'shares'],
       ];
@@ -292,11 +297,23 @@ export async function onRequest(context: { request: Request; env: Env }) {
           try { form.getCheckBox(cbName).check(); } catch { /* skip */ }
         }
       }
+      // P.7 bottom page counter: "附表二第 _ 頁 Schedule 2 Page _"
+      // Each P.7 fits 2 allottees → pages = ceil(allotteesCount / 2)
+      const sched2Pages = Math.max(1, Math.ceil(allotteesList.length / 2));
+      try {
+        const tf26 = form.getTextField('fill_26_P.7');
+        tf26.setText(String(sched2Pages));
+        tf26.updateAppearances(helv);
+      } catch { /* skip */ }
+      try {
+        const tf27 = form.getTextField('fill_27_P.7');
+        tf27.setText(String(sched2Pages));
+        tf27.updateAppearances(helv);
+      } catch { /* skip */ }
     } else if (allotteeName || allotteeNameZh) {
       // Backward compatibility: flat allottee fields
       if (allotteeNameZh) setIfEmpty('fill_4_P.7', allotteeNameZh);
       if (allotteeName) {
-        setIfEmpty('fill_7_P.7', allotteeName);  // full English name
         const nameParts = allotteeName.trim().split(/\s+/);
         if (nameParts.length >= 2) {
           setIfEmpty('fill_5_P.7', nameParts[0]);  // HK: first word = surname
@@ -375,10 +392,12 @@ export async function onRequest(context: { request: Request; env: Env }) {
     if (hasAllottees) {
       try { form.getCheckBox('cb_4_P.3').check(); } catch { /* skip */ }  // P.2 bottom
       try { form.getCheckBox('cb_1_P.3').check(); } catch { /* skip */ }  // P.3 Section 5
-      // P.3 continuation counters: fill_23 = Schedule 2 page count (P.7 = 1 page)
+      // P.3 continuation counters: fill_26 = Schedule 2 page count
+      // (verified by Qwen VL: 5 boxes = A/B/C/Schedule1/Schedule2, fill_26 is rightmost)
+      const sched2Pages = Math.max(1, Math.ceil(allotteesList.length / 2));
       try {
-        const tf = form.getTextField('fill_23_P.3');
-        tf.setText('1');
+        const tf = form.getTextField('fill_26_P.3');
+        tf.setText(String(sched2Pages));
         tf.updateAppearances(helv);
       } catch { /* skip */ }
     }

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -11,6 +11,7 @@ import { useSaveFormHistory } from '@/hooks/useFormHistory';
 import FormHistorySelector from './FormHistorySelector';
 import PresenterSelector from './PresenterSelector';
 import type { Presenter } from '@/hooks/usePresenters';
+import { usePresenterList } from '@/hooks/usePresenters';
 
 interface NSC1GeneratorFormProps { onBack: () => void; initialCompanyId?: string; }
 
@@ -35,6 +36,7 @@ interface ShareAllotment {
 
 export default function NSC1GeneratorForm({ onBack, initialCompanyId }: NSC1GeneratorFormProps) {
   const { data: companies = [] } = useCompanies();
+  const { data: presenters = [] } = usePresenterList();
   const [selectedCompanyId, setSelectedCompanyId] = useState('');
   const [generating, setGenerating] = useState(false);
   const { mutate: saveFormHistory } = useSaveFormHistory();
@@ -102,6 +104,208 @@ export default function NSC1GeneratorForm({ onBack, initialCompanyId }: NSC1Gene
       allotteeCountry: 'Hong Kong', allotteeJointlyHeld: false, allotteeRemarks: '' }]);
   const removeAllotment = (i: number) =>
     setAllotments(prev => prev.length > 1 ? prev.filter((_, idx) => idx !== i) : prev);
+
+  // ── Person picker: options for name autofill (company persons + presenters) ──
+  const personOptions = useMemo(() => {
+    const opts: { group: string; items: { id: string; label: string; sublabel: string; data: any }[] }[] = [];
+    if (selectedCompanyId) {
+      const company = companies.find(c => c.id === selectedCompanyId);
+      if (company) {
+        const people: any[] = [];
+        for (const d of company.directors || []) {
+          people.push({
+            id: `dir_${d.id}`,
+            label: d.nameEnglish || d.nameChinese || '?',
+            sublabel: `董事 Director${d.nameChinese ? ` · ${d.nameChinese}` : ''}`,
+            data: {
+              nameChinese: d.nameChinese || '',
+              nameEnglish: d.nameEnglish || '',
+            },
+          });
+        }
+        for (const s of company.secretaries || []) {
+          people.push({
+            id: `sec_${s.id}`,
+            label: s.nameEnglish || s.nameChinese || '?',
+            sublabel: `公司秘書 Secretary${s.nameChinese ? ` · ${s.nameChinese}` : ''}`,
+            data: {
+              nameChinese: s.nameChinese || '',
+              nameEnglish: s.nameEnglish || '',
+            },
+          });
+        }
+        if (people.length > 0) {
+          opts.push({ group: `🏢 ${company.name} — 董事／秘書`, items: people });
+        }
+      }
+    }
+    if (presenters.length > 0) {
+      opts.push({
+        group: '👤 已儲存提交人',
+        items: presenters.map(p => ({
+          id: `pres_${p.id}`,
+          label: p.name,
+          sublabel: [p.phone, p.email].filter(Boolean).join(' · ') || '',
+          data: {
+            nameChinese: (p as any).nameChinese || '',
+            nameEnglish: p.nameEnglish || p.name || '',
+          },
+        })),
+      });
+    }
+    return opts;
+  }, [selectedCompanyId, companies, presenters]);
+
+  // ── Address picker: options from company + persons + presenters ──
+  const addressOptions = useMemo(() => {
+    const opts: { group: string; items: { id: string; label: string; sublabel: string; data: any }[] }[] = [];
+    if (selectedCompanyId) {
+      const company = companies.find(c => c.id === selectedCompanyId);
+      if (company) {
+        // Company registered address
+        const regAddr = [company.regFlat, company.regBuilding, company.regStreet, company.regDistrict, company.regRegion]
+          .filter(Boolean).join(', ');
+        if (regAddr) {
+          opts.push({
+            group: `🏢 ${company.name}`,
+            items: [{
+              id: 'company_reg',
+              label: '公司註冊地址',
+              sublabel: regAddr.slice(0, 50),
+              data: {
+                flat: company.regFlat || '',
+                building: company.regBuilding || '',
+                street: company.regStreet || '',
+                district: company.regDistrict || '',
+                country: company.regRegion || 'Hong Kong',
+              },
+            }],
+          });
+        }
+        // Company persons' addresses
+        const personAddrs: any[] = [];
+        const seen = new Set<string>();
+        for (const d of company.directors || []) {
+          const addr = d.address || [d.addrFlat, d.addrBuilding, d.addrStreet, d.addrDistrict, d.addrRegion].filter(Boolean).join(', ');
+          if (addr && !seen.has(addr)) {
+            seen.add(addr);
+            personAddrs.push({
+              id: `addr_dir_${d.id}`,
+              label: d.nameEnglish || d.nameChinese || '?',
+              sublabel: addr.slice(0, 50),
+              data: {
+                flat: d.addrFlat || '', building: d.addrBuilding || '',
+                street: d.addrStreet || '', district: d.addrDistrict || '',
+                country: d.addrRegion || 'Hong Kong',
+                _raw: addr, // fallback for D1 flat address
+              },
+            });
+          }
+        }
+        for (const s of company.secretaries || []) {
+          const addr = s.address || [s.addrFlat, s.addrBuilding, s.addrStreet, s.addrDistrict, s.addrRegion].filter(Boolean).join(', ');
+          if (addr && !seen.has(addr)) {
+            seen.add(addr);
+            personAddrs.push({
+              id: `addr_sec_${s.id}`,
+              label: s.nameEnglish || s.nameChinese || '?',
+              sublabel: addr.slice(0, 50),
+              data: {
+                flat: s.addrFlat || '', building: s.addrBuilding || '',
+                street: s.addrStreet || '', district: s.addrDistrict || '',
+                country: s.addrRegion || 'Hong Kong',
+                _raw: addr,
+              },
+            });
+          }
+        }
+        if (personAddrs.length > 0) {
+          opts.push({ group: '👥 公司人員地址', items: personAddrs });
+        }
+      }
+    }
+    // Presenters' addresses
+    if (presenters.length > 0) {
+      const presAddrs = presenters.filter(p => p.address).map(p => ({
+        id: `addr_pres_${p.id}`,
+        label: p.name,
+        sublabel: (p.address || '').slice(0, 50),
+        data: {
+          flat: '', building: '', street: '', district: '', country: 'Hong Kong',
+          _raw: p.address || '',
+        },
+      }));
+      if (presAddrs.length > 0) {
+        opts.push({ group: '👤 已儲存提交人地址', items: presAddrs });
+      }
+    }
+    return opts;
+  }, [selectedCompanyId, companies, presenters]);
+
+  /** Parse flat address string into 5 structured fields */
+  const splitAddress = (addr: string) => {
+    if (!addr) return { flat: '', building: '', street: '', district: '', country: 'Hong Kong' };
+    const parts = addr.split(/[,，\n]/).map(s => s.trim()).filter(Boolean);
+    return {
+      flat: parts[0] || '',
+      building: parts[1] || '',
+      street: parts.slice(2).join(', ') || '',
+      district: '',
+      country: 'Hong Kong',
+    };
+  };
+
+  /** Handle person pick → fill name fields only */
+  const handlePersonPick = (i: number, personId: string) => {
+    if (!personId) return;
+    for (const grp of personOptions) {
+      const found = grp.items.find(o => o.id === personId);
+      if (found) {
+        const d = found.data;
+        // HK convention: surname comes FIRST in English name (e.g. "CHAN Tai Man" → surname=CHAN)
+        const nameParts = (d.nameEnglish || '').trim().split(/\s+/);
+        const surname = nameParts.length > 0 ? nameParts[0] : '';
+        const otherNames = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
+        setAllotments(prev => prev.map((a, idx) => idx === i ? {
+          ...a,
+          allotteeNameZh: d.nameChinese || '',
+          allotteeName: d.nameEnglish || '',
+          allotteeSurname: surname,
+          allotteeOtherNames: otherNames,
+        } : a));
+        toast({ title: '已載入', description: `獲配人姓名從「${found.label}」自動填入` });
+        return;
+      }
+    }
+  };
+
+  /** Handle address pick → fill address fields only */
+  const handleAddressPick = (i: number, addrId: string) => {
+    if (!addrId) return;
+    for (const grp of addressOptions) {
+      const found = grp.items.find(o => o.id === addrId);
+      if (found) {
+        const d = found.data;
+        let flat = d.flat || '', building = d.building || '',
+          street = d.street || '', district = d.district || '',
+          country = d.country || 'Hong Kong';
+        // If structured fields are all empty, parse from _raw (D1 flat address)
+        if (!flat && !building && !street && !district && d._raw) {
+          const split = splitAddress(d._raw);
+          flat = split.flat; building = split.building;
+          street = split.street; district = split.district;
+        }
+        setAllotments(prev => prev.map((a, idx) => idx === i ? {
+          ...a,
+          allotteeFlat: flat, allotteeBuilding: building,
+          allotteeStreet: street, allotteeDistrict: district,
+          allotteeCountry: country,
+        } : a));
+        toast({ title: '已載入', description: `地址從「${found.label}」自動填入` });
+        return;
+      }
+    }
+  };
 
   // Auto-calculate totals
   const totals = allotments.reduce((acc, a) => {
@@ -376,6 +580,66 @@ export default function NSC1GeneratorForm({ onBack, initialCompanyId }: NSC1Gene
                 <div><Label>每股未繳金額</Label><Input placeholder="例如：0.00" value={a.amountUnpaid} onChange={e => updateAllotment(i, 'amountUnpaid', e.target.value)} className="mt-1" /></div>
                 <div className="col-span-3 mt-2 pt-3 border-t border-border">
                   <span className="text-sm font-semibold">獲分配人資料（附表二 Schedule 2）</span>
+                </div>
+                {/* ── Person picker ── */}
+                <div className="col-span-3 bg-blue-50/60 border border-blue-200 rounded-md p-3">
+                  <Label className="text-xs font-semibold text-blue-700 flex items-center gap-1">
+                    👤 從現有系統選擇人員（可選，選後自動填入姓名）
+                  </Label>
+                  <Select value="" onValueChange={(v) => handlePersonPick(i, v)} disabled={personOptions.length === 0}>
+                    <SelectTrigger className="mt-1 h-8 text-sm bg-white">
+                      <SelectValue placeholder={
+                        personOptions.length === 0
+                          ? (selectedCompanyId ? '— 該公司暫無董事／秘書，且無已儲存提交人 —' : '— 選擇公司後可從公司人員載入 —')
+                          : '— 選擇人員自動填入姓名 —'
+                      } />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {personOptions.map(grp => (
+                        <div key={grp.group}>
+                          <div className="px-2 py-1.5 text-xs text-muted-foreground font-medium">{grp.group}</div>
+                          {grp.items.map(opt => (
+                            <SelectItem key={opt.id} value={opt.id}>
+                              <div className="flex flex-col">
+                                <span className="text-sm">{opt.label}</span>
+                                {opt.sublabel ? <span className="text-xs text-muted-foreground">{opt.sublabel}</span> : null}
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </div>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {/* ── Address picker ── */}
+                <div className="col-span-3 bg-green-50/60 border border-green-200 rounded-md p-3">
+                  <Label className="text-xs font-semibold text-green-700 flex items-center gap-1">
+                    📍 從現有系統選擇地址（可選，選後自動填入地址）
+                  </Label>
+                  <Select value="" onValueChange={(v) => handleAddressPick(i, v)} disabled={addressOptions.length === 0}>
+                    <SelectTrigger className="mt-1 h-8 text-sm bg-white">
+                      <SelectValue placeholder={
+                        addressOptions.length === 0
+                          ? (selectedCompanyId ? '— 暫無可用地址 —' : '— 選擇公司後可從公司地址載入 —')
+                          : '— 選擇地址自動填入 —'
+                      } />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {addressOptions.map(grp => (
+                        <div key={grp.group}>
+                          <div className="px-2 py-1.5 text-xs text-muted-foreground font-medium">{grp.group}</div>
+                          {grp.items.map(opt => (
+                            <SelectItem key={opt.id} value={opt.id}>
+                              <div className="flex flex-col">
+                                <span className="text-sm">{opt.label}</span>
+                                {opt.sublabel ? <span className="text-xs text-muted-foreground">{opt.sublabel}</span> : null}
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </div>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div><Label>中文姓名 Name in Chinese</Label><Input placeholder="例如：陳大文" value={a.allotteeNameZh} onChange={e => updateAllotment(i, 'allotteeNameZh', e.target.value)} className="mt-1" /></div>
                 <div><Label>英文姓名 Name in English</Label><Input placeholder="例如：CHAN Tai Man" value={a.allotteeName} onChange={e => updateAllotment(i, 'allotteeName', e.target.value)} className="mt-1" /></div>

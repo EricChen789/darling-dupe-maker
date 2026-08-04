@@ -232,15 +232,23 @@ export async function onRequest(context: { request: Request; env: Env }) {
 
     if (hasAllottees) {
       // Structured allottees list (new format)
+      // P.7 widget layout (verified by Qwen VL + PyMuPDF text labels 2026-08-04):
+      //   Allottee 1: fill_4=nameZh, fill_5=surname, fill_6=otherNames, fill_7=nameEn(full),
+      //               fill_8=flat, fill_9=building, fill_10=street, fill_11=district, fill_12=country,
+      //               fill_13=shares, cb_1=jointlyHeld
+      //   Allottee 2: fill_15=nameZh, fill_16=surname, fill_17=otherNames, fill_18=nameEn(full),
+      //               fill_19=flat, fill_20=building, fill_21=street, fill_22=district, fill_23=country,
+      //               fill_24=shares, cb_2=jointlyHeld
+      //   Note: fill_2/3 are section-level (Class of Shares / Total Shares), NOT per-allottee!
       const p7Specs1: [string, string][] = [
-        ['fill_2_P.7', 'nameZh'], ['fill_3_P.7', 'nameEn'], ['fill_4_P.7', 'surname'],
-        ['fill_5_P.7', 'otherNames'], ['fill_6_P.7', 'flat'], ['fill_7_P.7', 'building'],
-        ['fill_8_P.7', 'street'], ['fill_9_P.7', 'district'], ['fill_10_P.7', 'postal'],
-        ['fill_11_P.7', 'country'], ['fill_12_P.7', 'remarks'], ['fill_13_P.7', 'shares'],
+        ['fill_4_P.7', 'nameZh'], ['fill_5_P.7', 'surname'], ['fill_6_P.7', 'otherNames'],
+        ['fill_7_P.7', 'nameEn'], ['fill_8_P.7', 'flat'], ['fill_9_P.7', 'building'],
+        ['fill_10_P.7', 'street'], ['fill_11_P.7', 'district'], ['fill_12_P.7', 'country'],
+        ['fill_13_P.7', 'shares'],
       ];
       const p7Specs2: [string, string][] = [
-        ['fill_15_P.7', 'nameZh'], ['fill_16_P.7', 'nameEn'], ['fill_17_P.7', 'surname'],
-        ['fill_18_P.7', 'otherNames'], ['fill_19_P.7', 'flat'], ['fill_20_P.7', 'building'],
+        ['fill_15_P.7', 'nameZh'], ['fill_16_P.7', 'surname'], ['fill_17_P.7', 'otherNames'],
+        ['fill_18_P.7', 'nameEn'], ['fill_19_P.7', 'flat'], ['fill_20_P.7', 'building'],
         ['fill_21_P.7', 'street'], ['fill_22_P.7', 'district'], ['fill_23_P.7', 'country'],
         ['fill_24_P.7', 'shares'],
       ];
@@ -248,14 +256,14 @@ export async function onRequest(context: { request: Request; env: Env }) {
         const specs = i === 0 ? p7Specs1 : p7Specs2;
         const a = allotteesList[i] || {};
         const nameEn = String(a.nameEn || '').trim();
-        // Auto-parse surname/otherNames from nameEn if not provided
+        // Auto-parse surname/otherNames from nameEn if not provided (HK: surname FIRST)
         let surname = String(a.surname || '').trim();
         let otherNames = String(a.otherNames || '').trim();
         if (nameEn && !surname) {
           const parts = nameEn.split(/\s+/);
           if (parts.length >= 2) {
-            surname = parts[parts.length - 1];
-            otherNames = parts.slice(0, -1).join(' ');
+            surname = parts[0];  // HK convention: first word = surname
+            otherNames = parts.slice(1).join(' ');
           } else {
             surname = nameEn;
           }
@@ -286,23 +294,23 @@ export async function onRequest(context: { request: Request; env: Env }) {
       }
     } else if (allotteeName || allotteeNameZh) {
       // Backward compatibility: flat allottee fields
-      if (allotteeNameZh) setIfEmpty('fill_2_P.7', allotteeNameZh);
-      if (allotteeName) setIfEmpty('fill_3_P.7', allotteeName);
-      if (allotteeName && !allotteeNameZh) {
+      if (allotteeNameZh) setIfEmpty('fill_4_P.7', allotteeNameZh);
+      if (allotteeName) {
+        setIfEmpty('fill_7_P.7', allotteeName);  // full English name
         const nameParts = allotteeName.trim().split(/\s+/);
         if (nameParts.length >= 2) {
-          setIfEmpty('fill_4_P.7', nameParts[nameParts.length - 1]);
-          setIfEmpty('fill_5_P.7', nameParts.slice(0, -1).join(' '));
+          setIfEmpty('fill_5_P.7', nameParts[0]);  // HK: first word = surname
+          setIfEmpty('fill_6_P.7', nameParts.slice(1).join(' '));
         } else {
-          setIfEmpty('fill_4_P.7', allotteeName);
+          setIfEmpty('fill_5_P.7', allotteeName);
         }
       }
-      if (allotteeFlat) setIfEmpty('fill_6_P.7', allotteeFlat);
-      if (allotteeBuilding) setIfEmpty('fill_7_P.7', allotteeBuilding);
-      if (allotteeStreet) setIfEmpty('fill_8_P.7', allotteeStreet);
-      if (allotteeDistrict) setIfEmpty('fill_9_P.7', allotteeDistrict);
-      if (allotteeCountry) setIfEmpty('fill_11_P.7', allotteeCountry);
-      if (allotteeAddress && !allotteeFlat) setIfEmpty('fill_6_P.7', allotteeAddress);
+      if (allotteeFlat) setIfEmpty('fill_8_P.7', allotteeFlat);
+      if (allotteeBuilding) setIfEmpty('fill_9_P.7', allotteeBuilding);
+      if (allotteeStreet) setIfEmpty('fill_10_P.7', allotteeStreet);
+      if (allotteeDistrict) setIfEmpty('fill_11_P.7', allotteeDistrict);
+      if (allotteeCountry) setIfEmpty('fill_12_P.7', allotteeCountry);
+      if (allotteeAddress && !allotteeFlat) setIfEmpty('fill_8_P.7', allotteeAddress);
       if (shares) setIfEmpty('fill_13_P.7', String(shares));
     }
 
@@ -367,6 +375,12 @@ export async function onRequest(context: { request: Request; env: Env }) {
     if (hasAllottees) {
       try { form.getCheckBox('cb_4_P.3').check(); } catch { /* skip */ }  // P.2 bottom
       try { form.getCheckBox('cb_1_P.3').check(); } catch { /* skip */ }  // P.3 Section 5
+      // P.3 continuation counters: fill_23 = Schedule 2 page count (P.7 = 1 page)
+      try {
+        const tf = form.getTextField('fill_23_P.3');
+        tf.setText('1');
+        tf.updateAppearances(helv);
+      } catch { /* skip */ }
     }
 
     // ═══ P.3 Signature: Director crossed out (index 1), Secretary kept (index 0) ═══

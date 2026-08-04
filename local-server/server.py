@@ -6703,6 +6703,8 @@ def _fill_nsc1_pdf(data):
     if has_allottees:
         _check(doc, fmap, 'cb_1_P.3', True)
         _check(doc, fmap, 'cb_4_P.3', True)
+        # P.3 continuation counters: fill_23 = Schedule 2 page count (P.7 = 1 page)
+        _set_if_empty('fill_23_P.3', '1')
 
     # ── Overlays ──
     for ov in (data.get('overlays', []) or []):
@@ -6721,17 +6723,24 @@ def _fill_nsc1_pdf(data):
     # ── P.7: Schedule 2 — Allottee personal details ──
     if has_allottees:
         # Field specs for each allottee slot (widget name → object key)
+        # P.7 widget layout (verified by Qwen VL + PyMuPDF text labels 2026-08-04):
+        #   A1: fill_4=nameZh, fill_5=surname, fill_6=otherNames, fill_7=nameEn(full),
+        #       fill_8=flat, fill_9=building, fill_10=street, fill_11=district, fill_12=country,
+        #       fill_13=shares, cb_1=jointlyHeld
+        #   A2: fill_15=nameZh, fill_16=surname, fill_17=otherNames, fill_18=nameEn(full),
+        #       fill_19=flat, fill_20=building, fill_21=street, fill_22=district, fill_23=country,
+        #       fill_24=shares, cb_2=jointlyHeld
+        #   Note: fill_2/3 are section-level (Class of Shares / Total Shares), NOT per-allottee!
         p7_specs_a1 = [
-            ('fill_2_P.7', 'nameZh'), ('fill_3_P.7', 'nameEn'),
-            ('fill_4_P.7', 'surname'), ('fill_5_P.7', 'otherNames'),
-            ('fill_6_P.7', 'flat'), ('fill_7_P.7', 'building'),
-            ('fill_8_P.7', 'street'), ('fill_9_P.7', 'district'),
-            ('fill_10_P.7', 'postal'), ('fill_11_P.7', 'country'),
-            ('fill_12_P.7', 'remarks'), ('fill_13_P.7', 'shares'),
+            ('fill_4_P.7', 'nameZh'), ('fill_5_P.7', 'surname'),
+            ('fill_6_P.7', 'otherNames'), ('fill_7_P.7', 'nameEn'),
+            ('fill_8_P.7', 'flat'), ('fill_9_P.7', 'building'),
+            ('fill_10_P.7', 'street'), ('fill_11_P.7', 'district'),
+            ('fill_12_P.7', 'country'), ('fill_13_P.7', 'shares'),
         ]
         p7_specs_a2 = [
-            ('fill_15_P.7', 'nameZh'), ('fill_16_P.7', 'nameEn'),
-            ('fill_17_P.7', 'surname'), ('fill_18_P.7', 'otherNames'),
+            ('fill_15_P.7', 'nameZh'), ('fill_16_P.7', 'surname'),
+            ('fill_17_P.7', 'otherNames'), ('fill_18_P.7', 'nameEn'),
             ('fill_19_P.7', 'flat'), ('fill_20_P.7', 'building'),
             ('fill_21_P.7', 'street'), ('fill_22_P.7', 'district'),
             ('fill_23_P.7', 'country'), ('fill_24_P.7', 'shares'),
@@ -6755,11 +6764,12 @@ def _fill_nsc1_pdf(data):
                 'remarks': a.get('remarks', '') or a.get('allotteeRemarks', ''),
             }
             # Auto-parse surname/otherNames from nameEn if not explicitly provided
+            # HK convention: first word = surname, rest = otherNames
             if name_en and not a_norm['surname']:
                 parts = name_en.split()
                 if len(parts) >= 2:
-                    a_norm['surname'] = parts[-1]
-                    a_norm['otherNames'] = ' '.join(parts[:-1])
+                    a_norm['surname'] = parts[0]
+                    a_norm['otherNames'] = ' '.join(parts[1:])
                 else:
                     a_norm['surname'] = name_en
             # Fallback: if no structured address but flat address exists, use it
@@ -6784,24 +6794,24 @@ def _fill_nsc1_pdf(data):
     elif allottee_name or allottee_name_zh:
         # Allottee 1 name (backward compatibility)
         if allottee_name_zh:
-            _set_if_empty('fill_2_P.7', allottee_name_zh)
+            _set_if_empty('fill_4_P.7', allottee_name_zh)
         if allottee_name:
-            _set_if_empty('fill_3_P.7', allottee_name)
+            _set_if_empty('fill_7_P.7', allottee_name)  # full English name
             name_parts = allottee_name.strip().split()
             if len(name_parts) >= 2:
-                _set_if_empty('fill_4_P.7', name_parts[-1])
-                _set_if_empty('fill_5_P.7', ' '.join(name_parts[:-1]))
+                _set_if_empty('fill_5_P.7', name_parts[0])  # HK: first word = surname
+                _set_if_empty('fill_6_P.7', ' '.join(name_parts[1:]))
             else:
-                _set_if_empty('fill_4_P.7', allottee_name)
-        for key, field in [('allotteeFlat', 'fill_6_P.7'), ('allotteeBuilding', 'fill_7_P.7'),
-                           ('allotteeStreet', 'fill_8_P.7'), ('allotteeDistrict', 'fill_9_P.7'),
-                           ('allotteeCountry', 'fill_11_P.7')]:
+                _set_if_empty('fill_5_P.7', allottee_name)
+        for key, field in [('allotteeFlat', 'fill_8_P.7'), ('allotteeBuilding', 'fill_9_P.7'),
+                           ('allotteeStreet', 'fill_10_P.7'), ('allotteeDistrict', 'fill_11_P.7'),
+                           ('allotteeCountry', 'fill_12_P.7')]:
             val = data.get(key, '')
             if val:
                 _set_if_empty(field, str(val))
         addr = data.get('allotteeAddress', '')
         if addr and not data.get('allotteeFlat', ''):
-            _set_if_empty('fill_6_P.7', addr)
+            _set_if_empty('fill_8_P.7', addr)
         if shares:
             _set_if_empty('fill_13_P.7', str(shares))
 

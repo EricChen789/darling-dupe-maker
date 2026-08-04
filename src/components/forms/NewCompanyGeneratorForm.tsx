@@ -5,6 +5,8 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useSaveFormHistory } from '@/hooks/useFormHistory';
 import FormHistorySelector from './FormHistorySelector';
 import PresenterSelector from './PresenterSelector';
@@ -92,6 +94,11 @@ export default function NewCompanyGeneratorForm({ onBack }: Props) {
   const [authorisedShares, setAuthorisedShares] = useState('50000');
   const [registeredAgent, setRegisteredAgent] = useState('');
 
+  // IRBR1 — 兄弟表單（致商業登記署通知書）
+  const [includeIRBR1, setIncludeIRBR1] = useState(false);
+  const [irbr1Yes, setIrbr1Yes] = useState(true); // 默認勾選"是"
+  const [showIRBR1Reminder, setShowIRBR1Reminder] = useState(false);
+
   const [officers, setOfficers] = useState<OfficerEntry[]>([emptyOfficer('director'), emptyOfficer('secretary')]);
   const [shareholders, setShareholders] = useState<ShareEntry[]>([emptyShare()]);
 
@@ -141,6 +148,9 @@ export default function NewCompanyGeneratorForm({ onBack }: Props) {
     if (data.officers) setOfficers(data.officers);
     if (data.shareholders) setShareholders(data.shareholders);
     if (data.signerShareholderIndex !== undefined) setSignerShareholderIndex(data.signerShareholderIndex);
+    // IRBR1 state
+    if (data.includeIRBR1 !== undefined) setIncludeIRBR1(data.includeIRBR1);
+    if (data.irbr1Yes !== undefined) setIrbr1Yes(data.irbr1Yes);
     // 兼容旧历史记录（旧版用 signerRole + signerIndex 从 officers 选）
     if (data.signerShareholderIndex === undefined && data.signerRole !== undefined) {
       setSignerShareholderIndex(0); // 旧记录回退到第一位股东
@@ -390,8 +400,31 @@ export default function NewCompanyGeneratorForm({ onBack }: Props) {
         const result = await resp.json();
         if (!resp.ok) throw new Error(result.error || 'Unknown error');
         downloadBase64Pdf(result.pdf, 'NNC1-form.pdf');
-        saveFormHistory({ formType: 'NNC1', formData: { jurisdiction, companyName, companyChinese, companyType, regAddress: regAddressJoined, addrFlat, addrBuilding, addrStreet, addrDistrict, addrRegion, companyEmail, companyPhone, businessNature, shareCapital, totalShares, submitterNameCn, submitterNameEn, submitterAddress, submitterPhone, submitterFax, submitterEmail, submitterRef, signerDate, authorisedShares, registeredAgent, officers, shareholders, signerShareholderIndex } });
+        saveFormHistory({ formType: 'NNC1', formData: { jurisdiction, companyName, companyChinese, companyType, regAddress: regAddressJoined, addrFlat, addrBuilding, addrStreet, addrDistrict, addrRegion, companyEmail, companyPhone, businessNature, shareCapital, totalShares, submitterNameCn, submitterNameEn, submitterAddress, submitterPhone, submitterFax, submitterEmail, submitterRef, signerDate, authorisedShares, registeredAgent, officers, shareholders, signerShareholderIndex, includeIRBR1, irbr1Yes } });
         toast({ title: 'PDF 已生成', description: 'NNC1 已使用官方模板下載' });
+
+        // ── IRBR1 兄弟表單 ──
+        if (includeIRBR1) {
+          try {
+            const irbr1Resp = await fetch(`/api/generate-irbr1-pdf`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+              body: JSON.stringify({ irbr1_yes: irbr1Yes }),
+            });
+            const irbr1Result = await irbr1Resp.json();
+            if (irbr1Resp.ok) {
+              downloadBase64Pdf(irbr1Result.pdf, 'IRBR1-form.pdf');
+              toast({ title: 'IRBR1 已一併生成', description: '致商業登記署通知書已下載' });
+            } else {
+              toast({ title: 'IRBR1 生成失敗', description: irbr1Result.error, variant: 'destructive' });
+            }
+          } catch (err: any) {
+            toast({ title: 'IRBR1 生成失敗', description: err.message, variant: 'destructive' });
+          }
+        } else {
+          // 提醒用戶可以一併生成 IRBR1
+          setShowIRBR1Reminder(true);
+        }
       } else {
         // BVI — keep generic generator
         const sections: GenericFormSection[] = [];
@@ -432,7 +465,7 @@ export default function NewCompanyGeneratorForm({ onBack }: Props) {
           ],
         }, 'NNC1-BVI');
         if (ok) {
-          saveFormHistory({ formType: 'NNC1', formData: { jurisdiction, companyName, companyChinese, companyType, regAddress: regAddressJoined, addrFlat, addrBuilding, addrStreet, addrDistrict, addrRegion, companyEmail, companyPhone, businessNature, shareCapital, totalShares, submitterNameCn, submitterNameEn, submitterAddress, submitterPhone, submitterFax, submitterEmail, submitterRef, signerDate, authorisedShares, registeredAgent, officers, shareholders, signerShareholderIndex } });
+          saveFormHistory({ formType: 'NNC1', formData: { jurisdiction, companyName, companyChinese, companyType, regAddress: regAddressJoined, addrFlat, addrBuilding, addrStreet, addrDistrict, addrRegion, companyEmail, companyPhone, businessNature, shareCapital, totalShares, submitterNameCn, submitterNameEn, submitterAddress, submitterPhone, submitterFax, submitterEmail, submitterRef, signerDate, authorisedShares, registeredAgent, officers, shareholders, signerShareholderIndex, includeIRBR1, irbr1Yes } });
           toast({ title: 'PDF 已生成', description: 'BVI 表格已下載' });
         }
       }
@@ -452,6 +485,49 @@ export default function NewCompanyGeneratorForm({ onBack }: Props) {
       </div>
 
       <h2 className="text-xl font-semibold">新公司成立表格</h2>
+
+      {/* ── IRBR1 兄弟表單入口 ── */}
+      <div className="rounded-md border border-amber-200 bg-amber-50 p-4 space-y-3 dark:bg-amber-950/20 dark:border-amber-800">
+        <div className="flex items-center gap-2">
+          <Checkbox
+            id="irbr1-toggle"
+            checked={includeIRBR1}
+            onCheckedChange={(v) => setIncludeIRBR1(!!v)}
+          />
+          <Label htmlFor="irbr1-toggle" className="text-sm font-medium cursor-pointer">
+            同時生成 IRBR1 表格（致商業登記署通知書）
+          </Label>
+        </div>
+        {includeIRBR1 && (
+          <div className="pl-6 space-y-2">
+            <Label className="text-xs">是否申請公司註冊？</Label>
+            <div className="flex gap-4">
+              <label className="flex items-center gap-1.5 cursor-pointer">
+                <input
+                  type="radio"
+                  name="irbr1-answer"
+                  value="yes"
+                  checked={irbr1Yes}
+                  onChange={() => setIrbr1Yes(true)}
+                  className="h-3.5 w-3.5"
+                />
+                <span className="text-xs">是 Yes</span>
+              </label>
+              <label className="flex items-center gap-1.5 cursor-pointer">
+                <input
+                  type="radio"
+                  name="irbr1-answer"
+                  value="no"
+                  checked={!irbr1Yes}
+                  onChange={() => setIrbr1Yes(false)}
+                  className="h-3.5 w-3.5"
+                />
+                <span className="text-xs">否 No</span>
+              </label>
+            </div>
+          </div>
+        )}
+      </div>
 
       <FormHistorySelector formType="NNC1" onSelect={handleLoadHistory} />
 
@@ -676,6 +752,32 @@ export default function NewCompanyGeneratorForm({ onBack }: Props) {
           <Input className="h-8 text-xs" placeholder="實繳 HKD" value={s.amountPaid} onChange={e => updateShare(i, { amountPaid: e.target.value })} />
         </div>
       ))}
+
+      {/* ── IRBR1 Reminder Dialog ── */}
+      <Dialog open={showIRBR1Reminder} onOpenChange={setShowIRBR1Reminder}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>IRBR1 補充表格</DialogTitle>
+            <DialogDescription>
+              NNC1 法團成立表格通常需要連同 IRBR1（致商業登記署通知書）一起提交。
+              <br /><br />
+              確定只生成 NNC1 而不生成 IRBR1 嗎？
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => {
+              setIncludeIRBR1(true);
+              setShowIRBR1Reminder(false);
+              toast({ title: '已選中 IRBR1', description: '請再次點擊「生成 PDF」來同時生成兩份表格' });
+            }}>
+              一併生成 IRBR1
+            </Button>
+            <Button variant="ghost" onClick={() => setShowIRBR1Reminder(false)}>
+              只生成 NNC1
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -85,6 +85,26 @@ function translateFormData(
     return primaryData;
   }
 
+  if (primaryForm === "NNC1" && linkedForm === "IRBR1") {
+    return {
+      irbr1_yes: true,
+      brNumber: primaryData.brNumber || "",
+    };
+  }
+
+  if (primaryForm === "NN1" && linkedForm === "IRBR2") {
+    const fields = primaryData.fields || primaryData;
+    return {
+      brNumber: primaryData.brNumber || fields.br_number || "",
+      businessNameChinese: primaryData.companyNameChinese || fields.nameChinese || "",
+      businessNameEnglish: primaryData.companyName || fields.nameEnglish || "",
+      businessNature: primaryData.businessNature || fields.businessNature || "",
+      commencementDate: primaryData.commencementDate || fields.commencementDate || "",
+      irbr2_registered: true,
+      irbr2_elect3yr: true,
+    };
+  }
+
   return { ...primaryData };
 }
 
@@ -262,6 +282,50 @@ export async function onRequest(context: any) {
             form_code: formCode,
             pdf: uint8ToBase64(pdfBytes),
             filename: `IR1263_${linkedData.companyName || "form"}.pdf`,
+          });
+        } else if (formCode === "IRBR1" || formCode === "IRBR2") {
+          // IRBR forms: load template from R2, fill, return
+          const r2Bucket = (env as any).PDF_TEMPLATES || (env as any).R2;
+          const templateName = formCode === "IRBR1" ? "IRBR1-template.pdf" : "IRBR2-template.pdf";
+          const templateObj = await r2Bucket.get(templateName);
+          if (!templateObj) throw new Error(`${templateName} not found in R2`);
+          const templateBytes = new Uint8Array(await templateObj.arrayBuffer());
+          const pdfDoc = await PDFDocument.load(templateBytes, { ignoreEncryption: true });
+          const form = pdfDoc.getForm();
+
+          if (formCode === "IRBR1") {
+            const irbr1Yes = linkedData.irbr1_yes !== false;
+            try {
+              const radioGroup = form.getRadioGroup('topmostSubform[0].Page1[0].RadioButtonList[0]');
+              const opts = radioGroup.getOptions();
+              if (opts.length >= 2) radioGroup.select(irbr1Yes ? opts[0] : opts[1]);
+            } catch (_) {}
+          } else {
+            // IRBR2
+            const br = linkedData.brNumber || "";
+            try { if (br) form.getTextField('topmostSubform[0].Page1[0].TextField1[0]').setText(br); } catch (_) {}
+            try { if (linkedData.businessNameChinese) form.getTextField('topmostSubform[0].Page1[0].TextField2[0]').setText(linkedData.businessNameChinese); } catch (_) {}
+            try { if (linkedData.businessNameEnglish) form.getTextField('topmostSubform[0].Page1[0].TextField2[1]').setText(linkedData.businessNameEnglish); } catch (_) {}
+            try { if (linkedData.businessNature) form.getTextField('topmostSubform[0].Page1[0].TextField2[2]').setText(linkedData.businessNature); } catch (_) {}
+            try { if (linkedData.commencementDate) form.getTextField('topmostSubform[0].Page1[0].DateTimeField1[0]').setText(linkedData.commencementDate); } catch (_) {}
+            try {
+              const rg1 = form.getRadioGroup('topmostSubform[0].Page1[0].RadioButtonList[1]');
+              const o1 = rg1.getOptions();
+              if (o1.length >= 2) rg1.select(linkedData.irbr2_registered !== false ? o1[0] : o1[1]);
+            } catch (_) {}
+            try {
+              const rg0 = form.getRadioGroup('topmostSubform[0].Page1[0].RadioButtonList[0]');
+              const o0 = rg0.getOptions();
+              if (o0.length >= 2) rg0.select(linkedData.irbr2_elect3yr !== false ? o0[0] : o0[1]);
+            } catch (_) {}
+          }
+
+          form.flatten();
+          const pdfBytes = await pdfDoc.save({ useObjectStreams: false });
+          results.push({
+            form_code: formCode,
+            pdf: uint8ToBase64(new Uint8Array(pdfBytes)),
+            filename: `${formCode}_${linkedData.companyName || linkedData.businessNameEnglish || "form"}.pdf`,
           });
         } else {
           results.push({

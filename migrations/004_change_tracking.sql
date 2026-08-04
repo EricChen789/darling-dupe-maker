@@ -58,4 +58,6 @@ INSERT OR IGNORE INTO form_linkages (id, primary_form, linked_form, linkage_type
   ('link_001', 'NR1', 'IRC3111A', 'always_together', '更改註冊辦事處地址時須同時通知稅務局更改業務地址', 1),
   ('link_002', 'NDR1', 'IR1263', 'always_together', '申請撤銷註冊時須同時通知稅務局', 1),
   ('link_003', 'NN9', 'IRC3111A', 'always_together', '非香港公司更改地址時須同時通知稅務局更改業務地址', 1),
-  ('link_004', 'ND2A', 'ND4', 'conditional', '若同時有董事/秘書辭任及委任，需一併提交 ND4 辭任通知書', 1);
+  ('link_004', 'ND2A', 'ND4', 'conditional', '若同時有董事/秘書辭任及委任，需一併提交 ND4 辭任通知書', 1),
+  ('link_005', 'NNC1', 'IRBR1', 'always_together', '根據《商業登記條例》，NNC1（法團成立表格）須連同IRBR1（致商業登記署通知書）一併提交', 1),
+  ('link_006', 'NN1', 'IRBR2', 'always_together', '根據《商業登記條例》第5B(1)及5D(2)條，NN1（註冊非香港公司申請書）須連同IRBR2（致商業登記署通知書）一併提交', 1);

@@ -1164,6 +1164,8 @@ addRoute("GET", "/api/form-linkages", async (req, env, user) => {
         "ND2A": ["ND4"],
         "NDR1": ["IR1263"],
         "NN9": ["IRC3111A"],
+        "NNC1": ["IRBR1"],
+        "NN1": ["IRBR2"],
       };
       if (primary) {
         return json({ linkages: staticMap[primary.toUpperCase()] || [] });
@@ -1184,6 +1186,8 @@ addRoute("GET", "/api/form-linkages", async (req, env, user) => {
       "ND2A": ["ND4"],
       "NDR1": ["IR1263"],
       "NN9": ["IRC3111A"],
+      "NNC1": ["IRBR1"],
+      "NN1": ["IRBR2"],
     };
     if (primary) return json({ linkages: staticMap[primary.toUpperCase()] || [] });
     return json({ linkages: staticMap });

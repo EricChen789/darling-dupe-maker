@@ -16,6 +16,8 @@ const FORM_LINKAGE_LABELS: Record<string, string> = {
   IRC3111A: 'IRC 3111A — 通知更改業務地址（税務局）',
   IR1263: 'IR 1263 — 通知税務局撤銷註冊',
   ND4: 'ND4 — 公司秘書及董事辭任通知書',
+  IRBR1: 'IRBR1 — 致商業登記署通知書（本地公司）',
+  IRBR2: 'IRBR2 — 致商業登記署通知書（非香港公司）',
 };
 
 export function getFormLinkageLabel(formCode: string): string {

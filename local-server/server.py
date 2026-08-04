@@ -7859,6 +7859,161 @@ def generate_nnc1_pdf():
         return jsonify({'error': str(e)}), 500
 
 
+# ─── IRBR1 PDF 生成（申請公司註冊補充表格） ───
+
+def _fill_irbr1_pdf(data):
+    """Fill IRBR1 PDF template（致商業登記署通知書），returns bytes.
+
+    1 page, 2 radio buttons (Yes=widget[0] / No=widget[1]) named:
+    topmostSubform[0].Page1[0].RadioButtonList[0]
+
+    Accepts: {irbr1_yes: bool, brNumber?: str}
+    """
+    template_path = os.path.join(os.path.dirname(__file__), '..', 'public', 'templates', 'IRBR1-template.pdf')
+    doc = fitz.open(template_path)
+
+    irbr1_yes = data.get('irbr1_yes', True)  # default Yes
+    if isinstance(irbr1_yes, str):
+        irbr1_yes = irbr1_yes.lower() in ('yes', 'true', '1', '是')
+
+    # Radio buttons: widget[0] = Yes, widget[1] = No
+    page = doc[0]
+    widgets = list(page.widgets())
+    if len(widgets) >= 2:
+        if irbr1_yes:
+            widgets[0].field_value = True
+            widgets[0].update()
+        else:
+            widgets[1].field_value = True
+            widgets[1].update()
+
+    # Stamp BR number if available
+    br8 = re.sub(r'[^0-9A-Za-z]', '', data.get('brNumber', '') or '')[:8]
+    if br8:
+        _stamp_br_on_all_pages(doc, br8)
+
+    pdf_bytes = doc.write(deflate=True)
+    doc.close()
+    return pdf_bytes
+
+
+@app.route('/api/generate-irbr1-pdf', methods=['POST'])
+def generate_irbr1_pdf():
+    try:
+        data = request.json
+        if not data:
+            return jsonify({'error': 'Empty request body'}), 400
+        pdf_bytes = _fill_irbr1_pdf(data)
+        import base64 as b64
+        return jsonify({'pdf': b64.b64encode(pdf_bytes).decode('ascii')})
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+# ─── IRBR2 PDF 生成（非香港公司致商業登記署通知書） ───
+
+def _fill_irbr2_pdf(data):
+    """Fill IRBR2 PDF template（致商業登記署通知書 — 非香港公司），returns bytes.
+
+    1 page, 9 widgets:
+    - TextField1[0]: Business Registration Number
+    - TextField2[0]: Business name Chinese
+    - TextField2[1]: Business name English
+    - TextField2[2]: Description & nature of business
+    - DateTimeField1[0]: Date of commencement of business
+    - RadioButtonList[1] (top): Already registered under Cap.310? widget[0]=Yes, widget[1]=No
+    - RadioButtonList[0] (bottom): Elect 3-year certificate validity? widget[0]=Yes, widget[1]=No
+
+    Accepts: { brNumber?, businessNameChinese?, businessNameEnglish?, businessNature?,
+               commencementDate?, irbr2_registered?, irbr2_elect3yr? }
+    """
+    template_path = os.path.join(os.path.dirname(__file__), '..', 'public', 'templates', 'IRBR2-template.pdf')
+    doc = fitz.open(template_path)
+
+    # ── Radio button helpers ──
+    irbr2_registered = data.get('irbr2_registered', True)  # default Yes
+    if isinstance(irbr2_registered, str):
+        irbr2_registered = irbr2_registered.lower() in ('yes', 'true', '1', '是')
+
+    irbr2_elect3yr = data.get('irbr2_elect3yr', True)  # default Yes
+    if isinstance(irbr2_elect3yr, str):
+        irbr2_elect3yr = irbr2_elect3yr.lower() in ('yes', 'true', '1', '是')
+
+    page = doc[0]
+    widgets = list(page.widgets())
+    # Widget index layout (verified from template):
+    # [0]=TextField1[0](BR), [1]=TextField2[0](CN), [2]=TextField2[1](EN),
+    # [3]=TextField2[2](Nature), [4]=DateTimeField1[0](Date),
+    # [5]=RadioButtonList[0]-Yes(bottom), [6]=RadioButtonList[0]-No(bottom),
+    # [7]=RadioButtonList[1]-Yes(top),    [8]=RadioButtonList[1]-No(top)
+
+    # ── Text fields ──
+    br_number = str(data.get('brNumber', '') or '').strip()
+    name_cn = str(data.get('businessNameChinese', '') or '').strip()
+    name_en = str(data.get('businessNameEnglish', '') or '').strip()
+    nature = str(data.get('businessNature', '') or '').strip()
+    commencement = str(data.get('commencementDate', '') or '').strip()
+
+    if br_number and len(widgets) > 0:
+        widgets[0].field_value = br_number
+        widgets[0].update()
+    if name_cn and len(widgets) > 1:
+        widgets[1].field_value = name_cn
+        widgets[1].update()
+    if name_en and len(widgets) > 2:
+        widgets[2].field_value = name_en
+        widgets[2].update()
+    if nature and len(widgets) > 3:
+        widgets[3].field_value = nature
+        widgets[3].update()
+    if commencement and len(widgets) > 4:
+        widgets[4].field_value = commencement
+        widgets[4].update()
+
+    # ── RadioButtonList[1] (top, indices 7,8): Already registered under Cap.310? ──
+    if len(widgets) > 8:
+        if irbr2_registered:
+            widgets[7].field_value = True   # Yes
+            widgets[7].update()
+        else:
+            widgets[8].field_value = True   # No
+            widgets[8].update()
+
+    # ── RadioButtonList[0] (bottom, indices 5,6): Elect 3-year certificate? ──
+    if len(widgets) > 6:
+        if irbr2_elect3yr:
+            widgets[5].field_value = True   # Yes
+            widgets[5].update()
+        else:
+            widgets[6].field_value = True   # No
+            widgets[6].update()
+
+    # ── BR stamp ──
+    if br_number:
+        _stamp_br_on_all_pages(doc, br_number)
+
+    pdf_bytes = doc.write(deflate=True)
+    doc.close()
+    return pdf_bytes
+
+
+@app.route('/api/generate-irbr2-pdf', methods=['POST'])
+def generate_irbr2_pdf():
+    try:
+        data = request.json
+        if not data:
+            return jsonify({'error': 'Empty request body'}), 400
+        pdf_bytes = _fill_irbr2_pdf(data)
+        import base64 as b64
+        return jsonify({'pdf': b64.b64encode(pdf_bytes).decode('ascii')})
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
 # ─── NN1 PDF 生成（註冊非香港公司申請書） ───
 
 def _fill_nn1_pdf(data):
@@ -11828,6 +11983,24 @@ def _translate_form_data(primary_data, primary_form, linked_form, db=None):
         # Transfer cessation-related data
         result = primary_data
 
+    elif primary_form == 'NNC1' and linked_form == 'IRBR1':
+        result = {
+            'irbr1_yes': True,
+            'brNumber': primary_data.get('brNumber', ''),
+        }
+
+    elif primary_form == 'NN1' and linked_form == 'IRBR2':
+        fields = primary_data.get('fields', primary_data)
+        result = {
+            'brNumber': primary_data.get('brNumber', fields.get('br_number', '')),
+            'businessNameChinese': primary_data.get('companyNameChinese', fields.get('nameChinese', '')),
+            'businessNameEnglish': primary_data.get('companyName', fields.get('nameEnglish', '')),
+            'businessNature': primary_data.get('businessNature', fields.get('businessNature', '')),
+            'commencementDate': primary_data.get('commencementDate', fields.get('commencementDate', '')),
+            'irbr2_registered': True,
+            'irbr2_elect3yr': True,
+        }
+
     return result
 
 
@@ -11859,6 +12032,10 @@ def generate_related_forms():
                         continue
                 elif form_code == 'IR1263':
                     pdf_bytes = _build_ir1263_pdf(linked_data)
+                elif form_code == 'IRBR1':
+                    pdf_bytes = _fill_irbr1_pdf(linked_data)
+                elif form_code == 'IRBR2':
+                    pdf_bytes = _fill_irbr2_pdf(linked_data)
                 else:
                     results.append({'form_code': form_code, 'error': f'Unsupported form: {form_code}'})
                     continue

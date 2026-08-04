@@ -2,14 +2,28 @@
 // Auto-fill CR form PDF from company data (production — Cloudflare Functions)
 // body: { company_id, form_code }
 // resp: { success: true, pdf: '<base64>', filename }
+//
+// Strategy: Try R2 AcroForm template first, fall back to from-scratch builder.
 
 import { PDFDocument, rgb } from 'pdf-lib';
 import {
   corsHeaders, jsonResp, uint8ToBase64, rget, fmtDate,
   drawMixed, segmentText, widthOfText, personLabel,
-  fetchAndEmbedFont, buildAddress
+  fetchAndEmbedFont, buildAddress, DEFAULT_PRESENTER
 } from './_pdf-utils';
+import { enableNeedAppearances } from './_acroform';
 import { verifyAuthRequest, type User, type Env } from './_auth';
+
+// ─── Template mapping ───
+const TEMPLATE_MAP: Record<string, string> = {
+  nnc1: 'NNC1-template.pdf',
+  nnc2: 'NNC2-template.pdf',
+  nn1:  'NN1-template.pdf',
+  nn3:  'NN3-template.pdf',
+  nn6:  'NN6-template.pdf',
+  nn7:  'NN7-template.pdf',
+  nn9:  'NN9-template.pdf',
+};
 
 const CR_FORM_META: Record<string, { code: string; title: string; title_en: string }> = {
   nar1:  { code: 'NAR1',  title: '周年申報表',           title_en: 'Annual Return' },
@@ -28,6 +42,7 @@ const CR_FORM_META: Record<string, { code: string; title: string; title_en: stri
   nn9:   { code: 'NN9',   title: '非香港公司更改地址申報表',            title_en: 'Notice of Change of Address of Non-Hong Kong Company' },
 };
 
+// ─── D1 query ───
 async function fetchCompanyBundle(db: D1Database, companyId: string) {
   const row = await db.prepare("SELECT * FROM companies WHERE id = ?").bind(companyId).first();
   if (!row) return null;
@@ -36,7 +51,8 @@ async function fetchCompanyBundle(db: D1Database, companyId: string) {
     `SELECT pcr.role, pcr.shares, pcr.share_type, pcr.currency, pcr.paid_up,
             pcr.date_appointed, pcr.date_ceased, pcr.is_reserve,
             p.name_english, p.name_chinese, p.id_number, p.passport_number,
-            p.address, p.service_address, p.email, p.phone, p.identity, p.tcsp_number
+            p.address, p.service_address, p.email, p.phone, p.identity, p.tcsp_number,
+            p.addr_flat, p.addr_building, p.addr_street, p.addr_district, p.addr_region
      FROM person_company_roles pcr JOIN persons p ON p.id = pcr.person_id
      WHERE pcr.company_id = ? AND (pcr.date_ceased IS NULL OR pcr.date_ceased = '')
      ORDER BY pcr.role, p.name_english`
@@ -53,7 +69,418 @@ async function fetchCompanyBundle(db: D1Database, companyId: string) {
   return { c, address, directors, secretaries, shareholders, totalShares };
 }
 
-// ─── PDF builder ───
+// ─── Helpers ───
+function parseEnglishName(en: string): { surname: string; otherNames: string } {
+  const parts = (en || '').trim().split(/\s+/);
+  return { surname: parts[0] || '', otherNames: parts.slice(1).join(' ') };
+}
+
+function parseAddress5(addr: string): string[] {
+  // Split address into up to 5 parts for CR 5-field address layout
+  const parts = (addr || '').split(',').map(s => s.trim()).filter(Boolean);
+  while (parts.length < 5) parts.push('');
+  return parts.slice(0, 5);
+}
+
+function br8(c: any): string {
+  return (c.company_number || c.brNumber || '').replace(/[^0-9A-Za-z]/g, '').slice(0, 8);
+}
+
+// ─── Template-based filling ───
+
+/** Try to generate PDF using R2 AcroForm template. Returns null if template not found. */
+async function tryBuildFromTemplate(
+  formCode: string, bundle: any, env: Env
+): Promise<Uint8Array | null> {
+  const templateName = TEMPLATE_MAP[formCode];
+  if (!templateName) return null;
+
+  const r2Bucket = (env as any).PDF_TEMPLATES || (env as any).R2;
+  if (!r2Bucket) return null;
+
+  const templateObj = await r2Bucket.get(templateName);
+  if (!templateObj) return null; // Template not in R2 — fall back to from-scratch
+
+  const templateBytes = new Uint8Array(await templateObj.arrayBuffer());
+  const pdfDoc = await PDFDocument.load(templateBytes, { ignoreEncryption: true });
+  const form = pdfDoc.getForm();
+
+  // Fill template fields based on form type
+  switch (formCode) {
+    case 'nnc1': fillNNC1Template(form, bundle); break;
+    case 'nnc2': fillNNC2Template(form, bundle); break;
+    case 'nn1':  fillNN1Template(form, bundle); break;
+    case 'nn7':  fillNN7Template(form, bundle); break;
+    case 'nn9':  fillNN9Template(form, bundle); break;
+    case 'nn3':  fillNN3Template(form, bundle); break;
+    case 'nn6':  fillNN6Template(form, bundle); break;
+    default: return null; // No template filler for this form
+  }
+
+  enableNeedAppearances(pdfDoc);
+  const pdfBytes = await pdfDoc.save({ useObjectStreams: false });
+  return new Uint8Array(pdfBytes);
+}
+
+// ─── Per-form template fillers ───
+
+function setF(form: any, name: string, value: string | null | undefined) {
+  if (!value) return;
+  try {
+    const tf = form.getTextField(name);
+    tf.setText(String(value));
+  } catch { /* field not in template */ }
+}
+
+function checkF(form: any, name: string, cond?: boolean) {
+  if (cond === false) return;
+  try { form.getCheckBox(name).check(); } catch { /* skip */ }
+}
+
+function fillNNC1Template(form: any, bundle: any) {
+  const c = bundle.c;
+  const br = br8(c);
+
+  // ── P.1: Company Name ──
+  setF(form, 'fill_1_P.1', c.name || c.name_english);
+  setF(form, 'fill_2_P.1', c.chinese_name || c.name_chinese);
+
+  // Company type checkbox
+  const ct = (c.company_type || '').toLowerCase();
+  checkF(form, 'cb_1_P.1', ct.includes('私人') || ct.includes('private'));
+  checkF(form, 'cb_2_P.1', ct.includes('公眾') || ct.includes('public'));
+
+  // Business nature
+  setF(form, 'fill_3_P.1', c.business_code);
+  setF(form, 'fill_4_P.1', c.business_nature);
+
+  // Registered address (fill_5-8)
+  setF(form, 'fill_5_P.1', c.reg_flat);
+  setF(form, 'fill_6_P.1', c.reg_building);
+  setF(form, 'fill_7_P.1', c.reg_street);
+  setF(form, 'fill_8_P.1', c.reg_district);
+
+  // Presenter (fill_9-15) — use default Twinsail
+  setF(form, 'fill_9_P.1', DEFAULT_PRESENTER.name);
+  setF(form, 'fill_10_P.1', DEFAULT_PRESENTER.name);
+  setF(form, 'fill_11_P.1', DEFAULT_PRESENTER.address);
+  setF(form, 'fill_12_P.1', DEFAULT_PRESENTER.contact);
+  setF(form, 'fill_13_P.1', DEFAULT_PRESENTER.contact);
+  setF(form, 'fill_14_P.1', DEFAULT_PRESENTER.contact);
+  setF(form, 'fill_15_P.1', '');
+
+  // ── P.2: Contact + Share Capital ──
+  setF(form, 'fill_1_P.2', c.email);
+  setF(form, 'fill_2_P.2', c.phone);
+
+  // Share capital from shareholders
+  const shareholders = bundle.shareholders;
+  if (shareholders.length > 0) {
+    const sh0 = shareholders[0];
+    setF(form, 'fill_3_P.2', sh0.share_type || 'Ordinary');
+    setF(form, 'fill_4_P.2', String(sh0.shares || ''));
+    setF(form, 'fill_5_P.2', sh0.currency || 'HKD');
+    setF(form, 'fill_6_P.2', sh0.paid_up || '');
+    setF(form, 'fill_7_P.2', sh0.paid_up || '');
+    setF(form, 'fill_8_P.2', '');
+    if (shareholders.length > 1) {
+      const sh1 = shareholders[1];
+      setF(form, 'fill_9_P.2', sh1.share_type || 'Ordinary');
+      setF(form, 'fill_10_P.2', String(sh1.shares || ''));
+      setF(form, 'fill_11_P.2', sh1.currency || 'HKD');
+      setF(form, 'fill_12_P.2', sh1.paid_up || '');
+      setF(form, 'fill_13_P.2', sh1.paid_up || '');
+      setF(form, 'fill_14_P.2', '');
+    }
+    // Totals
+    setF(form, 'fill_16_P.2', shareholders[0].currency || 'HKD');
+    setF(form, 'fill_17_P.2', String(bundle.totalShares));
+  }
+
+  // ── P.3: Founder Member (first shareholder) ──
+  if (shareholders.length > 0) {
+    const sh = shareholders[0];
+    setF(form, 'fill_1_P.3', sh.name_chinese);
+    const en = parseEnglishName(sh.name_english);
+    setF(form, 'fill_2_P.3', en.surname);
+    setF(form, 'fill_3_P.3', en.otherNames);
+    // Address (5-field: fill_5-9)
+    const personAddr = sh.addr_flat || sh.service_address || sh.address || '';
+    const addr = parseAddress5(personAddr);
+    setF(form, 'fill_5_P.3', addr[0]);  // flat
+    setF(form, 'fill_6_P.3', addr[1]);  // building
+    setF(form, 'fill_7_P.3', addr[2]);  // street
+    setF(form, 'fill_8_P.3', addr[3]);  // district
+    setF(form, 'fill_9_P.3', addr[4]);  // region/country
+    // Shares
+    setF(form, 'fill_10_P.3', sh.share_type || 'Ordinary');
+    setF(form, 'fill_11_P.3', String(sh.shares || ''));
+    setF(form, 'fill_12_P.3', sh.currency || 'HKD');
+    setF(form, 'fill_13_P.3', sh.paid_up || '');
+    // Total shares
+    setF(form, 'fill_18_P.3', String(bundle.totalShares));
+  }
+
+  // ── P.4: Secretary (natural person) ──
+  const secNat = bundle.secretaries.find((s: any) => (s.identity || 'natural') !== 'corporate');
+  if (secNat) {
+    setF(form, 'fill_1_P.4', secNat.name_chinese);
+    const en = parseEnglishName(secNat.name_english);
+    setF(form, 'fill_2_P.4', en.surname);
+    setF(form, 'fill_3_P.4', en.otherNames);
+    const addr = parseAddress5(secNat.service_address || secNat.address || '');
+    setF(form, 'fill_8_P.4', addr[0]);
+    setF(form, 'fill_9_P.4', addr[1]);
+    setF(form, 'fill_10_P.4', addr[2]);
+    setF(form, 'fill_11_P.4', addr[3]);
+    setF(form, 'fill_12_P.4', secNat.email);
+    setF(form, 'fill_13_P.4', (secNat.id_number || '').slice(0, 4));
+    checkF(form, 'cb_1_P.4', true); // TCSP
+  }
+
+  // ── P.5: Secretary (body corporate) ──
+  const secCorp = bundle.secretaries.find((s: any) => s.identity === 'corporate');
+  if (secCorp) {
+    setF(form, 'fill_1_P.5', secCorp.name_chinese);
+    setF(form, 'fill_2_P.5', secCorp.name_english);
+    const addr = parseAddress5(secCorp.service_address || secCorp.address || '');
+    setF(form, 'fill_3_P.5', addr[0]);
+    setF(form, 'fill_4_P.5', addr[1]);
+    setF(form, 'fill_5_P.5', addr[2]);
+    setF(form, 'fill_6_P.5', addr[3]);
+    setF(form, 'fill_7_P.5', secCorp.email);
+    setF(form, 'fill_8_P.5', secCorp.id_number || secCorp.tcsp_number);
+    checkF(form, 'cb_1_P.5', true);
+  }
+
+  // ── P.6: Director (natural person) ──
+  const dirNat = bundle.directors.find((d: any) => (d.identity || 'natural') !== 'corporate');
+  if (dirNat) {
+    setF(form, 'fill_1_P.6', dirNat.name_chinese);
+    const en = parseEnglishName(dirNat.name_english);
+    setF(form, 'fill_2_P.6', en.surname);
+    setF(form, 'fill_3_P.6', en.otherNames);
+    const addr = parseAddress5(dirNat.service_address || dirNat.address || '');
+    setF(form, 'fill_8_P.6', addr[0]);
+    setF(form, 'fill_9_P.6', addr[1]);
+    setF(form, 'fill_10_P.6', addr[2]);
+    setF(form, 'fill_11_P.6', addr[3]);
+    setF(form, 'fill_12_P.6', addr[4]);
+    setF(form, 'fill_13_P.6', dirNat.email);
+    setF(form, 'fill_14_P.6', (dirNat.id_number || '').slice(0, 4));
+    checkF(form, 'cb_1_P.6', true);
+  }
+
+  // ── P.7: Director (body corporate) ──
+  const dirCorp = bundle.directors.find((d: any) => d.identity === 'corporate');
+  if (dirCorp) {
+    setF(form, 'fill_1_P.7', dirCorp.name_chinese);
+    setF(form, 'fill_2_P.7', dirCorp.name_english);
+    const addr = parseAddress5(dirCorp.service_address || dirCorp.address || '');
+    setF(form, 'fill_3_P.7', addr[0]);
+    setF(form, 'fill_4_P.7', addr[1]);
+    setF(form, 'fill_5_P.7', addr[2]);
+    setF(form, 'fill_6_P.7', addr[3]);
+    setF(form, 'fill_7_P.7', addr[4]);
+    setF(form, 'fill_8_P.7', dirCorp.email);
+    setF(form, 'fill_9_P.7', dirCorp.id_number);
+    checkF(form, 'cb_1_P.7', true);
+    // Signer for body corporate director
+    const sh0 = bundle.shareholders[0];
+    if (sh0) {
+      setF(form, 'fill_10_P.7', [sh0.name_english, sh0.name_chinese].filter(Boolean).join(' '));
+    }
+  }
+
+  // ── P.8: Founder member statement ──
+  // Page counts for continuation sheets
+  const secNatCount = bundle.secretaries.filter((s: any) => (s.identity || 'natural') !== 'corporate').length;
+  const secCorpCount = bundle.secretaries.filter((s: any) => s.identity === 'corporate').length;
+  const dirNatCount = bundle.directors.filter((d: any) => (d.identity || 'natural') !== 'corporate').length;
+  const dirCorpCount = bundle.directors.filter((d: any) => d.identity === 'corporate').length;
+
+  setF(form, 'fill_1_P.8', secNatCount > 1 ? String(secNatCount - 1) : '');
+  setF(form, 'fill_2_P.8', secCorpCount > 1 ? String(secCorpCount - 1) : '');
+  setF(form, 'fill_3_P.8', dirNatCount > 1 ? String(dirNatCount - 1) : '');
+  setF(form, 'fill_4_P.8', dirCorpCount > 1 ? String(dirCorpCount - 1) : '');
+  setF(form, 'fill_5_P.8', '');
+
+  // PI-NNC1 page count
+  let piCount = 0;
+  if (secNatCount > 0) piCount++;
+  if (dirNatCount > 0) piCount++;
+  setF(form, 'fill_6_P.8', piCount > 0 ? String(piCount) : '');
+
+  // Signer (first shareholder/founder)
+  const sh0 = bundle.shareholders[0];
+  if (sh0) {
+    const signerName = parseEnglishName(sh0.name_english);
+    setF(form, 'fill_7_P.8', [signerName.surname, signerName.otherNames].filter(Boolean).join(' '));
+  }
+  // Sign date defaults to today
+  const today = new Date();
+  setF(form, 'fill_8_P.8', `${String(today.getDate()).padStart(2, '0')}/${String(today.getMonth() + 1).padStart(2, '0')}/${today.getFullYear()}`);
+
+  // ── BR on P.1 ──
+  setF(form, 'br_P.1', br);
+  setF(form, 'fill_br_P.1', br);
+}
+
+function fillNNC2Template(form: any, bundle: any) {
+  const c = bundle.c;
+  const br = br8(c);
+
+  setF(form, 'fill_1_P.1', br);
+  setF(form, 'fill_2_P.1', c.name || c.name_english);
+  setF(form, 'fill_3_P.1', c.chinese_name || c.name_chinese);
+
+  // Presenter
+  setF(form, 'fill_9_P.1', DEFAULT_PRESENTER.name);
+  setF(form, 'fill_10_P.1', DEFAULT_PRESENTER.address);
+  setF(form, 'fill_11_P.1', DEFAULT_PRESENTER.contact);
+
+  // BR on all pages
+  for (let i = 1; i <= 8; i++) {
+    setF(form, `br_P.${i}`, br);
+  }
+}
+
+function fillNN1Template(form: any, bundle: any) {
+  const c = bundle.c;
+  const br = br8(c);
+
+  // P.1: Company info
+  setF(form, 'fill_1_P.1', br);
+  setF(form, 'fill_2_P.1', c.name || c.name_english);
+  setF(form, 'fill_3_P.1', c.chinese_name || c.name_chinese);
+  setF(form, 'fill_4_P.1', c.place_of_incorporation || '');
+
+  // Registered address
+  setF(form, 'fill_5_P.1', c.reg_flat);
+  setF(form, 'fill_6_P.1', c.reg_building);
+  setF(form, 'fill_7_P.1', c.reg_street);
+  setF(form, 'fill_8_P.1', c.reg_district);
+  setF(form, 'fill_9_P.1', c.reg_region || '');
+
+  // Presenter
+  setF(form, 'fill_13_P.1', DEFAULT_PRESENTER.name);
+  setF(form, 'fill_14_P.1', DEFAULT_PRESENTER.address);
+  setF(form, 'fill_15_P.1', DEFAULT_PRESENTER.contact);
+
+  // Directors
+  const dirNat = bundle.directors.find((d: any) => (d.identity || 'natural') !== 'corporate');
+  if (dirNat) {
+    setF(form, 'fill_1_P.3', dirNat.name_english || '');
+    setF(form, 'fill_2_P.3', dirNat.name_chinese || '');
+    setF(form, 'fill_5_P.3', dirNat.service_address || dirNat.address || '');
+    setF(form, 'fill_6_P.3', dirNat.id_number || '');
+  }
+
+  // Secretary
+  const secNat = bundle.secretaries.find((s: any) => (s.identity || 'natural') !== 'corporate');
+  if (secNat) {
+    setF(form, 'fill_1_P.4', secNat.name_english || '');
+    setF(form, 'fill_2_P.4', secNat.name_chinese || '');
+    setF(form, 'fill_5_P.4', secNat.service_address || secNat.address || '');
+  }
+}
+
+function fillNN7Template(form: any, bundle: any) {
+  const c = bundle.c;
+  const br = br8(c);
+
+  setF(form, 'fill_1_P.1', br);
+  setF(form, 'fill_2_P.1', c.name || c.name_english);
+
+  // First director for change of particulars
+  const dir = bundle.directors[0];
+  if (dir) {
+    setF(form, 'fill_3_P.1', dir.name_english || '');
+    setF(form, 'fill_4_P.1', dir.name_chinese || '');
+    setF(form, 'fill_5_P.1', dir.id_number || '');
+  }
+
+  // Presenter
+  setF(form, 'fill_12_P.1', DEFAULT_PRESENTER.name);
+  setF(form, 'fill_13_P.1', DEFAULT_PRESENTER.contact);
+  setF(form, 'fill_14_P.1', DEFAULT_PRESENTER.address);
+}
+
+function fillNN9Template(form: any, bundle: any) {
+  const c = bundle.c;
+  const br = br8(c);
+
+  setF(form, 'fill_1_P.1', br);
+  setF(form, 'fill_2_P.1', c.name || c.name_english);
+  setF(form, 'fill_3_P.1', c.chinese_name || c.name_chinese);
+
+  // Current address
+  setF(form, 'fill_5_P.1', c.reg_flat);
+  setF(form, 'fill_6_P.1', c.reg_building);
+  setF(form, 'fill_7_P.1', c.reg_street);
+  setF(form, 'fill_8_P.1', c.reg_district);
+  setF(form, 'fill_9_P.1', c.reg_region || '');
+
+  // Presenter
+  setF(form, 'fill_13_P.1', DEFAULT_PRESENTER.name);
+  setF(form, 'fill_14_P.1', DEFAULT_PRESENTER.address);
+  setF(form, 'fill_15_P.1', DEFAULT_PRESENTER.contact);
+}
+
+function fillNN3Template(form: any, bundle: any) {
+  const c = bundle.c;
+  const br = br8(c);
+
+  setF(form, 'fill_1_P.1', br);
+  setF(form, 'fill_2_P.1', c.name || c.name_english);
+  setF(form, 'fill_3_P.1', c.chinese_name || c.name_chinese);
+  setF(form, 'fill_4_P.1', c.place_of_incorporation || '');
+
+  // Registered address
+  setF(form, 'fill_5_P.1', c.reg_flat);
+  setF(form, 'fill_6_P.1', c.reg_building);
+  setF(form, 'fill_7_P.1', c.reg_street);
+  setF(form, 'fill_8_P.1', c.reg_district);
+  setF(form, 'fill_9_P.1', c.reg_region || '');
+
+  // Presenter
+  setF(form, 'fill_13_P.1', DEFAULT_PRESENTER.name);
+  setF(form, 'fill_14_P.1', DEFAULT_PRESENTER.address);
+  setF(form, 'fill_15_P.1', DEFAULT_PRESENTER.contact);
+}
+
+function fillNN6Template(form: any, bundle: any) {
+  const c = bundle.c;
+  const br = br8(c);
+
+  setF(form, 'fill_1_P.1', br);
+  setF(form, 'fill_2_P.1', c.name || c.name_english);
+
+  // First director for appointment/cessation
+  const dir = bundle.directors[0];
+  if (dir) {
+    const isNatural = (dir.identity || 'natural') !== 'corporate';
+    if (isNatural) {
+      setF(form, 'fill_3_P.2', dir.name_english || '');
+      setF(form, 'fill_4_P.2', dir.name_chinese || '');
+      setF(form, 'fill_7_P.2', dir.id_number || '');
+      setF(form, 'fill_8_P.2', dir.service_address || dir.address || '');
+    } else {
+      setF(form, 'fill_3_P.3', dir.name_chinese || '');
+      setF(form, 'fill_4_P.3', dir.name_english || '');
+      setF(form, 'fill_11_P.3', dir.id_number || '');
+    }
+    checkF(form, 'cb_2_P.2', true); // director role
+    checkF(form, 'cb_3_P.2', true); // appointment type
+  }
+
+  // Presenter
+  setF(form, 'fill_13_P.1', DEFAULT_PRESENTER.name);
+  setF(form, 'fill_14_P.1', DEFAULT_PRESENTER.contact);
+  setF(form, 'fill_15_P.1', DEFAULT_PRESENTER.address);
+}
+
+// ─── From-scratch builder (fallback) ───
 async function buildPdf(
   bundle: any,
   meta: { code: string; title: string; title_en: string },
@@ -69,7 +496,6 @@ async function buildPdf(
   let y = 800;
   const lineH = 14;
 
-  // Helper: draw a line of text with mixed CJK/ASCII
   const drawLine = (text: string, size = 10, bold = false, color?: any) => {
     if (y < 60) {
       page = doc.addPage([PAGE_W, PAGE_H]);
@@ -84,7 +510,6 @@ async function buildPdf(
     y -= lineH;
   };
 
-  // Helper: centered title
   const drawTitle = (text: string, size = 14, color?: any) => {
     const w = widthOfText(text, cjk, ascii, size);
     const x = (PAGE_W - w) / 2;
@@ -184,7 +609,7 @@ async function buildPdf(
   drawLine(`本文件由公司秘書管理系統自動生成 · ${today}`, 7);
 
   const pdfBytes = await doc.save();
-  return pdfBytes;
+  return new Uint8Array(pdfBytes);
 }
 
 // ─── Route handler ───
@@ -207,10 +632,17 @@ export async function onRequestPost(context: { request: Request; env: Env }) {
     const bundle = await fetchCompanyBundle(env.DB as unknown as D1Database, companyId);
     if (!bundle) return jsonResp({ error: '找不到該公司' }, 404);
 
-    const pdfBytes = await buildPdf(bundle, meta, formCode, env);
+    // Try template-based generation first, fall back to from-scratch
+    let pdfBytes: Uint8Array;
+    const templateResult = await tryBuildFromTemplate(formCode, bundle, env);
+    if (templateResult) {
+      pdfBytes = templateResult;
+    } else {
+      // Fall back to from-scratch builder
+      pdfBytes = await buildPdf(bundle, meta, formCode, env);
+    }
 
-    const bytes = new Uint8Array(pdfBytes);
-    const base64 = uint8ToBase64(bytes);
+    const base64 = uint8ToBase64(pdfBytes);
 
     const safeName = (bundle.c.name || bundle.c.chinese_name || 'company')
       .replace(/[^\w一-鿿-]/g, '_').slice(0, 30);

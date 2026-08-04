@@ -27,7 +27,7 @@ interface QueryBuilder {
 }
 
 // Build fetch options
-function getAccessToken(): string {
+export function getAccessToken(): string {
   return localStorage.getItem("secretary_jwt") || "";
 }
 

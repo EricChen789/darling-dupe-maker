@@ -1,0 +1,65 @@
+Based on the provided NDR1 form (Page 3), here are the **actual field values** found in **Section 12C and Section 13** (Nominee Natural Person Details):
+
+---
+
+### ✅ **Section 12C: Particulars of the Natural Person Nominated to be Given Notice of the Deregistration**
+
+#### **Name of the Natural Person Nominated**
+- **中文姓名 (Name in Chinese):**  
+  → *Shea Kam Fai*
+
+- **英文姓名 (Name in English):**
+  - **姓氏 (Surname):**  
+    → *Shea*
+  - **名字 (Other Names):**  
+    → *Kam Fai*
+
+---
+
+### ✅ **Section 13: Correspondence Address**
+
+- **室／樓／座等 (Flat / Floor / Block etc.):**  
+  → *Room 405, 4/F*
+
+- **大廈 (Building):**  
+  → *Tung Ning Building*
+
+- **街道／屋苑／地段／村等 (Street / Estate / Lot / Village etc.):**  
+  → *249-253 Des Voeux Road Central*
+
+- **區／市／省／州／郵遞區號等 (District / City / Province / State / Postal Code etc.):**  
+  → *Sheung Wan*
+
+- **國家／地區 (Country / Region):**  
+  → *Hong Kong*
+
+---
+
+### ❌ **Section 14: Contact Information**
+- **電郵地址 (Email Address):**  
+  → *(Blank)*
+
+- **圖文傳真號碼 (Fax Number):**  
+  → *(Blank)*
+
+---
+
+### ✅ Summary of Actual Field Values:
+
+| Field | Value |
+|------|-------|
+| **Chinese Name** | Shea Kam Fai |
+| **English Surname** | Shea |
+| **English Other Names** | Kam Fai |
+| **Flat/Floor/Block** | Room 405, 4/F |
+| **Building** | Tung Ning Building |
+| **Street** | 249-253 Des Voeux Road Central |
+| **District** | Sheung Wan |
+| **Country/Region** | Hong Kong |
+| **Email Address** | Not provided |
+| **Fax Number** | Not provided |
+
+---
+
+✅ All expected name and address details match exactly as specified.  
+❌ Email and Fax fields are left blank.

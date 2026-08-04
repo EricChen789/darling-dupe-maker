@@ -1,0 +1,65 @@
+y=25 x=52 w=120  |PI-ND2A|
+y=34 x=461 w=69  |商業登記號碼|
+y=45 x=428 w=134  |Business Registration Number|
+y=87 x=52 w=357  |委任公司秘書／董事 (自然人) − 受保護資料|
+y=108 x=52 w=497  |Appointment of Company Secretary／Director (Natural Person) –|
+y=128 x=52 w=171  |Protected Information|
+y=143 x=59 w=49  |X|
+y=152 x=198 w=275  |公眾紀錄不會顯示此頁|
+y=173 x=148 w=375  |This page will not be shown on the public record|
+y=203 x=52 w=404  |- 公司須於本頁申報新委任公司秘書的香港身分證或護照的完整號碼。|
+y=217 x=63 w=503  |The full number of Hong Kong Identity Card or passport of the newly appointed company|
+y=230 x=63 w=226  |secretary should be reported on this page.|
+y=249 x=52 w=443  |- 公司須於本頁申報新委任董事的香港身分證或護照的完整號碼及通常住址。|
+y=263 x=52 w=513  |The full number of Hong Kong Identity Card or passport and usual residential address of the|
+y=276 x=63 w=307  |newly appointed director should be reported on this page.|
+y=293 x=52 w=372  |(每一頁PI-ND2A 只可填報一名自然人的受保護資料。如超過一名自然人資料，請另加PI-ND2A 頁填報。|
+y=306 x=52 w=508  |Each PI-ND2A sheet can only report the protected information of 1 natural person. If there is information for more than 1 natural person, please|
+y=315 x=52 w=180  |report separately on additional PI-ND2A sheet(s).)|
+y=326 x=52 w=221  |請在適用的空格內加上  號 Please tick the relevant box(es)|
+y=339 x=52 w=24  |身分|
+y=351 x=52 w=40  |Capacity|
+y=341 x=228 w=49  |公司秘書|
+y=351 x=228 w=73  |Company Secretary|
+y=341 x=335 w=26  |董事|
+y=350 x=335 w=31  |Director|
+y=341 x=420 w=49  |候補董事|
+y=350 x=420 w=65  |Alternate Director|
+y=365 x=52 w=47  |中文姓名|
+y=377 x=52 w=75  |Name in Chinese|
+y=396 x=52 w=47  |英文姓名|
+y=407 x=52 w=72  |Name in English|
+y=399 x=185 w=18  |姓氏|
+y=406 x=172 w=36  |Surname|
+y=427 x=185 w=22  |名字|
+y=435 x=157 w=51  |Other Names|
+y=455 x=52 w=105  |身分識別Identification|
+y=468 x=52 w=126  |(a) 香港身分證(完整號碼)|
+y=479 x=69 w=160  |Hong Kong Identity Card (Full Number)|
+y=473 x=512 w=11  |(|
+y=473 x=557 w=7  |)|
+y=498 x=52 w=41  |(b) 護照|
+y=509 x=69 w=38  |Passport|
+y=501 x=227 w=72  |簽發國家／地區|
+y=510 x=208 w=91  |Issuing Country／Region|
+y=530 x=257 w=42  |完整號碼|
+y=535 x=250 w=50  |Full Number|
+y=558 x=52 w=422  |董事／候補董事的通常住址Usual Residential Address of Director／Alternate Director|
+y=582 x=52 w=58  |室／樓／座等|
+y=588 x=52 w=86  |Flat／Floor／Block etc.|
+y=617 x=52 w=22  |大廈|
+y=623 x=52 w=32  |Building|
+y=650 x=52 w=106  |街道／屋苑／地段／村等|
+y=657 x=52 w=122  |Street／Estate／Lot／Village etc.|
+y=680 x=52 w=124  |區／市／省／州／郵遞區號等|
+y=689 x=52 w=100  |District／City／Province／|
+y=694 x=52 w=92  |State／Postal Code etc.|
+y=718 x=52 w=50  |國家／地區|
+y=724 x=52 w=66  |Country／Region|
+y=795 x=52 w=245  |指明編號 1/2023 (2023 年12 月) Specification No. 1/2023 (December 2023)|
+y=457 x=27 w=10  |32|
+y=562 x=27 w=10  |33|
+y=163 x=27 w=10  |31|
+y=754 x=51 w=195  |(交付表格ND2A 時，請將所有PI-ND2A 頁置於最後。|
+y=764 x=51 w=291  |Please place all PI-ND2A sheets at the end when delivering the Form ND2A.)|
+y=381 x=26 w=10  |15|

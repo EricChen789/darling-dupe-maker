@@ -359,6 +359,17 @@ function buildFormPayload(
         currency,
         totalConsideration: totalConsideration.toFixed(2),
         allotmentDate: `${allotParts.day}/${allotParts.month}/${allotParts.year}`,
+        // Task 1: Non-cash consideration (default: cash-only)
+        nonCashConsideration: false,
+        nonCashTypes: [],
+        nonCashDetails: '',
+        // Task 2: Structured allottees list for P.7 Schedule 2
+        allottees: (allotteeName || allotteeNameZh) ? [{
+          nameEn: allotteeName,
+          nameZh: allotteeNameZh,
+          shares: String(shares),
+          country: 'Hong Kong',
+        }] : [],
         fields: {
           // ── P.1 Header ──
           'fill_1_P.1': br8,

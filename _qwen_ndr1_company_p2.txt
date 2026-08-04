@@ -1,0 +1,46 @@
+Based on the provided **NDR1 Form, Page 2**, here is the verification of your three checks:
+
+---
+
+### ✅ **1. Body Corporate Name Field (fill_5)**  
+**Check:** Should contain company name.  
+**Result:** ✅ **Correct**  
+- The field **"申請人名稱 (法人團體) Name of Applicant (Body Corporate)"** contains:  
+  **"Add More Wealth Company Limited"**  
+  ✔️ This is a valid company name and correctly filled.
+
+---
+
+### ✅ **2. Natural Person Name Fields (Chinese Name / Surname / Other Names)**  
+**Check:** Should be **empty** since applicant is a **body corporate**, not a natural person.  
+**Result:** ✅ **Correct**  
+- **中文姓名 (Name in Chinese):** Empty  
+- **英文姓名 - 姓氏 (Surname):** Empty  
+- **名字 (Other Names):** Empty  
+✔️ All fields are blank as required when applying as a company.
+
+---
+
+### ✅ **3. Address Fields (5 fields)**  
+**Check:** List actual values found in the address section.  
+**Result:** ✅ Below are the **actual values** entered:
+
+| Field | Value |
+|------|-------|
+| **室／樓／座等 (Flat / Floor / Block etc.)** | Room 405, 4/F |
+| **大廈 (Building)** | Tung Ning Building |
+| **街道／屋苑／地段／村等 (Street / Estate / Lot / Village etc.)** | 249-253 Des Voeux Road Central |
+| **區／市／省／州／郵遞區號等 (District / City / Province / State / Postal Code etc.)** | Sheung Wan |
+| **國家／地區 (Country / Region)** | Hong Kong |
+
+> Note: While "Sheung Wan" is a district, it's acceptable in this context as a location identifier. No postal code is provided, which is common in Hong Kong forms unless specifically required.
+
+---
+
+### ✅ Summary:
+All entries are **correctly completed** for a **company applicant**:
+- Company name is present.
+- Natural person fields are left blank.
+- Correspondence address is fully filled with accurate details.
+
+✅ **Form is properly completed per requirements.**

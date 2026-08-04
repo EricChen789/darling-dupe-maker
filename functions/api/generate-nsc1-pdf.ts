@@ -136,49 +136,78 @@ export async function onRequest(context: { request: Request; env: Env }) {
     setIfEmpty('fill_34_P.1', rget(data, 'presentorEmail') || DEFAULT_PRESENTER.email);
     setIfEmpty('fill_35_P.1', rget(data, 'presentorReference') || DEFAULT_PRESENTER.reference);
 
-    // ═══ P.3 Share Capital Table (TOTAL post-allotment) ═══
-    // Query company share capital from DB
+    // ═══ P.3 Share Capital Table (TOTAL post-allotment, Section 6) ═══
+    // 1. Query existing share_capital from DB  2. Add new allotment  3. Single-currency → consolidate
     let totalShares = 0, totalPaid = 0, totalUnpaid = 0;
     let shareCapitalCurrency = 'HKD';
+    const byClass: Record<string, {currency: string; shares: number; paid: number; unpaid: number}> = {};
     if (companyId && (env as any).DB) {
       try {
         const db = (env as any).DB as D1Database;
-        // Get all share capital records for this company
+        // Get all share capital records
         const scRows = await db.prepare(
-          "SELECT * FROM share_capital WHERE company_id = ? ORDER BY class_name"
+          "SELECT class_name, currency, COALESCE(total_number,0) as total_number, "
+          + "COALESCE(total_amount,0) as total_amount, COALESCE(paid_up,0) as paid_up, "
+          + "COALESCE(unpaid,0) as unpaid FROM share_capital WHERE company_id = ? ORDER BY class_name"
         ).bind(companyId).all();
         if (scRows.results && scRows.results.length > 0) {
-          // Fill P.3 share capital table from DB (up to 3 rows)
-          for (let i = 0; i < Math.min(scRows.results.length, 3); i++) {
-            const sc = scRows.results[i] as any;
-            const base = 2 + i * 6; // fill_2, fill_8, fill_14
-            fields[`fill_${base}_P.3`] = sc.class_name || sc.className || '';
-            fields[`fill_${base+1}_P.3`] = sc.currency || shareCapitalCurrency;
-            fields[`fill_${base+2}_P.3`] = String(sc.total_number || sc.totalNumber || '');
-            fields[`fill_${base+3}_P.3`] = String(sc.total_amount || sc.totalAmount || '');
-            fields[`fill_${base+4}_P.3`] = String(sc.paid_up || sc.paidUp || '');
-            fields[`fill_${base+5}_P.3`] = String(sc.unpaid || '0');
-            totalShares += Number(sc.total_number || sc.totalNumber || 0);
-            totalPaid += Number(sc.paid_up || sc.paidUp || 0);
-            totalUnpaid += Number(sc.unpaid || 0);
+          for (const sc of scRows.results as any[]) {
+            const cls = (sc.class_name || sc.className || 'Ordinary').trim();
+            const cur = (sc.currency || 'HKD').trim();
+            if (!byClass[cls]) byClass[cls] = {currency: cur, shares: 0, paid: 0, unpaid: 0};
+            byClass[cls].shares += Number(sc.total_number || sc.totalNumber || 0);
+            byClass[cls].paid += Number(sc.total_amount || sc.totalAmount || 0);
+            byClass[cls].unpaid += Number(sc.unpaid || 0);
           }
         } else {
-          // No share_capital table — compute from share_transactions
+          // Fall back to share_transactions
           const txRows = await db.prepare(
-            "SELECT COALESCE(SUM(shares), 0) as total_shares, share_type, currency FROM share_transactions WHERE company_id = ? GROUP BY share_type"
+            "SELECT COALESCE(SUM(shares), 0) as total_shares, share_type, currency "
+            + "FROM share_transactions WHERE company_id = ? GROUP BY share_type"
           ).bind(companyId).all();
           if (txRows.results && txRows.results.length > 0) {
-            for (let i = 0; i < Math.min(txRows.results.length, 3); i++) {
-              const tx = txRows.results[i] as any;
-              const base = 2 + i * 6;
-              fields[`fill_${base}_P.3`] = tx.share_type || tx.shareType || 'Ordinary';
-              fields[`fill_${base+1}_P.3`] = tx.currency || 'HKD';
-              fields[`fill_${base+2}_P.3`] = String(tx.total_shares || '');
-              fields[`fill_${base+3}_P.3`] = ''; // total amount unknown
-              fields[`fill_${base+4}_P.3`] = ''; // paid unknown
-              fields[`fill_${base+5}_P.3`] = '';
-              totalShares += Number(tx.total_shares || 0);
+            for (const tx of txRows.results as any[]) {
+              const cls = (tx.share_type || tx.shareType || 'Ordinary').trim();
+              const cur = (tx.currency || 'HKD').trim();
+              if (!byClass[cls]) byClass[cls] = {currency: cur, shares: 0, paid: 0, unpaid: 0};
+              byClass[cls].shares += Number(tx.total_shares || 0);
             }
+          }
+        }
+        // Add new allotment to totals
+        const newClass = (rget(data, 'shareClass') || rget(data, 'allotteeClass') || 'Ordinary').trim();
+        const newShares = Number(rget(data, 'shares') || rget(data, 'allotteeShares') || 0);
+        const newCurrency = (rget(data, 'currency') || 'HKD').trim();
+        const newPaidPerShare = Number(rget(data, 'pricePerShare') || 0);
+        if (!byClass[newClass]) byClass[newClass] = {currency: newCurrency, shares: 0, paid: 0, unpaid: 0};
+        byClass[newClass].currency = byClass[newClass].currency || newCurrency;
+        byClass[newClass].shares += newShares;
+        byClass[newClass].paid += newShares * newPaidPerShare;
+        // Fill P.3 table (3 rows max, 6 cols)
+        const currencies = [...new Set(Object.values(byClass).map(v => v.currency).filter(Boolean))];
+        if (currencies.length === 1 && Object.keys(byClass).length > 0) {
+          // Single currency: consolidate all classes
+          const allShares = Object.values(byClass).reduce((s, v) => s + v.shares, 0);
+          const allPaid = Object.values(byClass).reduce((s, v) => s + v.paid, 0);
+          const allUnpaid = Object.values(byClass).reduce((s, v) => s + v.unpaid, 0);
+          fields['fill_2_P.3'] = '普通股 Ordinary';
+          fields['fill_3_P.3'] = currencies[0] || 'HKD';
+          fields['fill_4_P.3'] = String(allShares);
+          if (allPaid > 0) fields['fill_5_P.3'] = allPaid.toFixed(2);
+          fields['fill_6_P.3'] = allUnpaid > 0 ? allUnpaid.toFixed(2) : '0.00';
+          totalShares = allShares; totalPaid = allPaid; totalUnpaid = allUnpaid;
+        } else {
+          let idx = 0;
+          for (const [clsName, v] of Object.entries(byClass)) {
+            if (idx >= 3) break;
+            const base = 2 + idx * 6;
+            fields[`fill_${base}_P.3`] = clsName;
+            fields[`fill_${base+1}_P.3`] = v.currency || 'HKD';
+            fields[`fill_${base+2}_P.3`] = String(v.shares);
+            if (v.paid > 0) fields[`fill_${base+3}_P.3`] = v.paid.toFixed(2);
+            fields[`fill_${base+4}_P.3`] = v.unpaid > 0 ? v.unpaid.toFixed(2) : '0.00';
+            totalShares += v.shares; totalPaid += v.paid; totalUnpaid += v.unpaid;
+            idx++;
           }
         }
       } catch { /* non-critical */ }
@@ -187,37 +216,61 @@ export async function onRequest(context: { request: Request; env: Env }) {
     // ═══ P.7 Schedule 2: Allottee personal details ═══
     const allotteeName = rget(data, 'allotteeName') || '';
     const allotteeNameZh = rget(data, 'allotteeNameZh') || '';
-    // Allottee address: accept flat format or structured
     const allotteeAddress = rget(data, 'allotteeAddress') || '';
     const allotteeFlat = rget(data, 'allotteeFlat') || '';
     const allotteeBuilding = rget(data, 'allotteeBuilding') || '';
     const allotteeStreet = rget(data, 'allotteeStreet') || '';
     const allotteeDistrict = rget(data, 'allotteeDistrict') || '';
     const allotteeCountry = rget(data, 'allotteeCountry') || 'Hong Kong';
+    // Allottees list (new structured format)
+    const allotteesList: any[] = data.allottees || [];
+    if ((allotteeName || allotteeNameZh) && allotteesList.length === 0) {
+      allotteesList.push({nameEn: allotteeName, nameZh: allotteeNameZh, address: allotteeAddress});
+    }
+    const hasAllottees = allotteesList.length > 0 &&
+      allotteesList.some((a: any) => (a.nameEn || a.nameZh || '').trim());
 
-    if (allotteeName || allotteeNameZh) {
-      // Allottee 1: fill_2=Chinese name, fill_3=English name
+    if (hasAllottees) {
+      // Structured allottees list (new format)
+      const p7Specs1: [string, string][] = [
+        ['fill_2_P.7', 'nameZh'], ['fill_3_P.7', 'nameEn'], ['fill_4_P.7', 'surname'],
+        ['fill_5_P.7', 'otherNames'], ['fill_6_P.7', 'flat'], ['fill_7_P.7', 'building'],
+        ['fill_8_P.7', 'street'], ['fill_9_P.7', 'district'], ['fill_10_P.7', 'postal'],
+        ['fill_11_P.7', 'country'], ['fill_13_P.7', 'shares'],
+      ];
+      const p7Specs2: [string, string][] = [
+        ['fill_15_P.7', 'nameZh'], ['fill_16_P.7', 'nameEn'], ['fill_17_P.7', 'surname'],
+        ['fill_18_P.7', 'otherNames'], ['fill_19_P.7', 'flat'], ['fill_20_P.7', 'building'],
+        ['fill_21_P.7', 'street'], ['fill_22_P.7', 'district'], ['fill_23_P.7', 'country'],
+        ['fill_24_P.7', 'shares'],
+      ];
+      for (let i = 0; i < Math.min(allotteesList.length, 2); i++) {
+        const specs = i === 0 ? p7Specs1 : p7Specs2;
+        const a = allotteesList[i] || {};
+        for (const [field, key] of specs) {
+          const val = String(a[key] || '').trim();
+          if (val) setIfEmpty(field, val);
+        }
+      }
+    } else if (allotteeName || allotteeNameZh) {
+      // Backward compatibility: flat allottee fields
       if (allotteeNameZh) setIfEmpty('fill_2_P.7', allotteeNameZh);
       if (allotteeName) setIfEmpty('fill_3_P.7', allotteeName);
-      // Parse English name into surname/other names
       if (allotteeName && !allotteeNameZh) {
         const nameParts = allotteeName.trim().split(/\s+/);
         if (nameParts.length >= 2) {
-          setIfEmpty('fill_4_P.7', nameParts[nameParts.length - 1]); // surname = last word
-          setIfEmpty('fill_5_P.7', nameParts.slice(0, -1).join(' ')); // other names
+          setIfEmpty('fill_4_P.7', nameParts[nameParts.length - 1]);
+          setIfEmpty('fill_5_P.7', nameParts.slice(0, -1).join(' '));
         } else {
           setIfEmpty('fill_4_P.7', allotteeName);
         }
       }
-      // Address: fill_6-11 (flat/building/street/district/postal/country)
       if (allotteeFlat) setIfEmpty('fill_6_P.7', allotteeFlat);
       if (allotteeBuilding) setIfEmpty('fill_7_P.7', allotteeBuilding);
       if (allotteeStreet) setIfEmpty('fill_8_P.7', allotteeStreet);
       if (allotteeDistrict) setIfEmpty('fill_9_P.7', allotteeDistrict);
       if (allotteeCountry) setIfEmpty('fill_11_P.7', allotteeCountry);
-      // If flat address provided, use it as primary
       if (allotteeAddress && !allotteeFlat) setIfEmpty('fill_6_P.7', allotteeAddress);
-      // Shares allotted
       if (shares) setIfEmpty('fill_13_P.7', String(shares));
     }
 
@@ -251,13 +304,37 @@ export async function onRequest(context: { request: Request; env: Env }) {
     // P.1: cb_1 = share capital increased → check for normal allotment
     try { form.getCheckBox('cb_1_P.1').check(); } catch { /* skip */ }
 
-    // P.2: Default — wholly for cash (cb_1) + allottees in Schedule 2 (cb_3)
-    try { form.getCheckBox('cb_1_P.2').check(); } catch { /* skip */ }
-    try { form.getCheckBox('cb_3_P.2').check(); } catch { /* skip */ }
+    // ═══ Non-cash consideration (P.1 + P.2 Section C) ═══
+    const nonCash = !!(rget(data, 'nonCashConsideration'));
+    if (nonCash) {
+      try { form.getCheckBox('cb_2_P.1').check(); } catch { /* skip */ }  // P.1 non-cash indicator
+      const nonCashTypes: string[] = data.nonCashTypes || [];
+      const TYPE_TO_CB: Record<string, string> = {
+        'division2_part13': 'cb_1_P.2',
+        'credited_fully_paid': 'cb_2_P.2',
+        'written_contract_s142': 'cb_3_P.2',
+      };
+      for (const t of nonCashTypes) {
+        const cbName = TYPE_TO_CB[t];
+        if (cbName) {
+          try { form.getCheckBox(cbName).check(); } catch { /* skip */ }
+        }
+      }
+      // Fill Section C details text area
+      const nonCashDetails = rget(data, 'nonCashDetails') || '';
+      if (nonCashDetails) {
+        try {
+          const tf = form.getTextField('fill_17_P.2');
+          tf.setText(nonCashDetails);
+          tf.updateAppearances(helv);
+        } catch { /* skip */ }
+      }
+    }
 
-    // P.3: cb_1 = allottee details in Schedule 2 (paper)
-    if (allotteeName || allotteeNameZh) {
-      try { form.getCheckBox('cb_1_P.3').check(); } catch { /* skip */ }
+    // P.2/P.3: Allottee details in Schedule 2
+    if (hasAllottees) {
+      try { form.getCheckBox('cb_4_P.3').check(); } catch { /* skip */ }  // P.2 bottom
+      try { form.getCheckBox('cb_1_P.3').check(); } catch { /* skip */ }  // P.3 Section 5
     }
 
     // ═══ P.3 Signature: Director crossed out (index 1), Secretary kept (index 0) ═══
@@ -292,7 +369,7 @@ export async function onRequest(context: { request: Request; env: Env }) {
     const allPages = pdfDoc.getPages();
     const keepIndices = new Set([0, 1, 2]);  // P.1, P.2, P.3
 
-    if (allotteeName || allotteeNameZh) {
+    if (hasAllottees) {
       keepIndices.add(6);  // P.7 = Schedule 2 allottee details
     }
 

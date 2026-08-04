@@ -6567,26 +6567,77 @@ def _fill_nsc1_pdf(data):
     for k, v in presenter_defaults.items():
         _set_if_empty(k, v)
 
-    # ── P.3: Share Capital Table (TOTAL post-allotment) ──
-    # Query share_transactions to compute totals per share class
+    # ── P.3: Share Capital Table (TOTAL post-allotment, Section 6) ──
+    # 1. Query existing share_capital from DB
+    # 2. Add the new allotment shares
+    # 3. Group by class; single-currency → consolidate into one row
     if company_id:
         try:
             db = get_db()
-            tx_rows = db.execute(
-                "SELECT share_type, currency, COALESCE(SUM(shares), 0) as total_shares "
-                "FROM share_transactions WHERE company_id = ? GROUP BY share_type",
+            sc_rows = db.execute(
+                "SELECT class_name, currency, COALESCE(total_number,0) as total_number, "
+                "COALESCE(total_amount,0) as total_amount, COALESCE(paid_up,0) as paid_up, "
+                "COALESCE(unpaid,0) as unpaid "
+                "FROM share_capital WHERE company_id = ?",
                 (company_id,)
             ).fetchall()
-            if tx_rows:
-                for i, tx in enumerate(tx_rows):
+            by_class = {}
+            for sc in sc_rows:
+                cls = (sc['class_name'] or 'Ordinary').strip()
+                cur = (sc['currency'] or 'HKD').strip()
+                if cls not in by_class:
+                    by_class[cls] = {'currency': cur, 'shares': 0, 'paid': 0.0, 'unpaid': 0.0}
+                by_class[cls]['shares'] += int(sc['total_number'] or 0)
+                by_class[cls]['paid'] += float(sc['total_amount'] or 0)
+                by_class[cls]['unpaid'] += float(sc['unpaid'] or 0)
+            # If no share_capital rows, fall back to share_transactions
+            if not by_class:
+                tx_rows = db.execute(
+                    "SELECT share_type, currency, COALESCE(SUM(shares), 0) as total_shares "
+                    "FROM share_transactions WHERE company_id = ? GROUP BY share_type",
+                    (company_id,)
+                ).fetchall()
+                for tx in tx_rows:
+                    cls = (tx['share_type'] or 'Ordinary').strip()
+                    cur = (tx['currency'] or 'HKD').strip()
+                    if cls not in by_class:
+                        by_class[cls] = {'currency': cur, 'shares': 0, 'paid': 0.0, 'unpaid': 0.0}
+                    by_class[cls]['shares'] += int(tx['total_shares'] or 0)
+            # Add new allotment to totals
+            new_class = (data.get('shareClass') or data.get('allotteeClass') or 'Ordinary').strip()
+            new_shares = int(data.get('shares') or data.get('allotteeShares') or 0)
+            new_currency = (data.get('currency') or 'HKD').strip()
+            new_paid = float(data.get('pricePerShare') or 0)
+            if new_class not in by_class:
+                by_class[new_class] = {'currency': new_currency, 'shares': 0, 'paid': 0.0, 'unpaid': 0.0}
+            by_class[new_class]['currency'] = by_class[new_class]['currency'] or new_currency
+            by_class[new_class]['shares'] += new_shares
+            by_class[new_class]['paid'] += new_shares * new_paid
+            # Fill P.3 table (3 rows max, 6 cols: Class|Currency|Number|Paid|Unpaid|Total)
+            currencies = set(v['currency'] for v in by_class.values() if v['currency'])
+            if len(currencies) == 1 and by_class:
+                # Single currency: consolidate all classes into one row
+                total_shares = sum(v['shares'] for v in by_class.values())
+                total_paid = sum(v['paid'] for v in by_class.values())
+                total_unpaid = sum(v['unpaid'] for v in by_class.values())
+                single_currency = list(currencies)[0] or 'HKD'
+                _set_if_empty('fill_2_P.3', '普通股 Ordinary')
+                _set_if_empty('fill_3_P.3', single_currency)
+                _set_if_empty('fill_4_P.3', str(total_shares))
+                if total_paid > 0:
+                    _set_if_empty('fill_5_P.3', f'{total_paid:.2f}')
+                _set_if_empty('fill_6_P.3', f'{total_unpaid:.2f}' if total_unpaid > 0 else '0.00')
+            else:
+                for i, (cls_name, v) in enumerate(by_class.items()):
                     if i >= 3:
-                        break  # Template has 3 rows max
+                        break
                     base = 2 + i * 6  # fill_2, fill_8, fill_14
-                    _set_if_empty(f'fill_{base}_P.3', tx['share_type'] or 'Ordinary')
-                    _set_if_empty(f'fill_{base+1}_P.3', tx['currency'] or 'HKD')
-                    _set_if_empty(f'fill_{base+2}_P.3', str(tx['total_shares']))
-                    # Total amount / paid / unpaid — computed from transactions
-                    # (If detailed amounts aren't available, leave for manual fill)
+                    _set_if_empty(f'fill_{base}_P.3', cls_name)
+                    _set_if_empty(f'fill_{base+1}_P.3', v['currency'] or 'HKD')
+                    _set_if_empty(f'fill_{base+2}_P.3', str(v['shares']))
+                    if v['paid'] > 0:
+                        _set_if_empty(f'fill_{base+3}_P.3', f"{v['paid']:.2f}")
+                    _set_if_empty(f'fill_{base+4}_P.3', f"{v['unpaid']:.2f}" if v['unpaid'] > 0 else '0.00')
         except Exception:
             pass  # Non-critical; user can fill manually
 
@@ -6615,16 +6666,43 @@ def _fill_nsc1_pdf(data):
     # ── Checkboxes ──
     for name in (data.get('checkboxes', []) or []):
         _check(doc, fmap, name, True)
-    # Default checkboxes
-    _check(doc, fmap, 'cb_1_P.1', True)   # Share capital increased
-    _check(doc, fmap, 'cb_1_P.2', True)   # Wholly for cash
-    _check(doc, fmap, 'cb_3_P.2', True)   # Allottee details in Schedule 2
+    # Default: share capital increased
+    _check(doc, fmap, 'cb_1_P.1', True)
 
-    # P.3: cb_1 = allottee details in Schedule 2 (paper)
+    # ── Allottee name (may come from either top-level or allottees[0]) ──
     allottee_name = (data.get('allotteeName') or '').strip()
     allottee_name_zh = (data.get('allotteeNameZh') or '').strip()
-    if allottee_name or allottee_name_zh:
+    allottees_list = data.get('allottees', [])
+    if (allottee_name or allottee_name_zh) and not allottees_list:
+        allottees_list = [{'nameEn': allottee_name, 'nameZh': allottee_name_zh,
+                           'address': data.get('allotteeAddress', ''),
+                           'shares': shares}]
+    has_allottees = bool(allottees_list and len(allottees_list) > 0 and
+                         any((a.get('nameEn', '') or a.get('nameZh', '') or '').strip() for a in allottees_list))
+
+    # ── Non-cash consideration (P.1 + P.2 Section C) ──
+    non_cash = data.get('nonCashConsideration', False)
+    if non_cash:
+        _check(doc, fmap, 'cb_2_P.1', True)  # P.1: non-cash consideration indicator
+        non_cash_types = data.get('nonCashTypes', [])
+        _TYPE_TO_CB = {
+            'division2_part13': 'cb_1_P.2',
+            'credited_fully_paid': 'cb_2_P.2',
+            'written_contract_s142': 'cb_3_P.2',
+        }
+        for t in non_cash_types:
+            cb_name = _TYPE_TO_CB.get(t)
+            if cb_name:
+                _check(doc, fmap, cb_name, True)
+        # Fill Section C details text area
+        details = data.get('nonCashDetails', '')
+        if details:
+            _set('fill_17_P.2', details)
+
+    # P.3: cb_1 = allottee details in Schedule 2; P.2: cb_4_P.3 = same (template quark)
+    if has_allottees:
         _check(doc, fmap, 'cb_1_P.3', True)
+        _check(doc, fmap, 'cb_4_P.3', True)
 
     # ── Overlays ──
     for ov in (data.get('overlays', []) or []):
@@ -6641,31 +6719,49 @@ def _fill_nsc1_pdf(data):
             pass
 
     # ── P.7: Schedule 2 — Allottee personal details ──
-    if allottee_name or allottee_name_zh:
-        # Allottee 1 name
+    if has_allottees:
+        for idx, a in enumerate(allottees_list[:2]):  # P.7 fits 2 allottees
+            prefix = 2 if idx == 0 else 15  # Allottee 1: fill_2-13, Allottee 2: fill_15-24
+            name_zh = (a.get('nameZh', '') or a.get('allotteeNameZh', '')).strip()
+            name_en = (a.get('nameEn', '') or a.get('allotteeName', '')).strip()
+            addr = (a.get('address', '') or a.get('allotteeAddress', '')).strip()
+            allottee_shares = a.get('shares', '') or a.get('allotteeShares', '') or shares
+            if name_zh:
+                _set_if_empty(f'fill_{prefix}_P.7', name_zh)
+            if name_en:
+                _set_if_empty(f'fill_{prefix+1}_P.7', name_en)
+                parts = name_en.split()
+                if len(parts) >= 2:
+                    _set_if_empty(f'fill_{prefix+2}_P.7', parts[-1])       # surname
+                    _set_if_empty(f'fill_{prefix+3}_P.7', ' '.join(parts[:-1]))  # other names
+                else:
+                    _set_if_empty(f'fill_{prefix+2}_P.7', name_en)
+            if addr:
+                _set_if_empty(f'fill_{prefix+4}_P.7', addr)
+            if allottee_shares:
+                _set_if_empty(f'fill_{prefix+11}_P.7', str(allottee_shares))
+        # Only fallback to old top-level logic if allottees list is empty
+    elif allottee_name or allottee_name_zh:
+        # Allottee 1 name (backward compatibility)
         if allottee_name_zh:
             _set_if_empty('fill_2_P.7', allottee_name_zh)
         if allottee_name:
             _set_if_empty('fill_3_P.7', allottee_name)
-            # Parse surname/other names
             name_parts = allottee_name.strip().split()
             if len(name_parts) >= 2:
-                _set_if_empty('fill_4_P.7', name_parts[-1])      # surname = last word
-                _set_if_empty('fill_5_P.7', ' '.join(name_parts[:-1]))  # other names
+                _set_if_empty('fill_4_P.7', name_parts[-1])
+                _set_if_empty('fill_5_P.7', ' '.join(name_parts[:-1]))
             else:
                 _set_if_empty('fill_4_P.7', allottee_name)
-        # Address fields
         for key, field in [('allotteeFlat', 'fill_6_P.7'), ('allotteeBuilding', 'fill_7_P.7'),
                            ('allotteeStreet', 'fill_8_P.7'), ('allotteeDistrict', 'fill_9_P.7'),
                            ('allotteeCountry', 'fill_11_P.7')]:
             val = data.get(key, '')
             if val:
                 _set_if_empty(field, str(val))
-        # Fallback: flat address string
         addr = data.get('allotteeAddress', '')
         if addr and not data.get('allotteeFlat', ''):
             _set_if_empty('fill_6_P.7', addr)
-        # Shares allotted
         if shares:
             _set_if_empty('fill_13_P.7', str(shares))
 
@@ -6704,7 +6800,7 @@ def _fill_nsc1_pdf(data):
     # Keep: P.1-P.3 always, P.7 (Schedule 2) if allottee data,
     #       any pages referenced in fields dict or overlays
     keep_indices = {0, 1, 2}  # P.1, P.2, P.3
-    if allottee_name or allottee_name_zh:
+    if has_allottees:
         keep_indices.add(6)  # P.7 = Schedule 2 allottee details
     # Keep pages referenced in fields dict
     for name in fields:

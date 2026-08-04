@@ -16,7 +16,11 @@ interface NSC1GeneratorFormProps { onBack: () => void; initialCompanyId?: string
 
 interface ShareAllotment {
   class: string; currency: string; numberOfShares: string;
-  amountPaid: string; amountUnpaid: string; allotteeName: string;
+  amountPaid: string; amountUnpaid: string;
+  // Allottee details (P.7 Schedule 2)
+  allotteeName: string;
+  allotteeNameZh: string;
+  allotteeAddress: string;
 }
 
 export default function NSC1GeneratorForm({ onBack, initialCompanyId }: NSC1GeneratorFormProps) {
@@ -42,10 +46,15 @@ export default function NSC1GeneratorForm({ onBack, initialCompanyId }: NSC1Gene
     presentorEmail: 'info@twinsail.com',
     presentorReference: 'TS-2026-001',
     signDay: dd, signMonth: mm, signYear: yyyy,
+    // Task 1: Non-cash consideration
+    nonCashConsideration: false,
+    nonCashDetails: '',
   });
+  const [nonCashTypes, setNonCashTypes] = useState<string[]>([]);
 
   const [allotments, setAllotments] = useState<ShareAllotment[]>([
-    { class: '普通股 Ordinary', currency: 'HKD', numberOfShares: '', amountPaid: '', amountUnpaid: '', allotteeName: '' },
+    { class: '普通股 Ordinary', currency: 'HKD', numberOfShares: '', amountPaid: '', amountUnpaid: '',
+      allotteeName: '', allotteeNameZh: '', allotteeAddress: '' },
   ]);
 
   const handleCompanySelect = (companyId: string) => {
@@ -75,7 +84,8 @@ export default function NSC1GeneratorForm({ onBack, initialCompanyId }: NSC1Gene
   const updateAllotment = (i: number, f: keyof ShareAllotment, v: string) =>
     setAllotments(prev => prev.map((a, idx) => idx === i ? { ...a, [f]: v } : a));
   const addAllotment = () =>
-    setAllotments(prev => [...prev, { class: '普通股 Ordinary', currency: 'HKD', numberOfShares: '', amountPaid: '', amountUnpaid: '', allotteeName: '' }]);
+    setAllotments(prev => [...prev, { class: '普通股 Ordinary', currency: 'HKD', numberOfShares: '', amountPaid: '', amountUnpaid: '',
+      allotteeName: '', allotteeNameZh: '', allotteeAddress: '' }]);
   const removeAllotment = (i: number) =>
     setAllotments(prev => prev.length > 1 ? prev.filter((_, idx) => idx !== i) : prev);
 
@@ -165,25 +175,32 @@ export default function NSC1GeneratorForm({ onBack, initialCompanyId }: NSC1Gene
         // ── P.3: Signature section ──
         'fill_27_P.3': formData.presentorName || '',
 
-        // ── P.7: Schedule 2 — Allottee Details (NOT presentor!) ──
+        // ── P.7-10: BR only (allottee details now sent via allottees array) ──
         'fill_1_P.7': formData.brNumber,
-        // Allottee #1
-        'fill_4_P.7': a[0]?.allotteeName || '',
-        'fill_13_P.7': a[0]?.numberOfShares || '',
-        // Allottee #2 (if present)
-        'fill_15_P.7': a[1]?.allotteeName || '',
-        'fill_24_P.7': a[1]?.numberOfShares || '',
-
-        // ── P.8-10: BR on every page ──
         'fill_1_P.8': formData.brNumber,
         'fill_1_P.9': formData.brNumber,
         'fill_1_P.10': formData.brNumber,
       };
 
+      // Build allottees array for P.7 Schedule 2
+      const allottees = allotments
+        .filter(x => (x.allotteeName || '').trim() || (x.allotteeNameZh || '').trim())
+        .map(x => ({
+          nameEn: x.allotteeName || '',
+          nameZh: x.allotteeNameZh || '',
+          address: x.allotteeAddress || '',
+          shares: x.numberOfShares || '',
+        }));
+
       const checkboxes: string[] = [
         'cb_1_P.1',   // Share capital IS increased
         'cb_1_P.7',   // Declaration checkbox
       ];
+      // Allottee Schedule 2 indicators
+      if (allottees.length > 0) {
+        checkboxes.push('cb_4_P.3');  // P.2 bottom (template quirk: named _P.3)
+        checkboxes.push('cb_1_P.3');  // P.3 Section 5
+      }
 
       const overlays: Array<{page: number; text: string; x: number; y: number; fontsize: number}> = [
         // P.3 signature date (index 2) — no AcroForm widgets at "Date:" position (y≈771)
@@ -202,6 +219,17 @@ export default function NSC1GeneratorForm({ onBack, initialCompanyId }: NSC1Gene
           allotmentToDate: `${formData.allotmentToDay}/${formData.allotmentToMonth}/${formData.allotmentToYear}`,
           fields,
           checkboxes,
+          // Task 1: Non-cash consideration
+          nonCashConsideration: formData.nonCashConsideration,
+          nonCashTypes: nonCashTypes,
+          nonCashDetails: formData.nonCashDetails,
+          // Task 2: Allottee details (structured array for P.7)
+          allottees,
+          // Task 3: Share capital data for P.3 computation
+          shares: totals.totalShares,
+          currency: totals.currency,
+          shareClass: a[0]?.class || '普通股 Ordinary',
+          pricePerShare: a[0]?.amountPaid || '1.00',
         }),
       });
       const result = await resp.json();
@@ -324,10 +352,55 @@ export default function NSC1GeneratorForm({ onBack, initialCompanyId }: NSC1Gene
                 <div><Label>股份數目</Label><Input placeholder="例如：10,000" value={a.numberOfShares} onChange={e => updateAllotment(i, 'numberOfShares', e.target.value)} className="mt-1" /></div>
                 <div><Label>每股已繳金額</Label><Input placeholder="例如：1.00" value={a.amountPaid} onChange={e => updateAllotment(i, 'amountPaid', e.target.value)} className="mt-1" /></div>
                 <div><Label>每股未繳金額</Label><Input placeholder="例如：0.00" value={a.amountUnpaid} onChange={e => updateAllotment(i, 'amountUnpaid', e.target.value)} className="mt-1" /></div>
-                <div><Label>獲分配人名稱</Label><Input placeholder="例如：CHAN Tai Man" value={a.allotteeName} onChange={e => updateAllotment(i, 'allotteeName', e.target.value)} className="mt-1" /></div>
+                <div><Label>獲分配人名稱 (英文)</Label><Input placeholder="例如：CHAN Tai Man" value={a.allotteeName} onChange={e => updateAllotment(i, 'allotteeName', e.target.value)} className="mt-1" /></div>
+                <div><Label>獲分配人名稱 (中文)</Label><Input placeholder="例如：陳大文" value={a.allotteeNameZh} onChange={e => updateAllotment(i, 'allotteeNameZh', e.target.value)} className="mt-1" /></div>
+                <div><Label>獲分配人地址</Label><Input placeholder="Flat, Building, Street, District, Country" value={a.allotteeAddress} onChange={e => updateAllotment(i, 'allotteeAddress', e.target.value)} className="mt-1" /></div>
               </div>
             </div>
           ))}
+        </div>
+
+        {/* ── Task 1: Non-Cash Consideration (P.2 Section C) ── */}
+        <div className="border border-border rounded-lg p-4">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox"
+              checked={formData.nonCashConsideration}
+              onChange={e => update('nonCashConsideration', e.target.checked ? 'true' : '')}
+              className="w-4 h-4 rounded" />
+            <span className="font-semibold">公司有非金錢代價配發股份</span>
+            <span className="text-xs text-muted-foreground">（P.1 cb_2 + P.2 Section C）</span>
+          </label>
+          {formData.nonCashConsideration && (
+            <div className="mt-3 space-y-3 pl-6 border-l-2 border-primary/30">
+              <p className="text-xs text-muted-foreground">C. 股份配發的非金錢代價的詳情 — 請選擇適用項：</p>
+              {[
+                { key: 'division2_part13', label: '公司以非金錢代價根據《公司條例》(第622章)第13部第2分部作出的安排進行股份配發' },
+                { key: 'credited_fully_paid', label: '所配發股份已入帳列為已繳足股款（不論有否經過資本化）' },
+                { key: 'written_contract_s142', label: '以非金錢代價配發，關乎第142(2)(d)(iii)條所述的書面合約' },
+              ].map(opt => (
+                <label key={opt.key} className="flex items-start gap-2 cursor-pointer">
+                  <input type="checkbox"
+                    checked={nonCashTypes.includes(opt.key)}
+                    onChange={e => {
+                      if (e.target.checked) {
+                        setNonCashTypes([...nonCashTypes, opt.key]);
+                      } else {
+                        setNonCashTypes(nonCashTypes.filter(k => k !== opt.key));
+                      }
+                    }}
+                    className="w-4 h-4 rounded mt-0.5" />
+                  <span className="text-sm">{opt.label}</span>
+                </label>
+              ))}
+              <div>
+                <Label>詳情 Particulars（將填入 P.2 詳情欄）</Label>
+                <textarea value={formData.nonCashDetails}
+                  onChange={e => update('nonCashDetails', e.target.value)}
+                  placeholder="請輸入非金錢代價的詳情..." rows={4}
+                  className="w-full mt-1 border border-border rounded-md p-2 text-sm" />
+              </div>
+            </div>
+          )}
         </div>
 
         {/* ── Sign Date ── */}

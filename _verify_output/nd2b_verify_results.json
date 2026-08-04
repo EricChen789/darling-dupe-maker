@@ -1,0 +1,1213 @@
+{
+  "form": "ND2B",
+  "timestamp": "2026-08-02 09:27:47",
+  "test_data_summary": {
+    "change_types": [
+      "address",
+      "name",
+      "id",
+      "contact"
+    ],
+    "role": "director",
+    "identity": "natural"
+  },
+  "field_status": {
+    "P.1": [
+      {
+        "name": "fill_1_P.1",
+        "value": "76543210",
+        "type": "text"
+      },
+      {
+        "name": "fill_2_P.1",
+        "value": "ALPHA OMEGA TRADING LIMITED",
+        "type": "text"
+      },
+      {
+        "name": "cb_1_P.1",
+        "value": "",
+        "type": "checkbox"
+      },
+      {
+        "name": "cb_2_P.1",
+        "value": "On",
+        "type": "checkbox"
+      },
+      {
+        "name": "cb_3_P.1",
+        "value": "",
+        "type": "checkbox"
+      },
+      {
+        "name": "fill_3_P.1",
+        "value": "陳大文",
+        "type": "text"
+      },
+      {
+        "name": "fill_4_P.1",
+        "value": "CHAN",
+        "type": "text"
+      },
+      {
+        "name": "fill_5_P.1",
+        "value": "Tai Man",
+        "type": "text"
+      },
+      {
+        "name": "fill_6_P.1",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_7_P.1",
+        "value": "F3689283",
+        "type": "text"
+      },
+      {
+        "name": "fill_8_P.1",
+        "value": "Twinsail Consultants Limited",
+        "type": "text"
+      },
+      {
+        "name": "fill_9_P.1",
+        "value": "Room 1203, 12/F, Wing On Centre, 111 Connaught Road Central, Hong Kong",
+        "type": "text"
+      },
+      {
+        "name": "fill_10_P.1",
+        "value": "+852 2521 3888",
+        "type": "text"
+      },
+      {
+        "name": "fill_11_P.1",
+        "value": "+852 2521 3999",
+        "type": "text"
+      },
+      {
+        "name": "fill_12_P.1",
+        "value": "info@twinsail.com",
+        "type": "text"
+      },
+      {
+        "name": "fill_13_P.1",
+        "value": "TS-2026-ND2B-001",
+        "type": "text"
+      }
+    ],
+    "P.2": [
+      {
+        "name": "fill_1_P.2",
+        "value": "76543210",
+        "type": "text"
+      },
+      {
+        "name": "fill_2_P.2",
+        "value": "CHAN Tai Man",
+        "type": "text"
+      },
+      {
+        "name": "fill_3_P.2",
+        "value": "2026",
+        "type": "text"
+      },
+      {
+        "name": "fill_4_P.2",
+        "value": "08",
+        "type": "text"
+      },
+      {
+        "name": "fill_5_P.2",
+        "value": "01",
+        "type": "text"
+      },
+      {
+        "name": "fill_6_P.2",
+        "value": "陳大明",
+        "type": "text"
+      },
+      {
+        "name": "fill_7_P.2",
+        "value": "CHAN Tai Ming",
+        "type": "text"
+      },
+      {
+        "name": "fill_8_P.2",
+        "value": "2026",
+        "type": "text"
+      },
+      {
+        "name": "fill_9_P.2",
+        "value": "08",
+        "type": "text"
+      },
+      {
+        "name": "fill_10_P.2",
+        "value": "01",
+        "type": "text"
+      },
+      {
+        "name": "fill_11_P.2",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_12_P.2",
+        "value": "CHAN Tai Man (Former) 陳大文（前用名）",
+        "type": "text"
+      },
+      {
+        "name": "fill_13_P.2",
+        "value": "2026",
+        "type": "text"
+      },
+      {
+        "name": "fill_14_P.2",
+        "value": "08",
+        "type": "text"
+      },
+      {
+        "name": "fill_15_P.2",
+        "value": "01",
+        "type": "text"
+      },
+      {
+        "name": "fill_16_P.2",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_17_P.2",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_18_P.2",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_19_P.2",
+        "value": "Room 2501",
+        "type": "text"
+      },
+      {
+        "name": "fill_20_P.2",
+        "value": "Silver Tower",
+        "type": "text"
+      },
+      {
+        "name": "fill_21_P.2",
+        "value": "200 Des Voeux Road Central",
+        "type": "text"
+      },
+      {
+        "name": "fill_22_P.2",
+        "value": "中西區",
+        "type": "text"
+      },
+      {
+        "name": "fill_23_P.2",
+        "value": "香港",
+        "type": "text"
+      },
+      {
+        "name": "fill_24_P.2",
+        "value": "2026",
+        "type": "text"
+      },
+      {
+        "name": "fill_25_P.2",
+        "value": "08",
+        "type": "text"
+      },
+      {
+        "name": "fill_26_P.2",
+        "value": "01",
+        "type": "text"
+      },
+      {
+        "name": "fill_27_P.2",
+        "value": "taiming.chan@example.com",
+        "type": "text"
+      },
+      {
+        "name": "fill_28_P.2",
+        "value": "2026",
+        "type": "text"
+      },
+      {
+        "name": "fill_29_P.2",
+        "value": "08",
+        "type": "text"
+      },
+      {
+        "name": "fill_30_P.2",
+        "value": "01",
+        "type": "text"
+      },
+      {
+        "name": "fill_31_P.2",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_32_P.2",
+        "value": "2026",
+        "type": "text"
+      },
+      {
+        "name": "fill_33_P.2",
+        "value": "08",
+        "type": "text"
+      },
+      {
+        "name": "fill_34_P.2",
+        "value": "01",
+        "type": "text"
+      },
+      {
+        "name": "fill_35_P.2",
+        "value": "G8765432",
+        "type": "text"
+      },
+      {
+        "name": "fill_36_P.2",
+        "value": "HKSAR",
+        "type": "text"
+      },
+      {
+        "name": "fill_37_P.2",
+        "value": "2026",
+        "type": "text"
+      },
+      {
+        "name": "fill_38_P.2",
+        "value": "08",
+        "type": "text"
+      },
+      {
+        "name": "fill_39_P.2",
+        "value": "01",
+        "type": "text"
+      },
+      {
+        "name": "fill_40_P.2",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "cb_1_P.2",
+        "value": "",
+        "type": "checkbox"
+      },
+      {
+        "name": "fill_41_P.2",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_42_P.2",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_43_P.2",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_44_P.2",
+        "value": "",
+        "type": "text"
+      }
+    ],
+    "P.3": [
+      {
+        "name": "fill_1_P.3",
+        "value": "76543210",
+        "type": "text"
+      },
+      {
+        "name": "cb_1_P.3",
+        "value": "",
+        "type": "checkbox"
+      },
+      {
+        "name": "cb_2_P.3",
+        "value": "",
+        "type": "checkbox"
+      },
+      {
+        "name": "cb_3_P.3",
+        "value": "",
+        "type": "checkbox"
+      },
+      {
+        "name": "fill_2_P.3",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_3_P.3",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_4_P.3",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_5_P.3",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_6_P.3",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_7_P.3",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_8_P.3",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_9_P.3",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_10_P.3",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_11_P.3",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_12_P.3",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_13_P.3",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_14_P.3",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_15_P.3",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_16_P.3",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_17_P.3",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_18_P.3",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_19_P.3",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_20_P.3",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_21_P.3",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_22_P.3",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "cb_4_P.3",
+        "value": "",
+        "type": "checkbox"
+      },
+      {
+        "name": "fill_23_P.3",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_24_P.3",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_25_P.3",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_26_P.3",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_27_P.3",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_28_P.3",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_29_P.3",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_30_P.3",
+        "value": "CHAN Tai Ming",
+        "type": "text"
+      },
+      {
+        "name": "Dropdown_1_P.3",
+        "value": " ",
+        "type": "dropdown"
+      },
+      {
+        "name": "Dropdown_2_P.3",
+        "value": " ",
+        "type": "dropdown"
+      },
+      {
+        "name": "fill_31_P.3",
+        "value": "2026-08-01",
+        "type": "text"
+      }
+    ],
+    "P.4": [
+      {
+        "name": "fill_1_P.4",
+        "value": "76543210",
+        "type": "text"
+      },
+      {
+        "name": "cb_1_P.4",
+        "value": "",
+        "type": "checkbox"
+      },
+      {
+        "name": "cb_2_P.4",
+        "value": "",
+        "type": "checkbox"
+      },
+      {
+        "name": "cb_3_P.4",
+        "value": "",
+        "type": "checkbox"
+      },
+      {
+        "name": "fill_2_P.4",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_3_P.4",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_4_P.4",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_5_P.4",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_6_P.4",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_7_P.4",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_8_P.4",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_9_P.4",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_10_P.4",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_11_P.4",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_12_P.4",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_13_P.4",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_14_P.4",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_15_P.4",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_16_P.4",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_17_P.4",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_18_P.4",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_19_P.4",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_20_P.4",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_21_P.4",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_22_P.4",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_23_P.4",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_24_P.4",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_25_P.4",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_26_P.4",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_27_P.4",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_28_P.4",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_29_P.4",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_30_P.4",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_31_P.4",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_32_P.4",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_33_P.4",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_34_P.4",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_35_P.4",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_36_P.4",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_37_P.4",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_38_P.4",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_39_P.4",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_40_P.4",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_41_P.4",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_42_P.4",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_43_P.4",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_44_P.4",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_45_P.4",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "cb_4_P.4",
+        "value": "",
+        "type": "checkbox"
+      },
+      {
+        "name": "fill_46_P.4",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_47_P.4",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_48_P.4",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_49_P.4",
+        "value": "",
+        "type": "text"
+      }
+    ],
+    "P.5": [
+      {
+        "name": "fill_1_P.5",
+        "value": "76543210",
+        "type": "text"
+      },
+      {
+        "name": "cb_1_P.5",
+        "value": "",
+        "type": "checkbox"
+      },
+      {
+        "name": "cb_2_P.5",
+        "value": "",
+        "type": "checkbox"
+      },
+      {
+        "name": "cb_3_P.5",
+        "value": "",
+        "type": "checkbox"
+      },
+      {
+        "name": "fill_2_P.5",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_3_P.5",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_4_P.5",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_5_P.5",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_6_P.5",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_7_P.5",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_8_P.5",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_9_P.5",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_10_P.5",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_11_P.5",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_12_P.5",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_13_P.5",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_14_P.5",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_15_P.5",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_16_P.5",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_17_P.5",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_18_P.5",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_19_P.5",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_20_P.5",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_21_P.5",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_22_P.5",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "cb_4_P.5",
+        "value": "",
+        "type": "checkbox"
+      },
+      {
+        "name": "fill_23_P.5",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_24_P.5",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_25_P.5",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_26_P.5",
+        "value": "",
+        "type": "text"
+      }
+    ],
+    "P.6": [
+      {
+        "name": "fill_1_P.6",
+        "value": "76543210",
+        "type": "text"
+      },
+      {
+        "name": "cb_1_P.6",
+        "value": "",
+        "type": "checkbox"
+      },
+      {
+        "name": "cb_2_P.6",
+        "value": "On",
+        "type": "checkbox"
+      },
+      {
+        "name": "cb_3_P.6",
+        "value": "",
+        "type": "checkbox"
+      },
+      {
+        "name": "fill_2_P.6",
+        "value": "陳大文",
+        "type": "text"
+      },
+      {
+        "name": "fill_3_P.6",
+        "value": "CHAN",
+        "type": "text"
+      },
+      {
+        "name": "fill_4_P.6",
+        "value": "Tai Man",
+        "type": "text"
+      },
+      {
+        "name": "fill_5_P.6",
+        "value": "G8765432",
+        "type": "text"
+      },
+      {
+        "name": "fill_6_P.6",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_7_P.6",
+        "value": "HKSAR",
+        "type": "text"
+      },
+      {
+        "name": "fill_8_P.6",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_9_P.6",
+        "value": "Room 2501, Silver Tower, 200 Des Voeux Road Central, 中西區, 香港",
+        "type": "text"
+      },
+      {
+        "name": "fill_10_P.6",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_11_P.6",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_12_P.6",
+        "value": "",
+        "type": "text"
+      },
+      {
+        "name": "fill_13_P.6",
+        "value": "",
+        "type": "text"
+      }
+    ],
+    "P.7": [],
+    "P.8": [],
+    "P.9": [],
+    "P.10": [],
+    "P.11": [],
+    "P.12": [],
+    "P.13": [],
+    "P.14": []
+  },
+  "page_results": {
+    "1": {
+      "page": 1,
+      "match": false,
+      "confidence": 0.75,
+      "issues": [
+        "商業登記號碼填寫錯誤，應為 '76543210'，但實際為 '76543210'（正確）",
+        "公司名稱填寫正確，為 'ALPHA OMEGA TRADING LIMITED'",
+        "cb_2 勾選正確，已勾選「董事 Director」",
+        "中文姓名填寫正確，為 '陳大文'",
+        "英文姓氏填寫正確，為 'CHAN'",
+        "英文名字填寫正確，為 'Tai Man'",
+        "香港身分證部分號碼填寫正確，為 'F3689283'，且右對齊",
+        "護照簽發地區未填寫，應填 'HKSAR'，但欄位空白",
+        "護照號碼(部分)未填寫，應填 'EL1234567'，但欄位空白",
+        "提交人名稱填寫正確，為 'Twinsail Consultants Limited'",
+        "提交人地址填寫正確，為 'Room 1203, 12/F, Wing On Centre, 111 Connaught Road Central, Hong Kong'",
+        "電話、傳真、電郵、檔號均填寫正確",
+        "所有填寫內容無錯位現象",
+        "字體大小合理，無溢出欄位邊界"
+      ],
+      "fields_ok": 10,
+      "fields_with_issues": [
+        "fill_7b: 護照簽發地區未填寫",
+        "fill_7c: 護照號碼(部分)未填寫"
+      ]
+    },
+    "2": {
+      "page": 2,
+      "error": "Extra data: line 1 column 934 (char 933)",
+      "match": null
+    },
+    "3": {
+      "page": 3,
+      "match": true,
+      "confidence": 0.98,
+      "issues": [
+        "空白頁（法人團體專用，自然人正確留空）"
+      ],
+      "fields_ok": 0,
+      "fields_with_issues": []
+    },
+    "4": {
+      "page": 4,
+      "match": true,
+      "confidence": 1.0,
+      "issues": [
+        "空白頁（法人團體專用，自然人正確留空）"
+      ],
+      "fields_ok": 0,
+      "fields_with_issues": []
+    },
+    "5": {
+      "page": 5,
+      "match": true,
+      "confidence": 1.0,
+      "issues": [
+        "空白頁（法人團體專用，自然人正確留空）"
+      ],
+      "fields_ok": 0,
+      "fields_with_issues": []
+    },
+    "6": {
+      "page": 6,
+      "match": false,
+      "confidence": 0.75,
+      "issues": [
+        "填寫的香港身份證號碼為 'G8765432'，但欄位中僅顯示 'G 8 7 6 5 4 3 2'，缺少括號內的數字（應為完整號碼）",
+        "新地址欄位填寫內容為 'Room 2501, Silver Tower, 200 Des Voeux Road Central'，與預期 'Room 2501, Silver Tower...' 不符，存在樓層號錯誤（2501 vs 2501）",
+        "中文姓名欄位填寫正確，但未驗證是否為現有董事姓名，需核對P.1一致性",
+        "提交人資料欄位未填寫，但此頁為受保護資料頁，通常不需提交人資訊，屬可接受"
+      ],
+      "fields_ok": 3,
+      "fields_with_issues": {
+        "fill_5": "HKID 號碼格式不完整，缺少括號內數字",
+        "fill_9": "地址樓層號錯誤，應為 Room 2501 而非 Room 2501",
+        "cb_2": "勾選正確，但需與P.1一致驗證"
+      }
+    },
+    "7": {
+      "page": 7,
+      "match": false,
+      "confidence": 0.1,
+      "issues": [
+        "此頁為ND2B表格的附註及引言部分，非第7頁應有的填寫內容",
+        "缺少應填寫的董事或公司秘書資料欄位",
+        "未見提交人資料填寫區",
+        "無checkbox勾選狀態",
+        "欄位內容完全空白，不符合ND2B第7頁標準格式"
+      ],
+      "fields_ok": 0,
+      "fields_with_issues": [
+        "所有欄位: 缺失應填寫內容，頁面內容與ND2B第7頁標準格式不符"
+      ]
+    },
+    "8": {
+      "page": 8,
+      "match": false,
+      "confidence": 0.1,
+      "issues": [
+        "此頁為ND2B表格第8頁，但內容為說明文字及示例，並非填寫欄位，不符合標準填寫格式",
+        "缺少應填寫的公司秘書或董事資料欄位",
+        "無任何填寫內容，僅為指引說明"
+      ],
+      "fields_ok": 0,
+      "fields_with_issues": [
+        "所有欄位: 此頁應為填寫公司秘書或董事更改詳情之頁面，但實際內容為說明文字，未提供填寫欄位"
+      ]
+    },
+    "9": {
+      "page": 9,
+      "match": false,
+      "confidence": 0.1,
+      "issues": [
+        "此頁為ND2B表格的說明文字，非填寫欄位頁面",
+        "內容為第14至20條填報指引，並非實際填寫資料",
+        "無任何填寫欄位或checkbox可驗證"
+      ],
+      "fields_ok": 0,
+      "fields_with_issues": []
+    },
+    "10": {
+      "page": 10,
+      "match": true,
+      "confidence": 1.0,
+      "issues": [
+        "空白頁（法人團體專用，自然人正確留空）"
+      ],
+      "fields_ok": 0,
+      "fields_with_issues": []
+    },
+    "11": {
+      "page": 11,
+      "match": false,
+      "confidence": 0.85,
+      "issues": [
+        "此頁為ND2B表格的說明頁，非第11頁填寫內容",
+        "實際內容為表格填寫指引，而非個人資料填寫欄位",
+        "缺少應有的填寫欄位如姓名、身份證號碼、地址等"
+      ],
+      "fields_ok": 0,
+      "fields_with_issues": {
+        "Page Content": "此頁為表格說明頁，非第11頁填寫內容"
+      }
+    },
+    "12": {
+      "page": 12,
+      "match": false,
+      "confidence": 0.85,
+      "issues": [
+        "此頁為ND2B表格第12頁，但內容僅顯示第10至13條說明文字，並無實際填寫欄位或資料填寫區域",
+        "缺少應有的填寫欄位如公司秘書或董事的商業登記號碼、更改詳情等",
+        "未見任何checkbox勾選狀態",
+        "提交人資料欄位缺失",
+        "字體大小合理，但內容非填寫資料而是說明文字"
+      ],
+      "fields_ok": 0,
+      "fields_with_issues": {
+        "12. 商業登記號碼": "欄位缺失，僅有說明文字",
+        "13. 更改詳情": "欄位缺失，僅有說明文字",
+        "提交人資料": "欄位缺失"
+      }
+    },
+    "13": {
+      "page": 13,
+      "match": true,
+      "confidence": 1.0,
+      "issues": [
+        "空白頁（法人團體專用，自然人正確留空）"
+      ],
+      "fields_ok": 0,
+      "fields_with_issues": []
+    },
+    "14": {
+      "page": 14,
+      "match": true,
+      "confidence": 1.0,
+      "issues": [
+        "空白頁（法人團體專用，自然人正確留空）"
+      ],
+      "fields_ok": 0,
+      "fields_with_issues": []
+    }
+  },
+  "summary": {
+    "total_pages": 14,
+    "passed": 6,
+    "failed": 7,
+    "errors": 1,
+    "avg_confidence": 0.73,
+    "all_ok": false
+  }
+}

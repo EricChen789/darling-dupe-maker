@@ -1,0 +1,29 @@
+y=544 x=68  |出任董事職位同意書Consent to Act as Director|
+y=558 x=68  |本人謹代表上述公司確認，上述公司同意擔任公司的董事／候補董事*。|
+y=568 x=68  |I, acting on behalf of the above named company, confirm that the above company consents to act as director／|
+y=578 x=68  |alternate director* of this company.|
+y=593 x=68  |簽署Signed :|
+y=609 x=68  |姓名Name  :|
+y=622 x=241  |董事(法人團體)的董事／公司秘書／獲授權人士*|
+y=631 x=195  |Director／Company Secretary／Authorized Person of the Director (Body Corporate)*|
+y=644 x=68  |本通知書包括下列續頁／PI-ND2A 頁 This Notice includes the following Continuation Sheet(s)／PI-ND2A Sheet(s)|
+y=660 x=72  |續頁Continuation Sheet(s)|
+y=660 x=226  |A|
+y=660 x=273  |B|
+y=660 x=321  |C|
+y=660 x=351  |PI-ND2A (不會供公眾查閱 NOT for Public Inspection)|
+y=679 x=72  |頁數Number of pages|
+y=676 x=352  |頁數Number of pages|
+y=698 x=51  |5 確認(適用的話) Confirmation (If applicable)|
+y=713 x=66  |名列本通知書內的每一名獲委任為公司秘書的自然人通常居於香港。|
+y=725 x=66  |Each natural person appointed as company secretary and named in this Notice ordinarily resides in Hong Kong.|
+y=743 x=54  |簽署Signed :|
+y=763 x=330  |日期Date :|
+y=764 x=54  |姓名Name|
+y=765 x=117  |:|
+y=776 x=117  |董事Director／公司秘書Company Secretary *|
+y=776 x=389  |日DD  /  月MM  /  年YYYY|
+y=790 x=51  |*請刪去不適用者 Delete whichever does not apply|
+y=745 x=28  |6|
+y=548 x=26  |29|
+y=701 x=26  |30|

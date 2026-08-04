@@ -6720,26 +6720,66 @@ def _fill_nsc1_pdf(data):
 
     # ── P.7: Schedule 2 — Allottee personal details ──
     if has_allottees:
+        # Field specs for each allottee slot (widget name → object key)
+        p7_specs_a1 = [
+            ('fill_2_P.7', 'nameZh'), ('fill_3_P.7', 'nameEn'),
+            ('fill_4_P.7', 'surname'), ('fill_5_P.7', 'otherNames'),
+            ('fill_6_P.7', 'flat'), ('fill_7_P.7', 'building'),
+            ('fill_8_P.7', 'street'), ('fill_9_P.7', 'district'),
+            ('fill_10_P.7', 'postal'), ('fill_11_P.7', 'country'),
+            ('fill_12_P.7', 'remarks'), ('fill_13_P.7', 'shares'),
+        ]
+        p7_specs_a2 = [
+            ('fill_15_P.7', 'nameZh'), ('fill_16_P.7', 'nameEn'),
+            ('fill_17_P.7', 'surname'), ('fill_18_P.7', 'otherNames'),
+            ('fill_19_P.7', 'flat'), ('fill_20_P.7', 'building'),
+            ('fill_21_P.7', 'street'), ('fill_22_P.7', 'district'),
+            ('fill_23_P.7', 'country'), ('fill_24_P.7', 'shares'),
+        ]
         for idx, a in enumerate(allottees_list[:2]):  # P.7 fits 2 allottees
-            prefix = 2 if idx == 0 else 15  # Allottee 1: fill_2-13, Allottee 2: fill_15-24
-            name_zh = (a.get('nameZh', '') or a.get('allotteeNameZh', '')).strip()
+            specs = p7_specs_a1 if idx == 0 else p7_specs_a2
             name_en = (a.get('nameEn', '') or a.get('allotteeName', '')).strip()
-            addr = (a.get('address', '') or a.get('allotteeAddress', '')).strip()
-            allottee_shares = a.get('shares', '') or a.get('allotteeShares', '') or shares
-            if name_zh:
-                _set_if_empty(f'fill_{prefix}_P.7', name_zh)
-            if name_en:
-                _set_if_empty(f'fill_{prefix+1}_P.7', name_en)
+            # Build normalized allottee dict with parsed name + structured address
+            a_norm = {
+                'nameEn': name_en,
+                'nameZh': (a.get('nameZh', '') or a.get('allotteeNameZh', '')).strip(),
+                'surname': a.get('surname', ''),
+                'otherNames': a.get('otherNames', ''),
+                'flat': a.get('flat', '') or a.get('allotteeFlat', ''),
+                'building': a.get('building', '') or a.get('allotteeBuilding', ''),
+                'street': a.get('street', '') or a.get('allotteeStreet', ''),
+                'district': a.get('district', '') or a.get('allotteeDistrict', ''),
+                'postal': a.get('postal', ''),
+                'country': a.get('country', '') or a.get('allotteeCountry', '') or 'Hong Kong',
+                'shares': str(a.get('shares', '') or a.get('allotteeShares', '') or shares or ''),
+                'remarks': a.get('remarks', '') or a.get('allotteeRemarks', ''),
+            }
+            # Auto-parse surname/otherNames from nameEn if not explicitly provided
+            if name_en and not a_norm['surname']:
                 parts = name_en.split()
                 if len(parts) >= 2:
-                    _set_if_empty(f'fill_{prefix+2}_P.7', parts[-1])       # surname
-                    _set_if_empty(f'fill_{prefix+3}_P.7', ' '.join(parts[:-1]))  # other names
+                    a_norm['surname'] = parts[-1]
+                    a_norm['otherNames'] = ' '.join(parts[:-1])
                 else:
-                    _set_if_empty(f'fill_{prefix+2}_P.7', name_en)
-            if addr:
-                _set_if_empty(f'fill_{prefix+4}_P.7', addr)
-            if allottee_shares:
-                _set_if_empty(f'fill_{prefix+11}_P.7', str(allottee_shares))
+                    a_norm['surname'] = name_en
+            # Fallback: if no structured address but flat address exists, use it
+            if not a_norm['flat']:
+                addr = (a.get('address', '') or a.get('allotteeAddress', '')).strip()
+                if addr:
+                    a_norm['flat'] = addr
+            # Fill all mapped fields
+            for field_name, key in specs:
+                val = a_norm.get(key, '')
+                if val and str(val).strip():
+                    _set_if_empty(field_name, str(val).strip())
+            # Jointly held checkbox
+            is_joint = a.get('jointlyHeld') or a.get('allotteeJointlyHeld')
+            if is_joint:
+                cb_name = 'cb_1_P.7' if idx == 0 else 'cb_2_P.7'
+                try:
+                    _check(doc, fmap, cb_name, True)
+                except Exception:
+                    pass
         # Only fallback to old top-level logic if allottees list is empty
     elif allottee_name or allottee_name_zh:
         # Allottee 1 name (backward compatibility)

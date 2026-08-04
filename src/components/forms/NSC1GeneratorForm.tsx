@@ -20,7 +20,17 @@ interface ShareAllotment {
   // Allottee details (P.7 Schedule 2)
   allotteeName: string;
   allotteeNameZh: string;
-  allotteeAddress: string;
+  allotteeSurname: string;
+  allotteeOtherNames: string;
+  // Structured address (5 fields)
+  allotteeFlat: string;
+  allotteeBuilding: string;
+  allotteeStreet: string;
+  allotteeDistrict: string;
+  allotteeCountry: string;
+  // Other Schedule 2 fields
+  allotteeJointlyHeld: boolean;
+  allotteeRemarks: string;
 }
 
 export default function NSC1GeneratorForm({ onBack, initialCompanyId }: NSC1GeneratorFormProps) {
@@ -54,7 +64,9 @@ export default function NSC1GeneratorForm({ onBack, initialCompanyId }: NSC1Gene
 
   const [allotments, setAllotments] = useState<ShareAllotment[]>([
     { class: '普通股 Ordinary', currency: 'HKD', numberOfShares: '', amountPaid: '', amountUnpaid: '',
-      allotteeName: '', allotteeNameZh: '', allotteeAddress: '' },
+      allotteeName: '', allotteeNameZh: '', allotteeSurname: '', allotteeOtherNames: '',
+      allotteeFlat: '', allotteeBuilding: '', allotteeStreet: '', allotteeDistrict: '',
+      allotteeCountry: 'Hong Kong', allotteeJointlyHeld: false, allotteeRemarks: '' },
   ]);
 
   const handleCompanySelect = (companyId: string) => {
@@ -85,7 +97,9 @@ export default function NSC1GeneratorForm({ onBack, initialCompanyId }: NSC1Gene
     setAllotments(prev => prev.map((a, idx) => idx === i ? { ...a, [f]: v } : a));
   const addAllotment = () =>
     setAllotments(prev => [...prev, { class: '普通股 Ordinary', currency: 'HKD', numberOfShares: '', amountPaid: '', amountUnpaid: '',
-      allotteeName: '', allotteeNameZh: '', allotteeAddress: '' }]);
+      allotteeName: '', allotteeNameZh: '', allotteeSurname: '', allotteeOtherNames: '',
+      allotteeFlat: '', allotteeBuilding: '', allotteeStreet: '', allotteeDistrict: '',
+      allotteeCountry: 'Hong Kong', allotteeJointlyHeld: false, allotteeRemarks: '' }]);
   const removeAllotment = (i: number) =>
     setAllotments(prev => prev.length > 1 ? prev.filter((_, idx) => idx !== i) : prev);
 
@@ -188,8 +202,16 @@ export default function NSC1GeneratorForm({ onBack, initialCompanyId }: NSC1Gene
         .map(x => ({
           nameEn: x.allotteeName || '',
           nameZh: x.allotteeNameZh || '',
-          address: x.allotteeAddress || '',
+          surname: x.allotteeSurname || '',
+          otherNames: x.allotteeOtherNames || '',
+          flat: x.allotteeFlat || '',
+          building: x.allotteeBuilding || '',
+          street: x.allotteeStreet || '',
+          district: x.allotteeDistrict || '',
+          country: x.allotteeCountry || 'Hong Kong',
           shares: x.numberOfShares || '',
+          jointlyHeld: x.allotteeJointlyHeld || false,
+          remarks: x.allotteeRemarks || '',
         }));
 
       const checkboxes: string[] = [
@@ -352,9 +374,36 @@ export default function NSC1GeneratorForm({ onBack, initialCompanyId }: NSC1Gene
                 <div><Label>股份數目</Label><Input placeholder="例如：10,000" value={a.numberOfShares} onChange={e => updateAllotment(i, 'numberOfShares', e.target.value)} className="mt-1" /></div>
                 <div><Label>每股已繳金額</Label><Input placeholder="例如：1.00" value={a.amountPaid} onChange={e => updateAllotment(i, 'amountPaid', e.target.value)} className="mt-1" /></div>
                 <div><Label>每股未繳金額</Label><Input placeholder="例如：0.00" value={a.amountUnpaid} onChange={e => updateAllotment(i, 'amountUnpaid', e.target.value)} className="mt-1" /></div>
-                <div><Label>獲分配人名稱 (英文)</Label><Input placeholder="例如：CHAN Tai Man" value={a.allotteeName} onChange={e => updateAllotment(i, 'allotteeName', e.target.value)} className="mt-1" /></div>
-                <div><Label>獲分配人名稱 (中文)</Label><Input placeholder="例如：陳大文" value={a.allotteeNameZh} onChange={e => updateAllotment(i, 'allotteeNameZh', e.target.value)} className="mt-1" /></div>
-                <div><Label>獲分配人地址</Label><Input placeholder="Flat, Building, Street, District, Country" value={a.allotteeAddress} onChange={e => updateAllotment(i, 'allotteeAddress', e.target.value)} className="mt-1" /></div>
+                <div className="col-span-3 mt-2 pt-3 border-t border-border">
+                  <span className="text-sm font-semibold">獲分配人資料（附表二 Schedule 2）</span>
+                </div>
+                <div><Label>中文姓名 Name in Chinese</Label><Input placeholder="例如：陳大文" value={a.allotteeNameZh} onChange={e => updateAllotment(i, 'allotteeNameZh', e.target.value)} className="mt-1" /></div>
+                <div><Label>英文姓名 Name in English</Label><Input placeholder="例如：CHAN Tai Man" value={a.allotteeName} onChange={e => updateAllotment(i, 'allotteeName', e.target.value)} className="mt-1" /></div>
+                <div></div>
+                <div><Label>姓氏 Surname</Label><Input placeholder="CHAN" value={a.allotteeSurname} onChange={e => updateAllotment(i, 'allotteeSurname', e.target.value)} className="mt-1" /></div>
+                <div><Label>名字 Other Names</Label><Input placeholder="Tai Man" value={a.allotteeOtherNames} onChange={e => updateAllotment(i, 'allotteeOtherNames', e.target.value)} className="mt-1" /></div>
+                <div><Label>獲配股份數目 No. of Shares</Label><Input value={a.numberOfShares} disabled className="mt-1 bg-muted/50" /></div>
+                {/* Structured Address */}
+                <div className="col-span-3 mt-2">
+                  <span className="text-xs text-muted-foreground font-medium">地址 Address</span>
+                </div>
+                <div><Label>室／樓／座 Flat/Floor/Block</Label><Input placeholder="Room 1203, 12/F" value={a.allotteeFlat} onChange={e => updateAllotment(i, 'allotteeFlat', e.target.value)} className="mt-1" /></div>
+                <div><Label>大廈 Building</Label><Input placeholder="Wing On Centre" value={a.allotteeBuilding} onChange={e => updateAllotment(i, 'allotteeBuilding', e.target.value)} className="mt-1" /></div>
+                <div></div>
+                <div className="col-span-3"><Label>街道／屋苑 Street / Estate</Label><Input placeholder="111 Connaught Road Central" value={a.allotteeStreet} onChange={e => updateAllotment(i, 'allotteeStreet', e.target.value)} className="mt-1" /></div>
+                <div><Label>地區 District</Label><Input placeholder="Central" value={a.allotteeDistrict} onChange={e => updateAllotment(i, 'allotteeDistrict', e.target.value)} className="mt-1" /></div>
+                <div><Label>國家／地區 Country</Label><Input placeholder="Hong Kong" value={a.allotteeCountry} onChange={e => updateAllotment(i, 'allotteeCountry', e.target.value)} className="mt-1" /></div>
+                <div></div>
+                {/* Jointly Held + Remarks */}
+                <div className="col-span-3 flex items-center gap-4 mt-1">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={a.allotteeJointlyHeld}
+                      onChange={e => updateAllotment(i, 'allotteeJointlyHeld', e.target.checked ? 'true' : '')}
+                      className="w-4 h-4 rounded" />
+                    <span className="text-sm">股份是聯名持有 Jointly Held</span>
+                  </label>
+                </div>
+                <div className="col-span-3"><Label>備註 Remarks</Label><Input placeholder="例如：聯名持有股份的詳情" value={a.allotteeRemarks} onChange={e => updateAllotment(i, 'allotteeRemarks', e.target.value)} className="mt-1" /></div>
               </div>
             </div>
           ))}

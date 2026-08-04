@@ -236,7 +236,7 @@ export async function onRequest(context: { request: Request; env: Env }) {
         ['fill_2_P.7', 'nameZh'], ['fill_3_P.7', 'nameEn'], ['fill_4_P.7', 'surname'],
         ['fill_5_P.7', 'otherNames'], ['fill_6_P.7', 'flat'], ['fill_7_P.7', 'building'],
         ['fill_8_P.7', 'street'], ['fill_9_P.7', 'district'], ['fill_10_P.7', 'postal'],
-        ['fill_11_P.7', 'country'], ['fill_13_P.7', 'shares'],
+        ['fill_11_P.7', 'country'], ['fill_12_P.7', 'remarks'], ['fill_13_P.7', 'shares'],
       ];
       const p7Specs2: [string, string][] = [
         ['fill_15_P.7', 'nameZh'], ['fill_16_P.7', 'nameEn'], ['fill_17_P.7', 'surname'],
@@ -247,9 +247,41 @@ export async function onRequest(context: { request: Request; env: Env }) {
       for (let i = 0; i < Math.min(allotteesList.length, 2); i++) {
         const specs = i === 0 ? p7Specs1 : p7Specs2;
         const a = allotteesList[i] || {};
+        const nameEn = String(a.nameEn || '').trim();
+        // Auto-parse surname/otherNames from nameEn if not provided
+        let surname = String(a.surname || '').trim();
+        let otherNames = String(a.otherNames || '').trim();
+        if (nameEn && !surname) {
+          const parts = nameEn.split(/\s+/);
+          if (parts.length >= 2) {
+            surname = parts[parts.length - 1];
+            otherNames = parts.slice(0, -1).join(' ');
+          } else {
+            surname = nameEn;
+          }
+        }
+        const merged: Record<string, string> = {
+          nameZh: String(a.nameZh || '').trim(),
+          nameEn,
+          surname,
+          otherNames,
+          flat: String(a.flat || '').trim(),
+          building: String(a.building || '').trim(),
+          street: String(a.street || '').trim(),
+          district: String(a.district || '').trim(),
+          postal: String(a.postal || '').trim(),
+          country: String(a.country || '').trim() || 'Hong Kong',
+          shares: String(a.shares || '').trim(),
+          remarks: String(a.remarks || '').trim(),
+        };
         for (const [field, key] of specs) {
-          const val = String(a[key] || '').trim();
+          const val = merged[key] || '';
           if (val) setIfEmpty(field, val);
+        }
+        // Jointly held checkbox
+        if (a.jointlyHeld) {
+          const cbName = i === 0 ? 'cb_1_P.7' : 'cb_2_P.7';
+          try { form.getCheckBox(cbName).check(); } catch { /* skip */ }
         }
       }
     } else if (allotteeName || allotteeNameZh) {

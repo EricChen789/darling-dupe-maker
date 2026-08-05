@@ -2,7 +2,7 @@
 // Phase 5.3: Batch generation of primary form + linked forms
 // Translates data between forms and delegates to individual PDF generators.
 
-import { PDFDocument, PDFName, PDFDict, PDFArray, PDFStream, PDFRef, decodePDFRawStream, rgb } from 'pdf-lib';
+import { PDFDocument, PDFName, PDFDict, PDFString, rgb } from 'pdf-lib';
 import {
   corsHeaders, jsonResp, uint8ToBase64, rget,
   drawMixed, fetchAndEmbedFont, widthOfText,
@@ -284,7 +284,7 @@ export async function onRequest(context: any) {
             filename: `IR1263_${linkedData.companyName || "form"}.pdf`,
           });
         } else if (formCode === "IRBR1" || formCode === "IRBR2") {
-          // IRBR forms: load fillable template from R2, dual-layer XFA + AcroForm
+          // IRBR forms: load fillable template from R2, delete XFA → pure AcroForm
           const r2Bucket = (env as any).PDF_TEMPLATES || (env as any).R2;
           const templateName = formCode === "IRBR1" ? "IRBR1-template.pdf" : "IRBR2-template.pdf";
           const templateObj = await r2Bucket.get(templateName);
@@ -292,60 +292,32 @@ export async function onRequest(context: any) {
           const templateBytes = new Uint8Array(await templateObj.arrayBuffer());
           const pdfDoc = await PDFDocument.load(templateBytes, { ignoreEncryption: true });
 
-          // ── Modify XFA datasets XML (for XFA-aware viewers) ──
-          // IRBR1 new template has NO XFA; IRBR2 has XFA with real datasets
-          if (formCode === "IRBR2") {
-            try {
-              const acroFormDict2 = pdfDoc.catalog.lookup(PDFName.of('AcroForm'), PDFDict);
-              const xfaArray = acroFormDict2.lookup(PDFName.of('XFA'), PDFArray);
-              const datasetsRef = xfaArray.get(7) as any as PDFRef;
-              const datasetsStream = pdfDoc.context.lookup(datasetsRef, PDFStream);
-              const decoded = decodePDFRawStream(datasetsStream);
-              let xmlText = new TextDecoder().decode(decoded.decode ? decoded.decode() : decoded);
+          // ── 学 IRBR1：删 XFA → 纯 AcroForm ──
+          try {
+            const acroDict = pdfDoc.catalog.lookup(PDFName.of('AcroForm'), PDFDict);
+            acroDict.delete(PDFName.of('XFA'));
+          } catch (e) { console.warn(`${formCode} XFA removal error:`, e); }
 
-              const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-              const br = (linkedData.brNumber || "").trim();
-              const cn = (linkedData.businessNameChinese || "").trim();
-              const en = (linkedData.businessNameEnglish || "").trim();
-              const nat = (linkedData.businessNature || "").trim();
-              const com = (linkedData.commencementDate || "").trim();
-              xmlText = xmlText.replace(/<TextField1\s*\/>/, br ? `<TextField1>${esc(br)}</TextField1>` : '<TextField1/>');
-              xmlText = xmlText.replace(/<TextField2\s*\/>/, cn ? `<TextField2>${esc(cn)}</TextField2>` : '<TextField2/>');
-              xmlText = xmlText.replace(/<TextField2\s*\/>/, en ? `<TextField2>${esc(en)}</TextField2>` : '<TextField2/>');
-              xmlText = xmlText.replace(/<TextField2\s*\/>/, nat ? `<TextField2>${esc(nat)}</TextField2>` : '<TextField2/>');
-              xmlText = xmlText.replace(/<DateTimeField1\s*\/>/, com ? `<DateTimeField1>${esc(com)}</DateTimeField1>` : '<DateTimeField1/>');
-              xmlText = xmlText.replace(/<RadioButtonList\s*\/>/, `<RadioButtonList>${linkedData.irbr2_elect3yr !== false ? '1' : '2'}</RadioButtonList>`);
-              xmlText = xmlText.replace(/<RadioButtonList\s*\/>/, `<RadioButtonList>${linkedData.irbr2_registered !== false ? '1' : '2'}</RadioButtonList>`);
-
-              const newBytes = new TextEncoder().encode(xmlText);
-              const newStream = pdfDoc.context.flateStream(newBytes);
-              xfaArray.set(7, pdfDoc.context.register(newStream));
-            } catch (e) { console.warn(`${formCode} XFA modification error:`, e); }
-          }
-
-          // ── Set AcroForm fields ──
           const form = pdfDoc.getForm();
           if (formCode === "IRBR1") {
-            // Simple checkboxes: cb_1_P.1=Yes (left), cb_2_P.1=No (right) — No XFA
             const irbr1Yes = linkedData.irbr1_yes !== false;
             try { if (irbr1Yes) form.getCheckBox('cb_1_P.1').check(); else form.getCheckBox('cb_2_P.1').check(); } catch (_) {}
           } else {
-            // IRBR2: 5 text fields + 2 radio groups
-            const br = linkedData.brNumber || "";
-            try { if (br) form.getTextField('topmostSubform[0].Page1[0].TextField1[0]').setText(br); } catch (_) {}
-            try { if (linkedData.businessNameChinese) form.getTextField('topmostSubform[0].Page1[0].TextField2[0]').setText(linkedData.businessNameChinese); } catch (_) {}
-            try { if (linkedData.businessNameEnglish) form.getTextField('topmostSubform[0].Page1[0].TextField2[1]').setText(linkedData.businessNameEnglish); } catch (_) {}
-            try { if (linkedData.businessNature) form.getTextField('topmostSubform[0].Page1[0].TextField2[2]').setText(linkedData.businessNature); } catch (_) {}
-            try { if (linkedData.commencementDate) form.getTextField('topmostSubform[0].Page1[0].DateTimeField1[0]').setText(linkedData.commencementDate); } catch (_) {}
+            // IRBR2: acroField.setValue() — 只设 /V，保留原始蓝框外观
+            if (linkedData.brNumber) form.getTextField('topmostSubform[0].Page1[0].TextField1[0]').acroField.setValue(PDFString.of(linkedData.brNumber));
+            if (linkedData.businessNameChinese) form.getTextField('topmostSubform[0].Page1[0].TextField2[0]').acroField.setValue(PDFString.of(linkedData.businessNameChinese));
+            if (linkedData.businessNameEnglish) form.getTextField('topmostSubform[0].Page1[0].TextField2[1]').acroField.setValue(PDFString.of(linkedData.businessNameEnglish));
+            if (linkedData.businessNature) form.getTextField('topmostSubform[0].Page1[0].TextField2[2]').acroField.setValue(PDFString.of(linkedData.businessNature));
+            if (linkedData.commencementDate) form.getTextField('topmostSubform[0].Page1[0].DateTimeField1[0]').acroField.setValue(PDFString.of(linkedData.commencementDate));
             try {
               const rg1 = form.getRadioGroup('topmostSubform[0].Page1[0].RadioButtonList[1]');
               const o1 = rg1.getOptions();
-              if (o1.length >= 2) rg1.select(linkedData.irbr2_registered !== false ? o1[0] : o1[1]);
+              if (o1.length >= 2) rg1.acroField.setValue(PDFName.of(linkedData.irbr2_registered !== false ? o1[0] : o1[1]));
             } catch (_) {}
             try {
               const rg0 = form.getRadioGroup('topmostSubform[0].Page1[0].RadioButtonList[0]');
               const o0 = rg0.getOptions();
-              if (o0.length >= 2) rg0.select(linkedData.irbr2_elect3yr !== false ? o0[0] : o0[1]);
+              if (o0.length >= 2) rg0.acroField.setValue(PDFName.of(linkedData.irbr2_elect3yr !== false ? o0[0] : o0[1]));
             } catch (_) {}
           }
 

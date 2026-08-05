@@ -83,9 +83,8 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
     //    Much cheaper than per-field updateAppearances(cjkFont) for 24-page template ──
     enableNeedAppearances(pdfDoc);
 
-    // ── Flatten & save ──
-    form.flatten();
-    const pdfBytes = await pdfDoc.save({ useObjectStreams: false });
+    // ── Flatten 去掉省 CPU (对齐 NN6/NN7 模式) ──
+    const pdfBytes = await pdfDoc.save({ updateFieldAppearances: false });
     return jsonResp({ pdf: uint8ToBase64(new Uint8Array(pdfBytes)) });
   } catch (err: any) {
     console.error("generate-nnc1-pdf error:", err?.message || err);

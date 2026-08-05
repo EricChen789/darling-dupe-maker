@@ -603,7 +603,7 @@ export default function NewCompanyGeneratorForm({ onBack, initialCompanyId }: Pr
 
         // ── PI-NNC1 (P.14+): 首任公司秘書／董事(自然人) 受保護資料 ──
         // ⚠️ 每頁只填報一名自然人！需要多頁時自動複製P.14
-        // cb_1/cb_2=身份（董事/秘書），非HKID/護照
+        // cb_1/cb_2=身份（秘書/董事），非HKID/護照
         // 字段順序：fill_2-4=姓名 → fill_5-6=HKID → fill_7-8=護照 → fill_9-13=住址5欄
         const buildPiPerson = (o: OfficerEntry, isSecretary: boolean) => {
           const en = parseEnName(o.nameEnglish);
@@ -649,7 +649,7 @@ export default function NewCompanyGeneratorForm({ onBack, initialCompanyId }: Pr
             'fill_12_P.14': p0.addrDistrict,
             'fill_13_P.14': p0.addrRegion,
           });
-          checkboxes.push(p0.isSecretary ? 'cb_2_P.14' : 'cb_1_P.14');
+          checkboxes.push(p0.isSecretary ? 'cb_1_P.14' : 'cb_2_P.14');
         }
 
         const resp = await fetch(`/api/generate-nnc1-pdf`, {

@@ -252,9 +252,9 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
       }
 
       // ── 3) For each person, remove widgets + draw text on their PI-NNC1 page ──
-      const fontSize = 10;
-      // Fields that should be center-aligned (name fields)
-      const centerFields = new Set(['fill_2', 'fill_3', 'fill_4']);
+      const fontSize = 12;
+      // Fields that should be center-aligned (names + ID numbers)
+      const centerFields = new Set(['fill_2', 'fill_3', 'fill_4', 'fill_5', 'fill_6', 'fill_7', 'fill_8']);
 
       /** Estimate text width for CJK strings (no fontkit → no exact metrics).
        *  CJK chars ≈ 1em wide, ASCII chars in CJK font ≈ 0.5em wide. */
@@ -333,9 +333,9 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
             }
           } else if (pos.fieldType === '/Btn') {
             // ── Checkbox ──
-            // cb_1 = Director (董事), cb_2 = Secretary (公司秘書)
-            const isChecked = (pos.suffix === "cb_1" && !person.isSecretary) ||
-                              (pos.suffix === "cb_2" && person.isSecretary);
+            // cb_1 = Secretary (公司秘書, left), cb_2 = Director (董事, right)
+            const isChecked = (pos.suffix === "cb_1" && person.isSecretary) ||
+                              (pos.suffix === "cb_2" && !person.isSecretary);
 
             // White rectangle to cover original widget
             page.drawRectangle({

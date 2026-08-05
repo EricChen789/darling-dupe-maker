@@ -7880,9 +7880,11 @@ def _fill_nnc1_pdf(data):
                 ((207, 686, 562, 714), pi_addr['district'], 'cj'),                # fill_12
                 ((207, 720, 562, 748), pi_addr['region'], 'cj'),                  # fill_13
             ]
-            for (x0, y0, x1, y1), val, mode in pi_fields_rects:
+            for fi, ((x0, y0, x1, y1), val, mode) in enumerate(pi_fields_rects):
                 if val:
                     page.draw_rect(fitz.Rect(x0-2, y0-2, x1+2, y1+2), color=1, fill=1)  # white
+                    # Center name fields (indices 0-2 = fill_2/fill_3/fill_4), left-align others
+                    is_center = fi < 3  # first 3 fields are names
                     if mode == 'cj':
                         # Embed CJK font on the copied page if not already there
                         page.clean_contents()
@@ -7891,10 +7893,10 @@ def _fill_nnc1_pdf(data):
                         except Exception:
                             pass  # font already embedded
                         page.insert_textbox(fitz.Rect(x0+2, y0+2, x1-2, y1-2), val,
-                            fontsize=8, fontname='TC', align=0)
+                            fontsize=10, fontname='TC', align=1 if is_center else 0)
                     else:
                         page.insert_textbox(fitz.Rect(x0+2, y0+2, x1-2, y1-2), val,
-                            fontsize=8, fontname='Helv', align=0)
+                            fontsize=10, fontname='Helv', align=1 if is_center else 0)
 
         # ── Checkbox: redact widget annotations + draw checkmark ──
         # ⚠️ ALL PI-NNC1 pages (original + copies) use the same approach:
@@ -7904,8 +7906,8 @@ def _fill_nnc1_pdf(data):
         # Solution: 1) Redact both checkbox widget areas (removes widget
         # annotations from this page + fills area with white)
         # 2) Draw a checkmark using lines at the correct position.
-        # cb_1_P.14 (Secretary): Rect(207.3, 360.1, 221.8, 374.4)
-        # cb_2_P.14 (Director):  Rect(313.5, 360.1, 328.0, 374.5)
+        # cb_1_P.14 (Director/董事): Rect(207.3, 360.1, 221.8, 374.4)
+        # cb_2_P.14 (Secretary/公司秘書):  Rect(313.5, 360.1, 328.0, 374.5)
         page.add_redact_annot(fitz.Rect(206, 359, 223, 376), fill=(1, 1, 1))
         page.add_redact_annot(fitz.Rect(312, 359, 329, 376), fill=(1, 1, 1))
         page.apply_redactions()
@@ -7916,9 +7918,9 @@ def _fill_nnc1_pdf(data):
 
         # Draw checkmark with lines at the correct position
         if pi_is_sec:
-            cx, cy = 214.5, 367.5  # cb_1 center
+            cx, cy = 320.5, 367.5  # cb_2 center (Secretary)
         else:
-            cx, cy = 320.5, 367.5  # cb_2 center
+            cx, cy = 214.5, 367.5  # cb_1 center (Director)
         page.draw_line(fitz.Point(cx-3, cy-1), fitz.Point(cx, cy+3), color=0, width=1.5)
         page.draw_line(fitz.Point(cx, cy+3), fitz.Point(cx+5, cy-4), color=0, width=1.5)
 

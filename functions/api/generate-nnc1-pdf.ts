@@ -252,7 +252,20 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
       }
 
       // ── 3) For each person, remove widgets + draw text on their PI-NNC1 page ──
-      const fontSize = 8;
+      const fontSize = 10;
+      // Fields that should be center-aligned (name fields)
+      const centerFields = new Set(['fill_2', 'fill_3', 'fill_4']);
+
+      /** Estimate text width for CJK strings (no fontkit → no exact metrics).
+       *  CJK chars ≈ 1em wide, ASCII chars in CJK font ≈ 0.5em wide. */
+      const estimateCjkWidth = (text: string, size: number): number => {
+        let w = 0;
+        for (const ch of text) {
+          w += (ch.charCodeAt(0) > 127) ? size : size * 0.5;
+        }
+        return w;
+      };
+
       for (let pi = 0; pi < piPersons.length; pi++) {
         const page = pdfDoc.getPages()[PI_PAGE_IDX + pi];
         if (!page) continue;
@@ -293,7 +306,19 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
 
             // Draw text (y adjusted for baseline — text goes at bottom of rect + offset)
             const textY = pos.y + 2;
-            const textX = pos.x + 2;
+            // Center name fields, left-align others
+            let textX: number;
+            if (centerFields.has(pos.suffix)) {
+              if (!isCjk || !hasCjk(val)) {
+                const tw = helv.widthOfTextAtSize(val, fontSize);
+                textX = pos.x + (pos.w - tw) / 2;
+              } else {
+                const estW = estimateCjkWidth(val, fontSize);
+                textX = pos.x + (pos.w - estW) / 2;
+              }
+            } else {
+              textX = pos.x + 2;
+            }
 
             if (!isCjk || !hasCjk(val)) {
               // ASCII: use page.drawText with Helvetica
@@ -308,8 +333,9 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
             }
           } else if (pos.fieldType === '/Btn') {
             // ── Checkbox ──
-            const isChecked = (pos.suffix === "cb_1" && person.isSecretary) ||
-                              (pos.suffix === "cb_2" && !person.isSecretary);
+            // cb_1 = Director (董事), cb_2 = Secretary (公司秘書)
+            const isChecked = (pos.suffix === "cb_1" && !person.isSecretary) ||
+                              (pos.suffix === "cb_2" && person.isSecretary);
 
             // White rectangle to cover original widget
             page.drawRectangle({

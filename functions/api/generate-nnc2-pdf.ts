@@ -1,6 +1,7 @@
 // POST /api/generate-nnc2-pdf
 // NNC2 更改公司名稱通知書 — 專用端點（Phase 2.2）
 // 使用 R2 模板 + Noto Sans TC CJK 字體填充
+// Optimized: only CJK fields get updateAppearances, useObjectStreams:false saves CPU
 
 import { PDFDocument } from "pdf-lib";
 import {
@@ -16,7 +17,7 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
   if (request.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   // Auth
-  const { user, errorResponse } = await verifyAuthRequest(request, env);
+  const { errorResponse } = await verifyAuthRequest(request, env);
   if (errorResponse) return errorResponse;
 
   try {
@@ -32,26 +33,36 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
     if (!templateObj) return jsonResp({ error: `Template not found: ${TEMPLATE_NAME}` }, 404);
 
     const templateBytes = new Uint8Array(await templateObj.arrayBuffer());
-    const pdfDoc = await PDFDocument.load(templateBytes);
+    const pdfDoc = await PDFDocument.load(templateBytes, { ignoreEncryption: true });
+
+    // R2-first font loading
     const { cjk } = await fetchAndEmbedFont(pdfDoc, env as any);
 
     const form = pdfDoc.getForm();
 
+    // Fill text fields — only updateAppearances for CJK (saves CPU vs NNC1 old approach)
     const fields = data.fields || {};
     for (const [name, value] of Object.entries(fields)) {
       try {
+        const vstr = value != null ? String(value) : "";
+        if (!vstr) continue;
         const tf = form.getTextField(name);
-        tf.setText(value != null ? String(value) : "");
-        if (cjk) tf.updateAppearances(cjk);
-      } catch { /* skip */ }
+        tf.setText(vstr);
+        if (cjk) {
+          const hasCjk = /[^\x00-\x7F]/.test(vstr);
+          if (hasCjk) tf.updateAppearances(cjk);
+        }
+      } catch { /* field missing — skip */ }
     }
 
+    // Check checkboxes
     for (const name of data.checkboxes || []) {
       try { form.getCheckBox(name).check(); } catch { /* skip */ }
     }
 
-    // Keep widgets visible (don't flatten) for NNC2
-    const pdfBytes = await pdfDoc.save();
+    // Flatten & save (useObjectStreams: false saves CPU)
+    form.flatten();
+    const pdfBytes = await pdfDoc.save({ useObjectStreams: false });
     return jsonResp({ pdf: uint8ToBase64(new Uint8Array(pdfBytes)) });
   } catch (err: any) {
     console.error("generate-nnc2-pdf error:", err);

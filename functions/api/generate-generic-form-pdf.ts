@@ -1,16 +1,12 @@
 // Generic form/document PDF generator.
 // Generates NNC1 (HK), NNC1-BVI, NNC2 (rename), and resolution PDFs from scratch.
-// Uses Noto Sans TC for full Chinese support.
+// Uses Noto Sans TC via R2-first font loading (shared _pdf-utils).
 import { PDFDocument, rgb } from "pdf-lib";
-import fontkit from "@pdf-lib/fontkit";
-import { verifyAuthRequest, type Env as AuthEnv } from './_auth';
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
-
-const CHINESE_FONT_URL = "https://cdn.jsdelivr.net/fontsource/fonts/noto-sans-tc@latest/chinese-traditional-400-normal.woff2";
+import {
+  corsHeaders, jsonResp, uint8ToBase64,
+  fetchAndEmbedFont,
+} from "./_pdf-utils";
+import { verifyAuthRequest, type Env } from "./_auth";
 
 interface Section {
   heading?: string;
@@ -29,11 +25,9 @@ interface DocPayload {
   signatureLines?: string[]; // e.g. ["Director: ____________", "Date: ____________"]
 }
 
-type Env = AuthEnv;
-
 export async function onRequest(context: { request: Request; env: Env }) {
   const { request, env } = context;
-  if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  if (request.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   // Auth
   const { errorResponse } = await verifyAuthRequest(request, env);
@@ -42,18 +36,13 @@ export async function onRequest(context: { request: Request; env: Env }) {
   try {
     const data: DocPayload = await request.json();
     if (!data || !data.formCode || !data.title) {
-      return new Response(JSON.stringify({ error: "formCode and title required" }), {
-        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return jsonResp({ error: "formCode and title required" }, 400);
     }
 
-    const fontResp = await fetch(CHINESE_FONT_URL, { headers: { Accept: "*/*" } });
-    if (!fontResp.ok) throw new Error("Failed to load Chinese font");
-    const fontBytes = await fontResp.arrayBuffer();
-
     const pdf = await PDFDocument.create();
-    pdf.registerFontkit(fontkit);
-    const font = await pdf.embedFont(fontBytes);
+
+    // R2-first font loading (shared helper — much faster than CDN)
+    const { cjk } = await fetchAndEmbedFont(pdf, env as any);
 
     let page = pdf.addPage([595, 842]);
     let y = 800;
@@ -62,7 +51,7 @@ export async function onRequest(context: { request: Request; env: Env }) {
     const maxWidth = right - left;
 
     const draw = (text: string, x: number, opts: { size?: number; color?: any } = {}) => {
-      page.drawText(text || "", { x, y, size: opts.size ?? 10, font, color: opts.color ?? rgb(0, 0, 0) });
+      page.drawText(text || "", { x, y, size: opts.size ?? 10, font: cjk, color: opts.color ?? rgb(0, 0, 0) });
     };
     const newLine = (delta = 14) => {
       y -= delta;
@@ -75,7 +64,7 @@ export async function onRequest(context: { request: Request; env: Env }) {
       const words = text.split(/(\s+)/);
       const lines: string[] = [];
       let cur = "";
-      const measure = (s: string) => font.widthOfTextAtSize(s, size);
+      const measure = (s: string) => cjk.widthOfTextAtSize(s, size);
       for (const w of words) {
         const trial = cur + w;
         if (measure(trial) <= width) {
@@ -171,23 +160,9 @@ export async function onRequest(context: { request: Request; env: Env }) {
     }
 
     const bytes = await pdf.save();
-
-    // Base64 encode — use safe character-by-character approach (same as generate-cr-form-pdf.ts)
-    const byteArray = new Uint8Array(bytes);
-    let binary = "";
-    for (let i = 0; i < byteArray.length; i++) {
-      binary += String.fromCharCode(byteArray[i]);
-    }
-    const base64 = btoa(binary);
-
-    return new Response(JSON.stringify({ pdf: base64 }), {
-      status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return jsonResp({ pdf: uint8ToBase64(new Uint8Array(bytes)) });
   } catch (e: any) {
     console.error("generate-generic-form-pdf error:", e);
-    return new Response(JSON.stringify({ error: e.message || String(e) }), {
-      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return jsonResp({ error: e.message || String(e) }, 500);
   }
 }

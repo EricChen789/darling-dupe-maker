@@ -327,46 +327,24 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
               }
             } else if (name.startsWith('cb_')) {
               // ── Checkbox ──
-              // Set default to Off for all widgets first
+              // Set all checkbox widgets to Off on every page — we use
+              // injectPageText('✓') below for the visual checkmark on ALL pages.
+              // Setting widget /AS alone is unreliable: PDF readers need /V set
+              // on the field, but shared fields across copied pages mean setting
+              // /V on one page affects all pages. injectPageText avoids this.
               widget.set(PDFName.of("AS"), PDFName.of("Off"));
-
-              // On Person 0's page, use the correct checkbox state
-              if (pi === 0) {
-                if ((suffix === "cb_1" && person.isSecretary) ||
-                    (suffix === "cb_2" && !person.isSecretary)) {
-                  // Discover On state name from existing AP (template uses "On", PDF convention)
-                  let onState = "On";
-                  try {
-                    const ap = widget.get(PDFName.of("AP")) as any;
-                    const apN = ap?.get?.(PDFName.of("N")) as any;
-                    // pdf-lib PDFDict: iterate entries to find non-Off key
-                    if (apN && typeof apN.entries === "function") {
-                      for (const [k] of apN.entries()) {
-                        const kStr = String(k);
-                        if (kStr !== "/Off") {
-                          onState = kStr.startsWith("/") ? kStr.slice(1) : kStr;
-                          break;
-                        }
-                      }
-                    }
-                  } catch { /* use default "On" */ }
-                  widget.set(PDFName.of("AS"), PDFName.of(onState));
-                }
-              }
-              // For Person 1+ pages (pi > 0), the checkbox stays Off
-              // A ✓ character is injected into the page content below
             }
           } catch { /* skip malformed widget */ }
         }
 
-        // 3) For Person 1+ pages, inject ✓ indicator at checkbox positions
-        //    (since field sharing prevents per-page checkbox state)
-        if (pi > 0) {
-          if (person.isSecretary) {
-            injectPageText(pdfDoc, pageIdx, '✓', 209, 478, 10, /*isCjk*/ true);
-          } else {
-            injectPageText(pdfDoc, pageIdx, '✓', 316, 478, 10, /*isCjk*/ true);
-          }
+        // 3) For ALL pages (including Person 0), inject ✓ indicator at checkbox positions.
+        //    Widget /AS alone is unreliable — PDF readers look at /V which is shared
+        //    across copied pages. injectPageText directly into the page content stream
+        //    is the only reliable cross-page checkbox indicator.
+        if (person.isSecretary) {
+          injectPageText(pdfDoc, pageIdx, '✓', 209, 478, 10, /*isCjk*/ true);
+        } else {
+          injectPageText(pdfDoc, pageIdx, '✓', 316, 478, 10, /*isCjk*/ true);
         }
       }
 

@@ -7863,10 +7863,6 @@ def _fill_nnc1_pdf(data):
             _set_cjk('fill_11_P.14', pi_addr['street'])
             _set_cjk('fill_12_P.14', pi_addr['district'])
             _set_cjk('fill_13_P.14', pi_addr['region'])
-            if pi_is_sec:
-                _check(doc, fmap, 'cb_1_P.14', True)
-            else:
-                _check(doc, fmap, 'cb_2_P.14', True)
         else:
             # Use insert_textbox on copied pages (form fields share names with original)
             # White rectangles over field areas + text overlay
@@ -7900,16 +7896,44 @@ def _fill_nnc1_pdf(data):
                         page.insert_textbox(fitz.Rect(x0+2, y0+2, x1-2, y1-2), val,
                             fontsize=8, fontname='Helv', align=0)
 
+        # ── Checkbox: redact widget annotations + draw checkmark ──
+        # ⚠️ ALL PI-NNC1 pages (original + copies) use the same approach:
+        # Widgets on copied pages share field objects with the original P.14 —
+        # setting field_value on one page affects ALL pages. And annotations
+        # render above page content, so draw_rect cannot cover them.
+        # Solution: 1) Redact both checkbox widget areas (removes widget
+        # annotations from this page + fills area with white)
+        # 2) Draw a checkmark using lines at the correct position.
+        # cb_1_P.14 (Secretary): Rect(207.3, 360.1, 221.8, 374.4)
+        # cb_2_P.14 (Director):  Rect(313.5, 360.1, 328.0, 374.5)
+        page.add_redact_annot(fitz.Rect(206, 359, 223, 376), fill=(1, 1, 1))
+        page.add_redact_annot(fitz.Rect(312, 359, 329, 376), fill=(1, 1, 1))
+        page.apply_redactions()
+
+        # Redraw checkbox outlines (redaction removes the original widget borders)
+        for box_cx, box_cy in [(214.5, 367.5), (320.5, 367.5)]:
+            page.draw_rect(fitz.Rect(box_cx-5, box_cy-6, box_cx+5, box_cy+6), color=0, width=1)
+
+        # Draw checkmark with lines at the correct position
+        if pi_is_sec:
+            cx, cy = 214.5, 367.5  # cb_1 center
+        else:
+            cx, cy = 320.5, 367.5  # cb_2 center
+        page.draw_line(fitz.Point(cx-3, cy-1), fitz.Point(cx, cy+3), color=0, width=1.5)
+        page.draw_line(fitz.Point(cx, cy+3), fitz.Point(cx+5, cy-4), color=0, width=1.5)
+
     if pi_nat_persons:
         pi_page_idx = 13  # 0-indexed P.14
         _fill_one_pi_nnc1(doc[pi_page_idx], pi_nat_persons[0], is_first_page=True)
 
         # Extra PI-NNC1 pages for additional natural persons
+        # ⚠️ fullcopy_page inserts the copy at the END of the document, NOT after the source!
         for i, person in enumerate(pi_nat_persons[1:], start=1):
-            doc.fullcopy_page(pi_page_idx)  # copy P.14 (now at pi_page_idx+i)
-            # The copy gets inserted right after the original; update index if needed
-            # Actually fullcopy_page inserts after the source page
-            _fill_one_pi_nnc1(doc[pi_page_idx + i], person, is_first_page=False)
+            doc.fullcopy_page(pi_page_idx)  # copy goes to end of document
+            copy_idx = len(doc) - 1
+            target_idx = pi_page_idx + i
+            doc.move_page(copy_idx, target_idx)  # move to correct position after source
+            _fill_one_pi_nnc1(doc[target_idx], person, is_first_page=False)
 
     # ── P.8: 創辦成員陳述書 ──
     # fill_1-5: 續頁頁數（A=創辦成員股東, B=秘書自然人, C=秘書法人, D=董事自然人, E=董事法人）

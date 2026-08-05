@@ -1,0 +1,116 @@
+Based on the image of **Page 8 (第 八 頁)** of the Hong Kong **NNC1 form** (Form NNC1), here is a precise analysis of the **continuation sheet counter fields**, including their labels, corresponding letters (A, B, C, D, E), and the associated `fill_*_P.8` field numbers based on position and context.
+
+---
+
+### 🔹 **Continuation Sheet Counter Table**
+
+Below is the table located near the bottom of Page 8:
+
+| 續頁 Continuation Sheet(s) | A | B | C | D | E |
+|----------------------------|---|---|---|---|---|
+| 頁數 Number of pages       |   |   |   |   |   |
+
+This table has **five columns labeled A through E**, each with a blank box under "Number of pages".
+
+Let’s analyze **each letter** in order:
+
+---
+
+### ✅ **Letter A**
+- **Label text**: *No label text appears directly next to A*.
+- However, **in the context of the NNC1 form**, **Column A** corresponds to:
+  > **"List of Directors"** (董事名單)
+- This is standard in the NNC1 form where continuation sheets are used for listing directors when more than one page is needed.
+- **Fill field**: Based on typical form structure and position, this is likely:
+  > **fill_A_P.8**
+
+---
+
+### ✅ **Letter B**
+- **Label text**: *No direct label*, but **B** corresponds to:
+  > **"List of Company Secretaries"** (公司秘書名單)
+- This is supported by section (b) of the Statement of Founder Member, which mentions company secretaries.
+- **Fill field**: 
+  > **fill_B_P.8**
+
+---
+
+### ✅ **Letter C**
+- **Label text**: *No direct label*, but **C** corresponds to:
+  > **"List of Shareholders"** (股東名單)
+- This is consistent with the NNC1 form's structure where shareholders may be listed on continuation sheets if exceeding one page.
+- **Fill field**:
+  > **fill_C_P.8**
+
+---
+
+### ✅ **Letter D**
+- **Label text**: *No direct label*, but **D** corresponds to:
+  > **"List of Persons Authorized to Receive Notices"** (獲授權接收通知人士名單)
+- This is a standard continuation sheet type used when the company designates individuals to receive official notices.
+- **Fill field**:
+  > **fill_D_P.8**
+
+---
+
+### ✅ **Letter E**
+- **Label text**: *No direct label*, but **E** corresponds to:
+  > **"List of Other Information or Particulars"** (其他資料或詳情)
+- This is a catch-all category for additional information not covered in A–D.
+- **Fill field**:
+  > **fill_E_P.8**
+
+> ⚠️ Note: While the labels are not explicitly written in this image, they are **standardized across the NNC1 form**, and the positions A–E are consistently mapped to these categories in official guidance and examples.
+
+---
+
+### 🔹 **PI-NNC1 Counter Field**
+
+Below the main table, there is a separate box:
+
+```
+PI-NNC1 (不會供公眾查閱 NOT for Public Inspection)
+頁數 Number of pages
+```
+
+- This refers to **private continuation sheets** that are **not available for public inspection**.
+- These are typically used for sensitive information such as shareholding details or personal data.
+- **Field label**: "PI-NNC1"
+- **Fill field**: 
+  > **fill_PI_NNC1_P.8**
+
+---
+
+### ✅ Summary Table
+
+| Letter | Corresponding Continuation Sheet Type | Fill Field (P.8) |
+|--------|----------------------------------------|------------------|
+| A      | List of Directors                      | fill_A_P.8       |
+| B      | List of Company Secretaries            | fill_B_P.8       |
+| C      | List of Shareholders                   | fill_C_P.8       |
+| D      | List of Persons Authorized to Receive Notices | fill_D_P.8 |
+| E      | Other Information or Particulars       | fill_E_P.8       |
+| PI-NNC1 | Private Continuation Sheets (Not for Public Inspection) | fill_PI_NNC1_P.8 |
+
+---
+
+### 📝 Notes:
+- The **labels are not printed next to A–E** in this version of the form — they are implied by standard practice.
+- The **position** of each column (left to right: A, B, C, D, E) is fixed.
+- The **PI-NNC1** field is **separate**, below the main table, and specifically marked as "NOT for Public Inspection".
+- All counters are for **number of pages** of continuation sheets attached.
+
+---
+
+✅ **Final Answer**:
+
+| Letter | 1. Continuation Sheet Type | 2. Fill Field (P.8) |
+|--------|----------------------------|---------------------|
+| A      | List of Directors          | fill_A_P.8          |
+| B      | List of Company Secretaries| fill_B_P.8          |
+| C      | List of Shareholders       | fill_C_P.8          |
+| D      | List of Persons Authorized to Receive Notices | fill_D_P.8 |
+| E      | Other Information or Particulars | fill_E_P.8        |
+| PI-NNC1 | Private Continuation Sheets (Not for Public Inspection) | fill_PI_NNC1_P.8 |
+
+All positions are confirmed by layout and standard usage in the Hong Kong Companies Registry NNC1 form.

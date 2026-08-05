@@ -7912,18 +7912,20 @@ def _fill_nnc1_pdf(data):
             _fill_one_pi_nnc1(doc[pi_page_idx + i], person, is_first_page=False)
 
     # ── P.8: 創辦成員陳述書 ──
-    # fill_1-5: 續頁頁數（A=秘書自然人, B=秘書法人, C=董事自然人, D=董事法人, E=額外法人董事）
+    # fill_1-5: 續頁頁數（A=創辦成員股東, B=秘書自然人, C=秘書法人, D=董事自然人, E=董事法人）
     sec_nat_count = sum(1 for o in officers if o.get('role') == 'secretary' and o.get('identity') != 'corporate')
     sec_corp_count = sum(1 for o in officers if o.get('role') == 'secretary' and o.get('identity') == 'corporate')
     dir_nat_count = sum(1 for o in officers if o.get('role') == 'director' and o.get('identity') != 'corporate')
     dir_corp_count = sum(1 for o in officers if o.get('role') == 'director' and o.get('identity') == 'corporate')
 
     # Only fill page counts for types that need continuation sheets (>1)
-    _set_text(doc, fmap, 'fill_1_P.8', str(sec_nat_count - 1) if sec_nat_count > 1 else '')
-    _set_text(doc, fmap, 'fill_2_P.8', str(sec_corp_count - 1) if sec_corp_count > 1 else '')
-    _set_text(doc, fmap, 'fill_3_P.8', str(dir_nat_count - 1) if dir_nat_count > 1 else '')
-    _set_text(doc, fmap, 'fill_4_P.8', str(dir_corp_count - 1) if dir_corp_count > 1 else '')
-    _set_text(doc, fmap, 'fill_5_P.8', '')  # E = additional body corporate directors
+    # A=創辦成員(股東)  B=秘書自然人  C=秘書法人  D=董事自然人  E=董事法人
+    sh_count = len(shareholders) if shareholders else 0
+    _set_text(doc, fmap, 'fill_1_P.8', str(sh_count - 1) if sh_count > 1 else '')      # A: 股東
+    _set_text(doc, fmap, 'fill_2_P.8', str(sec_nat_count - 1) if sec_nat_count > 1 else '')  # B: 秘書自然人
+    _set_text(doc, fmap, 'fill_3_P.8', str(sec_corp_count - 1) if sec_corp_count > 1 else '') # C: 秘書法人
+    _set_text(doc, fmap, 'fill_4_P.8', str(dir_nat_count - 1) if dir_nat_count > 1 else '')   # D: 董事自然人
+    _set_text(doc, fmap, 'fill_5_P.8', str(dir_corp_count - 1) if dir_corp_count > 1 else '') # E: 董事法人
 
     # PI-NNC1 頁數（受保護資料頁）= 所有自然人秘書+董事
     pi_count = len(pi_nat_persons)

@@ -290,11 +290,12 @@ export default function NewCompanyGeneratorForm({ onBack, initialCompanyId }: Pr
           'fill_7_P.8': signerFullNameEn,                       // 創辦成員英文姓名（左欄）
           'fill_8_P.8': signerDateStr,                           // 日期 Date DD/MM/YYYY（右欄）
           // P.8 continuation sheet page counts (A/B/C/D/E + PI-NNC1)
-          'fill_1_P.8': officers.filter(o => o.role === 'secretary' && o.identity === 'natural').length > 1 ? '1' : '',
-          'fill_2_P.8': officers.filter(o => o.role === 'secretary' && o.identity === 'corporate').length > 1 ? '1' : '',
-          'fill_3_P.8': officers.filter(o => o.role === 'director' && o.identity === 'natural').length > 1 ? '1' : '',
-          'fill_4_P.8': officers.filter(o => o.role === 'director' && o.identity === 'corporate').length > 1 ? '1' : '',
-          'fill_5_P.8': '',                                    // E (additional body corporate directors)
+          // A=股東  B=秘書自然人  C=秘書法人  D=董事自然人  E=董事法人
+          'fill_1_P.8': shareholders.length > 1 ? '1' : '',   // A: 創辦成員(股東) 續頁 P.9
+          'fill_2_P.8': officers.filter(o => o.role === 'secretary' && o.identity === 'natural').length > 1 ? '1' : '',   // B: 秘書自然人 P.10
+          'fill_3_P.8': officers.filter(o => o.role === 'secretary' && o.identity === 'corporate').length > 1 ? '1' : '',  // C: 秘書法人 P.11
+          'fill_4_P.8': officers.filter(o => o.role === 'director' && o.identity === 'natural').length > 1 ? '1' : '',     // D: 董事自然人 P.12
+          'fill_5_P.8': officers.filter(o => o.role === 'director' && o.identity === 'corporate').length > 1 ? '1' : '',   // E: 董事法人 P.13
           'fill_6_P.8': (allNatSecs.length + allNatDirs.length) > 0 ? String(allNatSecs.length + allNatDirs.length) : '',
         };
 
@@ -586,15 +587,18 @@ export default function NewCompanyGeneratorForm({ onBack, initialCompanyId }: Pr
         }
 
         // Update P.8 page counts (actual continuation pages used)
+        // A=股東  B=秘書自然人  C=秘書法人  D=董事自然人  E=董事法人
+        const shContPages = Math.max(0, shareholders.length - 1);
         const secNatContPages = Math.max(0, allNatSecs.length - 1);
         const secCorpContPages = Math.max(0, allCorpSecs.length - 1);
         const dirNatContPages = Math.max(0, allNatDirs.length - 1);
         const dirCorpContPages = Math.max(0, allCorpDirs.length - 1);
         Object.assign(fields, {
-          'fill_1_P.8': secNatContPages > 0 ? String(secNatContPages) : '',
-          'fill_2_P.8': secCorpContPages > 0 ? String(secCorpContPages) : '',
-          'fill_3_P.8': dirNatContPages > 0 ? String(dirNatContPages) : '',
-          'fill_4_P.8': dirCorpContPages > 0 ? String(dirCorpContPages) : '',
+          'fill_1_P.8': shContPages > 0 ? String(shContPages) : '',           // A: 股東
+          'fill_2_P.8': secNatContPages > 0 ? String(secNatContPages) : '',   // B: 秘書自然人
+          'fill_3_P.8': secCorpContPages > 0 ? String(secCorpContPages) : '', // C: 秘書法人
+          'fill_4_P.8': dirNatContPages > 0 ? String(dirNatContPages) : '',   // D: 董事自然人
+          'fill_5_P.8': dirCorpContPages > 0 ? String(dirCorpContPages) : '', // E: 董事法人
         });
 
         // ── PI-NNC1 (P.14+): 首任公司秘書／董事(自然人) 受保護資料 ──

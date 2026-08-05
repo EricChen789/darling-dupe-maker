@@ -690,22 +690,21 @@ export default function NewCompanyGeneratorForm({ onBack, initialCompanyId }: Pr
               <Trash2 className="h-3 w-3" />
             </Button>
           </div>
-          {/* 從系統選擇董事／秘書 */}
-          {initialCompanyId && (
-            <PersonQuickPick
-              companyId={initialCompanyId}
-              label="👤 從系統選擇人員（選後自動填入姓名／地址／證件）"
-              onPick={(d) => {
-                updateOfficer(i, {
-                  nameEnglish: d.nameEnglish || '',
-                  nameChinese: d.nameChinese || '',
-                  idNumber: d.idNumber || '',
-                  identity: d.identity || 'natural',
-                  address: [d.addrFlat, d.addrBuilding, d.addrStreet, d.addrDistrict, d.addrRegion].filter(Boolean).join(', ') || d.address || '',
-                });
-              }}
-            />
-          )}
+          {/* 從系統選擇董事／秘書（全系統） */}
+          <PersonQuickPick
+            companyId={initialCompanyId}
+            includeAllCompanies={true}
+            label="👤 從系統選擇人員（所有公司董事／秘書／提交人）"
+            onPick={(d) => {
+              updateOfficer(i, {
+                nameEnglish: d.nameEnglish || '',
+                nameChinese: d.nameChinese || '',
+                idNumber: d.idNumber || '',
+                identity: d.identity || 'natural',
+                address: [d.addrFlat, d.addrBuilding, d.addrStreet, d.addrDistrict, d.addrRegion].filter(Boolean).join(', ') || d.address || '',
+              });
+            }}
+          />
           {initialCompanyId && (
             <AddressQuickPick
               companyId={initialCompanyId}

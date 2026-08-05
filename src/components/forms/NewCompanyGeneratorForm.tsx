@@ -401,6 +401,46 @@ export default function NewCompanyGeneratorForm({ onBack, initialCompanyId }: Pr
           }
         }
 
+        // ── PI-NNC1 (P.14): 首任公司秘書／董事(自然人) 受保護資料 ──
+        Object.assign(fields, { 'fill_1_P.14': companyName });     // 公司名稱
+        // First Secretary (Natural Person) — full HKID/passport + address
+        if (firstSecNatural) {
+          const piSnEn = parseEnName(firstSecNatural.nameEnglish);
+          const piSnAddr = parseAddr(firstSecNatural.address);
+          const secId = (firstSecNatural.idNumber || '').trim();
+          // Parse HKID format: "A123456(7)" → main="A123456", check="7"
+          const hkidMatch = secId.match(/^([A-Z]?\d+)\s*\(?(\d)\)?$/);
+          const secMainId = hkidMatch ? hkidMatch[1] : secId;
+          const secCheckDigit = hkidMatch ? hkidMatch[2] : '';
+          Object.assign(fields, {
+            'fill_2_P.14': firstSecNatural.nameChinese || '',      // 中文姓名
+            'fill_3_P.14': piSnEn.surname,                         // 英文姓氏
+            'fill_4_P.14': piSnEn.otherNames,                      // 英文名字
+            'fill_5_P.14': secMainId,                              // 身分證/護照號碼
+            'fill_6_P.14': secCheckDigit,                          // 括號內數字
+            'fill_7_P.14': piSnAddr.flat || piSnAddr.building || firstSecNatural.address || '',  // 住址1
+            'fill_8_P.14': [piSnAddr.street, piSnAddr.district, piSnAddr.region].filter(Boolean).join(', ') || '',  // 住址2
+          });
+          // Identity type checkbox: HKID vs Passport
+          if (secId.match(/^[A-Z]?\d/)) {
+            checkboxes.push('cb_1_P.14'); // 香港身分證
+          } else {
+            checkboxes.push('cb_2_P.14'); // 護照
+          }
+        }
+        // First Director (Natural Person) — full HKID/passport + address
+        if (firstDirNatural) {
+          const piDnEn = parseEnName(firstDirNatural.nameEnglish);
+          const piDnAddr = parseAddr(firstDirNatural.address);
+          Object.assign(fields, {
+            'fill_9_P.14': firstDirNatural.nameChinese || '',      // 中文姓名
+            'fill_10_P.14': piDnEn.surname,                        // 英文姓氏
+            'fill_11_P.14': piDnEn.otherNames,                     // 英文名字
+            'fill_12_P.14': (firstDirNatural.idNumber || '').trim(), // 完整身分證/護照號碼
+            'fill_13_P.14': [piDnAddr.flat, piDnAddr.building, piDnAddr.street, piDnAddr.district, piDnAddr.region].filter(Boolean).join(', ') || firstDirNatural.address || '', // 住址
+          });
+        }
+
         const resp = await fetch(`/api/generate-nnc1-pdf`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },

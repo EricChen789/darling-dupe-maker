@@ -7763,6 +7763,38 @@ def _fill_nnc1_pdf(data):
             signer_name = (first_sh.get('surname', '') + ' ' + first_sh.get('otherNames', '')).strip()
         _set_text(doc, fmap, 'fill_10_P.7', signer_name)
 
+    # ── PI-NNC1 (P.14): 首任公司秘書／董事(自然人) 受保護資料 ──
+    # fill_1 = 公司名稱
+    _set_text(doc, fmap, 'fill_1_P.14', data.get('companyName', '') or data.get('nameEnglish', ''))
+
+    if first_sec_nat:
+        sec_en = _parse_en_name(first_sec_nat.get('nameEnglish', ''))
+        sec_id = (first_sec_nat.get('idNumber', '') or '').strip()
+        # Parse HKID: "A123456(7)" → main + check digit
+        hkid_m = re.match(r'^([A-Z]?\d+)\s*\(?(\d)\)?$', sec_id)
+        _set_cjk('fill_2_P.14', first_sec_nat.get('nameChinese', ''), align='center')
+        _set_text(doc, fmap, 'fill_3_P.14', sec_en['surname'])
+        _set_text(doc, fmap, 'fill_4_P.14', sec_en['otherNames'])
+        _set_text(doc, fmap, 'fill_5_P.14', hkid_m.group(1) if hkid_m else sec_id)
+        _set_text(doc, fmap, 'fill_6_P.14', hkid_m.group(2) if hkid_m else '')
+        sec_addr = _parse_addr(first_sec_nat.get('address', ''))
+        _set_cjk('fill_7_P.14', f"{sec_addr['flat']} {sec_addr['building']}".strip())
+        _set_cjk('fill_8_P.14', f"{sec_addr['street']} {sec_addr['district']} {sec_addr['region']}".strip())
+        # Identity: HKID vs Passport
+        if re.match(r'^[A-Z]?\d', sec_id):
+            _check(doc, fmap, 'cb_1_P.14', True)  # HKID
+        else:
+            _check(doc, fmap, 'cb_2_P.14', True)  # Passport
+
+    if first_dir_nat:
+        dir_en = _parse_en_name(first_dir_nat.get('nameEnglish', ''))
+        _set_cjk('fill_9_P.14', first_dir_nat.get('nameChinese', ''), align='center')
+        _set_text(doc, fmap, 'fill_10_P.14', dir_en['surname'])
+        _set_text(doc, fmap, 'fill_11_P.14', dir_en['otherNames'])
+        _set_text(doc, fmap, 'fill_12_P.14', (first_dir_nat.get('idNumber', '') or '').strip())
+        dir_addr = _parse_addr(first_dir_nat.get('address', ''))
+        _set_cjk('fill_13_P.14', ', '.join(filter(None, [dir_addr['flat'], dir_addr['building'], dir_addr['street'], dir_addr['district'], dir_addr['region']])))
+
     # ── P.8: 創辦成員陳述書 ──
     # fill_1-5: 續頁頁數（A=秘書自然人, B=秘書法人, C=董事自然人, D=董事法人, E=額外法人董事）
     sec_nat_count = sum(1 for o in officers if o.get('role') == 'secretary' and o.get('identity') != 'corporate')

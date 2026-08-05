@@ -8171,8 +8171,8 @@ def generate_nnc1_pdf():
 def _fill_irbr1_pdf(data):
     """Fill IRBR1 PDF template（致商業登記署通知書），returns bytes.
 
-    1 page, 2 radio buttons (Yes=widget[0] / No=widget[1]) named:
-    topmostSubform[0].Page1[0].RadioButtonList[0]
+    1 page, 2 checkboxes (no XFA):
+      cb_1_P.1 = Yes/是 (left), cb_2_P.1 = No/否 (right)
 
     Accepts: {irbr1_yes: bool, brNumber?: str}
     """
@@ -8183,16 +8183,15 @@ def _fill_irbr1_pdf(data):
     if isinstance(irbr1_yes, str):
         irbr1_yes = irbr1_yes.lower() in ('yes', 'true', '1', '是')
 
-    # Radio buttons: widget[0] = Yes, widget[1] = No
+    # Simple checkboxes: cb_1_P.1=Yes (left), cb_2_P.1=No (right)
     page = doc[0]
-    widgets = list(page.widgets())
-    if len(widgets) >= 2:
-        if irbr1_yes:
-            widgets[0].field_value = True
-            widgets[0].update()
-        else:
-            widgets[1].field_value = True
-            widgets[1].update()
+    for w in page.widgets():
+        if w.field_name == 'cb_1_P.1' and irbr1_yes:
+            w.field_value = True
+            w.update()
+        elif w.field_name == 'cb_2_P.1' and not irbr1_yes:
+            w.field_value = True
+            w.update()
 
     # Stamp BR number if available
     br8 = re.sub(r'[^0-9A-Za-z]', '', data.get('brNumber', '') or '')[:8]

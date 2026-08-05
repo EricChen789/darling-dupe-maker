@@ -284,24 +284,22 @@ export async function onRequest(context: any) {
             filename: `IR1263_${linkedData.companyName || "form"}.pdf`,
           });
         } else if (formCode === "IRBR1" || formCode === "IRBR2") {
-          // IRBR forms: load template from R2, fill, return
+          // IRBR forms: load fillable template from R2, fill AcroForm widgets only
+          // New fillable templates have empty XFA streams — AcroForm API is the way.
           const r2Bucket = (env as any).PDF_TEMPLATES || (env as any).R2;
           const templateName = formCode === "IRBR1" ? "IRBR1-template.pdf" : "IRBR2-template.pdf";
           const templateObj = await r2Bucket.get(templateName);
           if (!templateObj) throw new Error(`${templateName} not found in R2`);
           const templateBytes = new Uint8Array(await templateObj.arrayBuffer());
           const pdfDoc = await PDFDocument.load(templateBytes, { ignoreEncryption: true });
-          const form = pdfDoc.getForm();
 
+          const form = pdfDoc.getForm();
           if (formCode === "IRBR1") {
+            // Simple checkboxes: cb_1_P.1=Yes (left), cb_2_P.1=No (right) — No XFA
             const irbr1Yes = linkedData.irbr1_yes !== false;
-            try {
-              const radioGroup = form.getRadioGroup('topmostSubform[0].Page1[0].RadioButtonList[0]');
-              const opts = radioGroup.getOptions();
-              if (opts.length >= 2) radioGroup.select(irbr1Yes ? opts[0] : opts[1]);
-            } catch (_) {}
+            try { if (irbr1Yes) form.getCheckBox('cb_1_P.1').check(); else form.getCheckBox('cb_2_P.1').check(); } catch (_) {}
           } else {
-            // IRBR2
+            // IRBR2: 5 text fields + 2 radio groups
             const br = linkedData.brNumber || "";
             try { if (br) form.getTextField('topmostSubform[0].Page1[0].TextField1[0]').setText(br); } catch (_) {}
             try { if (linkedData.businessNameChinese) form.getTextField('topmostSubform[0].Page1[0].TextField2[0]').setText(linkedData.businessNameChinese); } catch (_) {}
@@ -320,7 +318,7 @@ export async function onRequest(context: any) {
             } catch (_) {}
           }
 
-          form.flatten();
+          // Keep form interactive — preserve editable blue boxes (no flatten)
           const pdfBytes = await pdfDoc.save({ useObjectStreams: false });
           results.push({
             form_code: formCode,

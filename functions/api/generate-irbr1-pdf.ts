@@ -1,6 +1,8 @@
 // POST /api/generate-irbr1-pdf
 // IRBR1 致商業登記署通知書 — 申請公司註冊補充表格
-// 1 page, 2 radio buttons (Yes/No)
+// 1 page, 2 checkboxes (Yes/No) — simple AcroForm, NO XFA.
+// Field names: cb_1_P.1 = Yes (left), cb_2_P.1 = No (right)
+// Keep form interactive (no flatten) — preserve editable blue boxes.
 
 import { PDFDocument } from "pdf-lib";
 import {
@@ -31,23 +33,17 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
     const templateBytes = new Uint8Array(await templateObj.arrayBuffer());
     const pdfDoc = await PDFDocument.load(templateBytes, { ignoreEncryption: true });
 
-    const form = pdfDoc.getForm();
     const irbr1Yes = data.irbr1_yes !== false; // default true (Yes)
 
-    // Radio button group: topmostSubform[0].Page1[0].RadioButtonList[0]
-    try {
-      const radioGroup = form.getRadioGroup('topmostSubform[0].Page1[0].RadioButtonList[0]');
-      // Try selecting by common export values
-      const options = radioGroup.getOptions();
-      if (options.length >= 2) {
-        radioGroup.select(irbr1Yes ? options[0] : options[1]);
-      }
-    } catch (e) {
-      console.warn("IRBR1 radio group selection error:", e);
+    // Simple AcroForm checkboxes — no XFA needed
+    const form = pdfDoc.getForm();
+    if (irbr1Yes) {
+      try { form.getCheckBox('cb_1_P.1').check(); } catch (_) {}
+    } else {
+      try { form.getCheckBox('cb_2_P.1').check(); } catch (_) {}
     }
 
-    // Flatten for clean output (1 page, cheap CPU)
-    form.flatten();
+    // Save — keep form interactive (no flatten), keep editable blue boxes
     const pdfBytes = await pdfDoc.save({ useObjectStreams: false });
     return jsonResp({ pdf: uint8ToBase64(new Uint8Array(pdfBytes)) });
   } catch (err: any) {

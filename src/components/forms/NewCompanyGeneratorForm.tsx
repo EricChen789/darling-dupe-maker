@@ -614,11 +614,11 @@ export default function NewCompanyGeneratorForm({ onBack, initialCompanyId }: Pr
             nameChinese: o.nameChinese || '',
             surname: en.surname,
             otherNames: en.otherNames,
-            hkidMain: hkidMatch ? hkidMatch[1] : id,
+            hkidMain: hkidMatch ? hkidMatch[1] : '',
             hkidCheck: hkidMatch ? hkidMatch[2] : '',
-            isHkid: /^[A-Z]?\d/.test(id),
+            isHkid: hkidMatch ? true : false,
             passportCountry: o.passportCountry || '',
-            passportNumber: id,  // full ID = passport number when not HKID
+            passportNumber: hkidMatch ? '' : id,  // only for non-HKID
             addrFlat: addr.flat,
             addrBuilding: addr.building,
             addrStreet: addr.street,

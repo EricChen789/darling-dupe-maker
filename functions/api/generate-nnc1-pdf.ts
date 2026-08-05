@@ -321,6 +321,10 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
               } else {
                 const mapping = PI_FIELDS.find(f => f.suffix === suffix);
                 if (!mapping) continue;
+                // HKID fields (fill_5, fill_6) — only fill if person has HKID
+                if ((suffix === 'fill_5' || suffix === 'fill_6') && !person.isHkid) continue;
+                // Passport fields (fill_7, fill_8) — only fill if person does NOT have HKID
+                if ((suffix === 'fill_7' || suffix === 'fill_8') && person.isHkid) continue;
                 const val = String(person[mapping.key] ?? "").trim();
                 if (!val) continue;
                 setWidgetAp(pdfDoc, widget, val, mapping.isCjk);

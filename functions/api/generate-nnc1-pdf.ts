@@ -8,108 +8,128 @@
 //     Person 1+ → copyPages + drawMixed overlay — 繞過 widget field-name 共享
 //     嵌入 Noto Sans TC（R2）提供 CJK 渲染
 
-import { PDFDocument, StandardFonts } from "pdf-lib";
-import { corsHeaders, jsonResp, uint8ToBase64, drawMixed, fetchAndEmbedFont } from "./_pdf-utils";
+import { PDFDocument, StandardFonts, PDFName, PDFString, PDFHexString } from "pdf-lib";
+import { corsHeaders, jsonResp, uint8ToBase64 } from "./_pdf-utils";
 import { enableNeedAppearances } from "./_acroform";
 import { verifyAuthRequest, type Env } from "./_auth";
 
 const TEMPLATE_NAME = "NNC1-template.pdf";
 
 // ═══ PI-NNC1 (P.14) — 受保護資料頁 ═══
-// Strategy: ALL persons use copyPages (blank template) + drawText overlay.
-//   White rectangles cover widget AP artifacts, then drawMixed renders text on top.
-//   This avoids the pdf-lib field-name sharing problem entirely.
-//   Mirrors Flask PyMuPDF approach: draw_rect(white) + insert_textbox.
+// Strategy: widget-level /V + /DA on copied pages, using template's built-in /PMingLiU font.
+//   No font embedding needed → CPU stays under Workers limit.
+//   Key insight: copyPages BEFORE touching any form fields → copied widgets are blank.
+//   Then set widget-level /V on each page independently.
 
-interface PiField {
-  key: string;    // piPerson property key
-  x: number;      // pdf-lib drawText x (origin bottom-left)
-  y: number;      // pdf-lib drawText y (field rect bottom)
-  w: number;      // field width
-  h: number;      // field height
-  isCjk: boolean;
-}
+// PI-NNC1 widget suffix → person data key
+const PI_KEY_MAP: Record<string, { key: string; isCjk: boolean }> = {
+  'fill_2':  { key: 'nameChinese',     isCjk: true  },
+  'fill_3':  { key: 'surname',         isCjk: false },
+  'fill_4':  { key: 'otherNames',      isCjk: false },
+  'fill_5':  { key: 'hkidMain',        isCjk: false },
+  'fill_6':  { key: 'hkidCheck',       isCjk: false },
+  'fill_7':  { key: 'passportCountry', isCjk: true  },
+  'fill_8':  { key: 'passportNumber',  isCjk: false },
+  'fill_9':  { key: 'addrFlat',        isCjk: true  },
+  'fill_10': { key: 'addrBuilding',    isCjk: true  },
+  'fill_11': { key: 'addrStreet',      isCjk: true  },
+  'fill_12': { key: 'addrDistrict',    isCjk: true  },
+  'fill_13': { key: 'addrRegion',      isCjk: true  },
+};
 
-const PI_FIELDS: PiField[] = [
-  { key: 'nameChinese',     x: 207, y: 436, w: 355, h: 22, isCjk: true  },
-  { key: 'surname',         x: 207, y: 406, w: 355, h: 23, isCjk: false },
-  { key: 'otherNames',      x: 207, y: 378, w: 355, h: 22, isCjk: false },
-  { key: 'hkidMain',        x: 257, y: 338, w: 256, h: 22, isCjk: false },
-  { key: 'hkidCheck',       x: 526, y: 338, w:  24, h: 22, isCjk: false },
-  { key: 'passportCountry', x: 257, y: 310, w: 305, h: 22, isCjk: true  },
-  { key: 'passportNumber',  x: 257, y: 282, w: 305, h: 22, isCjk: false },
-  { key: 'addrFlat',        x: 207, y: 230, w: 355, h: 27, isCjk: true  },
-  { key: 'addrBuilding',    x: 207, y: 196, w: 355, h: 27, isCjk: true  },
-  { key: 'addrStreet',      x: 207, y: 162, w: 355, h: 27, isCjk: true  },
-  { key: 'addrDistrict',    x: 207, y: 128, w: 355, h: 27, isCjk: true  },
-  { key: 'addrRegion',      x: 207, y:  94, w: 355, h: 27, isCjk: true  },
-];
-
-/** Fill one PI-NNC1 page using white rect + drawMixed overlay.
- *  White rectangles cover the blank widget AP (and any shared-field artifacts),
- *  then text is drawn on top — matching the Flask PyMuPDF approach. */
-function fillPiDrawText(
+/** Set widget-level /V and /DA on a single PI-NNC1 page.
+ *  Works on both original and copied pages — uses template's /PMingLiU font.
+ *  Deletes widget /AP so PDF reader regenerates appearance from /V + /DA. */
+function fillPiWidgets(
   pdfDoc: any,
   pageIndex: number,
   piPerson: Record<string, any>,
-  fonts: { cjk: any; ascii: any }
+  companyName: string
 ): void {
   const page = pdfDoc.getPages()[pageIndex];
   if (!page) return;
+  const annots = page.node.lookup(PDFName.of("Annots")) as any;
+  if (!annots || typeof annots.size !== "function") return;
 
-  // Helper: draw a filled white rectangle
-  const whiteRect = (x: number, y: number, w: number, h: number) => {
+  for (let i = 0; i < annots.size(); i++) {
     try {
-      page.drawRectangle({
-        x: x - 4, y: y - 2,
-        width: w + 8, height: h + 4,
-        color: { r: 1, g: 1, b: 1 } as any,
-        borderWidth: 0,
-      } as any);
-    } catch { /* skip if drawRectangle fails */ }
-  };
+      const widget = pdfDoc.context.lookup(annots.get(i)) as any;
+      if (!widget || typeof widget.get !== "function") continue;
+      const subtype = widget.get(PDFName.of("Subtype"));
+      if (!subtype || String(subtype) !== "/Widget") continue;
 
-  // Company name at top (fill_1 area, ~y:490-515)
-  const coName = String(piPerson['companyName'] ?? '').trim();
-  if (coName) {
-    whiteRect(207, 490, 355, 25);
-    drawMixed(page, coName, {
-      x: 211, y: 497, size: 9, cjk: fonts.cjk, ascii: fonts.ascii,
-    });
-  }
+      const parentRef = widget.get(PDFName.of("Parent"));
+      const field = parentRef ? (pdfDoc.context.lookup(parentRef) as any) : widget;
+      const ft = field.get(PDFName.of("FT"));
+      const fieldType = ft ? String(ft) : "";
 
-  // Person data fields — white rect + text in each blue field box
-  for (const f of PI_FIELDS) {
-    const val = String(piPerson[f.key] ?? '').trim();
-    if (!val) continue;
-    // Cover widget area with white, then draw text
-    whiteRect(f.x, f.y, f.w, f.h);
-    const textY = Math.round(f.y + f.h / 2 + 2); // vertical center baseline
-    try {
-      if (f.isCjk || !fonts.ascii) {
-        drawMixed(page, val, {
-          x: f.x + 2, y: textY, size: 8, cjk: fonts.cjk, ascii: fonts.ascii,
-        });
-      } else {
-        page.drawText(val, {
-          x: f.x + 2, y: textY, size: 8, font: fonts.ascii,
-        });
+      // Get field/widget name
+      const fieldName = _decode(field.get(PDFName.of("T")));
+      const widgetName = _decode(widget.get(PDFName.of("T")));
+      const name = widgetName || fieldName || "";
+      if (!name) continue;
+
+      // Extract suffix: "fill_2_P.14" → "fill_2"
+      const suffix = name.replace(/_P\.\d+$/, "").replace(/_P\d+$/, "");
+
+      if (fieldType === "/Tx") {
+        let val = "";
+        if (suffix === "fill_1") {
+          val = companyName;
+        } else {
+          const mapping = PI_KEY_MAP[suffix];
+          if (mapping) val = String(piPerson[mapping.key] ?? "").trim();
+        }
+        if (!val) continue;
+
+        // Build DA string using template's PMingLiU for CJK, Helv for ASCII
+        const mapping = PI_KEY_MAP[suffix];
+        const useCjk = mapping?.isCjk && !_isAscii(val);
+        const da = useCjk
+          ? "/PMingLiU 10 Tf 0 g"
+          : "/Helv 10 Tf 0 g";
+
+        widget.set(PDFName.of("DA"), PDFString.of(da));
+        widget.set(PDFName.of("V"), useCjk ? PDFHexString.fromText(val) : PDFString.of(val));
+        widget.delete(PDFName.of("AP")); // force reader to regenerate from /V+/DA
+      } else if (fieldType === "/Btn") {
+        // Checkbox: cb_1 = 秘書, cb_2 = 董事
+        const isSec = piPerson['isSecretary'];
+        if ((suffix === 'cb_1' && isSec) || (suffix === 'cb_2' && !isSec)) {
+          // Discover On state name from AP dict
+          let onState = "Yes";
+          try {
+            const ap = widget.get(PDFName.of("AP")) as any;
+            const apN = ap?.get?.(PDFName.of("N")) as any;
+            const dict = apN?.dict;
+            if (dict && typeof dict.keys === "function") {
+              for (const k of dict.keys()) {
+                if (k !== "Off") { onState = k; break; }
+              }
+            }
+          } catch { /* use default */ }
+          widget.set(PDFName.of("AS"), PDFName.of(onState));
+          widget.delete(PDFName.of("AP"));
+        }
       }
-    } catch {
-      try {
-        drawMixed(page, val, {
-          x: f.x + 2, y: textY, size: 8, cjk: fonts.cjk, ascii: fonts.ascii,
-        });
-      } catch { /* skip */ }
-    }
+    } catch { /* skip malformed widget */ }
   }
+}
 
-  // Checkbox: draw tick mark at cb_1 (x:207) or cb_2 (x:314)
+// Mini helpers to avoid importing _acroform (reduces bundle)
+function _decode(v: any): string {
+  if (!v) return "";
   try {
-    whiteRect(piPerson['isSecretary'] ? 207 : 314, 471, 16, 16);
-    const cbX = piPerson['isSecretary'] ? 208 : 315;
-    page.drawText('✓', { x: cbX, y: 473, size: 10, font: fonts.cjk });
-  } catch { /* skip */ }
+    if (v instanceof PDFString) return v.decodeText();
+    if (v instanceof PDFHexString) return v.decodeText();
+    return String(v).replace(/^\(|\)$/g, "");
+  } catch { return ""; }
+}
+function _isAscii(s: string): boolean {
+  for (let i = 0; i < s.length; i++) {
+    if (s.charCodeAt(i) > 127) return false;
+  }
+  return true;
 }
 
 export async function onRequest(context: { request: Request; env: Env }): Promise<Response> {
@@ -188,46 +208,36 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
       } catch { /* skip */ }
     }
 
-    // ── PI-NNC1: Copy blank P.14 FIRST, then drawText overlay for ALL persons ──
+    // ── PI-NNC1: Copy blank P.14 FIRST, then widget /V for ALL persons ──
     const piPersons = data.piPersons || [];
     const PI_PAGE_IDX = 13; // P.14 (0-indexed)
 
     if (piPersons.length > 0) {
-      // Load CJK font on-demand (fontkit registration is expensive — only when PI needed)
-      const cjkFonts = await fetchAndEmbedFont(pdfDoc, env as any);
-      const fonts = { cjk: cjkFonts.cjk, ascii: helv };
-
-      // Attach company name to each piPerson
       const companyName = (data.fields as any)?.['fill_1_P.1'] || '';
-      for (const p of piPersons) {
-        (p as any).companyName = companyName;
-      }
 
-      // 1) Copy extra blank P.14 pages FIRST (while widgets are still blank/unfilled)
+      // 1) Copy extra blank P.14 pages FIRST (while widgets are still blank)
       if (piPersons.length > 1) {
         for (let i = 1; i < piPersons.length; i++) {
           const [copiedPage] = await pdfDoc.copyPages(pdfDoc, [PI_PAGE_IDX]);
           pdfDoc.insertPage(PI_PAGE_IDX + i, copiedPage);
         }
-
-        // Adjust removePages indices for inserted PI-NNC1 pages
         if (data.removePages) {
           const shift = piPersons.length - 1;
           data.removePages = data.removePages.map((p: number) => p + shift);
         }
       }
 
-      // 2) DrawText overlay on ALL PI-NNC1 pages (all persons, all pages)
+      // 2) Set widget /V on ALL PI-NNC1 pages (uses template /PMingLiU font)
       for (let i = 0; i < piPersons.length; i++) {
-        fillPiDrawText(pdfDoc, PI_PAGE_IDX + i, piPersons[i], fonts);
+        fillPiWidgets(pdfDoc, PI_PAGE_IDX + i, piPersons[i], companyName);
       }
 
-      // 3) P.8 續頁計數器 — fill_4 = 續頁D (PI-NNC1 continuation count)
+      // 3) P.8 續頁計數器
       const piContPages = piPersons.length - 1;
       if (piContPages > 0) {
         try {
           form.getTextField('fill_4_P.8').setText(String(piContPages));
-        } catch { /* may not exist in all template versions */ }
+        } catch { /* skip */ }
       }
     }
 

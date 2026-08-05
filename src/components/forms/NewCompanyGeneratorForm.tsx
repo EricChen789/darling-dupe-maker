@@ -447,6 +447,156 @@ export default function NewCompanyGeneratorForm({ onBack, initialCompanyId }: Pr
           }
         }
 
+        // ── Continuation Pages (P.9-P.13): 續頁A/B/C/D/E ──
+        // P.9 (續頁A, index 8) = 創辦成員(股東) 續頁
+        // P.10 (續頁B, index 9) = 公司秘書自然人 續頁
+        // P.11 (續頁C, index 10) = 公司秘書法人團體 續頁
+        // P.12 (續頁D, index 11) = 董事自然人 續頁
+        // P.13 (續頁E, index 12) = 董事法人團體 續頁
+        // Build a list of pages to remove (unused continuation pages)
+        const extraRemove: number[] = [];
+
+        // 續頁A (P.9): Second shareholder
+        const secondShareholder = shareholders[1];
+        if (secondShareholder && (secondShareholder.name || secondShareholder.surname)) {
+          const sh2Addr = parseAddr(secondShareholder.address);
+          const sh2Paid = parseFloat(String(secondShareholder.amountPaid || '').replace(/[^0-9.]/g, ''));
+          Object.assign(fields, {
+            'fill_1_P.9': secondShareholder.name,
+            'fill_2_P.9': secondShareholder.surname,
+            'fill_3_P.9': secondShareholder.otherNames,
+            'fill_5_P.9': sh2Addr.flat,
+            'fill_6_P.9': sh2Addr.building,
+            'fill_7_P.9': sh2Addr.street,
+            'fill_8_P.9': sh2Addr.district,
+            'fill_9_P.9': sh2Addr.region,
+            'fill_10_P.9': secondShareholder.shareType || 'Ordinary',
+            'fill_11_P.9': fmtNum(secondShareholder.shares || 0),
+            'fill_12_P.9': 'HKD',
+            'fill_13_P.9': fmtNum(isNaN(sh2Paid) ? 0 : sh2Paid),
+          });
+        } else if (allNatSecs.length <= 1) {
+          extraRemove.push(8); // P.9 續頁A unused
+        }
+
+        // 續頁B (P.10): Second natural secretary
+        const secondSecNat = allNatSecs[1];
+        if (secondSecNat) {
+          const sn2En = parseEnName(secondSecNat.nameEnglish);
+          const sn2Addr = parseAddr(secondSecNat.address);
+          const sec2Id = (secondSecNat.idNumber || '').trim();
+          const sec2IsHkid = /^[A-Z]?\d/.test(sec2Id);
+          Object.assign(fields, {
+            'fill_1_P.10': secondSecNat.nameChinese || '',
+            'fill_2_P.10': sn2En.surname,
+            'fill_3_P.10': sn2En.otherNames,
+            'fill_4_P.10': secondSecNat.previousNameChinese || '',
+            'fill_5_P.10': secondSecNat.previousNameEnglish || '',
+            'fill_6_P.10': secondSecNat.aliasChinese || '',
+            'fill_7_P.10': secondSecNat.aliasEnglish || '',
+            'fill_8_P.10': sn2Addr.flat,
+            'fill_9_P.10': sn2Addr.building,
+            'fill_10_P.10': sn2Addr.street,
+            'fill_11_P.10': sn2Addr.district,
+            'fill_12_P.10': '',
+            'fill_13_P.10': sec2IsHkid ? fmtHkid(sec2Id) : '',
+            'fill_14_P.10': !sec2IsHkid && sec2Id ? (secondSecNat.passportCountry || '') : '',
+            'fill_15_P.10': !sec2IsHkid && sec2Id ? sec2Id : '',
+            'fill_16_P.10': secondSecNat.tcspLicense || '',
+          });
+          if (!secondSecNat.tcspLicense) checkboxes.push('cb_1_P.10');
+        } else {
+          extraRemove.push(9); // P.10 續頁B unused
+        }
+
+        // 續頁C (P.11): Second corporate secretary — only if >1
+        const allCorpSecs = officers.filter(o => o.role === 'secretary' && o.identity === 'corporate');
+        const secondSecCorp = allCorpSecs[1];
+        if (secondSecCorp) {
+          const sc2Addr = parseAddr(secondSecCorp.address);
+          const sc2Tcsp = secondSecCorp.tcspLicense || '';
+          Object.assign(fields, {
+            'fill_1_P.11': secondSecCorp.nameChinese || '',
+            'fill_2_P.11': secondSecCorp.nameEnglish || '',
+            'fill_3_P.11': sc2Addr.flat,
+            'fill_4_P.11': sc2Addr.building,
+            'fill_5_P.11': sc2Addr.street,
+            'fill_6_P.11': sc2Addr.district,
+            'fill_7_P.11': '',
+            'fill_8_P.11': secondSecCorp.companyNumberRef || secondSecCorp.idNumber || '',
+            'fill_9_P.11': sc2Tcsp,
+          });
+          if (!sc2Tcsp) checkboxes.push('cb_1_P.11');
+        } else {
+          extraRemove.push(10); // P.11 續頁C unused (only 1 corp secretary)
+        }
+
+        // 續頁D (P.12): Second natural director
+        const secondDirNat = allNatDirs[1];
+        if (secondDirNat) {
+          const dn2En = parseEnName(secondDirNat.nameEnglish);
+          const dn2Addr = parseAddr(secondDirNat.address);
+          const dir2Id = (secondDirNat.idNumber || '').trim();
+          const dir2IsHkid = /^[A-Z]?\d/.test(dir2Id);
+          Object.assign(fields, {
+            'fill_1_P.12': secondDirNat.nameChinese || '',
+            'fill_2_P.12': dn2En.surname,
+            'fill_3_P.12': dn2En.otherNames,
+            'fill_4_P.12': secondDirNat.previousNameChinese || '',
+            'fill_5_P.12': secondDirNat.previousNameEnglish || '',
+            'fill_6_P.12': secondDirNat.aliasChinese || '',
+            'fill_7_P.12': secondDirNat.aliasEnglish || '',
+            'fill_8_P.12': dn2Addr.flat,
+            'fill_9_P.12': dn2Addr.building,
+            'fill_10_P.12': dn2Addr.street,
+            'fill_11_P.12': dn2Addr.district,
+            'fill_12_P.12': dn2Addr.region,
+            'fill_13_P.12': '',
+            'fill_14_P.12': dir2IsHkid ? fmtHkid(dir2Id) : '',
+            'fill_15_P.12': !dir2IsHkid && dir2Id ? (secondDirNat.passportCountry || '') : '',
+            'fill_16_P.12': !dir2IsHkid && dir2Id ? dir2Id : '',
+          });
+          checkboxes.push('cb_1_P.12');
+        } else {
+          extraRemove.push(11); // P.12 續頁D unused
+        }
+
+        // 續頁E (P.13): Second corporate director
+        const allCorpDirs = officers.filter(o => o.role === 'director' && o.identity === 'corporate');
+        const secondDirCorp = allCorpDirs[1];
+        if (secondDirCorp) {
+          const dc2Addr = parseAddr(secondDirCorp.address);
+          Object.assign(fields, {
+            'fill_1_P.13': secondDirCorp.nameChinese || '',
+            'fill_2_P.13': secondDirCorp.nameEnglish || '',
+            'fill_3_P.13': dc2Addr.flat,
+            'fill_4_P.13': dc2Addr.building,
+            'fill_5_P.13': dc2Addr.street,
+            'fill_6_P.13': dc2Addr.district,
+            'fill_7_P.13': dc2Addr.region,
+            'fill_8_P.13': '',
+            'fill_9_P.13': secondDirCorp.companyNumberRef || '',
+          });
+          checkboxes.push('cb_1_P.13');
+          if (chosenSigner && signerFullNameEn) {
+            Object.assign(fields, { 'fill_10_P.13': signerFullNameEn });
+          }
+        } else {
+          extraRemove.push(12); // P.13 續頁E unused
+        }
+
+        // Update P.8 page counts (actual continuation pages used)
+        const secNatContPages = Math.max(0, allNatSecs.length - 1);
+        const secCorpContPages = Math.max(0, allCorpSecs.length - 1);
+        const dirNatContPages = Math.max(0, allNatDirs.length - 1);
+        const dirCorpContPages = Math.max(0, allCorpDirs.length - 1);
+        Object.assign(fields, {
+          'fill_1_P.8': secNatContPages > 0 ? String(secNatContPages) : '',
+          'fill_2_P.8': secCorpContPages > 0 ? String(secCorpContPages) : '',
+          'fill_3_P.8': dirNatContPages > 0 ? String(dirNatContPages) : '',
+          'fill_4_P.8': dirCorpContPages > 0 ? String(dirCorpContPages) : '',
+        });
+
         // ── PI-NNC1 (P.14+): 首任公司秘書／董事(自然人) 受保護資料 ──
         // ⚠️ 每頁只填報一名自然人！需要多頁時自動複製P.14
         // cb_1/cb_2=身份（秘書/董事），非HKID/護照
@@ -507,7 +657,7 @@ export default function NewCompanyGeneratorForm({ onBack, initialCompanyId }: Pr
             overlays,
             piPersons,  // 所有自然人（秘書+董事），後端會自動複製PI-NNC1頁面
             keepWidgets: true,
-            removePages: [14,15,16,17,18,19,20,21,22,23],  // 刪除填表須知白頁 (0-indexed: P.15-24)
+            removePages: [...extraRemove, 14,15,16,17,18,19,20,21,22,23],  // 刪除未用續頁 + 填表須知白頁
             alignCenterFields: ['fill_1_P.1', 'fill_2_P.1', 'fill_4_P.1', 'fill_1_P.3', 'fill_1_P.4', 'fill_1_P.5', 'fill_1_P.6', 'fill_1_P.7'],  // 公司名+業務性質+股東/秘書/董事中文名 水平居中
             alignVCenterFields: ['fill_1_P.1', 'fill_2_P.1', 'fill_4_P.1', 'fill_1_P.3', 'fill_1_P.4', 'fill_1_P.5', 'fill_1_P.6', 'fill_1_P.7'],  // 上下居中
             forceWidgetAp: ['fill_1_P.1'],  // 純英文公司名也走 widget AP 才可居中

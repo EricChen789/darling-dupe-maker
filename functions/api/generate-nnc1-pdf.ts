@@ -85,9 +85,11 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
     const form = pdfDoc.getForm();
 
     // ── Fill text fields ──
-    // NO LONGER skip _P.14 fields — person 0 data goes through form API (field-level /V)
+    // Skip _P.14 fields — PI-NNC1 uses drawText overlay (below), not form API.
+    // Setting both causes double-text (widget AP + overlay drawText).
     const fields = data.fields || {};
     for (const [name, value] of Object.entries(fields)) {
+      if (name.endsWith('_P.14')) continue;
       try {
         const vstr = value != null ? String(value) : "";
         if (!vstr) continue;
@@ -97,7 +99,9 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
     }
 
     // ── Check checkboxes ──
+    // Skip P.14 checkboxes — handled by drawText overlay (below).
     for (const name of data.checkboxes || []) {
+      if (name.endsWith('_P.14')) continue;
       try {
         form.getCheckBox(name).check();
       } catch { /* skip */ }
@@ -150,8 +154,8 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
           try {
             // White rectangle to cover underlying form field (template AP or form API value)
             page.drawRectangle({
-              x: rect.x - 2, y: rect.y - 2,
-              width: rect.w + 4, height: rect.h + 4,
+              x: rect.x - 4, y: rect.y - 4,
+              width: rect.w + 8, height: rect.h + 8,
               color: white,
             });
 
@@ -172,8 +176,8 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
           try {
             // White rectangle to cover underlying checkbox
             page.drawRectangle({
-              x: cbRect.x - 2, y: cbRect.y - 2,
-              width: cbRect.w + 4, height: cbRect.h + 4,
+              x: cbRect.x - 4, y: cbRect.y - 4,
+              width: cbRect.w + 8, height: cbRect.h + 8,
               color: white,
             });
             // Draw ✓ symbol

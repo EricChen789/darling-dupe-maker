@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -10,16 +10,20 @@ import { useSaveFormHistory } from '@/hooks/useFormHistory';
 import { downloadBase64Pdf } from '@/lib/downloadPdf';
 import FormHistorySelector from './FormHistorySelector';
 import PresenterSelector from './PresenterSelector';
+import RelatedFormsPrompt from './RelatedFormsPrompt';
 import type { Presenter } from '@/hooks/usePresenters';
+import AddressQuickPick from './AddressQuickPick';
 
-interface NN1GeneratorFormProps { onBack: () => void; }
+interface NN1GeneratorFormProps { onBack: () => void; initialCompanyId?: string; }
 interface OfficerEntry { role: string; nameChinese: string; nameEnglish: string; identity: string; address: string; }
 interface ShareholderEntry { name: string; shares: string; class: string; }
 
-export default function NN1GeneratorForm({ onBack }: NN1GeneratorFormProps) {
+export default function NN1GeneratorForm({ onBack, initialCompanyId }: NN1GeneratorFormProps) {
   const { data: companies = [] } = useCompanies();
   const [selectedCompanyId, setSelectedCompanyId] = useState('');
   const [generating, setGenerating] = useState(false);
+  const [showRelatedPrompt, setShowRelatedPrompt] = useState(false);
+  const [relatedLinkages, setRelatedLinkages] = useState<any[]>([]);
 
   const selectedCompany = useMemo(
     () => companies.find(c => c.id === selectedCompanyId),
@@ -85,6 +89,11 @@ export default function NN1GeneratorForm({ onBack }: NN1GeneratorFormProps) {
       }));
     }
   };
+
+  useEffect(() => {
+    if (initialCompanyId && companies.length && !selectedCompanyId) handleCompanySelect(initialCompanyId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialCompanyId, companies.length]);
 
   const handleGenerate = async () => {
     if (!formData.proposedNameEnglish) { toast({ title: '錯誤', description: '請填寫擬用公司英文名稱', variant: 'destructive' }); return; }
@@ -228,6 +237,17 @@ export default function NN1GeneratorForm({ onBack }: NN1GeneratorFormProps) {
         formType: 'NN1',
         formData: { formData, officers, shareholders, selectedCompanyId },
       });
+      // Check for IRBR2 linkage
+      try {
+        const linkResp = await fetch(`/api/form-linkages?primary=NN1`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const linkData = await linkResp.json();
+        if (linkData.linkages && linkData.linkages.length > 0) {
+          setRelatedLinkages(linkData.linkages);
+          setShowRelatedPrompt(true);
+        }
+      } catch (_) { /* linkage check is non-critical */ }
     } catch (err: any) { toast({ title: '生成失敗', description: err.message, variant: 'destructive' }); }
     finally { setGenerating(false); }
   };
@@ -309,6 +329,18 @@ export default function NN1GeneratorForm({ onBack }: NN1GeneratorFormProps) {
         {/* Section 3(b): Address */}
         <div><h3 className="font-semibold mb-3">香港主要營業地點的地址</h3>
           <p className="text-xs text-muted-foreground mb-3">Address of the Principal Place of Business in Hong Kong</p>
+          {selectedCompanyId && (
+            <div className="mb-3">
+              <AddressQuickPick companyId={selectedCompanyId}
+                onPick={(d) => {
+                  if (d.flat) update('flat', d.flat);
+                  if (d.building) update('building', d.building);
+                  if (d.street) update('street', d.street);
+                  if (d.district) update('district', d.district);
+                }}
+              />
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-4">
             <div><Label>室／樓／座 Flat／Floor／Block</Label><Input value={formData.flat} onChange={e => update('flat', e.target.value)} className="mt-1" /></div>
             <div><Label>大廈 Building</Label><Input value={formData.building} onChange={e => update('building', e.target.value)} className="mt-1" /></div>
@@ -435,6 +467,17 @@ export default function NN1GeneratorForm({ onBack }: NN1GeneratorFormProps) {
           </Button>
         </div>
       </div>
+
+      <RelatedFormsPrompt
+        open={showRelatedPrompt}
+        onOpenChange={setShowRelatedPrompt}
+        primaryFormCode="NN1"
+        primaryFormName="NN1 — 註冊非香港公司的註冊申請書"
+        primaryFormData={{ ...formData, company_id: selectedCompanyId }}
+        companyId={selectedCompanyId}
+        companyName={formData.proposedNameEnglish || formData.brNumber}
+        linkages={relatedLinkages}
+      />
     </div>
   );
 }

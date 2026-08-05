@@ -13,10 +13,12 @@ import { downloadGenericFormPdf } from '@/lib/genericFormPdf';
 import { downloadBase64Pdf } from '@/lib/downloadPdf';
 import { useSaveFormHistory } from '@/hooks/useFormHistory';
 import FormHistorySelector from './FormHistorySelector';
+import PresenterSelector from './PresenterSelector';
+import AddressQuickPick from './AddressQuickPick';
 
-interface Props { onBack: () => void; }
+interface Props { onBack: () => void; initialCompanyId?: string; }
 
-export default function RenameCompanyForm({ onBack }: Props) {
+export default function RenameCompanyForm({ onBack, initialCompanyId }: Props) {
   const { data: companies = [] } = useCompanies();
   const save = useSaveResolution();
   const [companyId, setCompanyId] = useState('');
@@ -42,6 +44,11 @@ export default function RenameCompanyForm({ onBack }: Props) {
   const { mutate: saveFormHistory } = useSaveFormHistory();
 
   const company = companies.find(c => c.id === companyId);
+
+  useEffect(() => {
+    if (initialCompanyId && companies.length && !companyId) setCompanyId(initialCompanyId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialCompanyId, companies.length]);
 
   useEffect(() => {
     if (company) {
@@ -231,6 +238,34 @@ with effect from the date of issue of the Certificate of Change of Name by the R
       <Separator />
 
       <h3 className="font-semibold text-sm">提交人資料 Presentor</h3>
+      {/* 從系統選擇提交人 */}
+      <PresenterSelector
+        currentData={{ name: presNameEn, nameEnglish: presNameEn, nameChinese: presNameCn, address: presAddress, phone: presPhone, fax: presFax, email: presEmail, reference: presRef }}
+        companyId={initialCompanyId}
+        onSelect={(p) => {
+          setPresNameEn(p.name || '');
+          setPresNameCn((p as any).nameChinese || '');
+          setPresAddress(p.address || '');
+          setPresPhone(p.phone || '');
+          setPresFax(p.fax || '');
+          setPresEmail(p.email || '');
+          setPresRef(p.reference || '');
+        }}
+      />
+      {initialCompanyId && (
+        <AddressQuickPick
+          companyId={initialCompanyId}
+          onPick={(d) => {
+            const parts = presAddress.split(/[,，]\s*/);
+            const flat = d.flat || parts[0] || '';
+            const building = d.building || parts[1] || '';
+            const street = d.street || parts[2] || '';
+            const district = d.district || parts[3] || '';
+            const region = d.country || d.region || parts[4] || '';
+            setPresAddress([flat, building, street, district, region].filter(Boolean).join(', '));
+          }}
+        />
+      )}
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1"><Label className="text-xs">中文姓名／名稱</Label><Input className="h-8 text-xs" value={presNameCn} onChange={e => setPresNameCn(e.target.value)} /></div>
         <div className="space-y-1"><Label className="text-xs">英文姓名／名稱</Label><Input className="h-8 text-xs" value={presNameEn} onChange={e => setPresNameEn(e.target.value)} /></div>

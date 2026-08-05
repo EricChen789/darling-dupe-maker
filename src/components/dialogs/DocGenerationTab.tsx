@@ -3,9 +3,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { FileText, FileType, Download, Loader2, FileOutput, AlertTriangle } from 'lucide-react';
+import { FileText, FileType, Download, Loader2, FileOutput } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { Company } from '@/types';
 import { NAR1Generator } from '@/components/nar1/NAR1Generator';
@@ -15,17 +14,23 @@ import ND4GeneratorForm from '@/components/forms/ND4GeneratorForm';
 import NDR1GeneratorForm from '@/components/forms/NDR1GeneratorForm';
 import NR1GeneratorForm from '@/components/forms/NR1GeneratorForm';
 import NSC1GeneratorForm from '@/components/forms/NSC1GeneratorForm';
-import RelatedFormsPrompt from '@/components/forms/RelatedFormsPrompt';
+import NewCompanyGeneratorForm from '@/components/forms/NewCompanyGeneratorForm';
+import RenameCompanyForm from '@/components/forms/RenameCompanyForm';
+import NN1GeneratorForm from '@/components/forms/NN1GeneratorForm';
+import NN3GeneratorForm from '@/components/forms/NN3GeneratorForm';
+import NN6GeneratorForm from '@/components/forms/NN6GeneratorForm';
+import NN7GeneratorForm from '@/components/forms/NN7GeneratorForm';
+import NN9GeneratorForm from '@/components/forms/NN9GeneratorForm';
+import IRBR1GeneratorForm from '@/components/forms/IRBR1GeneratorForm';
+import IRBR2GeneratorForm from '@/components/forms/IRBR2GeneratorForm';
 import { useGenerateDocx, DOCX_DOC_TYPES, type GenerateDocxInput } from '@/hooks/useWordDoc';
-import { useAutoCRFormPdf } from '@/hooks/useAutoCRFormPdf';
-import { getAccessToken } from '@/lib/d1Api';
 
 interface DocGenerationTabProps {
   company: Company;
 }
 
 // 有專用 PDF 生成器（PyMuPDF 模板填充）的表單
-const DEDICATED_PDF_FORMS = new Set(['nar1', 'nd2a', 'nd2b', 'nd4', 'ndr1', 'nr1', 'nsc1']);
+const DEDICATED_PDF_FORMS = new Set(['nar1', 'nd2a', 'nd2b', 'nd4', 'ndr1', 'nr1', 'nsc1', 'nnc1', 'nnc2', 'nn1', 'nn3', 'nn6', 'nn7', 'nn9', 'irbr1', 'irbr2']);
 
 // 政府表格清單 — 14 種 CR 表格，全部支援 PDF + Word 雙生成
 const PDF_FORMS: { key: string; code: string; label: string; desc: string }[] = [
@@ -56,118 +61,14 @@ export function DocGenerationTab({ company }: DocGenerationTabProps) {
   const generateDocx = useGenerateDocx();
   const [pendingDocx, setPendingDocx] = useState('');
 
-  // ── Auto-Fill PDF（無專用生成器的表格）──
-  const generateAutoPdf = useAutoCRFormPdf();
-  const [pendingPdf, setPendingPdf] = useState('');
-
   const [contentDialog, setContentDialog] = useState<{ docType: string; label: string } | null>(null);
   const [meetingDate, setMeetingDate] = useState('');
   const [location, setLocation] = useState('');
   const [content, setContent] = useState('');
 
-  // ── IRBR 快速生成对话框 ──
-  const [irbrDialog, setIRBRDialog] = useState<'irbr1' | 'irbr2' | null>(null);
-  const [irbr1Yes, setIrbr1Yes] = useState(true);
-  const [irbr2Registered, setIrbr2Registered] = useState(true);
-  const [irbr2Elect3yr, setIrbr2Elect3yr] = useState(true);
-  const [irbrBusy, setIRBRBusy] = useState(false);
-
-  // ── RelatedFormsPrompt（auto-CR 表单联动）──
-  const [showRelatedPrompt, setShowRelatedPrompt] = useState(false);
-  const [relatedLinkages, setRelatedLinkages] = useState<any[]>([]);
-  const [relatedFormData, setRelatedFormData] = useState<any>(null);
-
   const openPdfForm = (key: string) => {
     if (key === 'nar1') { setNar1Open(true); return; }
-    if (DEDICATED_PDF_FORMS.has(key)) { setPdfForm(key); return; }
-    if (key === 'irbr1' || key === 'irbr2') { setIRBRDialog(key); return; }
-    // 無專用生成器的表格 → 自動填充 PDF
-    doGenerateAutoPdf(key);
-  };
-
-  const doGenerateAutoPdf = async (formCode: string) => {
-    setPendingPdf(formCode);
-    const meta = PDF_FORMS.find(f => f.key === formCode);
-    try {
-      const res = await generateAutoPdf.mutateAsync({ company_id: company.id, form_code: formCode });
-      toast({ title: '已生成', description: `${meta?.label || formCode} PDF 已下載（${res.filename}）` });
-
-      // ── 检查关联表单联动 ──
-      const linkageTriggerForms: Record<string, string> = {
-        'nnc1': 'NNC1',  // NNC1 → IRBR1
-        'nn1': 'NN1',    // NN1 → IRBR2
-      };
-      const primaryFormCode = linkageTriggerForms[formCode];
-      if (primaryFormCode) {
-        try {
-          const token = getAccessToken();
-          const linkResp = await fetch(`/api/form-linkages?primary=${primaryFormCode}`, {
-            headers: { Authorization: `Bearer ${token}` },
-          });
-          const linkData = await linkResp.json();
-          if (linkData.linkages && linkData.linkages.length > 0) {
-            setRelatedLinkages(linkData.linkages);
-            setRelatedFormData({
-              brNumber: (company as any).brNumber || '',
-              companyName: company.name,
-              companyNameChinese: (company as any).chineseName || '',
-              companyId: company.id,
-            });
-            setShowRelatedPrompt(true);
-          }
-        } catch (_) { /* linkage check is non-critical */ }
-      }
-    } catch (e: any) {
-      toast({ title: 'PDF 生成失敗', description: e.message, variant: 'destructive' });
-    } finally {
-      setPendingPdf('');
-    }
-  };
-
-  // ── 独立生成 IRBR 表格 ──
-  const doGenerateIRBR = async () => {
-    if (!irbrDialog) return;
-    setIRBRBusy(true);
-    const isIRBR1 = irbrDialog === 'irbr1';
-    const brNumber = (company as any).brNumber || '';
-    try {
-      const token = getAccessToken();
-      const body = isIRBR1
-        ? { irbr1_yes: irbr1Yes, brNumber }
-        : {
-            brNumber,
-            businessNameChinese: (company as any).chineseName || '',
-            businessNameEnglish: company.name || '',
-            businessNature: (company as any).businessNature || '',
-            irbr2_registered: irbr2Registered,
-            irbr2_elect3yr: irbr2Elect3yr,
-          };
-      const endpoint = isIRBR1 ? '/api/generate-irbr1-pdf' : '/api/generate-irbr2-pdf';
-      const resp = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify(body),
-      });
-      const result = await resp.json();
-      if (!resp.ok) throw new Error(result.error || `HTTP ${resp.status}`);
-      // Download PDF
-      const byteChars = atob(result.pdf);
-      const byteNums = new Array(byteChars.length);
-      for (let i = 0; i < byteChars.length; i++) byteNums[i] = byteChars.charCodeAt(i);
-      const blob = new Blob([new Uint8Array(byteNums)], { type: 'application/pdf' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = isIRBR1 ? 'IRBR1-form.pdf' : 'IRBR2-form.pdf';
-      a.click();
-      URL.revokeObjectURL(url);
-      toast({ title: '已生成', description: `${isIRBR1 ? 'IRBR1' : 'IRBR2'} 已下載` });
-      setIRBRDialog(null);
-    } catch (e: any) {
-      toast({ title: '生成失敗', description: e.message, variant: 'destructive' });
-    } finally {
-      setIRBRBusy(false);
-    }
+    setPdfForm(key);
   };
 
   const doGenerateDocx = async (input: GenerateDocxInput, label: string) => {
@@ -214,6 +115,15 @@ export function DocGenerationTab({ company }: DocGenerationTabProps) {
       case 'ndr1': return <NDR1GeneratorForm onBack={onBack} initialCompanyId={cid} />;
       case 'nr1':  return <NR1GeneratorForm onBack={onBack} initialCompanyId={cid} />;
       case 'nsc1': return <NSC1GeneratorForm onBack={onBack} initialCompanyId={cid} />;
+      case 'nnc1': return <NewCompanyGeneratorForm onBack={onBack} initialCompanyId={cid} />;
+      case 'nnc2': return <RenameCompanyForm onBack={onBack} initialCompanyId={cid} />;
+      case 'nn1':  return <NN1GeneratorForm onBack={onBack} initialCompanyId={cid} />;
+      case 'nn3':  return <NN3GeneratorForm onBack={onBack} initialCompanyId={cid} />;
+      case 'nn6':  return <NN6GeneratorForm onBack={onBack} initialCompanyId={cid} />;
+      case 'nn7':  return <NN7GeneratorForm onBack={onBack} initialCompanyId={cid} />;
+      case 'nn9':  return <NN9GeneratorForm onBack={onBack} initialCompanyId={cid} />;
+      case 'irbr1': return <IRBR1GeneratorForm onBack={onBack} initialCompanyId={cid} />;
+      case 'irbr2': return <IRBR2GeneratorForm onBack={onBack} initialCompanyId={cid} />;
       default: return null;
     }
   };
@@ -234,8 +144,6 @@ export function DocGenerationTab({ company }: DocGenerationTabProps) {
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {PDF_FORMS.map(f => {
             const docxBusy = generateDocx.isPending && pendingDocx === `cr_${f.key}`;
-            const pdfBusy = generateAutoPdf.isPending && pendingPdf === f.key;
-            const isDedicated = DEDICATED_PDF_FORMS.has(f.key);
             return (
               <div key={f.key}
                 className="rounded-lg border border-border bg-card p-3 hover:border-primary/30 transition-colors">
@@ -248,10 +156,9 @@ export function DocGenerationTab({ company }: DocGenerationTabProps) {
                 </button>
                 <div className="flex gap-2 mt-2.5 pt-2.5 border-t border-border/50">
                   <Button size="sm" variant="outline" className="flex-1 h-7 text-xs"
-                    disabled={pdfBusy}
                     onClick={() => openPdfForm(f.key)}>
-                    {pdfBusy ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <FileText className="h-3 w-3 mr-1" />}
-                    {isDedicated ? 'PDF' : 'PDF'}
+                    <FileText className="h-3 w-3 mr-1" />
+                    PDF
                   </Button>
                   <Button size="sm" variant="outline" className="flex-1 h-7 text-xs" disabled={docxBusy}
                     onClick={() => {
@@ -296,97 +203,6 @@ export function DocGenerationTab({ company }: DocGenerationTabProps) {
 
       {/* NAR1 自帶 Dialog */}
       <NAR1Generator open={nar1Open} onOpenChange={setNar1Open} company={company} />
-
-      {/* IRBR 快速生成对话框 */}
-      <Dialog open={!!irbrDialog} onOpenChange={o => { if (!o) setIRBRDialog(null); }}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>{irbrDialog === 'irbr1' ? 'IRBR1 — 致商業登記署通知書（本地公司）' : 'IRBR2 — 致商業登記署通知書（非香港公司）'}</DialogTitle>
-            <DialogDescription>
-              {irbrDialog === 'irbr1'
-                ? '此表格需與 NNC1（法團成立表格）一併提交至商業登記署。'
-                : '此表格需與 NN1（註冊非香港公司申請書）一併提交至商業登記署。'}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="text-sm text-muted-foreground">
-              公司：<span className="font-medium text-foreground">{company.name}</span>
-              {(company as any).brNumber && <span className="ml-2">BR: {(company as any).brNumber}</span>}
-            </div>
-
-            {irbrDialog === 'irbr1' ? (
-              <div className="space-y-2">
-                <Label className="text-sm">是否申請公司註冊？</Label>
-                <div className="flex gap-4">
-                  <label className="flex items-center gap-1.5 cursor-pointer">
-                    <input type="radio" name="irbr1-yesno" checked={irbr1Yes} onChange={() => setIrbr1Yes(true)} />
-                    <span className="text-sm">是 Yes</span>
-                  </label>
-                  <label className="flex items-center gap-1.5 cursor-pointer">
-                    <input type="radio" name="irbr1-yesno" checked={!irbr1Yes} onChange={() => setIrbr1Yes(false)} />
-                    <span className="text-sm">否 No</span>
-                  </label>
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <div className="space-y-2">
-                  <Label className="text-sm">是否已根據《商業登記條例》(第310章)登記？</Label>
-                  <div className="flex gap-4">
-                    <label className="flex items-center gap-1.5 cursor-pointer">
-                      <input type="radio" name="irbr2-reg310" checked={irbr2Registered} onChange={() => setIrbr2Registered(true)} />
-                      <span className="text-sm">是 Yes</span>
-                    </label>
-                    <label className="flex items-center gap-1.5 cursor-pointer">
-                      <input type="radio" name="irbr2-reg310" checked={!irbr2Registered} onChange={() => setIrbr2Registered(false)} />
-                      <span className="text-sm">否 No</span>
-                    </label>
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-sm">是否選擇3年有效期商業登記證？</Label>
-                  <div className="flex gap-4">
-                    <label className="flex items-center gap-1.5 cursor-pointer">
-                      <input type="radio" name="irbr2-3yr" checked={irbr2Elect3yr} onChange={() => setIrbr2Elect3yr(true)} />
-                      <span className="text-sm">是 Yes</span>
-                    </label>
-                    <label className="flex items-center gap-1.5 cursor-pointer">
-                      <input type="radio" name="irbr2-3yr" checked={!irbr2Elect3yr} onChange={() => setIrbr2Elect3yr(false)} />
-                      <span className="text-sm">否 No</span>
-                    </label>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {irbrDialog === 'irbr1' && !irbr1Yes && (
-              <div className="flex items-start gap-2 p-2 rounded bg-amber-50 dark:bg-amber-950/20 text-amber-800 dark:text-amber-200 text-xs">
-                <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-                若選擇「否」代表不申請公司註冊但仍需通知商業登記署。
-              </div>
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIRBRDialog(null)} disabled={irbrBusy}>取消</Button>
-            <Button onClick={doGenerateIRBR} disabled={irbrBusy}>
-              {irbrBusy ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Download className="h-4 w-4 mr-1" />}
-              生成 {irbrDialog?.toUpperCase()}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* RelatedFormsPrompt（auto-CR 表单联动） */}
-      <RelatedFormsPrompt
-        open={showRelatedPrompt}
-        onOpenChange={setShowRelatedPrompt}
-        primaryFormCode={relatedLinkages[0]?.primary_form || ''}
-        primaryFormName=""
-        primaryFormData={relatedFormData || {}}
-        companyId={company.id}
-        companyName={company.name}
-        linkages={relatedLinkages}
-      />
 
       {/* CR 表格生成器（全屏 Dialog 承載） */}
       <Dialog open={!!pdfForm} onOpenChange={o => { if (!o) setPdfForm(null); }}>

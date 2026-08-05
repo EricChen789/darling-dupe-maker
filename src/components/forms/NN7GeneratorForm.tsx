@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -12,6 +12,7 @@ import { Person } from '@/types';
 import { downloadBase64Pdf } from '@/lib/downloadPdf';
 import PresenterSelector from './PresenterSelector';
 import type { Presenter } from '@/hooks/usePresenters';
+import AddressQuickPick from './AddressQuickPick';
 
 // ── 香港 18 區（繁體，用於下拉選單） ──
 const HK_DISTRICTS = [
@@ -98,9 +99,10 @@ function AddressFields({
 interface NN7GeneratorFormProps {
   onBack: () => void;
   prefillPerson?: Person | null;
+  initialCompanyId?: string;
 }
 
-export default function NN7GeneratorForm({ onBack, prefillPerson }: NN7GeneratorFormProps) {
+export default function NN7GeneratorForm({ onBack, prefillPerson, initialCompanyId }: NN7GeneratorFormProps) {
   const { data: allCompanies = [] } = useCompanies();
   const { mutate: saveFormHistory } = useSaveFormHistory();
 
@@ -187,6 +189,11 @@ export default function NN7GeneratorForm({ onBack, prefillPerson }: NN7Generator
       }));
     }
   };
+
+  useEffect(() => {
+    if (initialCompanyId && companies.length && !selectedCompanyId) handleCompanySelect(initialCompanyId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialCompanyId, companies.length]);
 
   const update = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -343,6 +350,19 @@ export default function NN7GeneratorForm({ onBack, prefillPerson }: NN7Generator
             {formData.changeType === 'address' && (
               <div>
                 <Label className="font-medium mb-2 block">更改後的新通訊地址 *</Label>
+                {selectedCompanyId && (
+                  <div className="mb-3">
+                    <AddressQuickPick companyId={selectedCompanyId}
+                      onPick={(d) => {
+                        if (d.flat) update('newFlat', d.flat);
+                        if (d.building) update('newBuilding', d.building);
+                        if (d.street) update('newStreet', d.street);
+                        if (d.district) update('newDistrict', d.district);
+                        if (d.country || d.region) update('newRegion', d.country || d.region || '');
+                      }}
+                    />
+                  </div>
+                )}
                 <div className="grid grid-cols-2 gap-3">
                   {/* P.2: fill_19=Flat+Block合并, fill_20=Building, fill_21=Street, fill_22=District, fill_23=Region */}
                   <div>

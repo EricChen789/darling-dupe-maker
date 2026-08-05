@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -10,11 +10,12 @@ import { downloadBase64Pdf } from '@/lib/downloadPdf';
 import { useSaveFormHistory } from '@/hooks/useFormHistory';
 import FormHistorySelector from './FormHistorySelector';
 import PresenterSelector from './PresenterSelector';
+import AddressQuickPick from './AddressQuickPick';
 import type { Presenter } from '@/hooks/usePresenters';
 
-interface NN3GeneratorFormProps { onBack: () => void; }
+interface NN3GeneratorFormProps { onBack: () => void; initialCompanyId?: string; }
 
-export default function NN3GeneratorForm({ onBack }: NN3GeneratorFormProps) {
+export default function NN3GeneratorForm({ onBack, initialCompanyId }: NN3GeneratorFormProps) {
   const { data: companies = [] } = useCompanies();
   const [selectedCompanyId, setSelectedCompanyId] = useState('');
   const [generating, setGenerating] = useState(false);
@@ -70,6 +71,11 @@ export default function NN3GeneratorForm({ onBack }: NN3GeneratorFormProps) {
       }));
     }
   };
+
+  useEffect(() => {
+    if (initialCompanyId && companies.length && !selectedCompanyId) handleCompanySelect(initialCompanyId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialCompanyId, companies.length]);
 
   const handleLoadHistory = (data: any) => {
     if (data.formData) setFormData((prev: any) => ({ ...prev, ...data.formData }));
@@ -256,6 +262,19 @@ export default function NN3GeneratorForm({ onBack }: NN3GeneratorFormProps) {
 
         {/* Section 5(a): Address */}
         <div><h3 className="font-semibold mb-3">5(a). 香港主要營業地點地址 Address of Principal Place of Business in HK</h3>
+          {selectedCompanyId && (
+            <div className="mb-3">
+              <AddressQuickPick companyId={selectedCompanyId}
+                onPick={(d) => {
+                  if (d.flat) update('flat', d.flat);
+                  if (d.building) update('building', d.building);
+                  if (d.street) update('street', d.street);
+                  if (d.district) update('district', d.district);
+                  if (d.country || d.region) update('region', d.country || d.region || '');
+                }}
+              />
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-4">
             <div><Label>室／樓／座 Flat／Floor／Block</Label><Input value={formData.flat} onChange={e => update('flat', e.target.value)} className="mt-1" /></div>
             <div><Label>大廈 Building</Label><Input value={formData.building} onChange={e => update('building', e.target.value)} className="mt-1" /></div>

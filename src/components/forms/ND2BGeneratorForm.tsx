@@ -13,6 +13,7 @@ import { Person } from '@/types';
 import { downloadBase64Pdf } from '@/lib/downloadPdf';
 import PresenterSelector from './PresenterSelector';
 import type { Presenter } from '@/hooks/usePresenters';
+import AddressQuickPick from './AddressQuickPick';
 import { recordChangeEvent } from '@/lib/changeEvents';
 
 // ── 香港 18 區（繁體，用於下拉選單） ──
@@ -546,6 +547,17 @@ export default function ND2BGeneratorForm({ onBack, prefillPerson, prefillNewAdd
             {formData.changeTypes.includes('address') && (
               <div className="border border-border rounded-lg p-4">
                 <h4 className="font-medium text-sm mb-3 text-primary">住址更改</h4>
+                {selectedCompanyId && (
+                  <AddressQuickPick companyId={selectedCompanyId}
+                    onPick={(d) => {
+                      if (d.flat) update('newFlat', d.flat);
+                      if (d.building) update('newBuilding', d.building);
+                      if (d.street) update('newStreet', d.street);
+                      if (d.district) update('newDistrict', d.district);
+                      if (d.country || d.region) update('newRegion', d.country || d.region || '');
+                    }}
+                  />
+                )}
                 <AddressFields
                   label="更改後的新通訊地址"
                   values={newAddrValues}

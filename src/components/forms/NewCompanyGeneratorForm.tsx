@@ -14,8 +14,11 @@ import { ArrowLeft, Download, Loader2, Plus, Trash2 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { downloadGenericFormPdf, type GenericFormSection } from '@/lib/genericFormPdf';
 import { downloadBase64Pdf } from '@/lib/downloadPdf';
+import AddressQuickPick from './AddressQuickPick';
+import PersonQuickPick from './PersonQuickPick';
+import { useCompanies } from '@/hooks/useCompanies';
 
-interface Props { onBack: () => void; }
+interface Props { onBack: () => void; initialCompanyId?: string; }
 
 interface OfficerEntry {
   role: 'director' | 'secretary';
@@ -51,10 +54,12 @@ const HK_DISTRICTS = [
   '北區', '大埔', '沙田', '西貢', '離島',
 ];
 
-export default function NewCompanyGeneratorForm({ onBack }: Props) {
+export default function NewCompanyGeneratorForm({ onBack, initialCompanyId }: Props) {
+  const { data: companies = [] } = useCompanies();
   const { mutate: saveFormHistory } = useSaveFormHistory();
   const [jurisdiction, setJurisdiction] = useState<'HK' | 'BVI'>('HK');
   const [generating, setGenerating] = useState(false);
+  const [referenceCompanyId, setReferenceCompanyId] = useState('');
 
   // Common
   const [companyName, setCompanyName] = useState('');
@@ -110,6 +115,7 @@ export default function NewCompanyGeneratorForm({ onBack }: Props) {
   const removeOfficer = (i: number) => setOfficers(arr => arr.filter((_, idx) => idx !== i));
   const updateShare = (i: number, patch: Partial<ShareEntry>) =>
     setShareholders(arr => arr.map((s, idx) => idx === i ? { ...s, ...patch } : s));
+  const removeShareholder = (i: number) => setShareholders(arr => arr.filter((_, idx) => idx !== i));
 
   const handleLoadHistory = (data: any) => {
     if (data.jurisdiction) setJurisdiction(data.jurisdiction);
@@ -469,6 +475,8 @@ export default function NewCompanyGeneratorForm({ onBack }: Props) {
           toast({ title: 'PDF 已生成', description: 'BVI 表格已下載' });
         }
       }
+    } catch (err: any) {
+      toast({ title: '生成失敗', description: err?.message || '未知錯誤', variant: 'destructive' });
     } finally {
       setGenerating(false);
     }
@@ -476,15 +484,10 @@ export default function NewCompanyGeneratorForm({ onBack }: Props) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center gap-3">
         <Button variant="ghost" size="sm" onClick={onBack}><ArrowLeft className="h-4 w-4 mr-1" /> 返回</Button>
-        <Button onClick={handleGenerate} disabled={generating} className="bg-primary text-primary-foreground">
-          {generating ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Download className="h-4 w-4 mr-1" />}
-          生成 PDF
-        </Button>
+        <h2 className="text-xl font-semibold">新公司成立表格</h2>
       </div>
-
-      <h2 className="text-xl font-semibold">新公司成立表格</h2>
 
       {/* ── IRBR1 兄弟表單入口 ── */}
       <div className="rounded-md border border-amber-200 bg-amber-50 p-4 space-y-3 dark:bg-amber-950/20 dark:border-amber-800">
@@ -573,6 +576,33 @@ export default function NewCompanyGeneratorForm({ onBack }: Props) {
         </div>
         <div className="space-y-1"><Label className="text-xs">業務性質</Label><Input value={businessNature} onChange={e => setBusinessNature(e.target.value)} /></div>
       </div>
+      {/* 參考現有公司地址 */}
+      <div className="bg-muted/30 border border-border rounded-lg p-3">
+        <Label className="text-xs font-medium mb-1 block">參考現有公司地址（可選）</Label>
+        <Select value={referenceCompanyId || '__none__'} onValueChange={(v) => setReferenceCompanyId(v === '__none__' ? '' : v)}>
+          <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="選擇公司以載入註冊地址..." /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__none__">— 不使用 —</SelectItem>
+            {companies.map(c => (
+              <SelectItem key={c.id} value={c.id}>{c.name} ({c.brNumber})</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {referenceCompanyId && (
+          <div className="mt-2">
+            <AddressQuickPick companyId={referenceCompanyId}
+              onPick={(d) => {
+                if (d.flat) setAddrFlat(d.flat);
+                if (d.building) setAddrBuilding(d.building);
+                if (d.street) setAddrStreet(d.street);
+                if (d.district) setAddrDistrict(d.district);
+                if (d.country || d.region) setAddrRegion(d.country || d.region || '');
+              }}
+            />
+          </div>
+        )}
+      </div>
+
       {/* 註冊辦事處地址 — 5 欄拆分 */}
       <div className="grid grid-cols-3 gap-2">
         <div className="space-y-1"><Label className="text-xs">室／樓／座 Flat/Floor</Label><Input className="h-8 text-xs" value={addrFlat} onChange={e => setAddrFlat(e.target.value)} placeholder="Flat/Room" /></div>
@@ -660,6 +690,36 @@ export default function NewCompanyGeneratorForm({ onBack }: Props) {
               <Trash2 className="h-3 w-3" />
             </Button>
           </div>
+          {/* 從系統選擇董事／秘書 */}
+          {initialCompanyId && (
+            <PersonQuickPick
+              companyId={initialCompanyId}
+              label="👤 從系統選擇人員（選後自動填入姓名／地址／證件）"
+              onPick={(d) => {
+                updateOfficer(i, {
+                  nameEnglish: d.nameEnglish || '',
+                  nameChinese: d.nameChinese || '',
+                  idNumber: d.idNumber || '',
+                  identity: d.identity || 'natural',
+                  address: [d.addrFlat, d.addrBuilding, d.addrStreet, d.addrDistrict, d.addrRegion].filter(Boolean).join(', ') || d.address || '',
+                });
+              }}
+            />
+          )}
+          {initialCompanyId && (
+            <AddressQuickPick
+              companyId={initialCompanyId}
+              onPick={(d) => {
+                const parts = (o.address || '').split(/[,，]\s*/);
+                const flat = d.flat || parts[0] || '';
+                const building = d.building || parts[1] || '';
+                const street = d.street || parts[2] || '';
+                const district = d.district || parts[3] || '';
+                const region = d.country || d.region || parts[4] || '';
+                updateOfficer(i, { address: [flat, building, street, district, region].join(', ') });
+              }}
+            />
+          )}
           <div className="grid grid-cols-2 gap-2">
             <Input className="h-8 text-xs" placeholder="英文姓名" value={o.nameEnglish} onChange={e => updateOfficer(i, { nameEnglish: e.target.value })} />
             <Input className="h-8 text-xs" placeholder="中文姓名" value={o.nameChinese} onChange={e => updateOfficer(i, { nameChinese: e.target.value })} />
@@ -743,15 +803,45 @@ export default function NewCompanyGeneratorForm({ onBack }: Props) {
         </Button>
       </div>
       {shareholders.map((s, i) => (
-        <div key={i} className="grid grid-cols-6 gap-2 items-end">
-          <Input className="h-8 text-xs" placeholder="中文姓名" value={s.name} onChange={e => updateShare(i, { name: e.target.value })} />
-          <Input className="h-8 text-xs" placeholder="英文姓氏 Surname" value={s.surname} onChange={e => updateShare(i, { surname: e.target.value })} />
-          <Input className="h-8 text-xs" placeholder="英文名字 Other Names" value={s.otherNames} onChange={e => updateShare(i, { otherNames: e.target.value })} />
-          <Input className="h-8 text-xs" type="number" placeholder="股數" value={s.shares || ''} onChange={e => updateShare(i, { shares: Number(e.target.value) || 0 })} />
-          <Input className="h-8 text-xs" placeholder="類別" value={s.shareType} onChange={e => updateShare(i, { shareType: e.target.value })} />
-          <Input className="h-8 text-xs" placeholder="實繳 HKD" value={s.amountPaid} onChange={e => updateShare(i, { amountPaid: e.target.value })} />
+        <div key={i} className="rounded-md border border-border p-3 space-y-2 bg-muted/30">
+          {/* 從系統選擇創辦股東（全系統人員） */}
+          <PersonQuickPick
+            includeAllCompanies={true}
+            label="👤 從系統所有人員選擇創辦股東（選後自動填入姓名）"
+            onPick={(d) => {
+              updateShare(i, {
+                name: d.nameChinese || '',
+                surname: d.surname || '',
+                otherNames: d.otherNames || '',
+              });
+            }}
+          />
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-muted-foreground">股東 #{i + 1}</span>
+            {shareholders.length > 1 && (
+              <Button variant="ghost" size="sm" className="h-7 text-destructive" onClick={() => removeShareholder(i)}>
+                <Trash2 className="h-3 w-3" />
+              </Button>
+            )}
+          </div>
+          <div className="grid grid-cols-6 gap-2 items-end">
+            <Input className="h-8 text-xs" placeholder="中文姓名" value={s.name} onChange={e => updateShare(i, { name: e.target.value })} />
+            <Input className="h-8 text-xs" placeholder="英文姓氏 Surname" value={s.surname} onChange={e => updateShare(i, { surname: e.target.value })} />
+            <Input className="h-8 text-xs" placeholder="英文名字 Other Names" value={s.otherNames} onChange={e => updateShare(i, { otherNames: e.target.value })} />
+            <Input className="h-8 text-xs" type="number" placeholder="股數" value={s.shares || ''} onChange={e => updateShare(i, { shares: Number(e.target.value) || 0 })} />
+            <Input className="h-8 text-xs" placeholder="類別" value={s.shareType} onChange={e => updateShare(i, { shareType: e.target.value })} />
+            <Input className="h-8 text-xs" placeholder="實繳 HKD" value={s.amountPaid} onChange={e => updateShare(i, { amountPaid: e.target.value })} />
+          </div>
         </div>
       ))}
+
+      {/* ── 底部生成按鈕 ── */}
+      <div className="sticky bottom-0 z-10 bg-background/95 backdrop-blur border-t border-border pt-4 pb-2 flex justify-center">
+        <Button onClick={handleGenerate} disabled={generating} size="lg" className="bg-primary text-primary-foreground px-12">
+          {generating ? <Loader2 className="h-5 w-5 mr-2 animate-spin" /> : <Download className="h-5 w-5 mr-2" />}
+          生成 PDF
+        </Button>
+      </div>
 
       {/* ── IRBR1 Reminder Dialog ── */}
       <Dialog open={showIRBR1Reminder} onOpenChange={setShowIRBR1Reminder}>

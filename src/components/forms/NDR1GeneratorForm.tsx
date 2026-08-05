@@ -13,6 +13,7 @@ import { downloadBase64Pdf } from '@/lib/downloadPdf';
 import { useSaveFormHistory } from '@/hooks/useFormHistory';
 import FormHistorySelector from './FormHistorySelector';
 import PersonPicker, { type PersonPickOption } from './PersonPicker';
+import AddressQuickPick from './AddressQuickPick';
 import RelatedFormsPrompt from './RelatedFormsPrompt';
 
 interface NDR1GeneratorFormProps { onBack: () => void; initialCompanyId?: string; }
@@ -421,6 +422,17 @@ export default function NDR1GeneratorForm({ onBack, initialCompanyId }: NDR1Gene
 
           {/* P.2 地址 + 聯絡（自然人和法人通用） */}
           <div className="grid grid-cols-1 gap-3 mt-3">
+            {selectedCompanyId && (
+              <AddressQuickPick companyId={selectedCompanyId}
+                onPick={(d) => {
+                  if (d.flat) update('appAddrFlat', d.flat);
+                  if (d.building) update('appAddrBuilding', d.building);
+                  if (d.street) update('appAddrStreet', d.street);
+                  if (d.district) update('appAddrDistrict', d.district);
+                  if (d.country || d.region) update('appAddrCountry', d.country || d.region || '');
+                }}
+              />
+            )}
             <div><Label className="text-xs">室／樓／座等 Flat / Floor / Block etc.</Label><Input value={formData.appAddrFlat} onChange={e => update('appAddrFlat', e.target.value)} className="mt-1 h-8 text-sm" /></div>
             <div><Label className="text-xs">大廈 Building</Label><Input value={formData.appAddrBuilding} onChange={e => update('appAddrBuilding', e.target.value)} className="mt-1 h-8 text-sm" /></div>
             <div><Label className="text-xs">街道／屋苑／地段／村等 Street / Estate / Lot / Village etc.</Label><Input value={formData.appAddrStreet} onChange={e => update('appAddrStreet', e.target.value)} className="mt-1 h-8 text-sm" /></div>
@@ -484,6 +496,17 @@ export default function NDR1GeneratorForm({ onBack, initialCompanyId }: NDR1Gene
               </div>
             )}
             <div className="grid grid-cols-1 gap-3">
+              {selectedCompanyId && (
+                <AddressQuickPick companyId={selectedCompanyId}
+                  onPick={(d) => {
+                    if (d.flat) update('nomAddrFlat', d.flat);
+                    if (d.building) update('nomAddrBuilding', d.building);
+                    if (d.street) update('nomAddrStreet', d.street);
+                    if (d.district) update('nomAddrDistrict', d.district);
+                    if (d.country || d.region) update('nomAddrCountry', d.country || d.region || '');
+                  }}
+                />
+              )}
               <div><Label className="text-xs">室／樓／座等</Label><Input value={formData.nomAddrFlat} onChange={e => update('nomAddrFlat', e.target.value)} className="mt-1 h-8 text-sm" /></div>
               <div><Label className="text-xs">大廈</Label><Input value={formData.nomAddrBuilding} onChange={e => update('nomAddrBuilding', e.target.value)} className="mt-1 h-8 text-sm" /></div>
               <div><Label className="text-xs">街道／屋苑等</Label><Input value={formData.nomAddrStreet} onChange={e => update('nomAddrStreet', e.target.value)} className="mt-1 h-8 text-sm" /></div>

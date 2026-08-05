@@ -10,6 +10,7 @@ import { downloadBase64Pdf } from '@/lib/downloadPdf';
 import { useSaveFormHistory } from '@/hooks/useFormHistory';
 import FormHistorySelector from './FormHistorySelector';
 import PresenterSelector from './PresenterSelector';
+import AddressQuickPick from './AddressQuickPick';
 import type { Presenter } from '@/hooks/usePresenters';
 
 interface IRC3111AGeneratorFormProps {
@@ -184,6 +185,19 @@ export default function IRC3111AGeneratorForm({ onBack, initialCompanyId }: IRC3
         {/* New Address */}
         <div>
           <h3 className="font-semibold mb-3">新業務地址 *</h3>
+          {selectedCompanyId && (
+            <div className="mb-3">
+              <AddressQuickPick companyId={selectedCompanyId}
+                onPick={(d) => {
+                  if (d.flat) update('newFlat', d.flat);
+                  if (d.building) update('newBuilding', d.building);
+                  if (d.street) update('newStreet', d.street);
+                  if (d.district) update('newDistrict', d.district);
+                  if (d.country || d.region) update('newRegion', d.country || d.region || '');
+                }}
+              />
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-4">
             <div><Label>室／樓／座</Label><Input value={formData.newFlat} onChange={e => update('newFlat', e.target.value)} placeholder="e.g. Room 2001, 20/F" className="mt-1" /></div>
             <div><Label>大廈</Label><Input value={formData.newBuilding} onChange={e => update('newBuilding', e.target.value)} placeholder="e.g. XYZ Tower" className="mt-1" /></div>

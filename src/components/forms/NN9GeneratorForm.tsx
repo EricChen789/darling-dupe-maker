@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -10,10 +10,11 @@ import { downloadBase64Pdf } from '@/lib/downloadPdf';
 import { useSaveFormHistory } from '@/hooks/useFormHistory';
 import FormHistorySelector from './FormHistorySelector';
 import PresenterSelector from './PresenterSelector';
+import AddressQuickPick from './AddressQuickPick';
 import RelatedFormsPrompt from './RelatedFormsPrompt';
 import type { Presenter } from '@/hooks/usePresenters';
 
-interface NN9GeneratorFormProps { onBack: () => void; }
+interface NN9GeneratorFormProps { onBack: () => void; initialCompanyId?: string; }
 
 const HK_DISTRICTS = [
   '中西區', '灣仔', '東區', '南區',
@@ -22,7 +23,7 @@ const HK_DISTRICTS = [
   '北區', '大埔', '沙田', '西貢', '離島',
 ];
 
-export default function NN9GeneratorForm({ onBack }: NN9GeneratorFormProps) {
+export default function NN9GeneratorForm({ onBack, initialCompanyId }: NN9GeneratorFormProps) {
   const { data: companies = [] } = useCompanies();
   const [selectedCompanyId, setSelectedCompanyId] = useState('');
   const [generating, setGenerating] = useState(false);
@@ -65,6 +66,11 @@ export default function NN9GeneratorForm({ onBack }: NN9GeneratorFormProps) {
       }));
     }
   };
+
+  useEffect(() => {
+    if (initialCompanyId && companies.length && !selectedCompanyId) handleCompanySelect(initialCompanyId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialCompanyId, companies.length]);
 
   const update = (f: string, v: string) => setFormData(prev => ({ ...prev, [f]: v }));
 
@@ -191,6 +197,19 @@ export default function NN9GeneratorForm({ onBack }: NN9GeneratorFormProps) {
         </div>
 
         <div><h3 className="font-semibold mb-3">新地址</h3>
+          {selectedCompanyId && (
+            <div className="mb-3">
+              <AddressQuickPick companyId={selectedCompanyId}
+                onPick={(d) => {
+                  if (d.flat) update('flat', d.flat);
+                  if (d.building) update('building', d.building);
+                  if (d.street) update('street', d.street);
+                  if (d.district) update('district', d.district);
+                  if (d.country || d.region) update('region', d.country || d.region || '');
+                }}
+              />
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div><Label className="text-xs text-muted-foreground">室／樓／座 Flat/Block</Label><Input value={formData.flat} onChange={e => update('flat', e.target.value)} placeholder="Room 1001, 10/F" className="mt-1" /></div>
             <div><Label className="text-xs text-muted-foreground">大廈／屋苑 Building/Estate</Label><Input value={formData.building} onChange={e => update('building', e.target.value)} placeholder="ABC Building" className="mt-1" /></div>

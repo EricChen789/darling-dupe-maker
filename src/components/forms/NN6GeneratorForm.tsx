@@ -10,6 +10,7 @@ import { toast } from '@/hooks/use-toast';
 import { useCompanies } from '@/hooks/useCompanies';
 import { downloadBase64Pdf } from '@/lib/downloadPdf';
 import PresenterSelector from './PresenterSelector';
+import AddressQuickPick from './AddressQuickPick';
 import type { Presenter } from '@/hooks/usePresenters';
 
 // ── 香港 18 區（繁體，用於下拉選單） ──
@@ -131,9 +132,10 @@ const emptyOfficer = (): OfficerEntry => ({
 
 interface NN6GeneratorFormProps {
   onBack: () => void;
+  initialCompanyId?: string;
 }
 
-export default function NN6GeneratorForm({ onBack }: NN6GeneratorFormProps) {
+export default function NN6GeneratorForm({ onBack, initialCompanyId }: NN6GeneratorFormProps) {
   const { data: companies = [] } = useCompanies();
   const { mutate: saveFormHistory } = useSaveFormHistory();
 
@@ -191,6 +193,11 @@ export default function NN6GeneratorForm({ onBack }: NN6GeneratorFormProps) {
       setPresentorAddress(regAddress);
     }
   };
+
+  useEffect(() => {
+    if (initialCompanyId && companies.length && !selectedCompanyId) handleCompanySelect(initialCompanyId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialCompanyId, companies.length]);
 
   // ── 選人 → 自動填入全部個人資料 ──
   const handlePersonSelect = (personId: string) => {
@@ -652,6 +659,19 @@ export default function NN6GeneratorForm({ onBack }: NN6GeneratorFormProps) {
                       {/* 通訊地址 */}
                       <div>
                         <Label className="font-medium mb-2 block">通訊地址 Correspondence Address</Label>
+                        {selectedCompanyId && (
+                          <div className="mb-3">
+                            <AddressQuickPick companyId={selectedCompanyId}
+                              onPick={(d) => {
+                                updateOfficer(idx, 'addrFlatBlock', d.flat || '');
+                                updateOfficer(idx, 'addrBuilding', d.building || '');
+                                updateOfficer(idx, 'addrStreetEstate', d.street || '');
+                                updateOfficer(idx, 'addrDistrict', d.district || '');
+                                updateOfficer(idx, 'addrRegion', d.country || d.region || '');
+                              }}
+                            />
+                          </div>
+                        )}
                         <div className="grid grid-cols-2 gap-3">
                           <div>
                             <Label className="text-xs text-muted-foreground">室／樓／座 Flat／Floor／Block</Label>
@@ -800,6 +820,19 @@ export default function NN6GeneratorForm({ onBack }: NN6GeneratorFormProps) {
                       {/* 通訊地址 */}
                       <div>
                         <Label className="font-medium mb-2 block">通訊地址 Correspondence Address</Label>
+                        {selectedCompanyId && (
+                          <div className="mb-3">
+                            <AddressQuickPick companyId={selectedCompanyId}
+                              onPick={(d) => {
+                                updateOfficer(idx, 'addrFlatBlock', d.flat || '');
+                                updateOfficer(idx, 'addrBuilding', d.building || '');
+                                updateOfficer(idx, 'addrStreetEstate', d.street || '');
+                                updateOfficer(idx, 'addrDistrict', d.district || '');
+                                updateOfficer(idx, 'addrRegion', d.country || d.region || '');
+                              }}
+                            />
+                          </div>
+                        )}
                         <div className="grid grid-cols-2 gap-3">
                           <div>
                             <Label className="text-xs text-muted-foreground">室／樓／座 Flat／Floor／Block</Label>

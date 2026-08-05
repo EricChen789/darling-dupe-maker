@@ -11,6 +11,7 @@ import { downloadBase64Pdf } from '@/lib/downloadPdf';
 import { useSaveFormHistory } from '@/hooks/useFormHistory';
 import FormHistorySelector from './FormHistorySelector';
 import PresenterSelector from './PresenterSelector';
+import AddressQuickPick from './AddressQuickPick';
 import RelatedFormsPrompt from './RelatedFormsPrompt';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import type { Presenter } from '@/hooks/usePresenters';
@@ -176,6 +177,19 @@ export default function NR1GeneratorForm({ onBack, initialCompanyId }: NR1Genera
         {/* New address */}
         <div>
           <h3 className="font-semibold mb-3">2(a) 新註冊辦事處地址</h3>
+          {selectedCompanyId && (
+            <div className="mb-3">
+              <AddressQuickPick companyId={selectedCompanyId}
+                onPick={(d) => {
+                  if (d.flat) update('flat', d.flat);
+                  if (d.building) update('building', d.building);
+                  if (d.street) update('street', d.street);
+                  if (d.district) update('district', d.district);
+                  if (d.country || d.region) update('region', d.country || d.region || '');
+                }}
+              />
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-4">
             <div><Label>室／樓／座</Label><Input value={formData.flat} onChange={e => update('flat', e.target.value)} placeholder="e.g. Room 1001, 10/F" className="mt-1" /></div>
             <div><Label>大廈</Label><Input value={formData.building} onChange={e => update('building', e.target.value)} placeholder="e.g. ABC Building" className="mt-1" /></div>

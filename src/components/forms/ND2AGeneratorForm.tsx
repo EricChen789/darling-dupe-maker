@@ -8,6 +8,8 @@ import { useSaveFormHistory } from '@/hooks/useFormHistory';
 import FormHistorySelector from './FormHistorySelector';
 import PresenterSelector from './PresenterSelector';
 import type { Presenter } from '@/hooks/usePresenters';
+import PersonQuickPick from './PersonQuickPick';
+import AddressQuickPick from './AddressQuickPick';
 import { ArrowLeft, Download, Loader2, Building2, Plus, Trash2 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { useCompanies } from '@/hooks/useCompanies';
@@ -288,6 +290,23 @@ export default function ND2AGeneratorForm({ onBack, initialCompanyId }: ND2AGene
                 </div>
                 {officer.identity === 'natural' ? (
                   <>
+                    {selectedCompany && (
+                      <div className="col-span-2">
+                        <PersonQuickPick companyId={selectedCompanyId}
+                          onPick={(d) => {
+                            updateOfficer(idx, 'nameChinese', d.nameChinese || '');
+                            updateOfficer(idx, 'nameSurname', d.surname || '');
+                            updateOfficer(idx, 'nameOtherNames', d.otherNames || '');
+                            if (d.idNumber) updateOfficer(idx, 'idNumber', d.idNumber);
+                            if (d.addrFlat) updateOfficer(idx, 'addrFlatBlock', d.addrFlat);
+                            if (d.addrBuilding) updateOfficer(idx, 'addrBuilding', d.addrBuilding);
+                            if (d.addrStreet) updateOfficer(idx, 'addrStreetEstate', d.addrStreet);
+                            if (d.addrDistrict) updateOfficer(idx, 'addrDistrict', d.addrDistrict);
+                            if (d.addrRegion) updateOfficer(idx, 'addrRegion', d.addrRegion);
+                          }}
+                        />
+                      </div>
+                    )}
                     <div><Label>中文姓名</Label><Input value={officer.nameChinese} onChange={e => updateOfficer(idx, 'nameChinese', e.target.value)} className="mt-1" /></div>
                     <div>
                       <Label>英文姓名</Label>
@@ -303,6 +322,17 @@ export default function ND2AGeneratorForm({ onBack, initialCompanyId }: ND2AGene
                     <div><Label>護照簽發國家／地區</Label><Input value={officer.passportCountry} onChange={e => updateOfficer(idx, 'passportCountry', e.target.value)} placeholder="如：HKSAR" className="mt-1" /></div>
                     <div><Label>護照號碼</Label><Input value={officer.passportNumber} onChange={e => updateOfficer(idx, 'passportNumber', e.target.value)} className="mt-1" /></div>
                     <div className="col-span-2">
+                      {selectedCompany && (
+                        <AddressQuickPick companyId={selectedCompanyId}
+                          onPick={(d) => {
+                            if (d.flat) updateOfficer(idx, 'addrFlatBlock', d.flat);
+                            if (d.building) updateOfficer(idx, 'addrBuilding', d.building);
+                            if (d.street) updateOfficer(idx, 'addrStreetEstate', d.street);
+                            if (d.district) updateOfficer(idx, 'addrDistrict', d.district);
+                            if (d.country || d.region) updateOfficer(idx, 'addrRegion', d.country || d.region || '');
+                          }}
+                        />
+                      )}
                       <Label>住址 Residential Address</Label>
                       <div className="grid grid-cols-2 gap-3 mt-1">
                         <div className="space-y-1">

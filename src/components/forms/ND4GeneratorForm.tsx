@@ -11,6 +11,8 @@ import { useSaveFormHistory } from '@/hooks/useFormHistory';
 import FormHistorySelector from './FormHistorySelector';
 import PresenterSelector from './PresenterSelector';
 import type { Presenter } from '@/hooks/usePresenters';
+import PersonQuickPick from './PersonQuickPick';
+import AddressQuickPick from './AddressQuickPick';
 
 interface ND4GeneratorFormProps { onBack: () => void; initialCompanyId?: string; }
 
@@ -234,6 +236,17 @@ export default function ND4GeneratorForm({ onBack, initialCompanyId }: ND4Genera
               )}
             </div>
           )}
+          {selectedCompany && (
+            <div className="mt-3">
+              <PersonQuickPick companyId={selectedCompanyId}
+                onPick={(d) => {
+                  if (d.nameChinese) update('officerNameChinese', d.nameChinese);
+                  if (d.surname || d.otherNames) update('officerNameEnglish', [d.surname, d.otherNames].filter(Boolean).join(', '));
+                  if (d.idNumber) update('hkidPartial', d.idNumber);
+                }}
+              />
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-4 mt-3">
             <div><Label>中文名稱</Label><Input value={formData.officerNameChinese} onChange={e => update('officerNameChinese', e.target.value)} className="mt-1" /></div>
             <div><Label>英文名稱 *（姓氏, 名字）</Label><Input value={formData.officerNameEnglish} onChange={e => update('officerNameEnglish', e.target.value)} className="mt-1" placeholder="CHAN, Tai Man" /></div>
@@ -279,7 +292,17 @@ export default function ND4GeneratorForm({ onBack, initialCompanyId }: ND4Genera
           />
           <div className="grid grid-cols-2 gap-4">
             <div><Label>姓名／名稱</Label><Input value={formData.presentorName} onChange={e => update('presentorName', e.target.value)} className="mt-1" /></div>
-            <div className="col-span-2"><Label>地址</Label><Input value={formData.presentorAddress} onChange={e => update('presentorAddress', e.target.value)} className="mt-1" /></div>
+            <div className="col-span-2">
+              {selectedCompanyId && (
+                <AddressQuickPick companyId={selectedCompanyId}
+                  onPick={(d) => {
+                    const parts = [d.flat, d.building, d.street, d.district, d.country || d.region].filter(Boolean);
+                    if (parts.length > 0) update('presentorAddress', parts.join(', '));
+                  }}
+                />
+              )}
+              <Label>地址</Label><Input value={formData.presentorAddress} onChange={e => update('presentorAddress', e.target.value)} className="mt-1" />
+            </div>
             <div><Label>電話 Tel</Label><Input value={formData.presentorPhone} onChange={e => update('presentorPhone', e.target.value)} className="mt-1" /></div>
             <div><Label>傳真 Fax</Label><Input value={formData.presentorFax} onChange={e => update('presentorFax', e.target.value)} className="mt-1" /></div>
             <div><Label>電郵 Email</Label><Input value={formData.presentorEmail} onChange={e => update('presentorEmail', e.target.value)} className="mt-1" /></div>

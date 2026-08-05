@@ -16,75 +16,38 @@ import { verifyAuthRequest, type Env } from "./_auth";
 const TEMPLATE_NAME = "NNC1-template.pdf";
 
 // ═══ PI-NNC1 (P.14) — 受保護資料頁 ═══
-// Hybrid strategy:
-//   Person 0 → form API + updateAppearances(cjkFont) — real AP stream, true form fill
-//   Person 1+ → copyPages + drawMixed overlay — bypasses shared field-name limitation
+// Strategy: ALL persons use copyPages (blank template) + drawText overlay.
+//   White rectangles cover widget AP artifacts, then drawMixed renders text on top.
+//   This avoids the pdf-lib field-name sharing problem entirely.
+//   Mirrors Flask PyMuPDF approach: draw_rect(white) + insert_textbox.
 
 interface PiField {
-  name: string;   // form field name e.g. "fill_2_P.14"
   key: string;    // piPerson property key
   x: number;      // pdf-lib drawText x (origin bottom-left)
   y: number;      // pdf-lib drawText y (field rect bottom)
   w: number;      // field width
   h: number;      // field height
-  isCjk: boolean; // true → use cjk font for updateAppearances / drawMixed
+  isCjk: boolean;
 }
 
 const PI_FIELDS: PiField[] = [
-  { name: 'fill_2_P.14',  key: 'nameChinese',     x: 207, y: 436, w: 355, h: 22, isCjk: true  },
-  { name: 'fill_3_P.14',  key: 'surname',         x: 207, y: 406, w: 355, h: 23, isCjk: false },
-  { name: 'fill_4_P.14',  key: 'otherNames',      x: 207, y: 378, w: 355, h: 22, isCjk: false },
-  { name: 'fill_5_P.14',  key: 'hkidMain',        x: 257, y: 338, w: 256, h: 22, isCjk: false },
-  { name: 'fill_6_P.14',  key: 'hkidCheck',       x: 526, y: 338, w:  24, h: 22, isCjk: false },
-  { name: 'fill_7_P.14',  key: 'passportCountry', x: 257, y: 310, w: 305, h: 22, isCjk: true  },
-  { name: 'fill_8_P.14',  key: 'passportNumber',  x: 257, y: 282, w: 305, h: 22, isCjk: false },
-  { name: 'fill_9_P.14',  key: 'addrFlat',        x: 207, y: 230, w: 355, h: 27, isCjk: true  },
-  { name: 'fill_10_P.14', key: 'addrBuilding',    x: 207, y: 196, w: 355, h: 27, isCjk: true  },
-  { name: 'fill_11_P.14', key: 'addrStreet',      x: 207, y: 162, w: 355, h: 27, isCjk: true  },
-  { name: 'fill_12_P.14', key: 'addrDistrict',    x: 207, y: 128, w: 355, h: 27, isCjk: true  },
-  { name: 'fill_13_P.14', key: 'addrRegion',      x: 207, y:  94, w: 355, h: 27, isCjk: true  },
+  { key: 'nameChinese',     x: 207, y: 436, w: 355, h: 22, isCjk: true  },
+  { key: 'surname',         x: 207, y: 406, w: 355, h: 23, isCjk: false },
+  { key: 'otherNames',      x: 207, y: 378, w: 355, h: 22, isCjk: false },
+  { key: 'hkidMain',        x: 257, y: 338, w: 256, h: 22, isCjk: false },
+  { key: 'hkidCheck',       x: 526, y: 338, w:  24, h: 22, isCjk: false },
+  { key: 'passportCountry', x: 257, y: 310, w: 305, h: 22, isCjk: true  },
+  { key: 'passportNumber',  x: 257, y: 282, w: 305, h: 22, isCjk: false },
+  { key: 'addrFlat',        x: 207, y: 230, w: 355, h: 27, isCjk: true  },
+  { key: 'addrBuilding',    x: 207, y: 196, w: 355, h: 27, isCjk: true  },
+  { key: 'addrStreet',      x: 207, y: 162, w: 355, h: 27, isCjk: true  },
+  { key: 'addrDistrict',    x: 207, y: 128, w: 355, h: 27, isCjk: true  },
+  { key: 'addrRegion',      x: 207, y:  94, w: 355, h: 27, isCjk: true  },
 ];
 
-/** Fill Person 0 on the ORIGINAL P.14 using form API + updateAppearances.
- *  Generates real appearance streams — the text is truly "in" the form fields. */
-function fillPiFormAPI(
-  form: any,
-  piPerson: Record<string, any>,
-  fonts: { cjk: any; ascii: any }
-): void {
-  // Company name (fill_1_P.14) — top of page
-  const coName = String(piPerson['companyName'] ?? '').trim();
-  if (coName) {
-    try {
-      const tf = form.getTextField('fill_1_P.14');
-      tf.setText(coName);
-      tf.updateAppearances(fonts.cjk);
-    } catch { /* field may not exist */ }
-  }
-
-  // Person data fields (fill_2 ~ fill_13)
-  for (const f of PI_FIELDS) {
-    const val = String(piPerson[f.key] ?? '').trim();
-    if (!val) continue;
-    try {
-      const tf = form.getTextField(f.name);
-      tf.setText(val);
-      tf.updateAppearances(f.isCjk ? fonts.cjk : fonts.ascii);
-    } catch { /* skip missing field */ }
-  }
-
-  // Checkboxes: cb_1 = 公司秘書, cb_2 = 董事
-  try {
-    if (piPerson['isSecretary']) {
-      form.getCheckBox('cb_1_P.14').check();
-    } else {
-      form.getCheckBox('cb_2_P.14').check();
-    }
-  } catch { /* skip */ }
-}
-
-/** Fill Person 1+ on a COPIED P.14 page using drawMixed overlay.
- *  Cannot use form API because copyPages shares field names across copies. */
+/** Fill one PI-NNC1 page using white rect + drawMixed overlay.
+ *  White rectangles cover the blank widget AP (and any shared-field artifacts),
+ *  then text is drawn on top — matching the Flask PyMuPDF approach. */
 function fillPiDrawText(
   pdfDoc: any,
   pageIndex: number,
@@ -94,22 +57,36 @@ function fillPiDrawText(
   const page = pdfDoc.getPages()[pageIndex];
   if (!page) return;
 
-  // Company name at top of page (above fill_2)
+  // Helper: draw a filled white rectangle
+  const whiteRect = (x: number, y: number, w: number, h: number) => {
+    try {
+      page.drawRectangle({
+        x: x - 4, y: y - 2,
+        width: w + 8, height: h + 4,
+        color: { r: 1, g: 1, b: 1 } as any,
+        borderWidth: 0,
+      } as any);
+    } catch { /* skip if drawRectangle fails */ }
+  };
+
+  // Company name at top (fill_1 area, ~y:490-515)
   const coName = String(piPerson['companyName'] ?? '').trim();
   if (coName) {
+    whiteRect(207, 490, 355, 25);
     drawMixed(page, coName, {
-      x: 209, y: 500, size: 9, cjk: fonts.cjk, ascii: fonts.ascii,
+      x: 211, y: 497, size: 9, cjk: fonts.cjk, ascii: fonts.ascii,
     });
   }
 
-  // Person data fields — draw text centered in each blue field box
+  // Person data fields — white rect + text in each blue field box
   for (const f of PI_FIELDS) {
     const val = String(piPerson[f.key] ?? '').trim();
     if (!val) continue;
-    // Vertical centering: baseline ≈ bottom + half height + small offset
-    const textY = Math.round(f.y + f.h / 2 + 2);
+    // Cover widget area with white, then draw text
+    whiteRect(f.x, f.y, f.w, f.h);
+    const textY = Math.round(f.y + f.h / 2 + 2); // vertical center baseline
     try {
-      if (f.isCjk) {
+      if (f.isCjk || !fonts.ascii) {
         drawMixed(page, val, {
           x: f.x + 2, y: textY, size: 8, cjk: fonts.cjk, ascii: fonts.ascii,
         });
@@ -119,19 +96,19 @@ function fillPiDrawText(
         });
       }
     } catch {
-      // Fallback: try drawMixed for everything
       try {
         drawMixed(page, val, {
           x: f.x + 2, y: textY, size: 8, cjk: fonts.cjk, ascii: fonts.ascii,
         });
-      } catch { /* skip unrenderable field */ }
+      } catch { /* skip */ }
     }
   }
 
-  // Checkbox tick mark
+  // Checkbox: draw tick mark at cb_1 (x:207) or cb_2 (x:314)
   try {
+    whiteRect(piPerson['isSecretary'] ? 207 : 314, 471, 16, 16);
     const cbX = piPerson['isSecretary'] ? 208 : 315;
-    page.drawText('✓', { x: cbX, y: 472, size: 10, font: fonts.cjk });
+    page.drawText('✓', { x: cbX, y: 473, size: 10, font: fonts.cjk });
   } catch { /* skip */ }
 }
 
@@ -212,7 +189,7 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
       }
     }
 
-    // ── PI-NNC1: Person 0 = form API, Person 1+ = copyPages + drawText ──
+    // ── PI-NNC1: Copy blank P.14 FIRST, then drawText overlay for ALL persons ──
     const piPersons = data.piPersons || [];
     const PI_PAGE_IDX = 13; // P.14 (0-indexed)
 
@@ -223,10 +200,7 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
         (p as any).companyName = companyName;
       }
 
-      // 1) Person 0: Fill the ORIGINAL P.14 via form API (real AP)
-      fillPiFormAPI(form, piPersons[0], fonts);
-
-      // 2) Person 1+: Copy blank P.14 pages, then drawText overlay
+      // 1) Copy extra blank P.14 pages FIRST (while widgets are still blank/unfilled)
       if (piPersons.length > 1) {
         for (let i = 1; i < piPersons.length; i++) {
           const [copiedPage] = await pdfDoc.copyPages(pdfDoc, [PI_PAGE_IDX]);
@@ -238,11 +212,11 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
           const shift = piPersons.length - 1;
           data.removePages = data.removePages.map((p: number) => p + shift);
         }
+      }
 
-        // Fill each copied page
-        for (let i = 1; i < piPersons.length; i++) {
-          fillPiDrawText(pdfDoc, PI_PAGE_IDX + i, piPersons[i], fonts);
-        }
+      // 2) DrawText overlay on ALL PI-NNC1 pages (all persons, all pages)
+      for (let i = 0; i < piPersons.length; i++) {
+        fillPiDrawText(pdfDoc, PI_PAGE_IDX + i, piPersons[i], fonts);
       }
 
       // 3) P.8 續頁計數器 — fill_4 = 續頁D (PI-NNC1 continuation count)

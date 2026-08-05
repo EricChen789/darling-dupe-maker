@@ -2,7 +2,7 @@
 // Phase 5.3: Batch generation of primary form + linked forms
 // Translates data between forms and delegates to individual PDF generators.
 
-import { PDFDocument, rgb } from 'pdf-lib';
+import { PDFDocument, PDFName, PDFDict, PDFArray, PDFStream, PDFRef, decodePDFRawStream, rgb } from 'pdf-lib';
 import {
   corsHeaders, jsonResp, uint8ToBase64, rget,
   drawMixed, fetchAndEmbedFont, widthOfText,
@@ -284,8 +284,7 @@ export async function onRequest(context: any) {
             filename: `IR1263_${linkedData.companyName || "form"}.pdf`,
           });
         } else if (formCode === "IRBR1" || formCode === "IRBR2") {
-          // IRBR forms: load fillable template from R2, fill AcroForm widgets only
-          // New fillable templates have empty XFA streams — AcroForm API is the way.
+          // IRBR forms: load fillable template from R2, dual-layer XFA + AcroForm
           const r2Bucket = (env as any).PDF_TEMPLATES || (env as any).R2;
           const templateName = formCode === "IRBR1" ? "IRBR1-template.pdf" : "IRBR2-template.pdf";
           const templateObj = await r2Bucket.get(templateName);
@@ -293,6 +292,38 @@ export async function onRequest(context: any) {
           const templateBytes = new Uint8Array(await templateObj.arrayBuffer());
           const pdfDoc = await PDFDocument.load(templateBytes, { ignoreEncryption: true });
 
+          // ── Modify XFA datasets XML (for XFA-aware viewers) ──
+          // IRBR1 new template has NO XFA; IRBR2 has XFA with real datasets
+          if (formCode === "IRBR2") {
+            try {
+              const acroFormDict2 = pdfDoc.catalog.lookup(PDFName.of('AcroForm'), PDFDict);
+              const xfaArray = acroFormDict2.lookup(PDFName.of('XFA'), PDFArray);
+              const datasetsRef = xfaArray.get(7) as any as PDFRef;
+              const datasetsStream = pdfDoc.context.lookup(datasetsRef, PDFStream);
+              const decoded = decodePDFRawStream(datasetsStream);
+              let xmlText = new TextDecoder().decode(decoded.decode ? decoded.decode() : decoded);
+
+              const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+              const br = (linkedData.brNumber || "").trim();
+              const cn = (linkedData.businessNameChinese || "").trim();
+              const en = (linkedData.businessNameEnglish || "").trim();
+              const nat = (linkedData.businessNature || "").trim();
+              const com = (linkedData.commencementDate || "").trim();
+              xmlText = xmlText.replace(/<TextField1\s*\/>/, br ? `<TextField1>${esc(br)}</TextField1>` : '<TextField1/>');
+              xmlText = xmlText.replace(/<TextField2\s*\/>/, cn ? `<TextField2>${esc(cn)}</TextField2>` : '<TextField2/>');
+              xmlText = xmlText.replace(/<TextField2\s*\/>/, en ? `<TextField2>${esc(en)}</TextField2>` : '<TextField2/>');
+              xmlText = xmlText.replace(/<TextField2\s*\/>/, nat ? `<TextField2>${esc(nat)}</TextField2>` : '<TextField2/>');
+              xmlText = xmlText.replace(/<DateTimeField1\s*\/>/, com ? `<DateTimeField1>${esc(com)}</DateTimeField1>` : '<DateTimeField1/>');
+              xmlText = xmlText.replace(/<RadioButtonList\s*\/>/, `<RadioButtonList>${linkedData.irbr2_elect3yr !== false ? '1' : '2'}</RadioButtonList>`);
+              xmlText = xmlText.replace(/<RadioButtonList\s*\/>/, `<RadioButtonList>${linkedData.irbr2_registered !== false ? '1' : '2'}</RadioButtonList>`);
+
+              const newBytes = new TextEncoder().encode(xmlText);
+              const newStream = pdfDoc.context.flateStream(newBytes);
+              xfaArray.set(7, pdfDoc.context.register(newStream));
+            } catch (e) { console.warn(`${formCode} XFA modification error:`, e); }
+          }
+
+          // ── Set AcroForm fields ──
           const form = pdfDoc.getForm();
           if (formCode === "IRBR1") {
             // Simple checkboxes: cb_1_P.1=Yes (left), cb_2_P.1=No (right) — No XFA

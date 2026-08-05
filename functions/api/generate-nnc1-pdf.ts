@@ -2,13 +2,15 @@
 // NNC1 法團成立表格（股份有限公司）— 專用端點（Phase 2.2）
 // 使用 R2 模板 + pdf-lib AcroForm 填充
 // 支援多自然人 → 自動複製 PI-NNC1 頁面（每頁一人）
-//   Strategy: detachWidget + delete /AP + /NeedAppearances (same as NAR1/ND2A/NR1).
-//     - Widgets detached from shared parent → independent /V per page
-//     - Old AP deleted → reader regenerates from /V + /DA via NeedAppearances
-//     - No fontkit, no manual AP streams → stays under Workers CPU limit
+//   Strategy: detachWidget + generate AP using page's internal font names
+//     - Widgets detached from shared parent → independent per page
+//     - AP streams reference /C2_1 (PMingLiU) and /Helv (Helvetica) — NO Resources dict
+//       so font resolution inherits from page Resources → works on copied pages too
+//     - No fontkit, no manual font embedding → stays under Workers CPU limit
 
 import {
   PDFDocument, StandardFonts, PDFName, PDFString, PDFHexString,
+  PDFArray, PDFNumber,
 } from "pdf-lib";
 import { corsHeaders, jsonResp, uint8ToBase64 } from "./_pdf-utils";
 import { verifyAuthRequest, type Env } from "./_auth";
@@ -119,24 +121,92 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
       } catch { /* skip */ }
     }
 
-    // ═══ PI-NNC1 (P.14): Widget-level fill via detach + deleteAP + NeedAppearances ═══
-    // Same pattern as NAR1, ND2A, NR1, NN-series, ND2B, NDR1.
-    //
+    // ═══ PI-NNC1 (P.14): Widget-level fill with generated AP streams ═══
     // Field hierarchy on P.14:
     //   Intermediate parent:  /T fill_2_P  /Kids[...]         (no /FT)
-    //   Terminal = Widget:    /FT /Tx      /T (14)  /Parent   (widget IS the terminal field)
+    //   Terminal = Widget:    /FT /Tx      /T (14)  /Parent
     //
-    // Approach:
-    //   1) detachWidget: copies widget /T to "fill_2_P.14", deletes /Parent → standalone
-    //   2) Set widget-level /V (per-person data) + /DA (font reference)
-    //   3) Delete widget /AP → viewer regenerates from /V + /DA via NeedAppearances
-    //   4) rebuildAcroFormFields: rebuilds /Fields + sets NeedAppearances=true
+    // v9 Approach:
+    //   1) Cross-document copyPages for independent widget objects per page
+    //   2) detachWidget: copy /T to "fill_2_P.14", inherit FT/DA/Ff, delete /Parent
+    //   3) Generate NEW AP stream using page's internal font names:
+    //      - /C2_1 for CJK (PMingLiU Type0, Identity-H) — resolves via page Resources
+    //      - /Helv for ASCII (Helvetica Type1, added by embedFont)
+    //   4) AP has NO Resources dict → font resolution inherits from page
+    //      → works correctly on both original and copied pages (different font xrefs!)
+    //   5) rebuildAcroFormFields: rebuilds /Fields + sets NeedAppearances=true
     //
-    // This avoids creating manual AP streams (no font refs needed, no CPU overhead).
+    // This avoids the v8 bug where AP's hardcoded DescendantFonts xref (526)
+    // pointed to the wrong font object on cross-document copied pages.
+
+    /** Generate AP stream using page's internal font names. No Resources dict. */
+    const setWidgetApV9 = (
+      ctx: any,
+      widget: any,
+      value: string,
+      isCjk: boolean,
+    ): void => {
+      const fontName = isCjk ? "C2_1" : "Helv";
+      const fontSize = 10;
+
+      let textOp: string;
+      if (isCjk) {
+        // UTF-16BE hex with BOM
+        let hex = 'FEFF';
+        for (let i = 0; i < value.length; i++) {
+          const code = value.charCodeAt(i);
+          if (code >= 0xD800 && code <= 0xDBFF && i + 1 < value.length) {
+            const lo = value.charCodeAt(i + 1);
+            if (lo >= 0xDC00 && lo <= 0xDFFF) {
+              const cp = 0x10000 + (code - 0xD800) * 0x400 + (lo - 0xDC00);
+              hex += cp.toString(16).padStart(8, '0').toUpperCase();
+              i++;
+              continue;
+            }
+          }
+          hex += (code >> 8).toString(16).padStart(2, '0').toUpperCase();
+          hex += (code & 0xFF).toString(16).padStart(2, '0').toUpperCase();
+        }
+        textOp = `<${hex}> Tj`;
+      } else {
+        const escaped = value.replace(/([()\\])/g, '\\$1');
+        textOp = `(${escaped}) Tj`;
+      }
+
+      const apContent = `/${fontName} ${fontSize} Tf\n0 g\nBT\n2 2 Td\n${textOp}\nET`;
+
+      // Build Form XObject (NO Resources — inherits from page)
+      const bbox = PDFArray.withContext(ctx);
+      bbox.push(PDFNumber.of(0));
+      bbox.push(PDFNumber.of(0));
+      bbox.push(PDFNumber.of(1000));
+      bbox.push(PDFNumber.of(1000));
+
+      const dict = ctx.obj({});
+      dict.set(PDFName.of('Type'), PDFName.of('XObject'));
+      dict.set(PDFName.of('Subtype'), PDFName.of('Form'));
+      dict.set(PDFName.of('BBox'), bbox);
+
+      const apStream = ctx.stream(new TextEncoder().encode(apContent), dict);
+      const apRef = ctx.register(apStream);
+
+      const apDict = ctx.obj({});
+      apDict.set(PDFName.of('N'), apRef);
+      widget.set(PDFName.of('AP'), apDict);
+
+      // Set /V
+      if (isCjk) {
+        widget.set(PDFName.of('V'), PDFHexString.fromText(value));
+      } else {
+        widget.set(PDFName.of('V'), PDFString.of(value));
+      }
+
+      // Set /DA (fallback)
+      widget.set(PDFName.of('DA'), PDFString.of(`/${fontName} ${fontSize} Tf 0 g`));
+    };
 
     const piPersons = data.piPersons || [];
     const PI_PAGE_IDX = 13; // P.14 (0-indexed)
-    const FIT_SIZE = 10;    // font size for all PI-NNC1 text fields
 
     if (piPersons.length > 0) {
       const companyName = (data.fields as any)?.['fill_1_P.1'] || '';
@@ -209,9 +279,8 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
             if (fieldType === '/Tx') {
               // ── Text field ──
               if (suffix === "fill_1") {
-                // Company name (always CJK-safe)
-                widget.set(PDFName.of("DA"), PDFString.of(`/PMingLiU ${FIT_SIZE} Tf 0 g`));
-                widget.set(PDFName.of("V"), PDFHexString.fromText(companyName));
+                // Company name (CJK-safe)
+                setWidgetApV9(ctx, widget, companyName, true);
               } else {
                 const mapping = PI_FIELDS.find(f => f.suffix === suffix);
                 if (!mapping) continue;
@@ -220,16 +289,8 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
                 const val = String(person[mapping.key] ?? "").trim();
                 if (!val) continue;
 
-                if (mapping.isCjk) {
-                  widget.set(PDFName.of("DA"), PDFString.of(`/PMingLiU ${FIT_SIZE} Tf 0 g`));
-                  widget.set(PDFName.of("V"), PDFHexString.fromText(val));
-                } else {
-                  widget.set(PDFName.of("DA"), PDFString.of(`/Helv ${FIT_SIZE} Tf 0 g`));
-                  widget.set(PDFName.of("V"), PDFString.of(val));
-                }
+                setWidgetApV9(ctx, widget, val, mapping.isCjk);
               }
-              // Delete old AP → viewer regenerates from /V + /DA via NeedAppearances
-              widget.delete(PDFName.of("AP"));
             } else if (fieldType === '/Btn') {
               // ── Checkbox ──
               // Default: Off
@@ -263,8 +324,7 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
       }
 
       // 3) Rebuild AcroForm /Fields + set NeedAppearances=true
-      //    This ensures copied-page widgets (orphaned from original /Kids) are registered,
-      //    and tells the reader to regenerate appearances from widget /V + /DA.
+      //    Registers copied-page widgets (orphaned from original /Kids).
       rebuildAcroFormFields(pdfDoc);
 
       // 4) P.8 續頁計數器
@@ -285,10 +345,8 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
     }
 
     // ── Save ──
-    // updateFieldAppearances:false — NeedAppearances tells the viewer to regenerate
-    // from widget /V + /DA. Non-P.14 fields were filled via pdf-lib form API which sets
-    // field /V; rebuildAcroFormFields lists them in /Fields so the viewer also regenerates
-    // those from field /V.
+    // updateFieldAppearances:false — we generate our own AP streams (setWidgetApV9)
+    // for PI-NNC1 pages. Other pages use pdf-lib form API which generates AP correctly.
     const pdfBytes = await pdfDoc.save({ updateFieldAppearances: false });
     return jsonResp({ pdf: uint8ToBase64(new Uint8Array(pdfBytes)) });
   } catch (err: any) {

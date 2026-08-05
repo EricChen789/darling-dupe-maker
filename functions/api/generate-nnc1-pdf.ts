@@ -294,7 +294,8 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
 
             if (pos.suffix === "fill_1") {
               val = companyName;
-              isCjk = hasCjk(companyName);
+              // Use broad check: any non-ASCII char → treat as CJK
+              isCjk = hasCjk(companyName) || /[^\x00-\x7F]/.test(companyName);
             } else {
               const mapping = PI_FIELDS.find(f => f.suffix === pos.suffix);
               if (!mapping) continue;
@@ -318,7 +319,7 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
             // Center name fields, left-align others
             let textX: number;
             if (centerFields.has(pos.suffix)) {
-              if (!isCjk || !hasCjk(val)) {
+              if (!isCjk) {
                 const tw = helv.widthOfTextAtSize(val, fontSize);
                 textX = pos.x + (pos.w - tw) / 2;
               } else {
@@ -329,15 +330,17 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
               textX = pos.x + 2;
             }
 
-            if (!isCjk || !hasCjk(val)) {
-              // ASCII: use page.drawText with Helvetica
+            if (!isCjk) {
+              // ASCII field: use page.drawText with Helvetica (safe — values are ASCII names/IDs)
               page.drawText(val, {
                 x: textX, y: textY,
                 size: fontSize,
                 font: helv as any,
               });
             } else {
-              // CJK: inject raw content stream with /C2_1 font
+              // CJK field: inject raw content stream with /C2_1 font
+              //   Always use /C2_1 even if hasCjk() is false — CJK font renders ASCII fine too,
+              //   and this avoids WinAnsi encoding errors from characters outside hasCjk's regex range.
               injectCjkText(ctx, page, val, textX, textY, fontSize);
             }
           } else if (pos.fieldType === '/Btn') {

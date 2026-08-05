@@ -275,6 +275,12 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
 
             // ── Detach widget from shared parent ──
             detachWidget(widget, parentObj);
+            // Add page suffix to /T — avoids name collision across PI-NNC1 pages
+            // (without this, 2 pages with same field names → PDF reader shows same value)
+            const currentT = widget.get(PDFName.of("T"));
+            if (currentT instanceof PDFString) {
+              widget.set(PDFName.of("T"), PDFString.of(`${currentT.decodeText()}.p${pageIdx}`));
+            }
 
             if (fieldType === '/Tx') {
               // ── Text field ──

@@ -158,10 +158,17 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
 
     const form = pdfDoc.getForm();
 
-    // ── Embed fonts (shared by BR stamp + PI-NNC1) ──
-    const fonts = await fetchAndEmbedFont(pdfDoc, env as any);
+    // ── BR stamp on all pages ──
+    // Embed Helvetica (lightweight, always needed for BR stamp)
+    const helv = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const brNumber = data.brNumber || "";
+    if (brNumber) {
+      for (const page of pdfDoc.getPages()) {
+        page.drawText(brNumber, { x: 500, y: 820, size: 8, font: helv });
+      }
+    }
 
-    // ── Fill text fields (skip P.14 — handled below via fillPiFormAPI / fillPiDrawText) ──
+    // ── Fill text fields (skip P.14 — handled below via fillPiDrawText) ──
     const fields = data.fields || {};
     for (const [name, value] of Object.entries(fields)) {
       if (name.endsWith('_P.14')) continue;
@@ -181,19 +188,15 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
       } catch { /* skip */ }
     }
 
-    // ── BR stamp on all pages ──
-    const brNumber = data.brNumber || "";
-    if (brNumber) {
-      for (const page of pdfDoc.getPages()) {
-        page.drawText(brNumber, { x: 500, y: 820, size: 8, font: fonts.ascii });
-      }
-    }
-
     // ── PI-NNC1: Copy blank P.14 FIRST, then drawText overlay for ALL persons ──
     const piPersons = data.piPersons || [];
     const PI_PAGE_IDX = 13; // P.14 (0-indexed)
 
     if (piPersons.length > 0) {
+      // Load CJK font on-demand (fontkit registration is expensive — only when PI needed)
+      const cjkFonts = await fetchAndEmbedFont(pdfDoc, env as any);
+      const fonts = { cjk: cjkFonts.cjk, ascii: helv };
+
       // Attach company name to each piPerson
       const companyName = (data.fields as any)?.['fill_1_P.1'] || '';
       for (const p of piPersons) {

@@ -7686,9 +7686,18 @@ def _fill_nnc1_pdf(data):
         _set_text(doc, fmap, 'fill_12_P.3', 'HKD')
         _set_text(doc, fmap, 'fill_13_P.3', first_sh.get('amountPaid', ''))
 
-        # 合計行（fill_18=總股數）
+        # 合計行（fill_18=總股數, fill_20=總款額）
         total_shares = sum(int(str(s.get('shares', '0')) or '0') for s in shareholders)
+        total_paid = 0.0
+        for s in shareholders:
+            amt_str = str(s.get('amountPaid', '0'))
+            amt_str = amt_str.replace('HKD', '').replace(',', '').strip()
+            try:
+                total_paid += float(amt_str)
+            except ValueError:
+                pass
         _set_text(doc, fmap, 'fill_18_P.3', str(total_shares) if total_shares else '')
+        _set_text(doc, fmap, 'fill_20_P.3', str(int(total_paid)) if total_paid else '')
 
     # ── P.4: 公司秘書（自然人）──
     if first_sec_nat:
@@ -7716,6 +7725,7 @@ def _fill_nnc1_pdf(data):
         _set_cjk('fill_6_P.5', addr['district'])
         _set_text(doc, fmap, 'fill_7_P.5', first_sec_corp.get('email', ''))
         _set_text(doc, fmap, 'fill_8_P.5', first_sec_corp.get('companyNumberRef', '') or first_sec_corp.get('idNumber', ''))
+        _set_text(doc, fmap, 'fill_9_P.5', first_sec_corp.get('tcspLicense', ''))
         _check(doc, fmap, 'cb_1_P.5', True)
 
     # ── P.6: 董事（自然人）──
@@ -7811,6 +7821,11 @@ def _fill_nnc1_pdf(data):
 
     # BR on all pages
     _stamp_br_on_all_pages(doc, br8)
+
+    # 刪除填表須知白頁 (P.15-24, 0-indexed: 14-23)
+    for pno in range(23, 13, -1):
+        if pno < len(doc):
+            doc.delete_page(pno)
 
     pdf_bytes = doc.write(deflate=True)
     doc.close()

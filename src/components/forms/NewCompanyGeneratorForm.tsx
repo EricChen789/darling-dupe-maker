@@ -36,6 +36,7 @@ interface ShareEntry {
   name: string;       // 中文姓名
   surname: string;    // 英文姓氏
   otherNames: string; // 英文名字
+  address: string;    // comma-separated structured address
   shares: number;
   shareType: string;
   amountPaid: string;
@@ -45,7 +46,7 @@ const emptyOfficer = (role: 'director' | 'secretary' = 'director'): OfficerEntry
   role, identity: 'natural', nameEnglish: '', nameChinese: '', idNumber: '', address: '', dateOfBirth: '',
 });
 
-const emptyShare = (): ShareEntry => ({ name: '', surname: '', otherNames: '', shares: 0, shareType: 'Ordinary', amountPaid: '' });
+const emptyShare = (): ShareEntry => ({ name: '', surname: '', otherNames: '', address: '', shares: 0, shareType: 'Ordinary', amountPaid: '' });
 
 const HK_DISTRICTS = [
   '中西區', '灣仔', '東區', '南區',
@@ -261,14 +262,14 @@ export default function NewCompanyGeneratorForm({ onBack, initialCompanyId }: Pr
           'fill_3_P.2': 'Ordinary',                            // ① 股份類別
           'fill_4_P.2': fmtNum(totalSharesNum),                // ② 股份數目
           'fill_5_P.2': 'HKD',                                 // ③ 貨幣單位
-          'fill_6_P.2': `HKD ${fmtNum(shareCapital)}`,         // ④ 股本總額
-          'fill_7_P.2': `HKD ${fmtNum(totalPaidNum)}`,         // ⑤ 已繳付
-          'fill_8_P.2': `HKD ${fmtNum((parseFloat(shareCapital.replace(/[^0-9.]/g,''))||0) - totalPaidNum)}`, // ⑥ 尚未繳付
+          'fill_6_P.2': fmtNum(shareCapital),                  // ④ 股本總額 (不含HKD)
+          'fill_7_P.2': fmtNum(totalPaidNum),                  // ⑤ 已繳付 (不含HKD)
+          'fill_8_P.2': fmtNum((parseFloat(shareCapital.replace(/[^0-9.]/g,''))||0) - totalPaidNum), // ⑥ 尚未繳付 (不含HKD)
           // ── P.2 Total row (fill_16~19 = 貨幣/股本總額/已繳付/尚未繳付 合計) ──
           'fill_16_P.2': 'HKD',                                   // 貨幣
-          'fill_17_P.2': `HKD ${fmtNum(shareCapital)}`,           // 股本總額 Total
-          'fill_18_P.2': `HKD ${fmtNum(totalPaidNum)}`,           // 已繳付 Total Paid
-          'fill_19_P.2': `HKD ${fmtNum((parseFloat(shareCapital.replace(/[^0-9.]/g,''))||0) - totalPaidNum)}`, // 尚未繳付 Total Unpaid
+          'fill_17_P.2': fmtNum(shareCapital),                    // 股本總額 Total (不含HKD)
+          'fill_18_P.2': fmtNum(totalPaidNum),                    // 已繳付 Total Paid (不含HKD)
+          'fill_19_P.2': fmtNum((parseFloat(shareCapital.replace(/[^0-9.]/g,''))||0) - totalPaidNum), // 尚未繳付 Total Unpaid (不含HKD)
 
           // ── P.8: Statement of Founder Member (signer = shareholder) ──
           'fill_7_P.8': signerFullNameEn,                       // 創辦成員英文姓名（左欄）
@@ -297,17 +298,27 @@ export default function NewCompanyGeneratorForm({ onBack, initialCompanyId }: Pr
 
         // ── P.3: First Founder Member (shareholder) ──
         if (firstShareholder && (firstShareholder.name || firstShareholder.surname || firstShareholder.otherNames)) {
+          const shAddr = parseAddr(firstShareholder.address);
+          const shAmountPaid = parseFloat(String(firstShareholder.amountPaid || '').replace(/[^0-9.]/g, ''));
           Object.assign(fields, {
             'fill_1_P.3': firstShareholder.name,               // 中文姓名/名稱
             'fill_2_P.3': firstShareholder.surname,             // 英文姓氏 Surname
             'fill_3_P.3': firstShareholder.otherNames,          // 英文名字 Other Names
-            // fill_4_P.3 is "OR" body-corporate alternative, leave empty
+            // fill_4_P.3 is "OR full English name" alternative, leave empty
+            // Address (fill_5-9: 室/大廈/街道/區/區域)
+            'fill_5_P.3': shAddr.flat,                          // 室/樓/座
+            'fill_6_P.3': shAddr.building,                      // 大廈
+            'fill_7_P.3': shAddr.street,                        // 街道/屋苑
+            'fill_8_P.3': shAddr.district,                      // 區/市
+            'fill_9_P.3': shAddr.region,                        // 國家/地區
+            // Shareholding table (fill_10-13: 類別/數目/貨幣/總款額)
             'fill_10_P.3': firstShareholder.shareType || 'Ordinary', // 股份類別
             'fill_11_P.3': fmtNum(firstShareholder.shares || 0),     // 股份數目
             'fill_12_P.3': 'HKD',                                    // 貨幣
-            'fill_13_P.3': `HKD ${fmtNum(firstShareholder.amountPaid || '0')}`, // 總款額
+            'fill_13_P.3': fmtNum(isNaN(shAmountPaid) ? 0 : shAmountPaid), // 總款額 (不含HKD)
             // ── P.3 Total row ──
-            'fill_18_P.3': fmtNum(totalSharesNum),                   // 總股數 Total Shares
+            'fill_18_P.3': fmtNum(totalSharesNum),                   // 總股數 (合計)
+            'fill_20_P.3': fmtNum(totalPaidNum),                     // 合計 總款額 (fill_19 貨幣留空)
           });
         }
 
@@ -361,7 +372,8 @@ export default function NewCompanyGeneratorForm({ onBack, initialCompanyId }: Pr
             'fill_5_P.5': scAddr.street,                        // 街道
             'fill_6_P.5': scAddr.district,                      // 區
             'fill_7_P.5': '',                                   // 電郵
-            'fill_8_P.5': firstSecCorporate.companyNumberRef || '', // BR 號碼
+            'fill_8_P.5': firstSecCorporate.companyNumberRef || firstSecCorporate.idNumber || '', // 商業登記號碼
+            'fill_9_P.5': (firstSecCorporate as any).tcspLicense || '',  // TCSP 牌照號碼
           });
           checkboxes.push('cb_1_P.5'); // 無須領有牌照
         }
@@ -397,6 +409,7 @@ export default function NewCompanyGeneratorForm({ onBack, initialCompanyId }: Pr
             checkboxes,
             overlays,
             keepWidgets: true,
+            removePages: [14,15,16,17,18,19,20,21,22,23],  // 刪除填表須知白頁 (0-indexed: P.15-24)
             alignCenterFields: ['fill_1_P.1', 'fill_2_P.1', 'fill_4_P.1', 'fill_1_P.3', 'fill_1_P.4', 'fill_1_P.5', 'fill_1_P.6', 'fill_1_P.7'],  // 公司名+業務性質+股東/秘書/董事中文名 水平居中
             alignVCenterFields: ['fill_1_P.1', 'fill_2_P.1', 'fill_4_P.1', 'fill_1_P.3', 'fill_1_P.4', 'fill_1_P.5', 'fill_1_P.6', 'fill_1_P.7'],  // 上下居中
             forceWidgetAp: ['fill_1_P.1'],  // 純英文公司名也走 widget AP 才可居中
@@ -812,6 +825,7 @@ export default function NewCompanyGeneratorForm({ onBack, initialCompanyId }: Pr
                 name: d.nameChinese || '',
                 surname: d.surname || '',
                 otherNames: d.otherNames || '',
+                address: [d.addrFlat, d.addrBuilding, d.addrStreet, d.addrDistrict, d.addrRegion].filter(Boolean).join(', ') || d.address || '',
               });
             }}
           />

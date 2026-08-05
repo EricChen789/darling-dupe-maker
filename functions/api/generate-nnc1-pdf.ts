@@ -4,172 +4,135 @@
 // CPU优化: enableNeedAppearances + updateFieldAppearances:false（24页模板）
 // 支援多自然人 → 自動複製 PI-NNC1 頁面（每頁一人）
 //   策略：
-//     Person 0 → createFormHelpers (detachWidget + /V + /DA + delete /AP)
-//     Person 1+ → copyPages + 手動 detach 每個 widget + 設值
-//     利用模板內建 /PMingLiU 字體渲染 CJK，不另外嵌入字體
+//     Person 0 → form API + updateAppearances(cjkFont) — 真實 AP，像打字填入
+//     Person 1+ → copyPages + drawMixed overlay — 繞過 widget field-name 共享
+//     嵌入 Noto Sans TC（R2）提供 CJK 渲染
 
-import { PDFDocument, StandardFonts, PDFName, PDFString, PDFHexString, PDFBool, PDFArray } from "pdf-lib";
-import { corsHeaders, jsonResp, uint8ToBase64 } from "./_pdf-utils";
-import {
-  enableNeedAppearances, isAscii, collectFormFields,
-  detachWidget, rebuildAcroFormFields,
-  buildCjkDA, buildHelvDA, decodePdfText
-} from "./_acroform";
+import { PDFDocument, StandardFonts } from "pdf-lib";
+import { corsHeaders, jsonResp, uint8ToBase64, drawMixed, fetchAndEmbedFont } from "./_pdf-utils";
+import { enableNeedAppearances } from "./_acroform";
 import { verifyAuthRequest, type Env } from "./_auth";
 
 const TEMPLATE_NAME = "NNC1-template.pdf";
 
-// PI-NNC1 field → person data key mapping (widget suffix → person key)
-const PI_FIELD_MAP: Record<string, { key: string; isCjk: boolean }> = {
-  'fill_2':  { key: 'nameChinese',      isCjk: true  },
-  'fill_3':  { key: 'surname',          isCjk: false },
-  'fill_4':  { key: 'otherNames',       isCjk: false },
-  'fill_5':  { key: 'hkidMain',         isCjk: false },
-  'fill_6':  { key: 'hkidCheck',        isCjk: false },
-  'fill_7':  { key: 'passportCountry',  isCjk: true  },
-  'fill_8':  { key: 'passportNumber',   isCjk: false },
-  'fill_9':  { key: 'addrFlat',         isCjk: true  },
-  'fill_10': { key: 'addrBuilding',     isCjk: true  },
-  'fill_11': { key: 'addrStreet',       isCjk: true  },
-  'fill_12': { key: 'addrDistrict',     isCjk: true  },
-  'fill_13': { key: 'addrRegion',       isCjk: true  },
-};
+// ═══ PI-NNC1 (P.14) — 受保護資料頁 ═══
+// Hybrid strategy:
+//   Person 0 → form API + updateAppearances(cjkFont) — real AP stream, true form fill
+//   Person 1+ → copyPages + drawMixed overlay — bypasses shared field-name limitation
 
-// Checkbox mapping: cb_1 = 秘書, cb_2 = 董事
-const PI_CB_MAP: Record<string, string> = {
-  'cb_1': 'isSecretary_true',   // cb_1 checked when isSecretary=true
-  'cb_2': 'isSecretary_false',  // cb_2 checked when isSecretary=false
-};
-
-/** Fill ONE PI-NNC1 widget on a specific page (works on original or copied pages). */
-function fillPiWidget(
-  pdfDoc: PDFDocument,
-  widget: any,
-  field: any,
-  suffix: string,
-  piPerson: Record<string, any>
-): boolean {
-  const mapping = PI_FIELD_MAP[suffix];
-  if (!mapping) return false; // not a data field (e.g. fill_1 = company name)
-
-  const val = String(piPerson[mapping.key] ?? "").trim();
-  if (!val) return false;
-
-  try {
-    detachWidget(widget, field);
-
-    const da = decodePdfText(widget.get(PDFName.of("DA"))) ||
-               decodePdfText(field.get(PDFName.of("DA"))) ||
-               "/Helv 12 Tf 0 g";
-
-    if (mapping.isCjk && !isAscii(val)) {
-      widget.set(PDFName.of("DA"), PDFString.of(buildCjkDA(da)));
-      widget.set(PDFName.of("V"), PDFHexString.fromText(val));
-    } else {
-      widget.set(PDFName.of("DA"), PDFString.of(buildHelvDA(da)));
-      widget.set(PDFName.of("V"), PDFString.of(val));
-    }
-    widget.delete(PDFName.of("AP"));
-    return true;
-  } catch { return false; }
+interface PiField {
+  name: string;   // form field name e.g. "fill_2_P.14"
+  key: string;    // piPerson property key
+  x: number;      // pdf-lib drawText x (origin bottom-left)
+  y: number;      // pdf-lib drawText y (field rect bottom)
+  w: number;      // field width
+  h: number;      // field height
+  isCjk: boolean; // true → use cjk font for updateAppearances / drawMixed
 }
 
-/** Fill PI-NNC1 checkbox on a specific page. */
-function fillPiCheckbox(
-  pdfDoc: PDFDocument,
-  widget: any,
-  field: any,
-  suffix: string,
-  piPerson: Record<string, any>
-): boolean {
-  const cond = PI_CB_MAP[suffix];
-  if (!cond) return false;
+const PI_FIELDS: PiField[] = [
+  { name: 'fill_2_P.14',  key: 'nameChinese',     x: 207, y: 436, w: 355, h: 22, isCjk: true  },
+  { name: 'fill_3_P.14',  key: 'surname',         x: 207, y: 406, w: 355, h: 23, isCjk: false },
+  { name: 'fill_4_P.14',  key: 'otherNames',      x: 207, y: 378, w: 355, h: 22, isCjk: false },
+  { name: 'fill_5_P.14',  key: 'hkidMain',        x: 257, y: 338, w: 256, h: 22, isCjk: false },
+  { name: 'fill_6_P.14',  key: 'hkidCheck',       x: 526, y: 338, w:  24, h: 22, isCjk: false },
+  { name: 'fill_7_P.14',  key: 'passportCountry', x: 257, y: 310, w: 305, h: 22, isCjk: true  },
+  { name: 'fill_8_P.14',  key: 'passportNumber',  x: 257, y: 282, w: 305, h: 22, isCjk: false },
+  { name: 'fill_9_P.14',  key: 'addrFlat',        x: 207, y: 230, w: 355, h: 27, isCjk: true  },
+  { name: 'fill_10_P.14', key: 'addrBuilding',    x: 207, y: 196, w: 355, h: 27, isCjk: true  },
+  { name: 'fill_11_P.14', key: 'addrStreet',      x: 207, y: 162, w: 355, h: 27, isCjk: true  },
+  { name: 'fill_12_P.14', key: 'addrDistrict',    x: 207, y: 128, w: 355, h: 27, isCjk: true  },
+  { name: 'fill_13_P.14', key: 'addrRegion',      x: 207, y:  94, w: 355, h: 27, isCjk: true  },
+];
 
-  const [key, expected] = cond.split('_');
-  const shouldCheck = String(piPerson[key]) === expected;
-
-  if (!shouldCheck) return false;
-
-  try {
-    detachWidget(widget, field);
-
-    // Discover the checkbox's "On" state name
-    let onState = "Yes";
-    try {
-      const ap = widget.get(PDFName.of("AP")) as any;
-      const apN = ap?.get?.(PDFName.of("N")) as any;
-      const dict = apN?.dict;
-      if (dict && typeof dict.keys === "function") {
-        for (const k of dict.keys()) {
-          if (k !== "Off") { onState = k; break; }
-        }
-      }
-    } catch { /* fallback to "Yes" */ }
-
-    widget.set(PDFName.of("AS"), PDFName.of(onState));
-    widget.delete(PDFName.of("AP"));
-    return true;
-  } catch { return false; }
-}
-
-/** Fill all PI-NNC1 widgets on a given page with person data. */
-function fillPiPage(
-  pdfDoc: PDFDocument,
-  pageIndex: number,
-  piPerson: Record<string, any>
+/** Fill Person 0 on the ORIGINAL P.14 using form API + updateAppearances.
+ *  Generates real appearance streams — the text is truly "in" the form fields. */
+function fillPiFormAPI(
+  form: any,
+  piPerson: Record<string, any>,
+  fonts: { cjk: any; ascii: any }
 ): void {
-  const pages = pdfDoc.getPages();
-  const page = pages[pageIndex];
-  const annots = page.node.lookup(PDFName.of("Annots")) as any;
-  if (!annots || typeof annots.size !== "function") return;
-
-  const fill_1_val = String(piPerson['companyName'] ?? "").trim();
-
-  for (let i = 0; i < annots.size(); i++) {
+  // Company name (fill_1_P.14) — top of page
+  const coName = String(piPerson['companyName'] ?? '').trim();
+  if (coName) {
     try {
-      const widget = pdfDoc.context.lookup(annots.get(i)) as any;
-      if (!widget || typeof widget.get !== "function") continue;
-      const subtype = widget.get(PDFName.of("Subtype"));
-      if (!subtype || String(subtype) !== "/Widget") continue;
-
-      const parentRef = widget.get(PDFName.of("Parent"));
-      const field = parentRef
-        ? (pdfDoc.context.lookup(parentRef) as any)
-        : widget;
-      const fieldName = decodePdfText(field.get(PDFName.of("T")));
-      const widgetName = decodePdfText(widget.get(PDFName.of("T")));
-      const name = widgetName || fieldName || "";
-      if (!name) continue;
-
-      // Extract suffix: "fill_2_P.14" → "fill_2"
-      const suffix = name.replace(/_P\.\d+$/, "").replace(/_P\d+$/, "");
-
-      const ft = field.get(PDFName.of("FT"));
-      const fieldType = ft ? String(ft) : "";
-
-      if (fieldType === "/Btn") {
-        // Checkbox
-        fillPiCheckbox(pdfDoc, widget, field, suffix, piPerson);
-      } else if (fieldType === "/Tx") {
-        // Text field: fill_1 = company name, fill_2+ = person data
-        if (suffix === 'fill_1') {
-          // Company name — fill via form API for P.14, but for copied pages do it here
-          if (fill_1_val) {
-            try {
-              detachWidget(widget, field);
-              widget.set(PDFName.of("DA"), PDFString.of(buildHelvDA(
-                decodePdfText(widget.get(PDFName.of("DA"))) || ""
-              )));
-              widget.set(PDFName.of("V"), PDFHexString.fromText(fill_1_val));
-              widget.delete(PDFName.of("AP"));
-            } catch { /* skip */ }
-          }
-        } else {
-          fillPiWidget(pdfDoc, widget, field, suffix, piPerson);
-        }
-      }
-    } catch { /* skip malformed widget */ }
+      const tf = form.getTextField('fill_1_P.14');
+      tf.setText(coName);
+      tf.updateAppearances(fonts.cjk);
+    } catch { /* field may not exist */ }
   }
+
+  // Person data fields (fill_2 ~ fill_13)
+  for (const f of PI_FIELDS) {
+    const val = String(piPerson[f.key] ?? '').trim();
+    if (!val) continue;
+    try {
+      const tf = form.getTextField(f.name);
+      tf.setText(val);
+      tf.updateAppearances(f.isCjk ? fonts.cjk : fonts.ascii);
+    } catch { /* skip missing field */ }
+  }
+
+  // Checkboxes: cb_1 = 公司秘書, cb_2 = 董事
+  try {
+    if (piPerson['isSecretary']) {
+      form.getCheckBox('cb_1_P.14').check();
+    } else {
+      form.getCheckBox('cb_2_P.14').check();
+    }
+  } catch { /* skip */ }
+}
+
+/** Fill Person 1+ on a COPIED P.14 page using drawMixed overlay.
+ *  Cannot use form API because copyPages shares field names across copies. */
+function fillPiDrawText(
+  pdfDoc: any,
+  pageIndex: number,
+  piPerson: Record<string, any>,
+  fonts: { cjk: any; ascii: any }
+): void {
+  const page = pdfDoc.getPages()[pageIndex];
+  if (!page) return;
+
+  // Company name at top of page (above fill_2)
+  const coName = String(piPerson['companyName'] ?? '').trim();
+  if (coName) {
+    drawMixed(page, coName, {
+      x: 209, y: 500, size: 9, cjk: fonts.cjk, ascii: fonts.ascii,
+    });
+  }
+
+  // Person data fields — draw text centered in each blue field box
+  for (const f of PI_FIELDS) {
+    const val = String(piPerson[f.key] ?? '').trim();
+    if (!val) continue;
+    // Vertical centering: baseline ≈ bottom + half height + small offset
+    const textY = Math.round(f.y + f.h / 2 + 2);
+    try {
+      if (f.isCjk) {
+        drawMixed(page, val, {
+          x: f.x + 2, y: textY, size: 8, cjk: fonts.cjk, ascii: fonts.ascii,
+        });
+      } else {
+        page.drawText(val, {
+          x: f.x + 2, y: textY, size: 8, font: fonts.ascii,
+        });
+      }
+    } catch {
+      // Fallback: try drawMixed for everything
+      try {
+        drawMixed(page, val, {
+          x: f.x + 2, y: textY, size: 8, cjk: fonts.cjk, ascii: fonts.ascii,
+        });
+      } catch { /* skip unrenderable field */ }
+    }
+  }
+
+  // Checkbox tick mark
+  try {
+    const cbX = piPerson['isSecretary'] ? 208 : 315;
+    page.drawText('✓', { x: cbX, y: 472, size: 10, font: fonts.cjk });
+  } catch { /* skip */ }
 }
 
 export async function onRequest(context: { request: Request; env: Env }): Promise<Response> {
@@ -218,7 +181,10 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
 
     const form = pdfDoc.getForm();
 
-    // ── Fill text fields (skip P.14 — handled below via fillPiPage) ──
+    // ── Embed fonts (shared by BR stamp + PI-NNC1) ──
+    const fonts = await fetchAndEmbedFont(pdfDoc, env as any);
+
+    // ── Fill text fields (skip P.14 — handled below via fillPiFormAPI / fillPiDrawText) ──
     const fields = data.fields || {};
     for (const [name, value] of Object.entries(fields)) {
       if (name.endsWith('_P.14')) continue;
@@ -241,51 +207,50 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
     // ── BR stamp on all pages ──
     const brNumber = data.brNumber || "";
     if (brNumber) {
-      const helv = await pdfDoc.embedFont(StandardFonts.Helvetica);
       for (const page of pdfDoc.getPages()) {
-        page.drawText(brNumber, { x: 500, y: 820, size: 8, font: helv });
+        page.drawText(brNumber, { x: 500, y: 820, size: 8, font: fonts.ascii });
       }
     }
 
-    // ── PI-NNC1: Fill Person 0 on P.14, then copy & fill for Person 1+ ──
+    // ── PI-NNC1: Person 0 = form API, Person 1+ = copyPages + drawText ──
     const piPersons = data.piPersons || [];
     const PI_PAGE_IDX = 13; // P.14 (0-indexed)
 
     if (piPersons.length > 0) {
-      // Attach company name to each piPerson for fill_1
+      // Attach company name to each piPerson
       const companyName = (data.fields as any)?.['fill_1_P.1'] || '';
       for (const p of piPersons) {
         (p as any).companyName = companyName;
       }
 
-      // 1) Copy extra pages FIRST
-      for (let i = 1; i < piPersons.length; i++) {
-        const [copiedPage] = await pdfDoc.copyPages(pdfDoc, [PI_PAGE_IDX]);
-        pdfDoc.insertPage(PI_PAGE_IDX + i, copiedPage);
+      // 1) Person 0: Fill the ORIGINAL P.14 via form API (real AP)
+      fillPiFormAPI(form, piPersons[0], fonts);
+
+      // 2) Person 1+: Copy blank P.14 pages, then drawText overlay
+      if (piPersons.length > 1) {
+        for (let i = 1; i < piPersons.length; i++) {
+          const [copiedPage] = await pdfDoc.copyPages(pdfDoc, [PI_PAGE_IDX]);
+          pdfDoc.insertPage(PI_PAGE_IDX + i, copiedPage);
+        }
+
+        // Adjust removePages indices for inserted PI-NNC1 pages
+        if (data.removePages) {
+          const shift = piPersons.length - 1;
+          data.removePages = data.removePages.map((p: number) => p + shift);
+        }
+
+        // Fill each copied page
+        for (let i = 1; i < piPersons.length; i++) {
+          fillPiDrawText(pdfDoc, PI_PAGE_IDX + i, piPersons[i], fonts);
+        }
       }
 
-      // 2) Adjust removePages for extra PI-NNC1 pages
-      if (data.removePages && piPersons.length > 1) {
-        const shift = piPersons.length - 1;
-        data.removePages = data.removePages.map((p: number) => p + shift);
-      }
-
-      // 3) Fill ALL PI-NNC1 pages (Person 0 on original, Person 1+ on copies)
-      for (let p = 0; p < piPersons.length; p++) {
-        fillPiPage(pdfDoc, PI_PAGE_IDX + p, piPersons[p] as any);
-      }
-
-      // 4) Rebuild AcroForm /Fields from actual page widget refs
-      //    This is essential after detaching widgets so the reader sees all fields.
-      rebuildAcroFormFields(pdfDoc);
-
-      // 5) P.8 續頁計數器 — PI-NNC1 continuation count in fill_4 (續頁D)
-      const piContPages = piPersons.length - 1; // number of extra PI-NNC1 pages
+      // 3) P.8 續頁計數器 — fill_4 = 續頁D (PI-NNC1 continuation count)
+      const piContPages = piPersons.length - 1;
       if (piContPages > 0) {
         try {
-          const tf = form.getTextField('fill_4_P.8');
-          tf.setText(String(piContPages));
-        } catch { /* P.8 counter field may not exist in all template versions */ }
+          form.getTextField('fill_4_P.8').setText(String(piContPages));
+        } catch { /* may not exist in all template versions */ }
       }
     }
 
@@ -301,8 +266,10 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
     }
 
     // ── Save ──
-    // NeedAppearances is already set by rebuildAcroFormFields above.
-    // updateFieldAppearances:false because widgets were individually set with /V + /DA.
+    // enableNeedAppearances as safety net for any fields without AP.
+    // updateFieldAppearances:false — Person 0 has real AP from updateAppearances(),
+    //   non-P.14 fields have AP from setText(), Person 1+ uses drawText (page stream).
+    enableNeedAppearances(pdfDoc);
     const pdfBytes = await pdfDoc.save({ updateFieldAppearances: false });
     return jsonResp({ pdf: uint8ToBase64(new Uint8Array(pdfBytes)) });
   } catch (err: any) {

@@ -3,34 +3,40 @@
 // 使用 R2 模板 + pdf-lib AcroForm 填充
 // CPU优化: enableNeedAppearances 替代逐字段 updateAppearances（24页模板）
 // 支援多自然人 → 自動複製 PI-NNC1 頁面（每頁一人）
-//   策略：copyPages + 直接設 widget /V（零字體依賴，CPU 極輕）
+//   策略：
+//     全部人員 → copyPages(如需) + 白底矩形 + drawText 疊加文字
+//     form API + NeedAppearances + updateFieldAppearances:false 不可靠：
+//     模板的 AP 顯示空白字段，且許多 PDF 閱讀器不認 NeedAppearances
+//     改用 drawText 直接繪製覆蓋在所有 PI-NNC1 頁面上
 
-import { PDFDocument, StandardFonts, PDFName, PDFString, PDFHexString } from "pdf-lib";
-import { corsHeaders, jsonResp, uint8ToBase64 } from "./_pdf-utils";
-import { enableNeedAppearances } from "./_acroform";
+import { PDFDocument, StandardFonts, PDFName, PDFString, PDFHexString, rgb } from "pdf-lib";
+import { corsHeaders, jsonResp, uint8ToBase64, fetchAndEmbedFont, drawMixed } from "./_pdf-utils";
+import { enableNeedAppearances, isAscii } from "./_acroform";
 import { verifyAuthRequest, type Env } from "./_auth";
 
 const TEMPLATE_NAME = "NNC1-template.pdf";
 
-// PI-NNC1 widget → piPerson key mapping
-// Widget names on P.14 template page
-const PI_WIDGET_KEYS: Record<string, string> = {
-  'fill_2_P.14': 'nameChinese',
-  'fill_3_P.14': 'surname',
-  'fill_4_P.14': 'otherNames',
-  'fill_5_P.14': 'hkidMain',
-  'fill_6_P.14': 'hkidCheck',
-  'fill_7_P.14': 'passportCountry',
-  'fill_8_P.14': 'passportNumber',
-  'fill_9_P.14': 'addrFlat',
-  'fill_10_P.14': 'addrBuilding',
-  'fill_11_P.14': 'addrStreet',
-  'fill_12_P.14': 'addrDistrict',
-  'fill_13_P.14': 'addrRegion',
-};
-const PI_COMPANY_FIELD = 'fill_1_P.14'; // company name
-const PI_CB1_FIELD = 'cb_1_P.14';      // 秘書 checkbox
-const PI_CB2_FIELD = 'cb_2_P.14';      // 董事 checkbox
+// PI-NNC1 field positions (pdf-lib coords: origin bottom-left, y = 842 - PyMuPDF y1)
+const PI_FIELD_RECTS: Array<{ key: string; x: number; y: number; w: number; h: number; isCjk: boolean }> = [
+  { key: 'nameChinese',  x: 207, y: 436, w: 355, h: 22, isCjk: true  },  // fill_2
+  { key: 'surname',      x: 207, y: 406, w: 355, h: 23, isCjk: false },  // fill_3
+  { key: 'otherNames',   x: 207, y: 378, w: 355, h: 22, isCjk: false },  // fill_4
+  { key: 'hkidMain',     x: 257, y: 338, w: 256, h: 22, isCjk: false },  // fill_5
+  { key: 'hkidCheck',    x: 526, y: 338, w:  24, h: 22, isCjk: false },  // fill_6
+  { key: 'passportCountry', x: 257, y: 310, w: 305, h: 22, isCjk: true }, // fill_7
+  { key: 'passportNumber',  x: 257, y: 282, w: 305, h: 22, isCjk: false },// fill_8
+  { key: 'addrFlat',     x: 207, y: 230, w: 355, h: 27, isCjk: true  },  // fill_9
+  { key: 'addrBuilding', x: 207, y: 196, w: 355, h: 27, isCjk: true  },  // fill_10
+  { key: 'addrStreet',   x: 207, y: 162, w: 355, h: 27, isCjk: true  },  // fill_11
+  { key: 'addrDistrict', x: 207, y: 128, w: 355, h: 27, isCjk: true  },  // fill_12
+  { key: 'addrRegion',   x: 207, y:  94, w: 355, h: 27, isCjk: true  },  // fill_13
+];
+
+// Checkbox positions for overlay (pdf-lib coords)
+const PI_CB_RECTS = [
+  { isSecretary: true,  x: 207, y: 472, w: 15, h: 14 },  // cb_1_P.14
+  { isSecretary: false, x: 314, y: 472, w: 15, h: 14 },  // cb_2_P.14
+];
 
 export async function onRequest(context: { request: Request; env: Env }): Promise<Response> {
   const { request, env } = context;
@@ -78,7 +84,8 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
 
     const form = pdfDoc.getForm();
 
-    // ── Fill text fields (Helvetica-only, no CJK updateAppearances to save CPU) ──
+    // ── Fill text fields ──
+    // NO LONGER skip _P.14 fields — person 0 data goes through form API (field-level /V)
     const fields = data.fields || {};
     for (const [name, value] of Object.entries(fields)) {
       try {
@@ -91,10 +98,12 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
 
     // ── Check checkboxes ──
     for (const name of data.checkboxes || []) {
-      try { form.getCheckBox(name).check(); } catch { /* skip */ }
+      try {
+        form.getCheckBox(name).check();
+      } catch { /* skip */ }
     }
 
-    // ── BR stamp on all pages (Helvetica, no CJK font needed) ──
+    // ── BR stamp on all pages ──
     const brNumber = data.brNumber || "";
     if (brNumber) {
       const helv = await pdfDoc.embedFont(StandardFonts.Helvetica);
@@ -103,72 +112,78 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
       }
     }
 
-    // ── PI-NNC1 multi-page: copy pages for additional natural persons ──
-    // Strategy: copy the PI-NNC1 page, then set /V directly on each widget
-    // annotation of the copy. Widget-level /V overrides the shared parent field's /V.
-    // This is pure PDF object manipulation — zero font embedding, zero draw calls.
-    // Much lighter CPU than the overlay-text approach.
+    // ── PI-NNC1 multi-page ──
+    // ALL persons use drawText overlay (white rect + drawMixed).
+    // form API + NeedAppearances + updateFieldAppearances:false is unreliable:
+    // the template AP shows blank fields and many viewers don't honor NeedAppearances.
+    // So we draw overlay for person 0 too, not just person 1+.
     const piPersons = data.piPersons || [];
     const PI_PAGE_INDEX = 13; // P.14 (0-indexed)
 
-    if (piPersons.length > 1) {
-      // Build a helper to set /V on a specific widget of a page
-      const setWidgetValue = (page: any, fieldName: string, value: string, isCheckbox: boolean) => {
-        try {
-          const annots = page.node.lookup(PDFName.of("Annots")) as any;
-          if (!annots || typeof annots.size !== "function") return;
-          for (let i = 0; i < annots.size(); i++) {
-            try {
-              const wref = annots.get(i);
-              const w = pdfDoc.context.lookup(wref) as any;
-              if (!w || typeof w.get !== "function") continue;
-              if (String(w.get(PDFName.of("Subtype"))) !== "/Widget") continue;
-              const t = w.get(PDFName.of("T"));
-              const wName = t ? (typeof t.decodeText === "function" ? t.decodeText() : String(t).replace(/^\((.*)\)$/s, "$1")) : "";
-              if (wName !== fieldName) continue;
-              if (isCheckbox) {
-                w.set(PDFName.of("V"), PDFName.of(value));
-              } else if (value) {
-                // Use PDFString for ASCII, PDFHexString for CJK (FEFF = UTF-16BE BOM)
-                if (/^[\x00-\x7F]*$/.test(value)) {
-                  w.set(PDFName.of("V"), PDFString.of(value));
-                } else {
-                  const hex = [...new TextEncoder().encode(value)]
-                    .map(b => b.toString(16).padStart(2, "0"))
-                    .join("");
-                  w.set(PDFName.of("V"), PDFHexString.of(`FEFF${hex}`));
-                }
-              }
-            } catch { /* skip broken widget */ }
-          }
-        } catch { /* page has no annots */ }
-      };
-
+    if (piPersons.length > 0) {
+      // Copy extra pages FIRST (before any overlay drawing that could be copied)
       for (let i = 1; i < piPersons.length; i++) {
-        const pi = piPersons[i];
-
-        // Copy the PI-NNC1 page
         const [copiedPage] = await pdfDoc.copyPages(pdfDoc, [PI_PAGE_INDEX]);
         pdfDoc.insertPage(PI_PAGE_INDEX + i, copiedPage);
-
-        // Set field values directly on the copied page's widgets
-        for (const [fieldName, key] of Object.entries(PI_WIDGET_KEYS)) {
-          const val = String((pi as any)[key] || "");
-          if (val) setWidgetValue(copiedPage, fieldName, val, false);
-        }
-        // Company name
-        const cnVal = pi.nameChinese || "";
-        if (cnVal) setWidgetValue(copiedPage, PI_COMPANY_FIELD, cnVal, false);
-
-        // Checkboxes: secretary vs director
-        setWidgetValue(copiedPage, PI_CB1_FIELD, pi.isSecretary ? "Yes" : "Off", true);
-        setWidgetValue(copiedPage, PI_CB2_FIELD, pi.isSecretary ? "Off" : "Yes", true);
       }
 
-      // Adjust removePages for the new page count
-      if (data.removePages) {
+      // Adjust removePages for extra PI-NNC1 pages
+      if (data.removePages && piPersons.length > 1) {
         const shift = piPersons.length - 1;
         data.removePages = data.removePages.map((p: number) => p + shift);
+      }
+
+      // ── Draw text overlays for ALL piPersons (including person 0) ──
+      // Embed fonts ONCE (not per page) to avoid CPU timeout
+      const fonts = await fetchAndEmbedFont(pdfDoc, env);
+      const white = rgb(1, 1, 1);
+
+      for (let p = 0; p < piPersons.length; p++) {
+        const pi = piPersons[p];
+        const page = pdfDoc.getPages()[PI_PAGE_INDEX + p];
+
+        // Draw text fields
+        for (const rect of PI_FIELD_RECTS) {
+          const val = String((pi as any)[rect.key] || "").trim();
+          if (!val) continue;
+
+          try {
+            // White rectangle to cover underlying form field (template AP or form API value)
+            page.drawRectangle({
+              x: rect.x - 2, y: rect.y - 2,
+              width: rect.w + 4, height: rect.h + 4,
+              color: white,
+            });
+
+            // Draw text
+            drawMixed(page, val, {
+              x: rect.x + 2,
+              y: rect.y + rect.h - 3,  // baseline from bottom of rect
+              size: 8,
+              cjk: fonts.cjk!,
+              ascii: fonts.ascii,
+            });
+          } catch { /* skip */ }
+        }
+
+        // Draw checkbox overlay
+        const cbRect = PI_CB_RECTS.find(r => r.isSecretary === pi.isSecretary);
+        if (cbRect) {
+          try {
+            // White rectangle to cover underlying checkbox
+            page.drawRectangle({
+              x: cbRect.x - 2, y: cbRect.y - 2,
+              width: cbRect.w + 4, height: cbRect.h + 4,
+              color: white,
+            });
+            // Draw ✓ symbol
+            page.drawText('✓', {
+              x: cbRect.x + 1, y: cbRect.y + 2,
+              size: 9,
+              font: fonts.ascii,
+            });
+          } catch { /* skip */ }
+        }
       }
     }
 
@@ -183,10 +198,10 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
       }
     }
 
-    // ── enableNeedAppearances: tells PDF reader to render field appearances ──
+    // ── enableNeedAppearances ──
     enableNeedAppearances(pdfDoc);
 
-    // ── Save (no flatten, no updateFieldAppearances = save CPU) ──
+    // ── Save ──
     const pdfBytes = await pdfDoc.save({ updateFieldAppearances: false });
     return jsonResp({ pdf: uint8ToBase64(new Uint8Array(pdfBytes)) });
   } catch (err: any) {

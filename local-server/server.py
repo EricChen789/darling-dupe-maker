@@ -7625,7 +7625,14 @@ def _fill_nnc1_pdf(data):
         _set_text(doc, fmap, f'fill_{7 + row_offset}_P.2', sh.get('paid', ''))
         _set_text(doc, fmap, f'fill_{8 + row_offset}_P.2', sh.get('unpaid', ''))
 
-    # 合計行 (fill_16-19 = 貨幣/總額/已繳/未繳)
+    # 合計行 (fill_15=總股數, fill_16-19 = 貨幣/總額/已繳/未繳)
+    total_shares_count = 0
+    for sh in shares_data[:2]:
+        try:
+            total_shares_count += int(str(sh.get('number', '0')).replace(',', ''))
+        except ValueError:
+            pass
+    _set_text(doc, fmap, 'fill_15_P.2', str(total_shares_count) if total_shares_count else '')
     _set_text(doc, fmap, 'fill_16_P.2', data.get('totalCurrency', 'HKD'))
     _set_text(doc, fmap, 'fill_17_P.2', data.get('totalCapital', ''))
     _set_text(doc, fmap, 'fill_18_P.2', data.get('totalPaid', ''))
@@ -7686,7 +7693,7 @@ def _fill_nnc1_pdf(data):
         _set_text(doc, fmap, 'fill_12_P.3', 'HKD')
         _set_text(doc, fmap, 'fill_13_P.3', first_sh.get('amountPaid', ''))
 
-        # 合計行（fill_18=總股數, fill_20=總款額）
+        # 合計行（fill_18=總股數, fill_19=貨幣, fill_20=總款額）
         total_shares = sum(int(str(s.get('shares', '0')) or '0') for s in shareholders)
         total_paid = 0.0
         for s in shareholders:
@@ -7697,6 +7704,7 @@ def _fill_nnc1_pdf(data):
             except ValueError:
                 pass
         _set_text(doc, fmap, 'fill_18_P.3', str(total_shares) if total_shares else '')
+        _set_text(doc, fmap, 'fill_19_P.3', 'HKD')
         _set_text(doc, fmap, 'fill_20_P.3', str(int(total_paid)) if total_paid else '')
 
     # ── P.4: 公司秘書（自然人）──
@@ -7705,14 +7713,30 @@ def _fill_nnc1_pdf(data):
         _set_cjk('fill_1_P.4', first_sec_nat.get('nameChinese', ''), align='center')
         _set_text(doc, fmap, 'fill_2_P.4', en['surname'])
         _set_text(doc, fmap, 'fill_3_P.4', en['otherNames'])
+        # Previous Names & Alias
+        _set_text(doc, fmap, 'fill_4_P.4', first_sec_nat.get('previousNameChinese', ''))
+        _set_text(doc, fmap, 'fill_5_P.4', first_sec_nat.get('previousNameEnglish', ''))
+        _set_text(doc, fmap, 'fill_6_P.4', first_sec_nat.get('aliasChinese', ''))
+        _set_text(doc, fmap, 'fill_7_P.4', first_sec_nat.get('aliasEnglish', ''))
+        # Address
         addr = _parse_addr(first_sec_nat.get('address', ''))
         _set_cjk('fill_8_P.4', addr['flat'])
         _set_cjk('fill_9_P.4', addr['building'])
         _set_cjk('fill_10_P.4', addr['street'])
         _set_cjk('fill_11_P.4', addr['district'])
         _set_text(doc, fmap, 'fill_12_P.4', first_sec_nat.get('email', ''))
-        _set_text(doc, fmap, 'fill_13_P.4', _fmt_hkid(first_sec_nat.get('idNumber', '')), align='right')
-        _check(doc, fmap, 'cb_1_P.4', True)  # 無須領有 TCSP 牌照
+        # HKID or Passport
+        sec_id = (first_sec_nat.get('idNumber', '') or '').strip()
+        sec_is_hkid = bool(re.match(r'^[A-Z]?\d', sec_id))
+        _set_text(doc, fmap, 'fill_13_P.4', _fmt_hkid(sec_id) if sec_is_hkid else '', align='right')
+        _set_text(doc, fmap, 'fill_14_P.4', first_sec_nat.get('passportCountry', '') if not sec_is_hkid and sec_id else '')
+        _set_text(doc, fmap, 'fill_15_P.4', sec_id if not sec_is_hkid and sec_id else '')
+        # TCSP licence
+        tcsp_sec = first_sec_nat.get('tcspLicense', '') or ''
+        _set_text(doc, fmap, 'fill_16_P.4', tcsp_sec)
+        # TCSP checkbox — only check "not required" if no licence
+        if not tcsp_sec:
+            _check(doc, fmap, 'cb_1_P.4', True)  # 無須領有 TCSP 牌照
 
     # ── P.5: 公司秘書（法人團體）──
     if first_sec_corp:
@@ -7726,7 +7750,9 @@ def _fill_nnc1_pdf(data):
         _set_text(doc, fmap, 'fill_7_P.5', first_sec_corp.get('email', ''))
         _set_text(doc, fmap, 'fill_8_P.5', first_sec_corp.get('companyNumberRef', '') or first_sec_corp.get('idNumber', ''))
         _set_text(doc, fmap, 'fill_9_P.5', first_sec_corp.get('tcspLicense', ''))
-        _check(doc, fmap, 'cb_1_P.5', True)
+        # TCSP checkbox — only check "not required" if no licence
+        if not first_sec_corp.get('tcspLicense', ''):
+            _check(doc, fmap, 'cb_1_P.5', True)
 
     # ── P.6: 董事（自然人）──
     if first_dir_nat:
@@ -7734,6 +7760,12 @@ def _fill_nnc1_pdf(data):
         _set_cjk('fill_1_P.6', first_dir_nat.get('nameChinese', ''), align='center')
         _set_text(doc, fmap, 'fill_2_P.6', en['surname'])
         _set_text(doc, fmap, 'fill_3_P.6', en['otherNames'])
+        # Previous Names & Alias
+        _set_text(doc, fmap, 'fill_4_P.6', first_dir_nat.get('previousNameChinese', ''))
+        _set_text(doc, fmap, 'fill_5_P.6', first_dir_nat.get('previousNameEnglish', ''))
+        _set_text(doc, fmap, 'fill_6_P.6', first_dir_nat.get('aliasChinese', ''))
+        _set_text(doc, fmap, 'fill_7_P.6', first_dir_nat.get('aliasEnglish', ''))
+        # Address
         addr = _parse_addr(first_dir_nat.get('address', ''))
         _set_cjk('fill_8_P.6', addr['flat'])
         _set_cjk('fill_9_P.6', addr['building'])
@@ -7741,7 +7773,12 @@ def _fill_nnc1_pdf(data):
         _set_cjk('fill_11_P.6', addr['district'])
         _set_cjk('fill_12_P.6', addr['region'])
         _set_text(doc, fmap, 'fill_13_P.6', first_dir_nat.get('email', ''))
-        _set_text(doc, fmap, 'fill_14_P.6', _fmt_hkid(first_dir_nat.get('idNumber', '')), align='right')
+        # HKID or Passport
+        dir_id = (first_dir_nat.get('idNumber', '') or '').strip()
+        dir_is_hkid = bool(re.match(r'^[A-Z]?\d', dir_id))
+        _set_text(doc, fmap, 'fill_14_P.6', _fmt_hkid(dir_id) if dir_is_hkid else '', align='right')
+        _set_text(doc, fmap, 'fill_15_P.6', first_dir_nat.get('passportCountry', '') if not dir_is_hkid and dir_id else '')
+        _set_text(doc, fmap, 'fill_16_P.6', dir_id if not dir_is_hkid and dir_id else '')
         _check(doc, fmap, 'cb_1_P.6', True)  # 同意擔任董事
 
     # ── P.7: 董事（法人團體）──
@@ -7763,37 +7800,116 @@ def _fill_nnc1_pdf(data):
             signer_name = (first_sh.get('surname', '') + ' ' + first_sh.get('otherNames', '')).strip()
         _set_text(doc, fmap, 'fill_10_P.7', signer_name)
 
-    # ── PI-NNC1 (P.14): 首任公司秘書／董事(自然人) 受保護資料 ──
-    # fill_1 = 公司名稱
-    _set_text(doc, fmap, 'fill_1_P.14', data.get('companyName', '') or data.get('nameEnglish', ''))
+    # ── PI-NNC1 (P.14+): 首任公司秘書／董事(自然人) 受保護資料 ──
+    # ⚠️ 每頁只填報一名自然人！需要多頁時自動複製P.14
+    # cb_1/cb_2=身份（秘書/董事），非HKID/護照
+    # 字段順序：fill_2-4=姓名 → fill_5-6=HKID → fill_7-8=護照 → fill_9-13=住址5欄
+    # 優先使用前端送來的 piPersons（含所有自然人），fallback 從 officers 提取
+    pi_raw = data.get('piPersons')
+    if pi_raw:
+        pi_nat_persons = []
+        for p in pi_raw:
+            en_surname = (p.get('surname', '') or '').strip()
+            en_other = (p.get('otherNames', '') or '').strip()
+            name_en = f"{en_surname} {en_other}".strip()
+            # Reconstruct idNumber from hkidMain+hkidCheck or passportNumber
+            if p.get('isHkid'):
+                hk_main = (p.get('hkidMain', '') or '').strip()
+                hk_check = (p.get('hkidCheck', '') or '').strip()
+                id_number = f"{hk_main}({hk_check})" if hk_check else hk_main
+            else:
+                id_number = (p.get('passportNumber', '') or '').strip()
+            # Reconstruct address string for _parse_addr
+            addr_parts = [(p.get(k, '') or '').strip() for k in ('addrFlat', 'addrBuilding', 'addrStreet', 'addrDistrict', 'addrRegion')]
+            address = ', '.join(addr_parts)
+            pi_nat_persons.append({
+                'nameChinese': (p.get('nameChinese', '') or '').strip(),
+                'nameEnglish': name_en,
+                'idNumber': id_number,
+                'passportCountry': (p.get('passportCountry', '') or '').strip(),
+                'address': address,
+                'role': 'secretary' if p.get('isSecretary') else 'director',
+                'identity': 'natural',
+            })
+    else:
+        pi_nat_persons = []
+        for o in officers:
+            if o.get('identity') == 'corporate':
+                continue
+            if o.get('role') in ('secretary', 'director'):
+                pi_nat_persons.append(o)
 
-    if first_sec_nat:
-        sec_en = _parse_en_name(first_sec_nat.get('nameEnglish', ''))
-        sec_id = (first_sec_nat.get('idNumber', '') or '').strip()
-        # Parse HKID: "A123456(7)" → main + check digit
-        hkid_m = re.match(r'^([A-Z]?\d+)\s*\(?(\d)\)?$', sec_id)
-        _set_cjk('fill_2_P.14', first_sec_nat.get('nameChinese', ''), align='center')
-        _set_text(doc, fmap, 'fill_3_P.14', sec_en['surname'])
-        _set_text(doc, fmap, 'fill_4_P.14', sec_en['otherNames'])
-        _set_text(doc, fmap, 'fill_5_P.14', hkid_m.group(1) if hkid_m else sec_id)
-        _set_text(doc, fmap, 'fill_6_P.14', hkid_m.group(2) if hkid_m else '')
-        sec_addr = _parse_addr(first_sec_nat.get('address', ''))
-        _set_cjk('fill_7_P.14', f"{sec_addr['flat']} {sec_addr['building']}".strip())
-        _set_cjk('fill_8_P.14', f"{sec_addr['street']} {sec_addr['district']} {sec_addr['region']}".strip())
-        # Identity: HKID vs Passport
-        if re.match(r'^[A-Z]?\d', sec_id):
-            _check(doc, fmap, 'cb_1_P.14', True)  # HKID
+    def _fill_one_pi_nnc1(page, person, is_first_page=True):
+        """Fill PI-NNC1 fields for one natural person on the given page."""
+        pi_is_sec = person.get('role') == 'secretary'
+        pi_en = _parse_en_name(person.get('nameEnglish', ''))
+        pi_id = (person.get('idNumber', '') or '').strip()
+        hkid_m = re.match(r'^([A-Z]?\d+)\s*\(?(\d)\)?$', pi_id)
+        pi_is_hkid = bool(re.match(r'^[A-Z]?\d', pi_id))
+        pi_addr = _parse_addr(person.get('address', ''))
+
+        if is_first_page:
+            # Use form fields on the original P.14
+            _set_text(doc, fmap, 'fill_1_P.14', data.get('companyName', '') or data.get('nameEnglish', ''))
+            _set_cjk('fill_2_P.14', person.get('nameChinese', ''), align='center')
+            _set_text(doc, fmap, 'fill_3_P.14', pi_en['surname'])
+            _set_text(doc, fmap, 'fill_4_P.14', pi_en['otherNames'])
+            _set_text(doc, fmap, 'fill_5_P.14', (hkid_m.group(1) if hkid_m else pi_id) if pi_is_hkid else '')
+            _set_text(doc, fmap, 'fill_6_P.14', (hkid_m.group(2) if hkid_m else '') if pi_is_hkid else '')
+            _set_text(doc, fmap, 'fill_7_P.14', person.get('passportCountry', '') if not pi_is_hkid and pi_id else '')
+            _set_text(doc, fmap, 'fill_8_P.14', pi_id if not pi_is_hkid and pi_id else '')
+            _set_cjk('fill_9_P.14', pi_addr['flat'])
+            _set_cjk('fill_10_P.14', pi_addr['building'])
+            _set_cjk('fill_11_P.14', pi_addr['street'])
+            _set_cjk('fill_12_P.14', pi_addr['district'])
+            _set_cjk('fill_13_P.14', pi_addr['region'])
+            if pi_is_sec:
+                _check(doc, fmap, 'cb_1_P.14', True)
+            else:
+                _check(doc, fmap, 'cb_2_P.14', True)
         else:
-            _check(doc, fmap, 'cb_2_P.14', True)  # Passport
+            # Use insert_textbox on copied pages (form fields share names with original)
+            # White rectangles over field areas + text overlay
+            pi_fields_rects = [
+                ((207, 384, 562, 406), person.get('nameChinese', ''), 'cj'),      # fill_2
+                ((207, 413, 562, 436), pi_en['surname'], ''),                     # fill_3
+                ((207, 442, 562, 464), pi_en['otherNames'], ''),                  # fill_4
+                ((257, 482, 513, 504), (hkid_m.group(1) if hkid_m else pi_id) if pi_is_hkid else '', ''),  # fill_5
+                ((526, 482, 551, 504), (hkid_m.group(2) if hkid_m else '') if pi_is_hkid else '', ''),    # fill_6
+                ((257, 510, 562, 532), person.get('passportCountry', '') if not pi_is_hkid and pi_id else '', ''),  # fill_7
+                ((257, 539, 562, 560), pi_id if not pi_is_hkid and pi_id else '', ''),  # fill_8
+                ((207, 584, 562, 612), pi_addr['flat'], 'cj'),                    # fill_9
+                ((207, 618, 562, 646), pi_addr['building'], 'cj'),                # fill_10
+                ((207, 652, 562, 680), pi_addr['street'], 'cj'),                  # fill_11
+                ((207, 686, 562, 714), pi_addr['district'], 'cj'),                # fill_12
+                ((207, 720, 562, 748), pi_addr['region'], 'cj'),                  # fill_13
+            ]
+            for (x0, y0, x1, y1), val, mode in pi_fields_rects:
+                if val:
+                    page.draw_rect(fitz.Rect(x0-2, y0-2, x1+2, y1+2), color=1, fill=1)  # white
+                    if mode == 'cj':
+                        # Embed CJK font on the copied page if not already there
+                        page.clean_contents()
+                        try:
+                            page.insert_font(fontname='TC', fontfile=_cjk_fontfile)
+                        except Exception:
+                            pass  # font already embedded
+                        page.insert_textbox(fitz.Rect(x0+2, y0+2, x1-2, y1-2), val,
+                            fontsize=8, fontname='TC', align=0)
+                    else:
+                        page.insert_textbox(fitz.Rect(x0+2, y0+2, x1-2, y1-2), val,
+                            fontsize=8, fontname='Helv', align=0)
 
-    if first_dir_nat:
-        dir_en = _parse_en_name(first_dir_nat.get('nameEnglish', ''))
-        _set_cjk('fill_9_P.14', first_dir_nat.get('nameChinese', ''), align='center')
-        _set_text(doc, fmap, 'fill_10_P.14', dir_en['surname'])
-        _set_text(doc, fmap, 'fill_11_P.14', dir_en['otherNames'])
-        _set_text(doc, fmap, 'fill_12_P.14', (first_dir_nat.get('idNumber', '') or '').strip())
-        dir_addr = _parse_addr(first_dir_nat.get('address', ''))
-        _set_cjk('fill_13_P.14', ', '.join(filter(None, [dir_addr['flat'], dir_addr['building'], dir_addr['street'], dir_addr['district'], dir_addr['region']])))
+    if pi_nat_persons:
+        pi_page_idx = 13  # 0-indexed P.14
+        _fill_one_pi_nnc1(doc[pi_page_idx], pi_nat_persons[0], is_first_page=True)
+
+        # Extra PI-NNC1 pages for additional natural persons
+        for i, person in enumerate(pi_nat_persons[1:], start=1):
+            doc.fullcopy_page(pi_page_idx)  # copy P.14 (now at pi_page_idx+i)
+            # The copy gets inserted right after the original; update index if needed
+            # Actually fullcopy_page inserts after the source page
+            _fill_one_pi_nnc1(doc[pi_page_idx + i], person, is_first_page=False)
 
     # ── P.8: 創辦成員陳述書 ──
     # fill_1-5: 續頁頁數（A=秘書自然人, B=秘書法人, C=董事自然人, D=董事法人, E=額外法人董事）
@@ -7809,10 +7925,8 @@ def _fill_nnc1_pdf(data):
     _set_text(doc, fmap, 'fill_4_P.8', str(dir_corp_count - 1) if dir_corp_count > 1 else '')
     _set_text(doc, fmap, 'fill_5_P.8', '')  # E = additional body corporate directors
 
-    # PI-NNC1 頁數（受保護資料頁）
-    pi_count = 0
-    if sec_nat_count > 0: pi_count += 1
-    if dir_nat_count > 0: pi_count += 1
+    # PI-NNC1 頁數（受保護資料頁）= 所有自然人秘書+董事
+    pi_count = len(pi_nat_persons)
     _set_text(doc, fmap, 'fill_6_P.8', str(pi_count) if pi_count > 0 else '')
 
     # 創辦成員簽署（fill_7=姓名, fill_8=日期 DD/MM/YYYY）
@@ -7855,7 +7969,11 @@ def _fill_nnc1_pdf(data):
     _stamp_br_on_all_pages(doc, br8)
 
     # 刪除填表須知白頁 (P.15-24, 0-indexed: 14-23)
-    for pno in range(23, 13, -1):
+    # 若插入了額外PI-NNC1頁面，白頁位置會向後偏移
+    extra_pi_pages = max(0, len(pi_nat_persons) - 1)
+    white_start = 14 + extra_pi_pages
+    white_end = 23 + extra_pi_pages
+    for pno in range(white_end, white_start - 1, -1):
         if pno < len(doc):
             doc.delete_page(pno)
 
@@ -7890,7 +8008,121 @@ def generate_nnc1_pdf():
             data.setdefault('presentorRef', fm.get('fill_15_P.1', ''))
             data.setdefault('companyEmail', fm.get('fill_1_P.2', ''))
             data.setdefault('companyPhone', fm.get('fill_2_P.2', ''))
-            # Checkboxes
+            # ── Extract P.2 share capital from fields dict ──
+            if not data.get('shares') and not data.get('shareClass'):
+                sc_class = fm.get('fill_3_P.2', 'Ordinary')
+                sc_number = fm.get('fill_4_P.2', '')
+                sc_currency = fm.get('fill_5_P.2', 'HKD')
+                sc_total = fm.get('fill_6_P.2', '')
+                sc_paid = fm.get('fill_7_P.2', '')
+                sc_unpaid = fm.get('fill_8_P.2', '')
+                if sc_number or sc_total:
+                    data.setdefault('shareClass', sc_class)
+                    data.setdefault('totalShares', sc_number)
+                    data.setdefault('shareCurrency', sc_currency)
+                    data.setdefault('shareCapital', sc_total)
+                    data.setdefault('totalPaid', sc_paid)
+                    data.setdefault('totalUnpaid', sc_unpaid)
+                # Total row (fill_15-19)
+                data.setdefault('totalCurrency', fm.get('fill_16_P.2', 'HKD'))
+            # ── Extract shareholders (P.3 founder members) from fields dict ──
+            if not data.get('shareholders'):
+                sh_name = fm.get('fill_1_P.3', '')
+                sh_surname = fm.get('fill_2_P.3', '')
+                sh_other = fm.get('fill_3_P.3', '')
+                sh_flat = fm.get('fill_5_P.3', '')
+                sh_building = fm.get('fill_6_P.3', '')
+                sh_street = fm.get('fill_7_P.3', '')
+                sh_district = fm.get('fill_8_P.3', '')
+                sh_region = fm.get('fill_9_P.3', '')
+                sh_addr = ', '.join([sh_flat, sh_building, sh_street, sh_district, sh_region])
+                sh_type = fm.get('fill_10_P.3', 'Ordinary')
+                sh_shares = fm.get('fill_11_P.3', '0')
+                sh_paid = fm.get('fill_13_P.3', '0')
+                if sh_name or sh_surname or sh_other:
+                    data['shareholders'] = [{
+                        'name': sh_name, 'surname': sh_surname, 'otherNames': sh_other,
+                        'address': sh_addr, 'shareType': sh_type,
+                        'shares': sh_shares, 'amountPaid': sh_paid,
+                    }]
+                else:
+                    data.setdefault('shareholders', [])
+            # ── Extract officers (P.4-P.7) from fields dict ──
+            if not data.get('officers'):
+                officers = []
+                # P.4: Secretary (Natural Person)
+                sn_cn = fm.get('fill_1_P.4', '')
+                sn_surname = fm.get('fill_2_P.4', '')
+                sn_other = fm.get('fill_3_P.4', '')
+                sn_flat = fm.get('fill_8_P.4', '')
+                sn_building = fm.get('fill_9_P.4', '')
+                sn_street = fm.get('fill_10_P.4', '')
+                sn_district = fm.get('fill_11_P.4', '')
+                sn_id = fm.get('fill_13_P.4', '') or fm.get('fill_15_P.4', '')
+                if sn_cn or sn_surname or sn_other:
+                    officers.append({
+                        'role': 'secretary', 'identity': 'natural',
+                        'nameChinese': sn_cn, 'nameEnglish': f'{sn_surname} {sn_other}'.strip(),
+                        'idNumber': sn_id,
+                        'address': ', '.join([sn_flat, sn_building, sn_street, sn_district, '']),
+                    })
+                # P.5: Secretary (Body Corporate)
+                sc_cn = fm.get('fill_1_P.5', '')
+                sc_en = fm.get('fill_2_P.5', '')
+                sc_flat = fm.get('fill_3_P.5', '')
+                sc_building = fm.get('fill_4_P.5', '')
+                sc_street = fm.get('fill_5_P.5', '')
+                sc_district = fm.get('fill_6_P.5', '')
+                sc_br = fm.get('fill_8_P.5', '')
+                if sc_cn or sc_en:
+                    officers.append({
+                        'role': 'secretary', 'identity': 'corporate',
+                        'nameChinese': sc_cn, 'nameEnglish': sc_en,
+                        'companyNumberRef': sc_br,
+                        'address': ', '.join([sc_flat, sc_building, sc_street, sc_district, '']),
+                    })
+                # P.6: Director (Natural Person)
+                dn_cn = fm.get('fill_1_P.6', '')
+                dn_surname = fm.get('fill_2_P.6', '')
+                dn_other = fm.get('fill_3_P.6', '')
+                dn_flat = fm.get('fill_8_P.6', '')
+                dn_building = fm.get('fill_9_P.6', '')
+                dn_street = fm.get('fill_10_P.6', '')
+                dn_district = fm.get('fill_11_P.6', '')
+                dn_region = fm.get('fill_12_P.6', '')
+                dn_id = fm.get('fill_14_P.6', '') or fm.get('fill_16_P.6', '')
+                if dn_cn or dn_surname or dn_other:
+                    officers.append({
+                        'role': 'director', 'identity': 'natural',
+                        'nameChinese': dn_cn, 'nameEnglish': f'{dn_surname} {dn_other}'.strip(),
+                        'idNumber': dn_id,
+                        'address': ', '.join([dn_flat, dn_building, dn_street, dn_district, dn_region]),
+                    })
+                # P.7: Director (Body Corporate)
+                dc_cn = fm.get('fill_1_P.7', '')
+                dc_en = fm.get('fill_2_P.7', '')
+                dc_flat = fm.get('fill_3_P.7', '')
+                dc_building = fm.get('fill_4_P.7', '')
+                dc_street = fm.get('fill_5_P.7', '')
+                dc_district = fm.get('fill_6_P.7', '')
+                dc_region = fm.get('fill_7_P.7', '')
+                dc_br = fm.get('fill_9_P.7', '')
+                if dc_cn or dc_en:
+                    officers.append({
+                        'role': 'director', 'identity': 'corporate',
+                        'nameChinese': dc_cn, 'nameEnglish': dc_en,
+                        'companyNumberRef': dc_br,
+                        'address': ', '.join([dc_flat, dc_building, dc_street, dc_district, dc_region]),
+                    })
+                if officers:
+                    data['officers'] = officers
+                else:
+                    data.setdefault('officers', [])
+            # ── Extract signer (P.8 founder member) from fields dict ──
+            signer_en = fm.get('fill_7_P.8', '')
+            if signer_en and not data.get('signer'):
+                data['signer'] = {'nameEnglish': signer_en}
+            # ── Checkboxes (P.1 company type) ──
             if 'checkboxes' in data and isinstance(data['checkboxes'], list):
                 company_type = (data.get('companyType') or '').lower()
                 if 'cb_1_P.1' in data['checkboxes'] and 'private' not in company_type:

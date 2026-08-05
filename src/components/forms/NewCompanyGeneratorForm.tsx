@@ -30,6 +30,15 @@ interface OfficerEntry {
   dateOfBirth?: string;
   placeIncorporated?: string;
   companyNumberRef?: string;
+  // Previous Names & Alias
+  previousNameChinese?: string;
+  previousNameEnglish?: string;
+  aliasChinese?: string;
+  aliasEnglish?: string;
+  // Passport
+  passportCountry?: string;
+  // TCSP licence (secretary only)
+  tcspLicense?: string;
 }
 
 interface ShareEntry {
@@ -67,6 +76,7 @@ export default function NewCompanyGeneratorForm({ onBack, initialCompanyId }: Pr
   const [companyChinese, setCompanyChinese] = useState('');
   const [companyType, setCompanyType] = useState('Private company limited by shares');
   const [businessNature, setBusinessNature] = useState('');
+  const [businessCode, setBusinessCode] = useState('');  // 業務性質編碼 (窄欄)
   // 註冊地址拆分
   const [addrFlat, setAddrFlat] = useState('');
   const [addrBuilding, setAddrBuilding] = useState('');
@@ -140,6 +150,7 @@ export default function NewCompanyGeneratorForm({ onBack, initialCompanyId }: Pr
     if (data.companyEmail !== undefined) setCompanyEmail(data.companyEmail);
     if (data.companyPhone !== undefined) setCompanyPhone(data.companyPhone);
     if (data.businessNature) setBusinessNature(data.businessNature);
+    if (data.businessCode) setBusinessCode(data.businessCode);
     if (data.shareCapital) setShareCapital(data.shareCapital);
     if (data.totalShares) setTotalShares(data.totalShares);
     if (data.submitterNameCn !== undefined) setSubmitterNameCn(data.submitterNameCn);
@@ -198,6 +209,9 @@ export default function NewCompanyGeneratorForm({ onBack, initialCompanyId }: Pr
         const firstSecNatural = officers.find(o => o.role === 'secretary' && o.identity === 'natural');
         const firstSecCorporate = officers.find(o => o.role === 'secretary' && o.identity === 'corporate');
         const firstShareholder = shareholders[0];
+        // ALL natural persons (for PI-NNC1 multi-page)
+        const allNatSecs = officers.filter(o => o.role === 'secretary' && o.identity === 'natural');
+        const allNatDirs = officers.filter(o => o.role === 'director' && o.identity === 'natural');
 
         // ── Parse English name into surname + otherNames ──
         const parseEnName = (en: string) => {
@@ -239,7 +253,7 @@ export default function NewCompanyGeneratorForm({ onBack, initialCompanyId }: Pr
           'fill_2_P.1': companyChinese || '',                  // 中文公司名稱
           // Section 2 — 公司類別 (checkboxes below)
           // Section 3 — 業務性質
-          'fill_3_P.1': '',                                    // 業務性質編碼 Code (narrow 48px)
+          'fill_3_P.1': businessCode || '',                     // 業務性質編碼 Code (narrow 48px) — no fallback!
           'fill_4_P.1': businessNature || '',                  // 業務性質描述 Description (wide 420px)
           // Section 4 — 註冊辦事處地址 (split into 4 fields)
           'fill_5_P.1': addrFlat,                              // 室/樓/座 Flat/Floor/Block
@@ -265,7 +279,8 @@ export default function NewCompanyGeneratorForm({ onBack, initialCompanyId }: Pr
           'fill_6_P.2': fmtNum(shareCapital),                  // ④ 股本總額 (不含HKD)
           'fill_7_P.2': fmtNum(totalPaidNum),                  // ⑤ 已繳付 (不含HKD)
           'fill_8_P.2': fmtNum((parseFloat(shareCapital.replace(/[^0-9.]/g,''))||0) - totalPaidNum), // ⑥ 尚未繳付 (不含HKD)
-          // ── P.2 Total row (fill_16~19 = 貨幣/股本總額/已繳付/尚未繳付 合計) ──
+          // ── P.2 Total row (fill_15~19 = 總股數/貨幣/股本總額/已繳付/尚未繳付 合計) ──
+          'fill_15_P.2': fmtNum(totalSharesNum),                    // 合計: 總股數
           'fill_16_P.2': 'HKD',                                   // 貨幣
           'fill_17_P.2': fmtNum(shareCapital),                    // 股本總額 Total (不含HKD)
           'fill_18_P.2': fmtNum(totalPaidNum),                    // 已繳付 Total Paid (不含HKD)
@@ -280,7 +295,7 @@ export default function NewCompanyGeneratorForm({ onBack, initialCompanyId }: Pr
           'fill_3_P.8': officers.filter(o => o.role === 'director' && o.identity === 'natural').length > 1 ? '1' : '',
           'fill_4_P.8': officers.filter(o => o.role === 'director' && o.identity === 'corporate').length > 1 ? '1' : '',
           'fill_5_P.8': '',                                    // E (additional body corporate directors)
-          'fill_6_P.8': (firstSecNatural ? 1 : 0) + (firstDirNatural ? 1 : 0) > 0 ? String((firstSecNatural ? 1 : 0) + (firstDirNatural ? 1 : 0)) : '',
+          'fill_6_P.8': (allNatSecs.length + allNatDirs.length) > 0 ? String(allNatSecs.length + allNatDirs.length) : '',
         };
 
         // ── Checkboxes ──
@@ -318,7 +333,8 @@ export default function NewCompanyGeneratorForm({ onBack, initialCompanyId }: Pr
             'fill_13_P.3': fmtNum(isNaN(shAmountPaid) ? 0 : shAmountPaid), // 總款額 (不含HKD)
             // ── P.3 Total row ──
             'fill_18_P.3': fmtNum(totalSharesNum),                   // 總股數 (合計)
-            'fill_20_P.3': fmtNum(totalPaidNum),                     // 合計 總款額 (fill_19 貨幣留空)
+            'fill_19_P.3': 'HKD',                                    // 貨幣 (合計)
+            'fill_20_P.3': fmtNum(totalPaidNum),                     // 合計 總款額
           });
         }
 
@@ -326,36 +342,62 @@ export default function NewCompanyGeneratorForm({ onBack, initialCompanyId }: Pr
         if (firstSecNatural) {
           const snEn = parseEnName(firstSecNatural.nameEnglish);
           const snAddr = parseAddr(firstSecNatural.address);
+          const secId = (firstSecNatural.idNumber || '').trim();
+          const secIsHkid = /^[A-Z]?\d/.test(secId);
           Object.assign(fields, {
             'fill_1_P.4': firstSecNatural.nameChinese || '',   // 中文姓名
             'fill_2_P.4': snEn.surname,                        // 英文姓氏
             'fill_3_P.4': snEn.otherNames,                     // 英文名字
+            // Previous Names & Alias
+            'fill_4_P.4': firstSecNatural.previousNameChinese || '',  // 前用姓名(中)
+            'fill_5_P.4': firstSecNatural.previousNameEnglish || '',  // 前用姓名(英)
+            'fill_6_P.4': firstSecNatural.aliasChinese || '',         // 別名(中)
+            'fill_7_P.4': firstSecNatural.aliasEnglish || '',         // 別名(英)
+            // Address
             'fill_8_P.4': snAddr.flat,                         // 室/樓/座
             'fill_9_P.4': snAddr.building,                     // 大廈
             'fill_10_P.4': snAddr.street,                      // 街道
             'fill_11_P.4': snAddr.district,                    // 區
             'fill_12_P.4': '',                                 // 電郵
-            'fill_13_P.4': fmtHkid(firstSecNatural.idNumber || ''), // HKID 前4位
+            // HKID or Passport
+            'fill_13_P.4': secIsHkid ? fmtHkid(secId) : '',   // HKID 前4位
+            'fill_14_P.4': !secIsHkid && secId ? (firstSecNatural.passportCountry || '') : '',  // 護照簽發國
+            'fill_15_P.4': !secIsHkid && secId ? secId : '',   // 護照號碼
+            // TCSP licence
+            'fill_16_P.4': firstSecNatural.tcspLicense || '',  // TCSP 牌照號碼
           });
-          // TCSP licence — assume not required unless specified
-          checkboxes.push('cb_1_P.4'); // 無須領有牌照
+          // TCSP licence checkbox — only check "not required" if no licence number
+          if (!firstSecNatural.tcspLicense) {
+            checkboxes.push('cb_1_P.4'); // 無須領有牌照
+          }
         }
 
         // ── P.6: First Director (Natural Person) ──
         if (firstDirNatural) {
           const dnEn = parseEnName(firstDirNatural.nameEnglish);
           const dnAddr = parseAddr(firstDirNatural.address);
+          const dirId = (firstDirNatural.idNumber || '').trim();
+          const dirIsHkid = /^[A-Z]?\d/.test(dirId);
           Object.assign(fields, {
             'fill_1_P.6': firstDirNatural.nameChinese || '',   // 中文姓名
             'fill_2_P.6': dnEn.surname,                        // 英文姓氏
             'fill_3_P.6': dnEn.otherNames,                     // 英文名字
+            // Previous Names & Alias
+            'fill_4_P.6': firstDirNatural.previousNameChinese || '',  // 前用姓名(中)
+            'fill_5_P.6': firstDirNatural.previousNameEnglish || '',  // 前用姓名(英)
+            'fill_6_P.6': firstDirNatural.aliasChinese || '',         // 別名(中)
+            'fill_7_P.6': firstDirNatural.aliasEnglish || '',         // 別名(英)
+            // Address
             'fill_8_P.6': dnAddr.flat,                         // 室/樓/座
             'fill_9_P.6': dnAddr.building,                     // 大廈
             'fill_10_P.6': dnAddr.street,                      // 街道
             'fill_11_P.6': dnAddr.district,                    // 區/市
             'fill_12_P.6': dnAddr.region,                      // 國家/地區
             'fill_13_P.6': '',                                 // 電郵
-            'fill_14_P.6': fmtHkid(firstDirNatural.idNumber || ''), // HKID 前4位
+            // HKID or Passport
+            'fill_14_P.6': dirIsHkid ? fmtHkid(dirId) : '',   // HKID 前4位
+            'fill_15_P.6': !dirIsHkid && dirId ? (firstDirNatural.passportCountry || '') : '',  // 護照簽發國
+            'fill_16_P.6': !dirIsHkid && dirId ? dirId : '',   // 護照號碼
           });
           // Consent to act as director checkbox
           checkboxes.push('cb_1_P.6');
@@ -364,6 +406,7 @@ export default function NewCompanyGeneratorForm({ onBack, initialCompanyId }: Pr
         // ── P.5: First Secretary (Body Corporate) ──
         if (firstSecCorporate) {
           const scAddr = parseAddr(firstSecCorporate.address);
+          const scTcsp = (firstSecCorporate as any).tcspLicense || '';
           Object.assign(fields, {
             'fill_1_P.5': firstSecCorporate.nameChinese || '',  // 中文名稱
             'fill_2_P.5': firstSecCorporate.nameEnglish || '',  // 英文名稱
@@ -373,9 +416,12 @@ export default function NewCompanyGeneratorForm({ onBack, initialCompanyId }: Pr
             'fill_6_P.5': scAddr.district,                      // 區
             'fill_7_P.5': '',                                   // 電郵
             'fill_8_P.5': firstSecCorporate.companyNumberRef || firstSecCorporate.idNumber || '', // 商業登記號碼
-            'fill_9_P.5': (firstSecCorporate as any).tcspLicense || '',  // TCSP 牌照號碼
+            'fill_9_P.5': scTcsp,                               // TCSP 牌照號碼
           });
-          checkboxes.push('cb_1_P.5'); // 無須領有牌照
+          // TCSP licence checkbox — only check "not required" if no licence number
+          if (!scTcsp) {
+            checkboxes.push('cb_1_P.5'); // 無須領有牌照
+          }
         }
 
         // ── P.7: First Director (Body Corporate) ──
@@ -401,44 +447,55 @@ export default function NewCompanyGeneratorForm({ onBack, initialCompanyId }: Pr
           }
         }
 
-        // ── PI-NNC1 (P.14): 首任公司秘書／董事(自然人) 受保護資料 ──
-        Object.assign(fields, { 'fill_1_P.14': companyName });     // 公司名稱
-        // First Secretary (Natural Person) — full HKID/passport + address
-        if (firstSecNatural) {
-          const piSnEn = parseEnName(firstSecNatural.nameEnglish);
-          const piSnAddr = parseAddr(firstSecNatural.address);
-          const secId = (firstSecNatural.idNumber || '').trim();
-          // Parse HKID format: "A123456(7)" → main="A123456", check="7"
-          const hkidMatch = secId.match(/^([A-Z]?\d+)\s*\(?(\d)\)?$/);
-          const secMainId = hkidMatch ? hkidMatch[1] : secId;
-          const secCheckDigit = hkidMatch ? hkidMatch[2] : '';
+        // ── PI-NNC1 (P.14+): 首任公司秘書／董事(自然人) 受保護資料 ──
+        // ⚠️ 每頁只填報一名自然人！需要多頁時自動複製P.14
+        // cb_1/cb_2=身份（秘書/董事），非HKID/護照
+        // 字段順序：fill_2-4=姓名 → fill_5-6=HKID → fill_7-8=護照 → fill_9-13=住址5欄
+        const buildPiPerson = (o: OfficerEntry, isSecretary: boolean) => {
+          const en = parseEnName(o.nameEnglish);
+          const addr = parseAddr(o.address);
+          const id = (o.idNumber || '').trim();
+          const hkidMatch = id.match(/^([A-Z]?\d+)\s*\(?(\d)\)?$/);
+          return {
+            nameChinese: o.nameChinese || '',
+            surname: en.surname,
+            otherNames: en.otherNames,
+            hkidMain: hkidMatch ? hkidMatch[1] : id,
+            hkidCheck: hkidMatch ? hkidMatch[2] : '',
+            isHkid: /^[A-Z]?\d/.test(id),
+            passportCountry: o.passportCountry || '',
+            passportNumber: id,  // full ID = passport number when not HKID
+            addrFlat: addr.flat,
+            addrBuilding: addr.building,
+            addrStreet: addr.street,
+            addrDistrict: addr.district,
+            addrRegion: addr.region,
+            isSecretary,
+          };
+        };
+        const piPersons: ReturnType<typeof buildPiPerson>[] = [];
+        for (const s of allNatSecs) piPersons.push(buildPiPerson(s, true));
+        for (const d of allNatDirs) piPersons.push(buildPiPerson(d, false));
+
+        // Also fill form fields for backward compatibility (first person on P.14)
+        if (piPersons.length > 0) {
+          const p0 = piPersons[0];
           Object.assign(fields, {
-            'fill_2_P.14': firstSecNatural.nameChinese || '',      // 中文姓名
-            'fill_3_P.14': piSnEn.surname,                         // 英文姓氏
-            'fill_4_P.14': piSnEn.otherNames,                      // 英文名字
-            'fill_5_P.14': secMainId,                              // 身分證/護照號碼
-            'fill_6_P.14': secCheckDigit,                          // 括號內數字
-            'fill_7_P.14': piSnAddr.flat || piSnAddr.building || firstSecNatural.address || '',  // 住址1
-            'fill_8_P.14': [piSnAddr.street, piSnAddr.district, piSnAddr.region].filter(Boolean).join(', ') || '',  // 住址2
+            'fill_1_P.14': companyName,
+            'fill_2_P.14': p0.nameChinese,
+            'fill_3_P.14': p0.surname,
+            'fill_4_P.14': p0.otherNames,
+            'fill_5_P.14': p0.isHkid ? p0.hkidMain : '',
+            'fill_6_P.14': p0.isHkid ? p0.hkidCheck : '',
+            'fill_7_P.14': !p0.isHkid && p0.passportNumber ? p0.passportCountry : '',
+            'fill_8_P.14': !p0.isHkid && p0.passportNumber ? p0.passportNumber : '',
+            'fill_9_P.14': p0.addrFlat,
+            'fill_10_P.14': p0.addrBuilding,
+            'fill_11_P.14': p0.addrStreet,
+            'fill_12_P.14': p0.addrDistrict,
+            'fill_13_P.14': p0.addrRegion,
           });
-          // Identity type checkbox: HKID vs Passport
-          if (secId.match(/^[A-Z]?\d/)) {
-            checkboxes.push('cb_1_P.14'); // 香港身分證
-          } else {
-            checkboxes.push('cb_2_P.14'); // 護照
-          }
-        }
-        // First Director (Natural Person) — full HKID/passport + address
-        if (firstDirNatural) {
-          const piDnEn = parseEnName(firstDirNatural.nameEnglish);
-          const piDnAddr = parseAddr(firstDirNatural.address);
-          Object.assign(fields, {
-            'fill_9_P.14': firstDirNatural.nameChinese || '',      // 中文姓名
-            'fill_10_P.14': piDnEn.surname,                        // 英文姓氏
-            'fill_11_P.14': piDnEn.otherNames,                     // 英文名字
-            'fill_12_P.14': (firstDirNatural.idNumber || '').trim(), // 完整身分證/護照號碼
-            'fill_13_P.14': [piDnAddr.flat, piDnAddr.building, piDnAddr.street, piDnAddr.district, piDnAddr.region].filter(Boolean).join(', ') || firstDirNatural.address || '', // 住址
-          });
+          checkboxes.push(p0.isSecretary ? 'cb_1_P.14' : 'cb_2_P.14');
         }
 
         const resp = await fetch(`/api/generate-nnc1-pdf`, {
@@ -448,6 +505,7 @@ export default function NewCompanyGeneratorForm({ onBack, initialCompanyId }: Pr
             fields,
             checkboxes,
             overlays,
+            piPersons,  // 所有自然人（秘書+董事），後端會自動複製PI-NNC1頁面
             keepWidgets: true,
             removePages: [14,15,16,17,18,19,20,21,22,23],  // 刪除填表須知白頁 (0-indexed: P.15-24)
             alignCenterFields: ['fill_1_P.1', 'fill_2_P.1', 'fill_4_P.1', 'fill_1_P.3', 'fill_1_P.4', 'fill_1_P.5', 'fill_1_P.6', 'fill_1_P.7'],  // 公司名+業務性質+股東/秘書/董事中文名 水平居中
@@ -459,7 +517,7 @@ export default function NewCompanyGeneratorForm({ onBack, initialCompanyId }: Pr
         const result = await resp.json();
         if (!resp.ok) throw new Error(result.error || 'Unknown error');
         downloadBase64Pdf(result.pdf, 'NNC1-form.pdf');
-        saveFormHistory({ formType: 'NNC1', formData: { jurisdiction, companyName, companyChinese, companyType, regAddress: regAddressJoined, addrFlat, addrBuilding, addrStreet, addrDistrict, addrRegion, companyEmail, companyPhone, businessNature, shareCapital, totalShares, submitterNameCn, submitterNameEn, submitterAddress, submitterPhone, submitterFax, submitterEmail, submitterRef, signerDate, authorisedShares, registeredAgent, officers, shareholders, signerShareholderIndex, includeIRBR1, irbr1Yes } });
+        saveFormHistory({ formType: 'NNC1', formData: { jurisdiction, companyName, companyChinese, companyType, regAddress: regAddressJoined, addrFlat, addrBuilding, addrStreet, addrDistrict, addrRegion, companyEmail, companyPhone, businessNature, businessCode, shareCapital, totalShares, submitterNameCn, submitterNameEn, submitterAddress, submitterPhone, submitterFax, submitterEmail, submitterRef, signerDate, authorisedShares, registeredAgent, officers, shareholders, signerShareholderIndex, includeIRBR1, irbr1Yes } });
         toast({ title: 'PDF 已生成', description: 'NNC1 已使用官方模板下載' });
 
         // ── IRBR1 兄弟表單 ──
@@ -524,7 +582,7 @@ export default function NewCompanyGeneratorForm({ onBack, initialCompanyId }: Pr
           ],
         }, 'NNC1-BVI');
         if (ok) {
-          saveFormHistory({ formType: 'NNC1', formData: { jurisdiction, companyName, companyChinese, companyType, regAddress: regAddressJoined, addrFlat, addrBuilding, addrStreet, addrDistrict, addrRegion, companyEmail, companyPhone, businessNature, shareCapital, totalShares, submitterNameCn, submitterNameEn, submitterAddress, submitterPhone, submitterFax, submitterEmail, submitterRef, signerDate, authorisedShares, registeredAgent, officers, shareholders, signerShareholderIndex, includeIRBR1, irbr1Yes } });
+          saveFormHistory({ formType: 'NNC1', formData: { jurisdiction, companyName, companyChinese, companyType, regAddress: regAddressJoined, addrFlat, addrBuilding, addrStreet, addrDistrict, addrRegion, companyEmail, companyPhone, businessNature, businessCode, shareCapital, totalShares, submitterNameCn, submitterNameEn, submitterAddress, submitterPhone, submitterFax, submitterEmail, submitterRef, signerDate, authorisedShares, registeredAgent, officers, shareholders, signerShareholderIndex, includeIRBR1, irbr1Yes } });
           toast({ title: 'PDF 已生成', description: 'BVI 表格已下載' });
         }
       }
@@ -627,7 +685,8 @@ export default function NewCompanyGeneratorForm({ onBack, initialCompanyId }: Pr
             </SelectContent>
           </Select>
         </div>
-        <div className="space-y-1"><Label className="text-xs">業務性質</Label><Input value={businessNature} onChange={e => setBusinessNature(e.target.value)} /></div>
+        <div className="space-y-1"><Label className="text-xs">業務性質編碼 Code (可選)</Label><Input className="h-8 text-xs" value={businessCode} onChange={e => setBusinessCode(e.target.value)} placeholder="如 045" /></div>
+        <div className="space-y-1"><Label className="text-xs">業務性質描述</Label><Input value={businessNature} onChange={e => setBusinessNature(e.target.value)} /></div>
       </div>
       {/* 參考現有公司地址 */}
       <div className="bg-muted/30 border border-border rounded-lg p-3">
@@ -755,6 +814,8 @@ export default function NewCompanyGeneratorForm({ onBack, initialCompanyId }: Pr
                 idNumber: d.idNumber || '',
                 identity: d.identity || 'natural',
                 address: [d.addrFlat, d.addrBuilding, d.addrStreet, d.addrDistrict, d.addrRegion].filter(Boolean).join(', ') || d.address || '',
+                tcspLicense: d.tcspLicense || '',
+                companyNumberRef: d.companyNumberRef || '',
               });
             }}
           />
@@ -803,6 +864,29 @@ export default function NewCompanyGeneratorForm({ onBack, initialCompanyId }: Pr
                 </>
               );
             })()}
+            {/* ── 更多資料（前用姓名、別名、護照、TCSP牌照）── */}
+            {o.identity === 'natural' && (
+              <details className="mt-2 text-xs">
+                <summary className="cursor-pointer text-muted-foreground hover:text-foreground py-1 select-none">
+                  {o.previousNameChinese || o.previousNameEnglish || o.aliasChinese || o.aliasEnglish || o.passportCountry || o.tcspLicense
+                    ? '▾ 更多資料（已填）'
+                    : '▸ 更多資料（前用姓名、別名、護照...）'}
+                </summary>
+                <div className="grid grid-cols-2 gap-2 mt-2 pl-2 border-l-2 border-muted">
+                  <Input className="h-8 text-xs" placeholder="前用姓名(中) Previous Name" value={o.previousNameChinese || ''} onChange={e => updateOfficer(i, { previousNameChinese: e.target.value })} />
+                  <Input className="h-8 text-xs" placeholder="前用姓名(英) Previous Name EN" value={o.previousNameEnglish || ''} onChange={e => updateOfficer(i, { previousNameEnglish: e.target.value })} />
+                  <Input className="h-8 text-xs" placeholder="別名(中) Alias" value={o.aliasChinese || ''} onChange={e => updateOfficer(i, { aliasChinese: e.target.value })} />
+                  <Input className="h-8 text-xs" placeholder="別名(英) Alias EN" value={o.aliasEnglish || ''} onChange={e => updateOfficer(i, { aliasEnglish: e.target.value })} />
+                  <Input className="h-8 text-xs" placeholder="護照簽發國 Passport Country" value={o.passportCountry || ''} onChange={e => updateOfficer(i, { passportCountry: e.target.value })} />
+                  <div />
+                </div>
+              </details>
+            )}
+            {o.role === 'secretary' && (
+              <div className="mt-2 pl-2 border-l-2 border-amber-200">
+                <Input className="h-8 text-xs w-48" placeholder="TCSP 牌照號碼（可選）" value={o.tcspLicense || ''} onChange={e => updateOfficer(i, { tcspLicense: e.target.value })} />
+              </div>
+            )}
           </div>
         </div>
       ))}
@@ -877,13 +961,52 @@ export default function NewCompanyGeneratorForm({ onBack, initialCompanyId }: Pr
               </Button>
             )}
           </div>
-          <div className="grid grid-cols-6 gap-2 items-end">
+          {/* 地址選擇（從系統選擇） */}
+          {initialCompanyId && (
+            <AddressQuickPick
+              companyId={initialCompanyId}
+              label="🏠 從公司地址選擇（選後自動填入）"
+              onPick={(d) => {
+                const parts = (s.address || '').split(/[,，]\s*/);
+                const flat = d.flat || parts[0] || '';
+                const building = d.building || parts[1] || '';
+                const street = d.street || parts[2] || '';
+                const district = d.district || parts[3] || '';
+                const region = d.country || d.region || parts[4] || '';
+                updateShare(i, { address: [flat, building, street, district, region].join(', ') });
+              }}
+            />
+          )}
+          <div className="grid grid-cols-3 gap-2 items-end">
             <Input className="h-8 text-xs" placeholder="中文姓名" value={s.name} onChange={e => updateShare(i, { name: e.target.value })} />
             <Input className="h-8 text-xs" placeholder="英文姓氏 Surname" value={s.surname} onChange={e => updateShare(i, { surname: e.target.value })} />
             <Input className="h-8 text-xs" placeholder="英文名字 Other Names" value={s.otherNames} onChange={e => updateShare(i, { otherNames: e.target.value })} />
-            <Input className="h-8 text-xs" type="number" placeholder="股數" value={s.shares || ''} onChange={e => updateShare(i, { shares: Number(e.target.value) || 0 })} />
-            <Input className="h-8 text-xs" placeholder="類別" value={s.shareType} onChange={e => updateShare(i, { shareType: e.target.value })} />
-            <Input className="h-8 text-xs" placeholder="實繳 HKD" value={s.amountPaid} onChange={e => updateShare(i, { amountPaid: e.target.value })} />
+          </div>
+          {/* 地址拆分为独立字段：Flat / Building / Street / District / Region */}
+          {(() => {
+            const parts = (s.address || '').split(/[,，]\s*/);
+            const flat = parts[0] || '', building = parts[1] || '', street = parts[2] || '', district = parts[3] || '', region = parts[4] || '';
+            const joinAddr = (f: string, b: string, st: string, d: string, r: string) =>
+              [f, b, st, d, r].join(', ');
+            const setPart = (idx: number, val: string) => {
+              const arr = [flat, building, street, district, region];
+              arr[idx] = val;
+              updateShare(i, { address: joinAddr(arr[0], arr[1], arr[2], arr[3], arr[4]) });
+            };
+            return (
+              <div className="grid grid-cols-3 gap-2">
+                <Input className="h-8 text-xs" placeholder="室/樓/座 Flat/Floor" value={flat} onChange={e => setPart(0, e.target.value)} />
+                <Input className="h-8 text-xs" placeholder="大廈 Building" value={building} onChange={e => setPart(1, e.target.value)} />
+                <Input className="h-8 text-xs" placeholder="街道 Street" value={street} onChange={e => setPart(2, e.target.value)} />
+                <Input className="h-8 text-xs" placeholder="區 District" value={district} onChange={e => setPart(3, e.target.value)} />
+                <Input className="h-8 text-xs" placeholder="地區 Region（如 香港）" value={region} onChange={e => setPart(4, e.target.value)} />
+              </div>
+            );
+          })()}
+          <div className="grid grid-cols-3 gap-2 items-end">
+            <Input className="h-8 text-xs" type="number" placeholder="股數 Shares" value={s.shares || ''} onChange={e => updateShare(i, { shares: Number(e.target.value) || 0 })} />
+            <Input className="h-8 text-xs" placeholder="股份類別 Share Type" value={s.shareType} onChange={e => updateShare(i, { shareType: e.target.value })} />
+            <Input className="h-8 text-xs" placeholder="實繳金額 HKD" value={s.amountPaid} onChange={e => updateShare(i, { amountPaid: e.target.value })} />
           </div>
         </div>
       ))}

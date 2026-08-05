@@ -235,7 +235,13 @@ function fillNNC1Template(form: any, bundle: any) {
     setF(form, 'fill_11_P.4', addr[3]);
     setF(form, 'fill_12_P.4', secNat.email);
     setF(form, 'fill_13_P.4', (secNat.id_number || '').slice(0, 4));
-    checkF(form, 'cb_1_P.4', true); // TCSP
+    // TCSP licence
+    const tcspNat = secNat.tcsp_number || '';
+    setF(form, 'fill_16_P.4', tcspNat);
+    // TCSP checkbox — only check "not required" if no licence
+    if (!tcspNat) {
+      checkF(form, 'cb_1_P.4', true);  // 無須領有 TCSP 牌照
+    }
   }
 
   // ── P.5: Secretary (body corporate) ──
@@ -249,8 +255,13 @@ function fillNNC1Template(form: any, bundle: any) {
     setF(form, 'fill_5_P.5', addr[2]);
     setF(form, 'fill_6_P.5', addr[3]);
     setF(form, 'fill_7_P.5', secCorp.email);
-    setF(form, 'fill_8_P.5', secCorp.id_number || secCorp.tcsp_number);
-    checkF(form, 'cb_1_P.5', true);
+    setF(form, 'fill_8_P.5', secCorp.company_number_ref || secCorp.id_number || '');  // BR 號碼
+    const tcspCorp = secCorp.tcsp_number || '';
+    setF(form, 'fill_9_P.5', tcspCorp);  // TCSP 牌照號碼
+    // TCSP checkbox — only check "not required" if no licence
+    if (!tcspCorp) {
+      checkF(form, 'cb_1_P.5', true);  // 無須領有 TCSP 牌照
+    }
   }
 
   // ── P.6: Director (natural person) ──
@@ -305,11 +316,48 @@ function fillNNC1Template(form: any, bundle: any) {
   setF(form, 'fill_4_P.8', dirCorpCount > 1 ? String(dirCorpCount - 1) : '');
   setF(form, 'fill_5_P.8', '');
 
-  // PI-NNC1 page count
-  let piCount = 0;
-  if (secNatCount > 0) piCount++;
-  if (dirNatCount > 0) piCount++;
+  // PI-NNC1 page count = ALL natural persons (not just first)
+  const piCount = secNatCount + dirNatCount;
   setF(form, 'fill_6_P.8', piCount > 0 ? String(piCount) : '');
+
+  // ── PI-NNC1 (P.14): 首任公司秘書／董事(自然人) 受保護資料 ──
+  // ⚠️ 每頁只填報一名自然人！cb_1/cb_2=身份（秘書/董事），非HKID/護照
+  // 字段順序：fill_2-4=姓名 → fill_5-6=HKID → fill_7-8=護照 → fill_9-13=住址5欄
+  const piNat = secNat || dirNat;
+  if (piNat) {
+    const piIsSec = !!secNat;
+    const piEn = parseEnglishName(piNat.name_english || '');
+    const piAddr = parseAddress5(piNat.addr_flat
+      ? [piNat.addr_flat, piNat.addr_building, piNat.addr_street, piNat.addr_district, piNat.addr_region].filter(Boolean).join(', ')
+      : (piNat.service_address || piNat.address || ''));
+    const piId = (piNat.id_number || '').trim();
+    const piHkidMatch = piId.match(/^([A-Z]?\d+)\s*\(?(\d)\)?$/);
+    const piMainId = piHkidMatch ? piHkidMatch[1] : piId;
+    const piCheckDigit = piHkidMatch ? piHkidMatch[2] : '';
+    const piIsHkid = /^[A-Z]?\d/.test(piId);
+
+    setF(form, 'fill_1_P.14', c.name || c.name_english);
+    // 姓名 (fill_2-4)
+    setF(form, 'fill_2_P.14', piNat.name_chinese || '');
+    setF(form, 'fill_3_P.14', piEn.surname);
+    setF(form, 'fill_4_P.14', piEn.otherNames);
+    // HKID (fill_5-6) — only if HKID
+    setF(form, 'fill_5_P.14', piIsHkid ? piMainId : '');
+    setF(form, 'fill_6_P.14', piIsHkid ? piCheckDigit : '');
+    // 護照 (fill_7-8) — only if passport
+    setF(form, 'fill_7_P.14', !piIsHkid && piId ? (piNat.passport_country || '') : '');
+    setF(form, 'fill_8_P.14', !piIsHkid && piId ? piId : '');
+    // 住址 (fill_9-13) — 5欄
+    setF(form, 'fill_9_P.14', piAddr[0]);   // 室/樓/座
+    setF(form, 'fill_10_P.14', piAddr[1]);  // 大廈
+    setF(form, 'fill_11_P.14', piAddr[2]);  // 街道/屋苑/地段/村
+    setF(form, 'fill_12_P.14', piAddr[3]);  // 區/市/省/州/郵遞區號
+    setF(form, 'fill_13_P.14', piAddr[4]);  // 國家/地區
+
+    // 身份 checkbox: cb_1=公司秘書, cb_2=董事
+    checkF(form, 'cb_1_P.14', piIsSec);
+    checkF(form, 'cb_2_P.14', !piIsSec);
+  }
 
   // Signer (first shareholder/founder)
   const sh0 = bundle.shareholders[0];

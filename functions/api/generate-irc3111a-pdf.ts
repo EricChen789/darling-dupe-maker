@@ -1,10 +1,13 @@
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { verifyAuthRequest, type Env as AuthEnv } from './_auth';
-import { corsHeaders, jsonResp, uint8ToBase64 } from './_pdf-utils';
+import {
+  corsHeaders, jsonResp, uint8ToBase64,
+  drawMixed, fetchAndEmbedFont,
+} from './_pdf-utils';
 
 // IRC3111A — Notification of Change of Business Address (税務局更改業務地址通知)
 // Drawn from scratch with pdf-lib (no AcroForm template).
-// Uses R2-stored CJK font (same as other PDF endpoints).
+// Uses fetchAndEmbedFont for R2-first CJK font loading (same as other PDF endpoints).
 
 const PW = 595, PH = 842; // A4 portrait
 const M = 50;
@@ -12,26 +15,7 @@ const labelX = M;
 const valueX = M + 170;
 const BLACK = rgb(0, 0, 0);
 
-function isAsciiChar(ch: string): boolean { return ch.charCodeAt(0) < 128; }
-
-function segmentText(text: string): { text: string; isAscii: boolean }[] {
-  const segments: { text: string; isAscii: boolean }[] = [];
-  if (!text) return segments;
-  let cur = "", curAscii: boolean | null = null;
-  for (const ch of text) {
-    const ascii = isAsciiChar(ch);
-    if (curAscii === null) curAscii = ascii;
-    else if (ascii !== curAscii) {
-      segments.push({ text: cur, isAscii: curAscii! });
-      cur = ""; curAscii = ascii;
-    }
-    cur += ch;
-  }
-  if (cur) segments.push({ text: cur, isAscii: curAscii ?? true });
-  return segments;
-}
-
-interface IRC3111AData {
+export interface IRC3111AData {
   companyName?: string;
   brNumber?: string;
   oldAddress?: string;
@@ -44,41 +28,19 @@ interface IRC3111AData {
 export async function generateIRC3111APdf(data: IRC3111AData, r2Bucket: any): Promise<Uint8Array> {
   const pdfDoc = await PDFDocument.create();
   const page = pdfDoc.addPage([PW, PH]); // A4 portrait
-  const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica);
-  const helveticaBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
 
-  // Load CJK font from R2 (same pattern as other endpoints)
-  let cjkFont: any = null;
-  try {
-    const fontObj = await r2Bucket.get("NotoSansTC.woff2");
-    if (fontObj) {
-      const fontBytes = new Uint8Array(await fontObj.arrayBuffer());
-      cjkFont = await pdfDoc.embedFont(fontBytes);
-    }
-  } catch (_) {
-    // CJK font not available — Chinese text won't render
-  }
+  // Use shared R2-first font loading (handles fontkit registration + fallback)
+  const { cjk: cjkFont, ascii: asciiFont, cjkMissing } = await fetchAndEmbedFont(pdfDoc, { R2: r2Bucket });
+  const f = { cjk: cjkFont, ascii: asciiFont };
 
-  function drawMixedAt(text: string, x: number, y: number, fontSize: number, bold = false): number {
-    const segs = segmentText(text);
-    let cx = x;
-    for (const s of segs) {
-      // If non-ASCII but no CJK font, skip (prevents WinAnsi encoding error)
-      if (!s.isAscii && !cjkFont) continue;
-      const f = s.isAscii
-        ? (bold ? helveticaBold : helvetica)
-        : cjkFont!;
-      page.drawText(s.text, { x: cx, y, size: fontSize, font: f, color: BLACK });
-      cx += f.widthOfTextAtSize(s.text, fontSize);
-    }
-    return cx;
-  }
+  // Bold simulated via drawMixed bold option
+  const boldDrawOpts = { cjk: f.cjk, ascii: f.ascii, bold: true, color: BLACK } as const;
 
   function drawValue(value: string, y: number, fontSize = 11): number {
     const display = value || "";
-    drawMixedAt(display, valueX, y, fontSize);
+    drawMixed(page, display, { x: valueX, y, size: fontSize, cjk: f.cjk, ascii: f.ascii, color: BLACK });
     // Underline
-    const tw = display ? helvetica.widthOfTextAtSize(display, fontSize) + 4 : PW - valueX - M - 10;
+    const tw = display ? asciiFont.widthOfTextAtSize(display, fontSize) + 4 : PW - valueX - M - 10;
     page.drawLine({
       start: { x: valueX, y: y - 3 },
       end: { x: Math.min(valueX + tw, PW - M), y: y - 3 },
@@ -90,16 +52,16 @@ export async function generateIRC3111APdf(data: IRC3111AData, r2Bucket: any): Pr
   let y = 792; // start from near top
 
   // ── Header ──
-  page.drawText("Inland Revenue Department", { x: PW / 2 - 75, y, size: 9, font: helvetica, color: BLACK });
-  if (cjkFont) {
+  page.drawText("Inland Revenue Department", { x: PW / 2 - 75, y, size: 9, font: asciiFont, color: BLACK });
+  if (!cjkMissing) {
     page.drawText("税 務 局", { x: PW / 2 - 25, y: y - 12, size: 9, font: cjkFont, color: BLACK });
   }
   y -= 35;
 
-  drawMixedAt("IR 3111A", PW / 2 - 30, y, 16, true);
+  drawMixed(page, "IR 3111A", { x: PW / 2 - 30, y, size: 16, ...boldDrawOpts });
   y -= 22;
-  drawMixedAt("Notification of Change of Business Address", PW / 2 - 115, y, 12, true);
-  if (cjkFont) {
+  drawMixed(page, "Notification of Change of Business Address", { x: PW / 2 - 115, y, size: 12, ...boldDrawOpts });
+  if (!cjkMissing) {
     page.drawText("通知更改業務地址", { x: PW / 2 - 60, y: y - 16, size: 10, font: cjkFont, color: BLACK });
   }
   y -= 48;
@@ -117,10 +79,10 @@ export async function generateIRC3111APdf(data: IRC3111AData, r2Bucket: any): Pr
   const signDate = data.signDate || "";
 
   function drawLabel(cnLabel: string, enLabel: string, yPos: number, fontSize = 11): void {
-    if (cjkFont) {
+    if (!cjkMissing) {
       page.drawText(cnLabel, { x: labelX, y: yPos, size: fontSize, font: cjkFont, color: BLACK });
     }
-    page.drawText(enLabel, { x: labelX, y: yPos - fontSize - 3, size: fontSize - 2, font: helvetica, color: BLACK });
+    page.drawText(enLabel, { x: labelX, y: yPos - fontSize - 3, size: fontSize - 2, font: asciiFont, color: BLACK });
   }
 
   drawLabel("商業登記號碼", "Business Registration No.", y); drawValue(br, y - 14); y -= 50;
@@ -130,11 +92,11 @@ export async function generateIRC3111APdf(data: IRC3111AData, r2Bucket: any): Pr
   drawLabel("更改生效日期", "Effective Date of Change", y); drawValue(effDate, y - 14); y -= 58;
 
   // Declaration
-  drawMixedAt("Declaration / 聲明", labelX, y, 11, true);
+  drawMixed(page, "Declaration / 聲明", { x: labelX, y, size: 11, ...boldDrawOpts });
   y -= 22;
-  drawMixedAt(
+  drawMixed(page,
     "I hereby declare that the above particulars are true and correct. 本人謹此聲明，以上填報的詳情均屬真實和正確。",
-    labelX + 5, y, 9
+    { x: labelX + 5, y, size: 9, cjk: f.cjk, ascii: f.ascii, color: BLACK }
   );
   y -= 28;
 
@@ -142,9 +104,11 @@ export async function generateIRC3111APdf(data: IRC3111AData, r2Bucket: any): Pr
   drawLabel("日期", "Date", y); drawValue(signDate, y - 14); y -= 50;
 
   // Footer
-  drawMixedAt("Notes / 註：", labelX, y, 8, true);
+  drawMixed(page, "Notes / 註：", { x: labelX, y, size: 8, ...boldDrawOpts });
   y -= 14;
-  drawMixedAt("1. Submit within 1 month of change. 須於更改後1個月內提交。", labelX + 5, y, 7.5);
+  drawMixed(page, "1. Submit within 1 month of change. 須於更改後1個月內提交。",
+    { x: labelX + 5, y, size: 7.5, cjk: f.cjk, ascii: f.ascii, color: BLACK }
+  );
 
   return pdfDoc.save();
 }

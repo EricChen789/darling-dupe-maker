@@ -23,6 +23,8 @@ export interface PersonQuickPickData {
   reference?: string;
   idNumber?: string;
   identity?: 'natural' | 'corporate';
+  tcspLicense?: string;
+  companyNumberRef?: string;
 }
 
 interface PersonOption {
@@ -93,6 +95,7 @@ export default function PersonQuickPick({
               email: d.email || '',
               idNumber: (d as any).hkidPartial || (d as any).idNumber || '',
               identity: (d as any).identity || 'natural',
+              companyNumberRef: (d as any).companyNumberRef || (d as any).company_number_ref || '',
             },
           });
         }
@@ -117,6 +120,8 @@ export default function PersonQuickPick({
               email: s.email || '',
               idNumber: (s as any).hkidPartial || (s as any).idNumber || '',
               identity: (s as any).identity || 'natural',
+              tcspLicense: (s as any).tcspNumber || (s as any).tcsp_number || '',
+              companyNumberRef: (s as any).companyNumberRef || (s as any).company_number_ref || '',
             },
           });
         }
@@ -153,6 +158,7 @@ export default function PersonQuickPick({
               email: d.email || '',
               idNumber: (d as any).hkidPartial || (d as any).idNumber || '',
               identity: (d as any).identity || 'natural',
+              companyNumberRef: (d as any).companyNumberRef || (d as any).company_number_ref || '',
             },
           });
         }
@@ -177,6 +183,8 @@ export default function PersonQuickPick({
               email: s.email || '',
               idNumber: (s as any).hkidPartial || (s as any).idNumber || '',
               identity: (s as any).identity || 'natural',
+              tcspLicense: (s as any).tcspNumber || (s as any).tcsp_number || '',
+              companyNumberRef: (s as any).companyNumberRef || (s as any).company_number_ref || '',
             },
           });
         }

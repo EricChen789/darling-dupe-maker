@@ -2,23 +2,21 @@
 // SCR Register PDF — background template + text overlay (Paul Tang format)
 // Template has all static elements pre-drawn; this only overlays dynamic text.
 // Much simpler and lighter than the old draw-from-scratch approach.
-import { PDFDocument, StandardFonts } from "pdf-lib";
-import fontkit from "@pdf-lib/fontkit";
+import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { verifyAuthRequest, type Env as AuthEnv } from './_auth';
+import {
+  corsHeaders, jsonResp, uint8ToBase64, rget,
+  drawMixed, drawMixedRight, widthOfText, segmentText, wrapText,
+  fetchAndEmbedFont, hasCjk,
+} from './_pdf-utils';
 
 type Env = AuthEnv & {
   DB: D1Database;
   R2: R2Bucket;
 };
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
-
 const PW = 842, PH = 595; // Landscape A4
 const M = 28;
-const CHINESE_FONT_URL = 'https://cdn.jsdelivr.net/fontsource/fonts/noto-sans-tc@latest/chinese-traditional-400-normal.woff2';
 
 // Column positions (from template generator, same as local server.py)
 const COL_X = [28, 107.3, 219.1, 366.4, 506.9, 631.4, 719.8];
@@ -36,82 +34,6 @@ const Y_TABLE_TOP = PH - 178; // y of first data row top (after table headers)
 const ROW_CAPACITY_P1 = 10;   // rows before overlapping Additional Matters on page 1
 const ROW_CAPACITY_CONT = 14; // rows per continuation page
 
-// ── Helpers ──
-function uint8ToBase64(bytes: Uint8Array): string {
-  let binary = "";
-  const chunk = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunk) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
-  }
-  return btoa(binary);
-}
-
-function rget(row: any, key: string, dflt: any = null): any {
-  const v = row ? row[key] : undefined;
-  return v !== null && v !== undefined ? v : dflt;
-}
-
-function isAsciiChar(ch: string): boolean { return ch.charCodeAt(0) <= 0x7F; }
-
-function hasCjk(text: string): boolean {
-  for (const ch of text || "") {
-    const c = ch.charCodeAt(0);
-    if ((c >= 0x4E00 && c <= 0x9FFF) || (c >= 0x3000 && c <= 0x303F) || (c >= 0xFF00 && c <= 0xFFEF)) return true;
-  }
-  return false;
-}
-
-function segmentText(text: string): { text: string; useCjk: boolean }[] {
-  const segments: { text: string; useCjk: boolean }[] = [];
-  if (!text) return segments;
-  let cur = "", curAscii: boolean | null = null;
-  for (const ch of text) {
-    const ascii = isAsciiChar(ch);
-    if (curAscii === null) curAscii = ascii;
-    else if (ascii !== curAscii) {
-      segments.push({ text: cur, useCjk: !curAscii });
-      cur = ""; curAscii = ascii;
-    }
-    cur += ch;
-  }
-  if (cur) segments.push({ text: cur, useCjk: curAscii === null ? false : !curAscii });
-  return segments;
-}
-
-function widthOfText(text: string, cjk: any, ascii: any, size: number): number {
-  let w = 0;
-  for (const s of segmentText(text || "")) {
-    w += (s.useCjk ? cjk : ascii).widthOfTextAtSize(s.text, size);
-  }
-  return w;
-}
-
-function wrapText(text: string, cjk: any, ascii: any, fontSize: number, maxWidth: number): string[] {
-  const lines: string[] = [];
-  const paragraphs = (text || "").split('\n');
-  for (const para of paragraphs) {
-    if (!para) { lines.push(""); continue; }
-    if (widthOfText(para, cjk, ascii, fontSize) <= maxWidth) {
-      lines.push(para);
-      continue;
-    }
-    let start = 0;
-    while (start < para.length) {
-      let lo = start + 1, hi = para.length;
-      while (lo < hi) {
-        const mid = Math.floor((lo + hi + 1) / 2);
-        if (widthOfText(para.slice(start, mid), cjk, ascii, fontSize) <= maxWidth) lo = mid;
-        else hi = mid - 1;
-      }
-      if (lo === start) lo = start + 1;
-      lines.push(para.slice(start, lo));
-      start = lo;
-    }
-  }
-  if (lines.length === 0) lines.push("");
-  return lines;
-}
-
 // ══════════════════════════════════════════════════════════════
 //  Main handler
 // ══════════════════════════════════════════════════════════════
@@ -126,42 +48,35 @@ export async function onRequest(context: { request: Request; env: Env }) {
   try {
     const { companyId } = await request.json() as any;
     if (!companyId) {
-      return new Response(JSON.stringify({ error: 'companyId required' }), {
-        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      return jsonResp({ error: 'companyId required' }, 400);
     }
 
     // R2 bucket binding (use same pattern as other endpoints)
     const r2Bucket = (env as any).PDF_TEMPLATES || (env as any).R2 || env.R2;
     if (!r2Bucket) throw new Error("R2 bucket not available");
 
-    // Fetch company, SCR data, template, and font in parallel
-    const [company, scrResult, templateObj, fontResp] = await Promise.all([
+    // Fetch company, SCR data, and template in parallel
+    const [company, scrResult, templateObj] = await Promise.all([
       env.DB.prepare("SELECT * FROM companies WHERE id = ?").bind(companyId).first(),
       env.DB.prepare("SELECT * FROM significant_controllers WHERE company_id = ? ORDER BY created_at").bind(companyId).all(),
       r2Bucket.get("scr-template-bg.pdf"),
-      fetch(CHINESE_FONT_URL, { headers: { Accept: '*/*' } }),
     ]);
 
     if (!company) throw new Error("Company not found");
     if (!templateObj) throw new Error("SCR template not found in R2");
-    if (!fontResp.ok) throw new Error('Failed to load Chinese font');
 
     const scrs = (scrResult.results || []) as any[];
     const templateBytes = new Uint8Array(await templateObj.arrayBuffer());
-    const fontBytes = await fontResp.arrayBuffer();
 
-    // Load PDFs and fonts
+    // Load template PDF and create output PDF
     const [templatePdf, outPdf] = await Promise.all([
       PDFDocument.load(templateBytes),
       PDFDocument.create(),
     ]);
-    outPdf.registerFontkit(fontkit);
 
-    const [cjkFont, asciiFont] = await Promise.all([
-      outPdf.embedFont(fontBytes),
-      outPdf.embedFont(StandardFonts.Helvetica),
-    ]);
+    // Load fonts via shared R2-first fetchAndEmbedFont
+    const { cjk: cjkFont, ascii: asciiFont, cjkMissing } = await fetchAndEmbedFont(outPdf, env as any);
+    const f = { cjk: cjkFont, ascii: asciiFont };
 
     const templatePages = templatePdf.getPages();
     const tplPage1 = templatePages[0];  // full header + rows + Additional Matters
@@ -233,7 +148,7 @@ export async function onRequest(context: { request: Request; env: Env }) {
 
       const rowTexts = [entryDate, nameDisplay, addr, idBlock, natureText, dateDisplay, remarks];
 
-      // Calculate row height
+      // Calculate row height (using shared wrapText)
       let rowH = DATA_ROW_H;
       for (let ci = 0; ci < rowTexts.length; ci++) {
         const txt = rowTexts[ci];
@@ -247,9 +162,6 @@ export async function onRequest(context: { request: Request; env: Env }) {
     }
 
     // ── Layout pages ──
-    // Page 1: header + up to ROW_CAPACITY_P1 rows + Additional Matters
-    // Continuation pages: continuation header + up to ROW_CAPACITY_CONT rows
-
     const pages: { tplRef: any; rows: DataRow[]; isPage1: boolean }[] = [];
     let rowIdx = 0;
 
@@ -279,37 +191,49 @@ export async function onRequest(context: { request: Request; env: Env }) {
       // Draw template background
       page.drawPage(tplRef);
 
-      // Draw header values (only on page 1)
+      // Draw header values (only on page 1) — using drawMixed for CJK/ASCII safety
       if (isPage1) {
         // Company name EN after "NAME OF COMPANY:  " label
         const labelEnW = asciiFont.widthOfTextAtSize("NAME OF COMPANY:  ", 8);
-        page.drawText(coName || coNameCh, { x: M + labelEnW + 2, y: Y_NAME_EN, size: 8, font: asciiFont });
+        drawMixed(page, coName || coNameCh, {
+          x: M + labelEnW + 2, y: Y_NAME_EN, size: 8, cjk: f.cjk, ascii: f.ascii,
+        });
 
         // Company name CN after "公司名稱:  " label
-        const labelCnW = cjkFont.widthOfTextAtSize("公司名稱:  ", 8);
+        const labelCnW = cjkMissing
+          ? asciiFont.widthOfTextAtSize("公司名稱:  ", 8)
+          : cjkFont.widthOfTextAtSize("公司名稱:  ", 8);
         const cnVal = coNameCh || coName;
-        page.drawText(cnVal, { x: M + labelCnW + 2, y: Y_NAME_CN, size: 8, font: cjkFont });
+        drawMixed(page, cnVal, {
+          x: M + labelCnW + 2, y: Y_NAME_CN, size: 8, cjk: f.cjk, ascii: f.ascii,
+        });
         // Underline under CN name
-        const cnValW = hasCjk(cnVal) ? cjkFont.widthOfTextAtSize(cnVal, 8) : asciiFont.widthOfTextAtSize(cnVal, 8);
+        const cnValW = widthOfText(cnVal, cjkFont, asciiFont, 8);
         const ulStart = M + labelCnW;
         const ulEnd = Math.max(ulStart + cnValW + 2, ulStart + 150);
         page.drawLine({ start: { x: ulStart, y: Y_NAME_CN - 11 }, end: { x: ulEnd, y: Y_NAME_CN - 11 }, thickness: 0.3 });
 
         // BR EN after "COMPANY NUMBER:  " label
         const labelBrEnW = asciiFont.widthOfTextAtSize("COMPANY NUMBER:  ", 8);
-        page.drawText(br || '', { x: M + labelBrEnW + 2, y: Y_BR_EN, size: 8, font: asciiFont });
+        drawMixed(page, br || '', {
+          x: M + labelBrEnW + 2, y: Y_BR_EN, size: 8, cjk: f.cjk, ascii: f.ascii,
+        });
 
         // BR CN after "公司編號:  " label
-        const labelBrCnW = cjkFont.widthOfTextAtSize("公司編號:  ", 8);
-        page.drawText(br || '', { x: M + labelBrCnW + 2, y: Y_BR_CN, size: 8, font: asciiFont });
+        const labelBrCnW = cjkMissing
+          ? asciiFont.widthOfTextAtSize("公司編號:  ", 8)
+          : cjkFont.widthOfTextAtSize("公司編號:  ", 8);
+        drawMixed(page, br || '', {
+          x: M + labelBrCnW + 2, y: Y_BR_CN, size: 8, cjk: f.cjk, ascii: f.ascii,
+        });
         // Underline under BR CN
-        const brValW = asciiFont.widthOfTextAtSize(br || '', 8);
+        const brValW = widthOfText(br || '', cjkFont, asciiFont, 8);
         const brUlStart = M + labelBrCnW;
         const brUlEnd = Math.max(brUlStart + brValW + 2, brUlStart + 100);
         page.drawLine({ start: { x: brUlStart, y: Y_BR_CN - 11 }, end: { x: brUlEnd, y: Y_BR_CN - 11 }, thickness: 0.3 });
       }
 
-      // ── Draw data rows ──
+      // ── Draw data rows using drawMixed/drawMixedRight for proper CJK/ASCII rendering ──
       let rowY = Y_TABLE_TOP;
       for (const row of rows) {
         const { texts, rowH } = row;
@@ -318,7 +242,6 @@ export async function onRequest(context: { request: Request; env: Env }) {
           if (!txt) continue;
           const cwAvail = Math.max(COL_W[ci] - CELL_PAD * 2, 20);
           const lines = wrapText(String(txt), cjkFont, asciiFont, DATA_SIZE, cwAvail);
-          const font = hasCjk(String(txt)) ? cjkFont : asciiFont;
 
           // Center text vertically in cell
           const textBlockH = lines.length * (DATA_SIZE + 2);
@@ -328,33 +251,24 @@ export async function onRequest(context: { request: Request; env: Env }) {
             const lineY = textStartY - li * (DATA_SIZE + 2);
             // Remarks column (ci=6) centered, others left-aligned
             if (ci === 6) {
-              const lw = font.widthOfTextAtSize(lines[li], DATA_SIZE);
-              const lx = COL_X[ci] + (COL_W[ci] - lw) / 2;
-              page.drawText(lines[li], { x: lx, y: lineY, size: DATA_SIZE, font });
+              drawMixedRight(page, lines[li], {
+                x: COL_X[ci] + COL_W[ci] - CELL_PAD, y: lineY, size: DATA_SIZE, cjk: f.cjk, ascii: f.ascii,
+              });
             } else {
-              page.drawText(lines[li], { x: COL_X[ci] + CELL_PAD, y: lineY, size: DATA_SIZE, font });
+              drawMixed(page, lines[li], {
+                x: COL_X[ci] + CELL_PAD, y: lineY, size: DATA_SIZE, cjk: f.cjk, ascii: f.ascii,
+              });
             }
           }
         }
         rowY -= rowH;
       }
-
-      // ── Additional Matters text (only on last page) ──
-      if (pi === lastPageIdx && isPage1 && rows.length > 0) {
-        // Template page 1 already has AM borders+labels pre-drawn.
-        // AM is at bottom of page — no additional text to draw here
-        // (AM content area is for manual handwritten notes)
-      }
     }
 
     const bytes = new Uint8Array(await outPdf.save());
-    return new Response(JSON.stringify({ pdf: uint8ToBase64(bytes) }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    return jsonResp({ pdf: uint8ToBase64(bytes) });
   } catch (e: any) {
     console.error('SCR PDF error:', e);
-    return new Response(JSON.stringify({ error: e.message }), {
-      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    return jsonResp({ error: e.message || String(e) }, 500);
   }
 }

@@ -95,7 +95,6 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
 
     // ── BR stamp on all pages ──
     const helv = await pdfDoc.embedFont(StandardFonts.Helvetica);
-    const zaDb = await pdfDoc.embedFont(StandardFonts.ZapfDingbats);  // for checkbox ✓
     const brNumber = data.brNumber || "";
     if (brNumber) {
       for (const page of pdfDoc.getPages()) {
@@ -272,11 +271,19 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
         if (!page) continue;
         const person = piPersons[pi];
 
-        // 3a) Remove ALL widget annotations (both /Tx and /Btn)
-        //     Checkmarks are drawn directly on page content using ZapfDingbats.
+        // 3a) Remove /Tx annotations only — keep /Btn (checkbox) widgets
+        //     Checkboxes use widget's built-in appearance via /AS setting.
         const annots = page.node.lookup(PDFName.of("Annots")) as any;
-        if (annots && typeof annots.clear === "function") {
-          annots.clear();
+        if (annots && typeof annots.size === "function") {
+          const toRemove: number[] = [];
+          for (let j = 0; j < annots.size(); j++) {
+            try {
+              const w = ctx.lookup(annots.get(j)) as any;
+              const ft = w?.get?.(PDFName.of("FT"));
+              if (ft && String(ft) === "/Tx") toRemove.push(j);
+            } catch { /* skip */ }
+          }
+          for (const j of toRemove.reverse()) annots.remove(j);
         }
 
         // 3b) Draw text fields on page content; set checkbox /AS for checkmarks
@@ -334,36 +341,69 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
               injectCjkText(ctx, page, val, textX, textY, fontSize);
             }
           } else if (pos.fieldType === '/Btn') {
-            // ── Checkbox: white-out widget + draw ✓ using ZapfDingbats ──
+            // ── Checkbox: use widget's built-in appearance, set /AS ──
             // cb_1 = Secretary (公司秘書, left), cb_2 = Director (董事, right)
             const shouldCheck = (pos.suffix === "cb_1" && person.isSecretary) ||
                                 (pos.suffix === "cb_2" && !person.isSecretary);
 
-            // White rectangle to cover original widget
-            page.drawRectangle({
-              x: pos.x, y: pos.y,
-              width: pos.w, height: pos.h,
-              color: rgb(1, 1, 1) as any,
-            });
-            // Checkbox border
-            page.drawRectangle({
-              x: pos.x, y: pos.y,
-              width: pos.w, height: pos.h,
-              borderWidth: 0.5,
-              borderColor: rgb(0, 0, 0) as any,
-            });
+            // Find the matching /Btn widget on this page and set /AS
+            const pageAnnots = page.node.lookup(PDFName.of("Annots")) as any;
+            if (pageAnnots && typeof pageAnnots.size === "function") {
+              for (let j = 0; j < pageAnnots.size(); j++) {
+                try {
+                  const w = ctx.lookup(pageAnnots.get(j)) as any;
+                  if (!w || String(w.get(PDFName.of("Subtype"))) !== "/Widget") continue;
+                  const ft = w.get(PDFName.of("FT"));
+                  if (!ft || String(ft) !== "/Btn") continue;
 
-            // Draw checkmark using ZapfDingbats ✓ (character "4")
-            // ZapfDingbats "4" = ✓, "8" = ☒
-            if (shouldCheck) {
-              const checkSize = Math.min(pos.w, pos.h) * 0.8;
-              const cx = pos.x + (pos.w - checkSize) / 2;
-              const cy = pos.y + (pos.h - checkSize) / 2;
-              page.drawText('4', {  // ZapfDingbats '4' = ✓ checkmark
-                x: cx, y: cy,
-                size: checkSize,
-                font: zaDb as any,
-              });
+                  // Match by parent field name
+                  let pn = "";
+                  const pr = w.get(PDFName.of("Parent"));
+                  if (pr) {
+                    const po = ctx.lookup(pr) as any;
+                    const pt = po?.get?.(PDFName.of("T"));
+                    if (pt instanceof PDFString) pn = pt.decodeText();
+                  }
+                  if (pn.replace(/_P$/, "") !== pos.suffix) continue;
+
+                  // Determine on-state name from /AP dict
+                  let onState = "Yes";  // default
+                  try {
+                    const ap = w.get(PDFName.of("AP"));
+                    if (ap) {
+                      const apObj = ctx.lookup(ap) as any;
+                      const n = apObj?.get?.(PDFName.of("N"));
+                      if (n) {
+                        const nObj = ctx.lookup(n) as any;
+                        if (nObj && typeof nObj.keys === "function") {
+                          for (const k of nObj.keys()) {
+                            const ks = String(k);
+                            if (ks !== "/Off") { onState = ks.replace(/^\//, ""); break; }
+                          }
+                        }
+                      }
+                    }
+                  } catch { /* use default "Yes" */ }
+
+                  // White-out old appearance + set /AS
+                  page.drawRectangle({
+                    x: pos.x, y: pos.y,
+                    width: pos.w, height: pos.h,
+                    color: rgb(1, 1, 1) as any,
+                  });
+                  // Redraw checkbox border
+                  page.drawRectangle({
+                    x: pos.x, y: pos.y,
+                    width: pos.w, height: pos.h,
+                    borderWidth: 0.5,
+                    borderColor: rgb(0, 0, 0) as any,
+                  });
+
+                  // Set widget appearance state (per-widget /AS overrides shared field /V)
+                  w.set(PDFName.of("AS"), PDFName.of(shouldCheck ? onState : "Off"));
+                  break;
+                } catch { /* skip */ }
+              }
             }
           }
         }

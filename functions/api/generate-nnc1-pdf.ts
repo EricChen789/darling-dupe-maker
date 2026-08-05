@@ -334,18 +334,22 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
               if (pi === 0) {
                 if ((suffix === "cb_1" && person.isSecretary) ||
                     (suffix === "cb_2" && !person.isSecretary)) {
-                  // Discover On state name from existing AP
-                  let onState = "Yes";
+                  // Discover On state name from existing AP (template uses "On", PDF convention)
+                  let onState = "On";
                   try {
                     const ap = widget.get(PDFName.of("AP")) as any;
                     const apN = ap?.get?.(PDFName.of("N")) as any;
-                    const dict2 = apN?.dict;
-                    if (dict2 && typeof dict2.keys === "function") {
-                      for (const k of dict2.keys()) {
-                        if (k !== "Off") { onState = k; break; }
+                    // pdf-lib PDFDict: iterate entries to find non-Off key
+                    if (apN && typeof apN.entries === "function") {
+                      for (const [k] of apN.entries()) {
+                        const kStr = String(k);
+                        if (kStr !== "/Off") {
+                          onState = kStr.startsWith("/") ? kStr.slice(1) : kStr;
+                          break;
+                        }
                       }
                     }
-                  } catch { /* use default "Yes" */ }
+                  } catch { /* use default "On" */ }
                   widget.set(PDFName.of("AS"), PDFName.of(onState));
                 }
               }

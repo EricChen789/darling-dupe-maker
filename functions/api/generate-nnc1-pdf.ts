@@ -2,31 +2,30 @@
 // NNC1 法團成立表格（股份有限公司）— 專用端點（Phase 2.2）
 // 使用 R2 模板 + pdf-lib AcroForm 填充
 // 支援多自然人 → 自動複製 PI-NNC1 頁面（每頁一人）
-//   Strategy: Manual AP stream generation referencing template fonts (/PMingLiU, /Helv)
-//     - No fontkit → stays under Workers CPU limit
-//     - Real AP streams on widgets → no NeedAppearances dependency
-//     - Widget-level control → no field-name sharing issues across copied pages
+//   Strategy: detachWidget + delete /AP + /NeedAppearances (same as NAR1/ND2A/NR1).
+//     - Widgets detached from shared parent → independent /V per page
+//     - Old AP deleted → reader regenerates from /V + /DA via NeedAppearances
+//     - No fontkit, no manual AP streams → stays under Workers CPU limit
 
 import {
   PDFDocument, StandardFonts, PDFName, PDFString, PDFHexString,
-  PDFArray, PDFNumber, PDFOperator,
 } from "pdf-lib";
 import { corsHeaders, jsonResp, uint8ToBase64 } from "./_pdf-utils";
-import { enableNeedAppearances } from "./_acroform";
 import { verifyAuthRequest, type Env } from "./_auth";
+import {
+  enableNeedAppearances,
+  rebuildAcroFormFields,
+  detachWidget,
+  decodePdfText,
+  buildCjkDA,
+  buildHelvDA,
+} from "./_acroform";
 
 const TEMPLATE_NAME = "NNC1-template.pdf";
 
-// ═══ PI-NNC1 (P.14) — 受保護資料頁 ═══
-// Manual AP stream approach:
-//   For each widget on each PI-NNC1 page, generate a real AP Form XObject stream
-//   referencing the template's built-in /PMingLiU (CJK) or /Helv (ASCII) font.
-//   No fontkit, no custom font embedding — stays under Workers CPU limit.
-//   Widget-level values → each copied page is independent (no field sharing).
-
 // PI-NNC1 field definitions
 interface PiField {
-  suffix: string;    // widget suffix e.g. "fill_2"
+  suffix: string;    // parent /T suffix e.g. "fill_2"
   key: string;       // person data key
   isCjk: boolean;
 }
@@ -45,139 +44,6 @@ const PI_FIELDS: PiField[] = [
   { suffix: 'fill_12', key: 'addrDistrict',    isCjk: true  },
   { suffix: 'fill_13', key: 'addrRegion',      isCjk: true  },
 ];
-
-/** Convert string to UTF-16BE hex (with BOM) for PDF hex string encoding. */
-function toUtf16BEHex(value: string): string {
-  let hex = 'FEFF'; // BOM
-  for (let i = 0; i < value.length; i++) {
-    const code = value.charCodeAt(i);
-    // Handle surrogate pairs for characters outside BMP
-    if (code >= 0xD800 && code <= 0xDBFF && i + 1 < value.length) {
-      const hi = code;
-      const lo = value.charCodeAt(i + 1);
-      if (lo >= 0xDC00 && lo <= 0xDFFF) {
-        const cp = 0x10000 + (hi - 0xD800) * 0x400 + (lo - 0xDC00);
-        hex += (cp >> 24).toString(16).padStart(2, '0').toUpperCase();
-        hex += ((cp >> 16) & 0xFF).toString(16).padStart(2, '0').toUpperCase();
-        hex += ((cp >> 8) & 0xFF).toString(16).padStart(2, '0').toUpperCase();
-        hex += (cp & 0xFF).toString(16).padStart(2, '0').toUpperCase();
-        i++; // skip low surrogate
-        continue;
-      }
-    }
-    hex += (code >> 8).toString(16).padStart(2, '0').toUpperCase();
-    hex += (code & 0xFF).toString(16).padStart(2, '0').toUpperCase();
-  }
-  return hex;
-}
-
-/** Escape special characters in a PDF literal string. */
-function escapePdfString(value: string): string {
-  return value.replace(/([()\\])/g, '\\$1');
-}
-
-/** Generate and set a widget-level AP stream (Form XObject) + /V + /DA.
- *  References template's built-in /PMingLiU (CJK) or /Helv (ASCII) font.
- *  No fontkit needed — stays under Workers CPU limit. */
-function setWidgetAp(
-  pdfDoc: PDFDocument,
-  widget: any,
-  value: string,
-  isCjk: boolean,
-): void {
-  const fontPsName = isCjk ? "PMingLiU" : "Helv";
-  const fontSize = 10;
-  const context = (pdfDoc as any).context;
-
-  // Build text operation
-  let textOp: string;
-  if (isCjk) {
-    const hex = toUtf16BEHex(value);
-    textOp = `<${hex}> Tj`;
-  } else {
-    const escaped = escapePdfString(value);
-    textOp = `(${escaped}) Tj`;
-  }
-
-  // AP stream content — simple text drawing
-  const apContent = `/${fontPsName} ${fontSize} Tf\n0 g\nBT\n2 2 Td\n${textOp}\nET`;
-  const apBytes = new TextEncoder().encode(apContent);
-
-  // Create Form XObject BBox [0, 0, 1000, 1000] — large, PDF reader maps to widget rect
-  const bbox = PDFArray.withContext(context);
-  bbox.push(PDFNumber.of(0));
-  bbox.push(PDFNumber.of(0));
-  bbox.push(PDFNumber.of(1000));
-  bbox.push(PDFNumber.of(1000));
-
-  const dict = context.obj({});
-  dict.set(PDFName.of('Type'), PDFName.of('XObject'));
-  dict.set(PDFName.of('Subtype'), PDFName.of('Form'));
-  dict.set(PDFName.of('BBox'), bbox);
-
-  // Create AP stream and register
-  const apStream = context.stream(apBytes, dict);
-  const apRef = context.register(apStream);
-
-  // Create AP dictionary: << /N apRef >>
-  const apDict = context.obj({});
-  apDict.set(PDFName.of('N'), apRef);
-
-  // Set on widget
-  widget.set(PDFName.of('AP'), apDict);
-
-  // Set /V — widget-level value (overrides field /V for this widget only)
-  if (isCjk) {
-    widget.set(PDFName.of('V'), PDFHexString.fromText(value));
-  } else {
-    widget.set(PDFName.of('V'), PDFString.of(value));
-  }
-
-  // Set /DA — default appearance string (fallback if AP is missing)
-  widget.set(PDFName.of('DA'), PDFString.of(`/${fontPsName} ${fontSize} Tf 0 g`));
-}
-
-/** Inject raw text drawing operators into a page's content stream.
- *  Used to draw checkmark indicators (✓) at checkbox positions
- *  for Person 1+ pages where field sharing prevents per-page checkbox state. */
-function injectPageText(
-  pdfDoc: PDFDocument,
-  pageIndex: number,
-  text: string,
-  x: number,
-  y: number,
-  size: number,
-  isCjk: boolean,
-): void {
-  const context = (pdfDoc as any).context;
-  const pages = pdfDoc.getPages();
-  const page = pages[pageIndex];
-  if (!page) return;
-
-  const fontPsName = isCjk ? "PMingLiU" : "Helv";
-
-  let textOp: string;
-  if (isCjk) {
-    const hex = toUtf16BEHex(text);
-    textOp = `<${hex}> Tj`;
-  } else {
-    const escaped = escapePdfString(text);
-    textOp = `(${escaped}) Tj`;
-  }
-
-  const contentStr = `BT /${fontPsName} ${size} Tf 0 g ${x} ${y} Td ${textOp} ET`;
-  const contentBytes = new TextEncoder().encode(contentStr);
-
-  // Create stream and add to page contents
-  const dict = context.obj({});
-  const stream = context.stream(contentBytes, dict);
-  const ref = context.register(stream);
-
-  const contentsArr = page.node.Contents();
-  if (contentsArr && typeof contentsArr.push === "function") {
-    contentsArr.push(ref);
-  }
-}
 
 export async function onRequest(context: { request: Request; env: Env }): Promise<Response> {
   const { request, env } = context;
@@ -234,7 +100,7 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
       }
     }
 
-    // ── Fill text fields (skip P.14 — handled via manual AP below) ──
+    // ── Fill text fields (skip P.14 — handled via widget-level below) ──
     const fields = data.fields || {};
     for (const [name, value] of Object.entries(fields)) {
       if (name.endsWith('_P.14')) continue;
@@ -253,21 +119,41 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
       } catch { /* skip */ }
     }
 
-    // ═══ PI-NNC1 (P.14): Manual AP stream for ALL persons ═══
-    // No fontkit, no form API on P.14 fields — each page gets independent widget AP
+    // ═══ PI-NNC1 (P.14): Widget-level fill via detach + deleteAP + NeedAppearances ═══
+    // Same pattern as NAR1, ND2A, NR1, NN-series, ND2B, NDR1.
+    //
+    // Field hierarchy on P.14:
+    //   Intermediate parent:  /T fill_2_P  /Kids[...]         (no /FT)
+    //   Terminal = Widget:    /FT /Tx      /T (14)  /Parent   (widget IS the terminal field)
+    //
+    // Approach:
+    //   1) detachWidget: copies widget /T to "fill_2_P.14", deletes /Parent → standalone
+    //   2) Set widget-level /V (per-person data) + /DA (font reference)
+    //   3) Delete widget /AP → viewer regenerates from /V + /DA via NeedAppearances
+    //   4) rebuildAcroFormFields: rebuilds /Fields + sets NeedAppearances=true
+    //
+    // This avoids creating manual AP streams (no font refs needed, no CPU overhead).
+
     const piPersons = data.piPersons || [];
     const PI_PAGE_IDX = 13; // P.14 (0-indexed)
+    const FIT_SIZE = 10;    // font size for all PI-NNC1 text fields
 
     if (piPersons.length > 0) {
       const companyName = (data.fields as any)?.['fill_1_P.1'] || '';
 
-      // 1) Copy extra P.14 pages first (while form fields are untouched)
+      // 1) Copy extra P.14 pages for additional persons
+      // ⚠️ Cross-document copyPages: copy from a SECOND template load so each
+      //    copied page gets INDEPENDENT widget objects (different xref numbers).
+      //    Same-document copyPages reuses object refs → setting /V on the last
+      //    page overwrites all previous pages' widget values.
       if (piPersons.length > 1) {
+        const freshBytes = new Uint8Array(templateBytes);
+        const freshDoc = await PDFDocument.load(freshBytes, { ignoreEncryption: true });
         for (let i = 1; i < piPersons.length; i++) {
-          const [copiedPage] = await pdfDoc.copyPages(pdfDoc, [PI_PAGE_IDX]);
+          const [copiedPage] = await pdfDoc.copyPages(freshDoc, [PI_PAGE_IDX]);
           pdfDoc.insertPage(PI_PAGE_IDX + i, copiedPage);
         }
-        // Adjust removePages indices for inserted pages (only pages AFTER PI_PAGE_IDX shift)
+        // Adjust removePages indices for inserted pages
         if (data.removePages) {
           const shift = piPersons.length - 1;
           data.removePages = data.removePages.map((p: number) =>
@@ -276,7 +162,8 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
         }
       }
 
-      // 2) For each person, set widget AP on their PI-NNC1 page
+      // 2) For each person, detach + fill widgets on their PI-NNC1 page
+      const ctx = (pdfDoc as any).context;
       for (let pi = 0; pi < piPersons.length; pi++) {
         const pageIdx = PI_PAGE_IDX + pi;
         const person = piPersons[pi];
@@ -284,64 +171,74 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
         const page = pages[pageIdx];
         if (!page) continue;
 
-        // Collect all widget annotations on this page
         const annots = page.node.lookup(PDFName.of("Annots")) as any;
         if (!annots || typeof annots.size !== "function") continue;
 
         for (let j = 0; j < annots.size(); j++) {
           try {
-            const widget = (pdfDoc as any).context.lookup(annots.get(j)) as any;
+            const widget = ctx.lookup(annots.get(j)) as any;
             if (!widget || typeof widget.get !== "function") continue;
             const subtype = widget.get(PDFName.of("Subtype"));
             if (!subtype || String(subtype) !== "/Widget") continue;
 
-            // Get widget/field name
+            // Read FT from widget (terminal field has /FT)
+            const ft = widget.get(PDFName.of("FT"));
+            const fieldType = ft ? String(ft) : '';
+
+            // Read T from PARENT (intermediate node has meaningful name like fill_2_P)
+            let parentName = "";
             const parentRef = widget.get(PDFName.of("Parent"));
-            const field = parentRef ? ((pdfDoc as any).context.lookup(parentRef) as any) : widget;
+            let parentObj: any = null;
+            if (parentRef) {
+              try { parentObj = ctx.lookup(parentRef); } catch { /* skip */ }
+              if (parentObj) {
+                try {
+                  const pT = parentObj.get(PDFName.of("T"));
+                  if (pT instanceof PDFString) parentName = pT.decodeText();
+                } catch { /* skip */ }
+              }
+            }
+            if (!parentName) continue;
 
-            // Extract parent field name (fT = meaningful, wT = just page number like "14")
-            const fT = field.get(PDFName.of("T"));
-            let name = "";
-            try {
-              if (fT instanceof PDFString) name = fT.decodeText();
-            } catch { /* skip */ }
-            if (!name) continue;
+            // Strip _P suffix: fill_2_P → fill_2, cb_1_P → cb_1
+            const suffix = parentName.replace(/_P$/, "");
 
-            // Strip _P suffix to get base field name: "fill_2_P" → "fill_2", "cb_1_P" → "cb_1"
-            const suffix = name.replace(/_P$/, "");
+            // ── Detach widget from shared parent ──
+            detachWidget(widget, parentObj);
 
-            // Determine field type by name prefix (FT lookup via pdf-lib returns null
-            // on this template's P.14 fields — the FT is stored in parent field-tree nodes).
-            // fill_* = text field, cb_* = checkbox.
-            if (name.startsWith('fill_')) {
+            if (fieldType === '/Tx') {
               // ── Text field ──
               if (suffix === "fill_1") {
-                // Company name — same for all persons
-                setWidgetAp(pdfDoc, widget, companyName, /*isCjk*/ true);
+                // Company name (always CJK-safe)
+                widget.set(PDFName.of("DA"), PDFString.of(`/PMingLiU ${FIT_SIZE} Tf 0 g`));
+                widget.set(PDFName.of("V"), PDFHexString.fromText(companyName));
               } else {
                 const mapping = PI_FIELDS.find(f => f.suffix === suffix);
                 if (!mapping) continue;
-                // HKID fields (fill_5, fill_6) — only fill if person has HKID
                 if ((suffix === 'fill_5' || suffix === 'fill_6') && !person.isHkid) continue;
-                // Passport fields (fill_7, fill_8) — only fill if person does NOT have HKID
                 if ((suffix === 'fill_7' || suffix === 'fill_8') && person.isHkid) continue;
                 const val = String(person[mapping.key] ?? "").trim();
                 if (!val) continue;
-                setWidgetAp(pdfDoc, widget, val, mapping.isCjk);
+
+                if (mapping.isCjk) {
+                  widget.set(PDFName.of("DA"), PDFString.of(`/PMingLiU ${FIT_SIZE} Tf 0 g`));
+                  widget.set(PDFName.of("V"), PDFHexString.fromText(val));
+                } else {
+                  widget.set(PDFName.of("DA"), PDFString.of(`/Helv ${FIT_SIZE} Tf 0 g`));
+                  widget.set(PDFName.of("V"), PDFString.of(val));
+                }
               }
-            } else if (name.startsWith('cb_')) {
+              // Delete old AP → viewer regenerates from /V + /DA via NeedAppearances
+              widget.delete(PDFName.of("AP"));
+            } else if (fieldType === '/Btn') {
               // ── Checkbox ──
-              // Set widget-level /V + /AS. Widget annotations on different
-              // pages can have independent /V values that override the shared
-              // field /V. /AS alone is not enough — PDF readers need /V.
-              // Default both checkboxes to Off on every page.
+              // Default: Off
               widget.set(PDFName.of("V"), PDFName.of("Off"));
               widget.set(PDFName.of("AS"), PDFName.of("Off"));
 
-              // For this person, set the correct checkbox to On
               if ((suffix === "cb_1" && person.isSecretary) ||
                   (suffix === "cb_2" && !person.isSecretary)) {
-                // Discover On state name from existing AP
+                // Discover the On state name from AP dict
                 let onState = "On";
                 try {
                   const ap = widget.get(PDFName.of("AP")) as any;
@@ -359,23 +256,18 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
                 widget.set(PDFName.of("V"), PDFName.of(onState));
                 widget.set(PDFName.of("AS"), PDFName.of(onState));
               }
+              // Checkbox AP is needed for visual checkmark; keep it
             }
           } catch { /* skip malformed widget */ }
         }
-
-        // 3) Widget /V + /AS is set above for all persons. As a backup for
-        //    Person 1+ pages (where shared fields may override widget /V),
-        //    also inject ✓ into the page content stream.
-        if (pi > 0) {
-          if (person.isSecretary) {
-            injectPageText(pdfDoc, pageIdx, '✓', 209, 478, 10, /*isCjk*/ true);
-          } else {
-            injectPageText(pdfDoc, pageIdx, '✓', 316, 478, 10, /*isCjk*/ true);
-          }
-        }
       }
 
-      // 4) P.8 續頁計數器 — fill_6 = total PI-NNC1 person count (matching Flask)
+      // 3) Rebuild AcroForm /Fields + set NeedAppearances=true
+      //    This ensures copied-page widgets (orphaned from original /Kids) are registered,
+      //    and tells the reader to regenerate appearances from widget /V + /DA.
+      rebuildAcroFormFields(pdfDoc);
+
+      // 4) P.8 續頁計數器
       try {
         form.getTextField('fill_6_P.8').setText(String(piPersons.length));
       } catch { /* skip */ }
@@ -393,9 +285,10 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
     }
 
     // ── Save ──
-    // updateFieldAppearances:false — P.14 widgets have manual AP, non-P.14 have form API AP.
-    // enableNeedAppearances as safety net for any field without AP.
-    enableNeedAppearances(pdfDoc);
+    // updateFieldAppearances:false — NeedAppearances tells the viewer to regenerate
+    // from widget /V + /DA. Non-P.14 fields were filled via pdf-lib form API which sets
+    // field /V; rebuildAcroFormFields lists them in /Fields so the viewer also regenerates
+    // those from field /V.
     const pdfBytes = await pdfDoc.save({ updateFieldAppearances: false });
     return jsonResp({ pdf: uint8ToBase64(new Uint8Array(pdfBytes)) });
   } catch (err: any) {

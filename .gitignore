@@ -37,3 +37,4 @@ local-server/storage/
 local-server/.resend_key
 local-server/.smtp_config
 local-server/.wuzapi_config
+bun.lockb

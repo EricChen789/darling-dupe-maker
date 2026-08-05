@@ -298,8 +298,6 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
             // Get widget/field name
             const parentRef = widget.get(PDFName.of("Parent"));
             const field = parentRef ? ((pdfDoc as any).context.lookup(parentRef) as any) : widget;
-            const ft = field.get(PDFName.of("FT"));
-            const fieldType = ft ? String(ft) : "";
 
             // Extract parent field name (fT = meaningful, wT = just page number like "14")
             const fT = field.get(PDFName.of("T"));
@@ -312,7 +310,10 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
             // Strip _P suffix to get base field name: "fill_2_P" → "fill_2", "cb_1_P" → "cb_1"
             const suffix = name.replace(/_P$/, "");
 
-            if (fieldType === "/Tx") {
+            // Determine field type by name prefix (FT lookup via pdf-lib returns null
+            // on this template's P.14 fields — the FT is stored in parent field-tree nodes).
+            // fill_* = text field, cb_* = checkbox.
+            if (name.startsWith('fill_')) {
               // ── Text field ──
               if (suffix === "fill_1") {
                 // Company name — same for all persons
@@ -324,7 +325,7 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
                 if (!val) continue;
                 setWidgetAp(pdfDoc, widget, val, mapping.isCjk);
               }
-            } else if (fieldType === "/Btn") {
+            } else if (name.startsWith('cb_')) {
               // ── Checkbox ──
               // Set default to Off for all widgets first
               widget.set(PDFName.of("AS"), PDFName.of("Off"));

@@ -9,7 +9,7 @@
 
 import {
   PDFDocument, StandardFonts, PDFName, PDFString, PDFHexString,
-  PDFArray, PDFNumber,
+  PDFArray, PDFNumber, rgb,
 } from "pdf-lib";
 import {
   corsHeaders, jsonResp, uint8ToBase64,
@@ -119,6 +119,8 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
       removePages?: number[];
       /** Per-field font size override (e.g. { 'fill_12_P.1': 8 }) */
       fieldFontSizes?: Record<string, number>;
+      /** Signatory capacity: cross out unused capacities on P.10 */
+      signatoryCapacity?: 'director' | 'secretary' | 'manager' | 'authorizedRep';
       piPersons?: Array<{
         nameChinese: string;
         surname: string;
@@ -173,6 +175,36 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
     for (const name of data.checkboxes || []) {
       if (name.endsWith('_P.17')) continue;
       check(name, true);
+    }
+
+    // ═══ P.10 Signatory Capacity — cross out unused capacities ═══
+    // Template has printed text: 董事／公司秘書／經理／獲授權代表*
+    //                           Director / Company Secretary / Manager / Authorized Rep*
+    // Instruction: "請刪去不適用者 Delete whichever does not apply"
+    // Draw horizontal lines through the 3 UNUSED capacities
+    const signatoryCapacity = data.signatoryCapacity;
+    if (signatoryCapacity) {
+      const pages = pdfDoc.getPages();
+      const p10 = pages[9]; // P.10 (0-indexed)
+      if (p10) {
+        // Approximate x ranges in PDF points for each capacity label
+        // Chinese row y≈56, English row y≈43 (from bottom of A4 842pt)
+        const CAP_POSITIONS: Record<string, { cn_x: [number, number]; en_x: [number, number] }> = {
+          director:      { cn_x: [283, 298], en_x: [283, 307] },
+          secretary:     { cn_x: [302, 331], en_x: [312, 355] },
+          manager:       { cn_x: [336, 350], en_x: [360, 379] },
+          authorizedRep: { cn_x: [355, 389], en_x: [384, 427] },
+        };
+        const CROSSOUT = ['director', 'secretary', 'manager', 'authorizedRep'].filter(c => c !== signatoryCapacity);
+        for (const cap of CROSSOUT) {
+          const pos = CAP_POSITIONS[cap];
+          if (!pos) continue;
+          // Chinese row
+          p10.drawLine({ start: { x: pos.cn_x[0], y: 56 }, end: { x: pos.cn_x[1], y: 56 }, thickness: 1.5, color: rgb(0, 0, 0) });
+          // English row
+          p10.drawLine({ start: { x: pos.en_x[0], y: 43 }, end: { x: pos.en_x[1], y: 43 }, thickness: 1.5, color: rgb(0, 0, 0) });
+        }
+      }
     }
 
     // ═══ PI-NN1 (P.17): Widget-level fill with generated AP streams ═══

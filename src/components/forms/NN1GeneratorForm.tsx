@@ -315,6 +315,7 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
   const [incorpLess18m, setIncorpLess18m] = useState(false);
   const [signatoryName, setSignatoryName] = useState('');
   const [signDateDay, setSignDateDay] = useState(''); const [signDateMonth, setSignDateMonth] = useState(''); const [signDateYear, setSignDateYear] = useState('');
+  const [signatoryCapacity, setSignatoryCapacity] = useState<'director' | 'secretary' | 'manager' | 'authorizedRep' | ''>('');
 
   // ═══ P.17: PI-NN1 — 自動從表單自然人提取（借鑒 NNC1 piPersons 模式）═���═
   interface PiPersonData {
@@ -442,6 +443,7 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
     if (fd.signDateDay !== undefined) setSignDateDay(fd.signDateDay);
     if (fd.signDateMonth !== undefined) setSignDateMonth(fd.signDateMonth);
     if (fd.signDateYear !== undefined) setSignDateYear(fd.signDateYear);
+    if (fd.signatoryCapacity !== undefined) setSignatoryCapacity(fd.signatoryCapacity);
     if (fd.selectedCompanyId) setSelectedCompanyId(data.selectedCompanyId || fd.selectedCompanyId);
     if (fd.hasSecNat !== undefined) setHasSecNat(fd.hasSecNat);
     // Arrays / objects stored at data.* level
@@ -594,6 +596,7 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
           piPersons: piPersons.length > 0 ? piPersons : undefined,
           removePages: [17, 18, 19, 20, 21, 22, 23, 24],  // P.18-P.25 填表須知
           fieldFontSizes: { 'fill_9_P.1': 8, 'fill_12_P.1': 7 },
+          signatoryCapacity: signatoryCapacity || undefined,
         }),
       });
       const result = await resp.json();
@@ -603,7 +606,7 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
 
       saveFormHistory({
         formType: 'NN1',
-        formData: { proposedNameEn, proposedNameCn, placeOfIncorporation, estDay, estMonth, estYear, addrFlat, addrBuilding, addrStreet, addrDistrict, companyEmail, companyPhone, regOffFlat, regOffBuilding, regOffStreet, regOffDistrict, regOffCountry, ppbFlat, ppbBuilding, ppbStreet, ppbDistrict, ppbCountry, overseasEmail, presenterNameCn, presenterNameEn, presenterAddress, presenterPhone, presenterFax, presenterEmail, presenterRef, charterDocs, incorpCert, acctFromDay, acctFromMonth, acctFromYear, acctToDay, acctToMonth, acctToYear, noAcctsRequired, incorpLess18m, signatoryName, signDateDay, signDateMonth, signDateYear, hasSecNat, selectedCompanyId, authRepNats, authRepCorps, secNat: hasSecNat ? secNat : null, secCorps, dirNats, dirCorps },
+        formData: { proposedNameEn, proposedNameCn, placeOfIncorporation, estDay, estMonth, estYear, addrFlat, addrBuilding, addrStreet, addrDistrict, companyEmail, companyPhone, regOffFlat, regOffBuilding, regOffStreet, regOffDistrict, regOffCountry, ppbFlat, ppbBuilding, ppbStreet, ppbDistrict, ppbCountry, overseasEmail, presenterNameCn, presenterNameEn, presenterAddress, presenterPhone, presenterFax, presenterEmail, presenterRef, charterDocs, incorpCert, acctFromDay, acctFromMonth, acctFromYear, acctToDay, acctToMonth, acctToYear, noAcctsRequired, incorpLess18m, signatoryName, signDateDay, signDateMonth, signDateYear, signatoryCapacity, hasSecNat, selectedCompanyId, authRepNats, authRepCorps, secNat: hasSecNat ? secNat : null, secCorps, dirNats, dirCorps },
       });
 
       try {
@@ -1043,6 +1046,32 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
             <DatePickerInput label="簽署日期 Date"
               day={signDateDay} month={signDateMonth} year={signDateYear}
               onChange={({ day, month, year }) => { setSignDateDay(day); setSignDateMonth(month); setSignDateYear(year); }} />
+          </div>
+          <div className="mt-3">
+            <Label className="text-xs font-medium mb-1 block">簽署人身份 Capacity of Signatory <span className="text-muted-foreground">（點擊選擇一個身份，其他畫橫線刪去）</span></Label>
+            <div className="flex flex-wrap gap-2">
+              {([
+                { key: 'director', label: '董事 Director' },
+                { key: 'secretary', label: '公司秘書 Company Secretary' },
+                { key: 'manager', label: '經理 Manager' },
+                { key: 'authorizedRep', label: '獲授權代表 Authorized Representative' },
+              ] as const).map(cap => {
+                const isSelected = signatoryCapacity === cap.key;
+                const isStrikethrough = signatoryCapacity && signatoryCapacity !== cap.key;
+                return (
+                  <button key={cap.key} type="button"
+                    className={`px-3 py-1.5 rounded-md text-xs border transition-all ${
+                      isSelected ? 'bg-blue-600 text-white border-blue-600 font-semibold' :
+                      isStrikethrough ? 'bg-muted text-muted-foreground border-border line-through' :
+                      'bg-background border-border hover:bg-accent'
+                    }`}
+                    onClick={() => setSignatoryCapacity(isSelected ? '' : cap.key)}
+                  >
+                    {cap.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
 

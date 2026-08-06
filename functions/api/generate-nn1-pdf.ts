@@ -26,14 +26,14 @@ const TEMPLATE_NAME = "NN1-template.pdf";
 
 // PI-NN1 field definitions (P.17)
 // Field name suffix → person data key + CJK flag + HKID/passport filter
-const PI_FIELDS: Array<{ suffix: string; key: string; isCjk: boolean; hkidOnly?: boolean; passportOnly?: boolean }> = [
+const PI_FIELDS: Array<{ suffix: string; key: string; isCjk: boolean }> = [
   { suffix: 'fill_2',  key: 'nameChinese',     isCjk: true  },
   { suffix: 'fill_3',  key: 'surname',         isCjk: false },
   { suffix: 'fill_4',  key: 'otherNames',      isCjk: false },
-  { suffix: 'fill_5',  key: 'hkidMain',        isCjk: false, hkidOnly: true    },
-  { suffix: 'fill_6',  key: 'hkidCheck',       isCjk: false, hkidOnly: true    },
-  { suffix: 'fill_7',  key: 'passportCountry', isCjk: true,  passportOnly: true },
-  { suffix: 'fill_8',  key: 'passportNumber',  isCjk: false, passportOnly: true },
+  { suffix: 'fill_5',  key: 'hkidMain',        isCjk: false },
+  { suffix: 'fill_6',  key: 'hkidCheck',       isCjk: false },
+  { suffix: 'fill_7',  key: 'passportCountry', isCjk: true  },
+  { suffix: 'fill_8',  key: 'passportNumber',  isCjk: false },
   { suffix: 'fill_9',  key: 'addrFlat',        isCjk: true  },
   { suffix: 'fill_10', key: 'addrBuilding',    isCjk: true  },
   { suffix: 'fill_11', key: 'addrStreet',      isCjk: true  },
@@ -259,9 +259,6 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
               } else {
                 const mapping = PI_FIELDS.find(f => suffix.includes(f.suffix));
                 if (!mapping) continue;
-                // HKID/passport filtering
-                if (mapping.hkidOnly && !person.isHkid) continue;
-                if (mapping.passportOnly && person.isHkid) continue;
                 const val = String((person as any)[mapping.key] ?? "").trim();
                 if (!val) continue;
                 setWidgetApV9(ctx, widget, val, mapping.isCjk);

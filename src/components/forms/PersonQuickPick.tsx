@@ -23,6 +23,8 @@ export interface PersonQuickPickData {
   email?: string;
   reference?: string;
   idNumber?: string;
+  passportCountry?: string;
+  passportNumber?: string;
   identity?: 'natural' | 'corporate';
   tcspLicense?: string;
   companyNumberRef?: string;
@@ -261,6 +263,8 @@ export default function PersonQuickPick({
             fax: p.fax || '',
             email: p.email || '',
             idNumber: p.id_number || '',
+            passportCountry: p.passport_country || '',
+            passportNumber: p.passport_number || '',
             identity: identity as 'natural' | 'corporate',
             tcspLicense: p.tcsp_number || '',
             companyNumberRef: p.company_number_ref || '',

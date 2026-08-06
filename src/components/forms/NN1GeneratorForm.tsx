@@ -749,7 +749,7 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
                 <Button variant="ghost" size="sm" onClick={() => removeAuthRepNat(a.id)} className="text-red-500"><Trash2 className="h-4 w-4" /></Button>
               </div>
               <PersonQuickPick companyId={selectedCompanyId} includeAllPersons
-                onPick={p => updateAuthRepNat(a.id, { nameChinese: p.nameChinese || '', surname: p.surname || '', otherNames: p.otherNames || '', addrFlat: p.addrFlat || '', addrBuilding: p.addrBuilding || '', addrStreet: p.addrStreet || '', addrDistrict: p.addrDistrict || '' })} />
+                onPick={p => updateAuthRepNat(a.id, { nameChinese: p.nameChinese || '', surname: p.surname || '', otherNames: p.otherNames || '', addrFlat: p.addrFlat || '', addrBuilding: p.addrBuilding || '', addrStreet: p.addrStreet || '', addrDistrict: p.addrDistrict || '', hkidFull: p.idNumber || '', passportCountry: p.passportCountry || '', passportNumber: p.passportNumber || '' })} />
               <div className="grid grid-cols-3 gap-2 mt-3">
                 <Input className="h-8 text-xs" placeholder="中文姓名" value={a.nameChinese} onChange={e => updateAuthRepNat(a.id, { nameChinese: e.target.value })} />
                 <Input className="h-8 text-xs" placeholder="英文姓氏 Surname" value={a.surname} onChange={e => updateAuthRepNat(a.id, { surname: e.target.value })} />
@@ -830,7 +830,7 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
           </div>
           {hasSecNat && (<>
             <PersonQuickPick companyId={selectedCompanyId} includeAllPersons
-              onPick={p => setSecNat(prev => ({ ...prev, nameChinese: p.nameChinese || '', surname: p.surname || '', otherNames: p.otherNames || '', prevNameChinese: p.previousNameChinese || '', prevNameEnglish: p.previousNameEnglish || '', aliasChinese: p.aliasChinese || '', aliasEnglish: p.aliasEnglish || '', addrFlat: p.addrFlat || '', addrBuilding: p.addrBuilding || '', addrStreet: p.addrStreet || '', addrDistrict: p.addrDistrict || '', addrRegion: p.addrRegion || '' }))} />
+              onPick={p => setSecNat(prev => ({ ...prev, nameChinese: p.nameChinese || '', surname: p.surname || '', otherNames: p.otherNames || '', prevNameChinese: p.previousNameChinese || '', prevNameEnglish: p.previousNameEnglish || '', aliasChinese: p.aliasChinese || '', aliasEnglish: p.aliasEnglish || '', addrFlat: p.addrFlat || '', addrBuilding: p.addrBuilding || '', addrStreet: p.addrStreet || '', addrDistrict: p.addrDistrict || '', addrRegion: p.addrRegion || '', hkidFull: p.idNumber || '', passportCountry: p.passportCountry || '', passportNumber: p.passportNumber || '' }))} />
             <div className="grid grid-cols-3 gap-2 mt-3">
               <Input className="h-8 text-xs" placeholder="中文姓名" value={secNat.nameChinese} onChange={e => setSecNat({ ...secNat, nameChinese: e.target.value })} />
               <Input className="h-8 text-xs" placeholder="英文姓氏 Surname" value={secNat.surname} onChange={e => setSecNat({ ...secNat, surname: e.target.value })} />
@@ -923,7 +923,7 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
                 </div>
               </div>
               <PersonQuickPick companyId={selectedCompanyId} includeAllPersons
-                onPick={p => updateDirNat(d.id, { nameChinese: p.nameChinese || '', surname: p.surname || '', otherNames: p.otherNames || '', prevNameChinese: p.previousNameChinese || '', prevNameEnglish: p.previousNameEnglish || '', aliasChinese: p.aliasChinese || '', aliasEnglish: p.aliasEnglish || '', addrFlat: p.addrFlat || '', addrBuilding: p.addrBuilding || '', addrStreet: p.addrStreet || '', addrDistrict: p.addrDistrict || '', addrRegion: p.addrRegion || '' })} />
+                onPick={p => updateDirNat(d.id, { nameChinese: p.nameChinese || '', surname: p.surname || '', otherNames: p.otherNames || '', prevNameChinese: p.previousNameChinese || '', prevNameEnglish: p.previousNameEnglish || '', aliasChinese: p.aliasChinese || '', aliasEnglish: p.aliasEnglish || '', addrFlat: p.addrFlat || '', addrBuilding: p.addrBuilding || '', addrStreet: p.addrStreet || '', addrDistrict: p.addrDistrict || '', addrRegion: p.addrRegion || '', hkidFull: p.idNumber || '', passportCountry: p.passportCountry || '', passportNumber: p.passportNumber || '' })} />
               <div className="grid grid-cols-3 gap-2 mt-3">
                 <Input className="h-8 text-xs" placeholder="中文姓名" value={d.nameChinese} onChange={e => updateDirNat(d.id, { nameChinese: e.target.value })} />
                 <Input className="h-8 text-xs" placeholder="英文姓氏 Surname" value={d.surname} onChange={e => updateDirNat(d.id, { surname: e.target.value })} />
@@ -1075,7 +1075,10 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
                       {p.isAltDir && <span className="text-xs bg-orange-100 text-orange-800 px-1.5 py-0.5 rounded">候補董事</span>}
                     </div>
                     <div className="text-xs text-muted-foreground mt-1">
-                      {p.isHkid ? `HKID: ${(p.hkidMain || '').slice(0, 4)}${(p.hkidMain || '').length > 4 ? '****' : ''}${p.hkidCheck ? `(${p.hkidCheck})` : ''}` : `護照: ${p.passportCountry} ${p.passportNumber}`}
+                      {[
+    p.hkidMain ? `HKID: ${p.hkidMain.slice(0, 4)}${p.hkidMain.length > 4 ? '****' : ''}${p.hkidCheck ? `(${p.hkidCheck})` : ''}` : '',
+    (p.passportCountry || p.passportNumber) ? `護照: ${p.passportCountry} ${p.passportNumber}`.trim() : '',
+  ].filter(Boolean).join(' · ')}
                       {' · '}{[p.addrFlat, p.addrBuilding, p.addrStreet, p.addrDistrict, p.addrCountry].filter(Boolean).join(', ')}
                     </div>
                   </div>

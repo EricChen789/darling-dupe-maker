@@ -10,7 +10,7 @@ import { toast } from '@/hooks/use-toast';
 import { useCompanies } from '@/hooks/useCompanies';
 import { useSaveResolution } from '@/hooks/useResolutions';
 import { downloadGenericFormPdf } from '@/lib/genericFormPdf';
-import { downloadBase64Pdf } from '@/lib/downloadPdf';
+import { downloadBase64Pdf, downloadBase64File } from '@/lib/downloadPdf';
 import { useSaveFormHistory } from '@/hooks/useFormHistory';
 import FormHistorySelector from './FormHistorySelector';
 import PresenterSelector from './PresenterSelector';
@@ -200,42 +200,68 @@ We, being all the Members of the Company entitled to attend and vote at the Gene
     }
     setGenerating(true);
     try {
-      const sections: any[] = [
-        { rows: [['Resolution Date 決議日期', resolutionDate], ['Effective Date 生效日期', effectiveDate]] },
-      ];
-      // Insert consent sections if checked
-      if (includeConsent) {
-        sections.push({ heading: "Members' Consent to Short Notice", paragraph: consentContentEn });
-        sections.push({ heading: '股東同意短通知', paragraph: consentContentCn });
-      }
-      sections.push({ heading: effectiveType === 'sole_director' ? 'Written Resolutions of the Sole Director' : 'Written Resolutions of the Members', paragraph: resolutionContentEn });
-      sections.push({ heading: effectiveType === 'sole_director' ? '單獨董事書面決議' : '股東書面決議', paragraph: resolutionContentCn });
+      const token = localStorage.getItem("secretary_jwt") || "";
+      const signerNames = signers ? signers.split(/[,，]/).map(s => s.trim()).filter(Boolean) : [];
 
-      const ok = await downloadGenericFormPdf({
-        formCode: 'Resolution-Rename',
-        title: resolutionTitle,
-        subtitle: resolutionSubtitle,
+      // Generate main resolution DOCX
+      const payload: Record<string, any> = {
+        resolutionType: effectiveType,
+        includeConsent,
         companyName: oldName || company.name,
-        brNumber: company.brNumber,
-        sections,
-        signatureLines,
-      }, 'Resolution_Rename');
-      if (ok) {
-        save.mutate({
-          company_id: company.id,
-          resolution_type: 'rename',
-          title: resolutionTitle,
-          resolution_date: resolutionDate,
-          content: resolutionContent,
-          signers,
-          is_ai_generated: false,
-        }, {
-          onSuccess: () => {
-            setResolutionDone(true);
-            toast({ title: '決議書 PDF 已生成並儲存', description: '可以繼續產生 NNC2 表格' });
-          },
+        oldName: oldName || company.name,
+        oldChineseName,
+        newName,
+        newChineseName,
+        ciNumber: company.ciNumber || '',
+        resolutionDate,
+        meetingTime: '10:00AM',
+        signer1Name: signerNames[0] || '',
+        signer2Name: signerNames[1] || '',
+      };
+
+      const resp = await fetch(`/api/generate-resolution-docx`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(payload),
+      });
+      const result = await resp.json();
+      if (!resp.ok) throw new Error(result.error || 'Unknown error');
+
+      const companyTag = (oldName || company.name).replace(/[^a-zA-Z0-9]/g, '_');
+      downloadBase64File(result.docx, `${result.filename || `Resolution_${effectiveType}_${companyTag}.docx`}`,
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+
+      // If consent is also checked, generate consent DOCX as well
+      if (includeConsent) {
+        const consentPayload = { ...payload, resolutionType: 'members_consent' };
+        const cResp = await fetch(`/api/generate-resolution-docx`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify(consentPayload),
         });
+        const cResult = await cResp.json();
+        if (cResp.ok && cResult.docx) {
+          downloadBase64File(cResult.docx, `Consent_ShortNotice_${companyTag}.docx`,
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+        }
       }
+
+      save.mutate({
+        company_id: company.id,
+        resolution_type: 'rename',
+        title: resolutionTitle,
+        resolution_date: resolutionDate,
+        content: resolutionContent,
+        signers,
+        is_ai_generated: false,
+      }, {
+        onSuccess: () => {
+          setResolutionDone(true);
+          toast({ title: '決議書 DOCX 已生成並儲存', description: '可用 Word 開啟後另存為 PDF' });
+        },
+      });
+    } catch (err: any) {
+      toast({ title: '生成失敗', description: err.message, variant: 'destructive' });
     } finally {
       setGenerating(false);
     }

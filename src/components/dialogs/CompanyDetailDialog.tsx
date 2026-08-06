@@ -22,7 +22,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Company, Person, Shareholder } from '@/types';
 import {
   Building2, Users, UserCheck, Briefcase, ArrowLeft, User, ShieldCheck, Copy,
-  Edit, Save, X, Plus, Trash2, Upload, FileText, Download, Loader2, Paperclip, UsersRound, UserCog, UserPlus, FileClock, History, FileOutput, Landmark,
+  Edit, Save, X, Plus, Trash2, Upload, FileText, Download, Loader2, Paperclip, UsersRound, UserCog, UserPlus, FileClock, History, FileOutput, Landmark, Undo2,
 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
@@ -42,8 +42,14 @@ import { SearchableSelect } from '@/components/ui/searchable-multiselect';
 import { useOfficers } from '@/hooks/useOfficers';
 import { useCompanies } from '@/hooks/useCompanies';
 import { useSecretaryTemplates } from '@/hooks/useSecretaryTemplates';
-import { useUnassignedChangeEvents, EVENT_TYPE_LABELS } from '@/hooks/useChangeEvents';
+import { useUnassignedChangeEvents, useChangeEvents, EVENT_TYPE_LABELS } from '@/hooks/useChangeEvents';
+import { useUndoChangeEvent, UNDOABLE_EVENT_TYPES } from '@/hooks/useUndoChangeEvent';
 import { useNAR1Status, getNAR1StatusBadge } from '@/hooks/useNAR1Status';
+import type { ChangeEvent } from '@/hooks/useChangeEvents';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 interface CompanyDetailDialogProps {
   open: boolean;
@@ -121,6 +127,39 @@ interface MergedMember {
   extras: string[];
   primaryPerson: Person | null;
   primaryShareholder: Shareholder | null;
+}
+
+/** Extract a human-readable person name from a change event */
+function getPersonNameFromEvent(
+  event: { event_type: string; person_id: string; new_value: string },
+  company: Company | undefined,
+): string {
+  // Appointment events: extract from new_value JSON
+  if (event.event_type.endsWith('_appoint') || event.event_type === 'shareholder_add') {
+    try {
+      const nv = JSON.parse(event.new_value || '{}');
+      const en = nv.name_english || nv.name || '';
+      const zh = nv.name_chinese || '';
+      return zh ? `${en}（${zh}）` : en || '(未知)';
+    } catch { return '(無法解析名稱)'; }
+  }
+  // Cessation events: look up person_id in company data
+  if (event.person_id && company) {
+    const allPeople: any[] = [
+      ...(company.directors || []),
+      ...(company.secretaries || []),
+      ...(company.authorizedReps || []),
+      ...(company.shareholders || []),
+    ];
+    const person = allPeople.find(p => (p as any)._personId === event.person_id);
+    if (person) {
+      const en = person.nameEnglish || '';
+      const zh = person.nameChinese || '';
+      return zh ? `${en}（${zh}）` : en || `(ID: ${event.person_id})`;
+    }
+    return `(ID: ${event.person_id})`;
+  }
+  return '(未知)';
 }
 
 function buildMergedMembers(
@@ -233,7 +272,19 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
   const deleteShareholder = useDeleteShareholder();
   const { data: secretaryTemplates = [] } = useSecretaryTemplates();
   const { data: unassignedChanges = [] } = useUnassignedChangeEvents(company?.id);
+  const { data: allChangeEvents = [] } = useChangeEvents(company?.id);
+  const undoEvent = useUndoChangeEvent();
   const { data: nar1Status } = useNAR1Status(company?.id);
+
+  // ── 可供撤銷的人事變更事件 ──
+  const personnelEvents = useMemo(() =>
+    allChangeEvents.filter(e => UNDOABLE_EVENT_TYPES.has(e.event_type)),
+    [allChangeEvents]
+  );
+
+  // ── 撤銷確認對話框狀態 ──
+  const [undoConfirmOpen, setUndoConfirmOpen] = useState(false);
+  const [undoConfirmTarget, setUndoConfirmTarget] = useState<ChangeEvent | null>(null);
 
   // ── 系統地址複製數據源 ──
   const { officers = [] } = useOfficers();
@@ -1111,6 +1162,66 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                   ) : null;
                 })()}
 
+                {/* 變更歷史（可撤銷） */}
+                {personnelEvents.length > 0 && (
+                  <div className="mt-6 border-t border-border pt-4">
+                    <h3 className="font-semibold text-sm flex items-center gap-2 mb-3">
+                      <FileClock className="h-4 w-4 text-primary" />
+                      變更歷史
+                      <Badge variant="secondary" className="text-xs">{personnelEvents.length}</Badge>
+                      <span className="text-xs text-muted-foreground font-normal">可撤銷的變更記錄</span>
+                    </h3>
+                    <div className="grid gap-2">
+                      {personnelEvents.slice(0, 30).map((event) => {
+                        const label = EVENT_TYPE_LABELS[event.event_type] || event.event_type;
+                        const isAppoint = event.event_type.endsWith('_appoint') || event.event_type === 'shareholder_add';
+                        const personName = getPersonNameFromEvent(event, company);
+
+                        return (
+                          <div key={event.id}
+                            className="flex items-center justify-between rounded-md border border-border bg-muted/30 px-3 py-2 text-sm group hover:bg-muted/60 transition-colors"
+                          >
+                            <div className="flex items-center gap-2 min-w-0 flex-1">
+                              <span className={`shrink-0 ${isAppoint ? 'text-green-600' : 'text-destructive'}`}>
+                                {isAppoint ? <Upload className="h-3.5 w-3.5 rotate-90" /> : <Download className="h-3.5 w-3.5 rotate-90" />}
+                              </span>
+                              <Badge variant={isAppoint ? 'default' : 'destructive'}
+                                className={`text-xs shrink-0 ${isAppoint ? 'bg-green-600 hover:bg-green-600' : ''}`}
+                              >
+                                {label}
+                              </Badge>
+                              {personName && (
+                                <span className="font-medium truncate text-xs">{personName}</span>
+                              )}
+                              <span className="text-xs font-mono text-muted-foreground shrink-0 ml-auto">
+                                {event.change_date}
+                              </span>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 px-1.5 ml-2 hidden group-hover:flex text-destructive shrink-0"
+                              disabled={undoEvent.isPending}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setUndoConfirmTarget(event);
+                                setUndoConfirmOpen(true);
+                              }}
+                            >
+                              {undoEvent.isPending ? (
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                              ) : (
+                                <Undo2 className="h-3 w-3" />
+                              )}
+                              <span className="ml-1 text-xs">撤銷</span>
+                            </Button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
                 {/* 委任／辭任日期歷史 (VE-06) */}
                 <div className="mt-6 border-t border-border pt-4">
                   <PersonnelSection company={company} />
@@ -1353,6 +1464,34 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
           </div>
 
           <CopyFromCompanyDialog open={copyDialogOpen} onOpenChange={setCopyDialogOpen} targetCompany={company} roleOverride={copyContext} />
+
+          {/* 撤銷變更確認對話框 */}
+          <AlertDialog open={undoConfirmOpen} onOpenChange={setUndoConfirmOpen}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>撤銷變更</AlertDialogTitle>
+                <AlertDialogDescription>
+                  {undoConfirmTarget
+                    ? `確定要撤銷「${EVENT_TYPE_LABELS[undoConfirmTarget.event_type] || undoConfirmTarget.event_type}：${getPersonNameFromEvent(undoConfirmTarget, company)}」嗎？此操作將還原該人員的角色狀態並清除此變更記錄。`
+                    : ''}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={undoEvent.isPending}>取消</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => {
+                    if (undoConfirmTarget && company) {
+                      undoEvent.mutate({ event: undoConfirmTarget, companyId: company.id });
+                    }
+                    setUndoConfirmOpen(false);
+                  }}
+                  disabled={undoEvent.isPending}
+                >
+                  {undoEvent.isPending ? '撤銷中...' : '確認撤銷'}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
 
           {/* Right: Person detail panel */}
           {selectedPerson && (

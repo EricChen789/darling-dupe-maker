@@ -95,14 +95,11 @@ function setBlueAp(
 
   const apDict = ctx.obj({});
   apDict.set(PDFName.of("N"), apRef);
-  widget.set(PDFName.of("AP"), apDict);
+  // Use widget.dict (raw PDFDict) — widget is a PDFWidgetAnnotation wrapper
+  (widget as any).dict.set(PDFName.of("AP"), apDict);
 
-  // Set /V
-  if (isCjk) {
-    widget.set(PDFName.of("V"), PDFHexString.fromText(value));
-  } else {
-    widget.set(PDFName.of("V"), PDFString.of(value));
-  }
+  // Set /V — PDFString.of() adds UTF-16BE BOM for CJK (PDFHexString.fromText lacks BOM!)
+  (widget as any).dict.set(PDFName.of("V"), PDFString.of(value));
 }
 
 export async function onRequest(context: { request: Request; env: Env }): Promise<Response> {
@@ -151,11 +148,8 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
         const fontSize = hasCjk ? 11 : 10;
 
         // Set /V via acroField (no markAsDirty)
-        if (hasCjk) {
-          tf.acroField.setValue(PDFHexString.fromText(vstr));
-        } else {
-          tf.acroField.setValue(PDFString.of(vstr));
-        }
+        // PDFString.of() adds UTF-16BE BOM for non-ASCII → correct CJK encoding
+        tf.acroField.setValue(PDFString.of(vstr));
 
         // Generate custom blue AP on each widget
         const widgets = tf.acroField.getWidgets();

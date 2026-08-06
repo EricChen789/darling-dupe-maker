@@ -29,11 +29,12 @@
 //   fill_17 → 提交人檔號 Presenter Reference
 
 import {
-  PDFDocument, PDFName, PDFString, PDFDict,
-  PDFArray, PDFNumber, PDFBool,
+  PDFDocument, PDFName, PDFString,
+  PDFArray, PDFNumber,
 } from "pdf-lib";
 import { corsHeaders, jsonResp, uint8ToBase64 } from "./_pdf-utils";
 import { verifyAuthRequest, type Env } from "./_auth";
+import { enableNeedAppearances } from "./_acroform";
 
 const TEMPLATE_NAME = "NNC2-template.pdf";
 
@@ -109,12 +110,7 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
     }
 
     // ── Enable NeedAppearances — viewer regenerates AP with DR's PMingLiU font ──
-    try {
-      const acroForm = pdfDoc.catalog.lookup(PDFName.of("AcroForm"), PDFDict);
-      if (acroForm) {
-        acroForm.set(PDFName.of("NeedAppearances"), PDFBool.True);
-      }
-    } catch { /* ignore */ }
+    enableNeedAppearances(pdfDoc);
 
     // ── Save: no flatten, no updateFieldAppearances → preserve template state ──
     const pdfBytes = await pdfDoc.save({ useObjectStreams: false, updateFieldAppearances: false });

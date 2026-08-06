@@ -152,17 +152,17 @@ with effect from the date of issue of the Certificate of Change of Name by the R
     try {
       const token = localStorage.getItem("secretary_jwt") || "";
       const rd = resolutionDate.split('-');  // YYYY-MM-DD
-      const ed = effectiveDate.split('-');
       const fields: Record<string, string> = {
         'fill_1_P.1': company.brNumber || '',
         'fill_2_P.1': oldName || company.name || '',
-        'fill_3_P.1': newName || '',
-        // fill_4-6: effective date D/M/Y (narrow fields at x=393-571, y=329)
-        'fill_4_P.1': ed.length >= 3 ? ed[2] : '',
-        'fill_5_P.1': ed.length >= 2 ? ed[1] : '',
-        'fill_6_P.1': ed.length >= 1 ? ed[0] : '',
-        // fill_7-8: Chinese names (wide fields at x=74)
-        'fill_7_P.1': oldChineseName || '',
+        // New fillable template: fill_3 = 現有公司中文名稱 (Existing Chinese)
+        'fill_3_P.1': oldChineseName || '',
+        // fill_4-6: 特別決議日期 (resolution date, not effective date)
+        'fill_4_P.1': rd.length >= 3 ? rd[2] : '',
+        'fill_5_P.1': rd.length >= 2 ? rd[1] : '',
+        'fill_6_P.1': rd.length >= 1 ? rd[0] : '',
+        // New fillable template: fill_7 = 擬用的公司英文名稱 (Intended English)
+        'fill_7_P.1': newName || '',
         'fill_8_P.1': newChineseName || '',
         // fill_9-10: signer + resolution date (y=554)
         'fill_9_P.1': signers ? signers.split(',')[0].trim() : '',
@@ -179,15 +179,7 @@ with effect from the date of issue of the Certificate of Change of Name by the R
       const resp = await fetch(`/api/generate-nnc2-pdf`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          fields,
-          brNumber: company?.brNumber || '',
-          keepWidgets: true,
-          alignCenterFields: ['fill_2_P.1', 'fill_3_P.1', 'fill_7_P.1', 'fill_8_P.1'],
-          alignVCenterFields: ['fill_2_P.1', 'fill_3_P.1', 'fill_7_P.1', 'fill_8_P.1'],
-          forceWidgetAp: ['fill_2_P.1', 'fill_3_P.1'],
-          fieldMinFontSize: { 'fill_13_P.1': 10 },
-        }),
+        body: JSON.stringify({ fields }),
       });
       const result = await resp.json();
       if (!resp.ok) throw new Error(result.error || 'Unknown error');

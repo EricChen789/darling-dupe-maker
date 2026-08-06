@@ -142,57 +142,22 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
         const vstr = value != null ? String(value) : "";
         if (!vstr) continue;
 
-        // Use standard API to register with form model
-        form.getTextField(name).setText(vstr);
+        const tf = form.getTextField(name);
+        tf.setText(vstr); // Register with form model
 
-        // Find widget and generate custom blue AP
+        // Generate custom blue AP for each widget
         const hasCjk = /[^\x00-\x7F]/.test(vstr);
-        // Determine fontSize from widget /DA or default 10
-        let fontSize = hasCjk ? 11 : 10;
+        const fontSize = hasCjk ? 11 : 10;
 
-        // Walk pages to find the widget annotation for this field
-        for (const page of pages) {
-          const annots = page.node.lookup(PDFName.of("Annots")) as any;
-          if (!annots || typeof annots.size !== "function") continue;
-
-          for (let j = 0; j < annots.size(); j++) {
-            try {
-              const widget = ctx.lookup(annots.get(j)) as any;
-              if (!widget || typeof widget.get !== "function") continue;
-              const subtype = widget.get(PDFName.of("Subtype"));
-              if (!subtype || String(subtype) !== "/Widget") continue;
-
-              // Check if this widget belongs to our field
-              let widgetName = "";
-              const tVal = widget.get(PDFName.of("T"));
-              if (tVal instanceof PDFString) widgetName = tVal.decodeText();
-
-              // Also check parent name
-              if (!widgetName) {
-                const parentRef = widget.get(PDFName.of("Parent"));
-                if (parentRef) {
-                  try {
-                    const parent = ctx.lookup(parentRef);
-                    const pT = parent.get(PDFName.of("T"));
-                    if (pT instanceof PDFString) widgetName = pT.decodeText();
-                  } catch { /* skip */ }
-                }
-              }
-
-              // pdf-lib may rename fields internally — match by suffix
-              if (widgetName !== name && !name.endsWith(widgetName) && !widgetName.endsWith(name)) continue;
-
-              // Get rect
-              const rectArr = widget.get(PDFName.of("Rect")) as any;
-              if (!rectArr || typeof rectArr.get !== "function") continue;
-              const w = rectArr.get(2).valueOf() - rectArr.get(0).valueOf();
-              const h = rectArr.get(3).valueOf() - rectArr.get(1).valueOf();
-              if (w <= 2 || h <= 2) continue;
-
-              setBlueAp(ctx, widget, vstr, hasCjk, fontSize, { w, h });
-              break; // Only process first matching widget
-            } catch { /* skip */ }
-          }
+        const widgets = tf.acroField.getWidgets();
+        for (const widget of widgets) {
+          try {
+            const rect = widget.getRectangle();
+            const w = rect.width;
+            const h = rect.height;
+            if (w <= 2 || h <= 2) continue;
+            setBlueAp(ctx, widget, vstr, hasCjk, fontSize, { w, h });
+          } catch { /* skip */ }
         }
       } catch { /* field missing — skip */ }
     }

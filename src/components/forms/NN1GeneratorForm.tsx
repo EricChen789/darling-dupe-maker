@@ -1,10 +1,15 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import { format } from 'date-fns';
+import { Calendar as CalendarIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Separator } from '@/components/ui/separator';
+import { Calendar } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { cn } from '@/lib/utils';
 import { ArrowLeft, Download, Loader2, Plus, Trash2 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { useCompanies } from '@/hooks/useCompanies';
@@ -46,6 +51,8 @@ const COUNTRIES = [
 ];
 
 // ── Types ──
+
+interface DateParts { day: string; month: string; year: string; }
 
 interface AuthRepNatEntry {
   id: string;
@@ -138,7 +145,16 @@ const emptyDirCorp = (id: string): DirCorpEntry => ({
 let _idCounter = 0;
 const uid = () => `n${++_idCounter}`;
 
-// ── CountryInput component ──
+// ── Helpers ──
+
+/** Build a Date from D/M/Y strings; null if invalid. */
+function toDate(d: string, m: string, y: string): Date | null {
+  if (!d || !m || !y) return null;
+  const date = new Date(parseInt(y), parseInt(m) - 1, parseInt(d));
+  return isNaN(date.getTime()) ? null : date;
+}
+
+// ── CountryInput ──
 function CountryInput({ value, onChange, placeholder = 'Search country...' }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
   const [filter, setFilter] = useState('');
   const [open, setOpen] = useState(false);
@@ -169,6 +185,52 @@ function CountryInput({ value, onChange, placeholder = 'Search country...' }: { 
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// ── DatePickerInput ──
+function DatePickerInput({ label, day, month, year, onChange }: {
+  label?: string;
+  day: string; month: string; year: string;
+  onChange: (dp: DateParts) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const date = toDate(day, month, year);
+
+  const handleSelect = (d: Date | undefined) => {
+    if (d) {
+      onChange({
+        day: String(d.getDate()).padStart(2, '0'),
+        month: String(d.getMonth() + 1).padStart(2, '0'),
+        year: String(d.getFullYear()),
+      });
+    }
+    setOpen(false);
+  };
+
+  return (
+    <div className="flex flex-col gap-1">
+      {label && <Label className="text-xs text-muted-foreground">{label}</Label>}
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button variant="outline" className={cn('h-8 justify-start text-left font-normal text-xs', !date && 'text-muted-foreground')}>
+            <CalendarIcon className="mr-1 h-3.5 w-3.5" />
+            {date ? format(date, 'yyyy-MM-dd') : <span>選擇日期...</span>}
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-auto p-0" align="start">
+          <Calendar mode="single" selected={date || undefined} onSelect={handleSelect} initialFocus />
+          {date && (
+            <div className="px-3 pb-2">
+              <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground"
+                onClick={() => { onChange({ day: '', month: '', year: '' }); setOpen(false); }}>
+                清除日期
+              </Button>
+            </div>
+          )}
+        </PopoverContent>
+      </Popover>
     </div>
   );
 }
@@ -253,7 +315,7 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
   const [sheetECount, setSheetECount] = useState(''); const [sheetFCount, setSheetFCount] = useState('');
   const [sheetPINN1Count, setSheetPINN1Count] = useState('');
   const [signatoryName, setSignatoryName] = useState('');
-  const [signDate, setSignDate] = useState('');
+  const [signDateDay, setSignDateDay] = useState(''); const [signDateMonth, setSignDateMonth] = useState(''); const [signDateYear, setSignDateYear] = useState('');
 
   // ═══ P.17: PI-NN1 ═══
   const [piCompanyName, setPiCompanyName] = useState('');
@@ -304,7 +366,9 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
     if (fd.presenterEmail !== undefined) setPresenterEmail(fd.presenterEmail);
     if (fd.presenterRef !== undefined) setPresenterRef(fd.presenterRef);
     if (fd.signatoryName !== undefined) setSignatoryName(fd.signatoryName);
-    if (fd.signDate !== undefined) setSignDate(fd.signDate);
+    if (fd.signDateDay !== undefined) setSignDateDay(fd.signDateDay);
+    if (fd.signDateMonth !== undefined) setSignDateMonth(fd.signDateMonth);
+    if (fd.signDateYear !== undefined) setSignDateYear(fd.signDateYear);
     if (fd.selectedCompanyId) setSelectedCompanyId(fd.selectedCompanyId);
     if (fd.hasSecNat !== undefined) setHasSecNat(fd.hasSecNat);
     if (fd.secNat) setSecNat(fd.secNat);
@@ -397,7 +461,6 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
         fields['fill_3_P.6'] = s.addrFlat; fields['fill_4_P.6'] = s.addrBuilding;
         fields['fill_5_P.6'] = s.addrStreet; fields['fill_6_P.6'] = s.addrDistrict; fields['fill_7_P.6'] = s.addrRegion;
         fields['fill_8_P.6'] = s.email;
-        // ⚠️ BR number removed per user request — template fill_9_P.6 left blank
         fields['fill_9_P.6'] = '';
         fields['fill_10_P.6'] = s.day; fields['fill_11_P.6'] = s.month; fields['fill_12_P.6'] = s.year;
       }
@@ -426,7 +489,6 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
         fields['fill_4_P.9'] = d.addrFlat; fields['fill_5_P.9'] = d.addrBuilding;
         fields['fill_6_P.9'] = d.addrStreet; fields['fill_7_P.9'] = d.addrDistrict; fields['fill_8_P.9'] = d.addrRegion;
         fields['fill_9_P.9'] = d.email;
-        // ⚠️ BR number removed — fill_10_P.9 left blank
         fields['fill_10_P.9'] = '';
         fields['fill_11_P.9'] = d.day; fields['fill_12_P.9'] = d.month; fields['fill_13_P.9'] = d.year;
       }
@@ -441,7 +503,9 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
       fields['fill_11_P.10'] = sheetCCount; fields['fill_12_P.10'] = sheetDCount;
       fields['fill_13_P.10'] = sheetECount; fields['fill_14_P.10'] = sheetFCount;
       fields['fill_15_P.10'] = sheetPINN1Count;
-      fields['fill_16_P.10'] = signatoryName; fields['fill_17_P.10'] = signDate;
+      fields['fill_16_P.10'] = signatoryName;
+      fields['fill_17_P.10'] = signDateDay && signDateMonth && signDateYear
+        ? `${signDateDay}/${signDateMonth}/${signDateYear}` : '';
 
       // ── P.17 ──
       fields['fill_1_P.17'] = piCompanyName || proposedNameEn;
@@ -474,7 +538,7 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
 
       saveFormHistory({
         formType: 'NN1',
-        formData: { proposedNameEn, proposedNameCn, placeOfIncorporation, estDay, estMonth, estYear, addrFlat, addrBuilding, addrStreet, addrDistrict, companyEmail, companyPhone, presenterNameCn, presenterNameEn, presenterAddress, presenterPhone, presenterFax, presenterEmail, presenterRef, hasSecNat, signatoryName, signDate, selectedCompanyId },
+        formData: { proposedNameEn, proposedNameCn, placeOfIncorporation, estDay, estMonth, estYear, addrFlat, addrBuilding, addrStreet, addrDistrict, companyEmail, companyPhone, presenterNameCn, presenterNameEn, presenterAddress, presenterPhone, presenterFax, presenterEmail, presenterRef, hasSecNat, signatoryName, signDateDay, signDateMonth, signDateYear, selectedCompanyId },
         authRepNats, authRepCorps, secNat: hasSecNat ? secNat : null, secCorps, dirNats, dirCorps,
       });
 
@@ -525,13 +589,10 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
             </div>
           </div>
 
-          <div className="mb-4">
-            <Label>在香港設立營業地點的日期 Date of Establishment of Place of Business in HK</Label>
-            <div className="grid grid-cols-3 gap-2 mt-1 max-w-xs">
-              <Input placeholder="日 DD" value={estDay} onChange={e => setEstDay(e.target.value)} />
-              <Input placeholder="月 MM" value={estMonth} onChange={e => setEstMonth(e.target.value)} />
-              <Input placeholder="年 YYYY" value={estYear} onChange={e => setEstYear(e.target.value)} />
-            </div>
+          <div className="mb-4 max-w-xs">
+            <DatePickerInput label="在香港設立營業地點的日期 Date of Establishment"
+              day={estDay} month={estMonth} year={estYear}
+              onChange={({ day, month, year }) => { setEstDay(day); setEstMonth(month); setEstYear(year); }} />
           </div>
 
           <div>
@@ -640,12 +701,11 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
                 <CountryInput value={a.passportCountry} onChange={v => updateAuthRepNat(a.id, { passportCountry: v })} />
               </div>
               <div className="grid grid-cols-2 gap-2 mt-2"><Input className="h-8 text-xs" placeholder="護照部分號碼" value={a.passportNumber} onChange={e => updateAuthRepNat(a.id, { passportNumber: e.target.value })} /></div>
-              <div className="grid grid-cols-3 gap-2 mt-2 max-w-xs">
-                <Input className="h-8 text-xs" placeholder="日 DD" value={a.day} onChange={e => updateAuthRepNat(a.id, { day: e.target.value })} />
-                <Input className="h-8 text-xs" placeholder="月 MM" value={a.month} onChange={e => updateAuthRepNat(a.id, { month: e.target.value })} />
-                <Input className="h-8 text-xs" placeholder="年 YYYY" value={a.year} onChange={e => updateAuthRepNat(a.id, { year: e.target.value })} />
+              <div className="max-w-xs mt-2">
+                <DatePickerInput label="獲授權日期 Date of Authorization"
+                  day={a.day} month={a.month} year={a.year}
+                  onChange={({ day, month, year }) => updateAuthRepNat(a.id, { day, month, year })} />
               </div>
-              <p className="text-xs text-muted-foreground mt-1">獲授權日期 Date of Authorization</p>
             </div>
           ))}
         </div>
@@ -683,12 +743,11 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
                 <Input className="h-8 text-xs" placeholder="區" value={c.addrDistrict} onChange={e => updateAuthRepCorp(c.id, { addrDistrict: e.target.value })} />
               </div>
               <div className="max-w-xs mt-2"><Input className="h-8 text-xs" placeholder="電郵 Email" value={c.email} onChange={e => updateAuthRepCorp(c.id, { email: e.target.value })} /></div>
-              <div className="grid grid-cols-3 gap-2 mt-2 max-w-xs">
-                <Input className="h-8 text-xs" placeholder="日 DD" value={c.day} onChange={e => updateAuthRepCorp(c.id, { day: e.target.value })} />
-                <Input className="h-8 text-xs" placeholder="月 MM" value={c.month} onChange={e => updateAuthRepCorp(c.id, { month: e.target.value })} />
-                <Input className="h-8 text-xs" placeholder="年 YYYY" value={c.year} onChange={e => updateAuthRepCorp(c.id, { year: e.target.value })} />
+              <div className="max-w-xs mt-2">
+                <DatePickerInput label="獲授權日期 Date of Authorization"
+                  day={c.day} month={c.month} year={c.year}
+                  onChange={({ day, month, year }) => updateAuthRepCorp(c.id, { day, month, year })} />
               </div>
-              <p className="text-xs text-muted-foreground mt-1">獲授權日期 Date of Authorization</p>
             </div>
           ))}
         </div>
@@ -730,12 +789,11 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
               <CountryInput value={secNat.passportCountry} onChange={v => setSecNat({ ...secNat, passportCountry: v })} />
             </div>
             <div className="grid grid-cols-2 gap-2 mt-2"><Input className="h-8 text-xs" placeholder="護照部分號碼" value={secNat.passportNumber} onChange={e => setSecNat({ ...secNat, passportNumber: e.target.value })} /></div>
-            <div className="grid grid-cols-3 gap-2 mt-2 max-w-xs">
-              <Input className="h-8 text-xs" placeholder="日 DD" value={secNat.day} onChange={e => setSecNat({ ...secNat, day: e.target.value })} />
-              <Input className="h-8 text-xs" placeholder="月 MM" value={secNat.month} onChange={e => setSecNat({ ...secNat, month: e.target.value })} />
-              <Input className="h-8 text-xs" placeholder="年 YYYY" value={secNat.year} onChange={e => setSecNat({ ...secNat, year: e.target.value })} />
+            <div className="max-w-xs mt-2">
+              <DatePickerInput label="獲委任日期 Date of Appointment"
+                day={secNat.day} month={secNat.month} year={secNat.year}
+                onChange={({ day, month, year }) => setSecNat({ ...secNat, day, month, year })} />
             </div>
-            <p className="text-xs text-muted-foreground mt-1">獲委任日期 Date of Appointment</p>
           </>)}
         </div>
 
@@ -769,12 +827,11 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
                 <Input className="h-8 text-xs" placeholder="國家/地區" value={s.addrRegion} onChange={e => updateSecCorp(s.id, { addrRegion: e.target.value })} />
               </div>
               <div className="max-w-xs mt-2"><Input className="h-8 text-xs" placeholder="電郵 Email" value={s.email} onChange={e => updateSecCorp(s.id, { email: e.target.value })} /></div>
-              <div className="grid grid-cols-3 gap-2 mt-2 max-w-xs">
-                <Input className="h-8 text-xs" placeholder="日 DD" value={s.day} onChange={e => updateSecCorp(s.id, { day: e.target.value })} />
-                <Input className="h-8 text-xs" placeholder="月 MM" value={s.month} onChange={e => updateSecCorp(s.id, { month: e.target.value })} />
-                <Input className="h-8 text-xs" placeholder="年 YYYY" value={s.year} onChange={e => updateSecCorp(s.id, { year: e.target.value })} />
+              <div className="max-w-xs mt-2">
+                <DatePickerInput label="獲委任日期 Date of Appointment"
+                  day={s.day} month={s.month} year={s.year}
+                  onChange={({ day, month, year }) => updateSecCorp(s.id, { day, month, year })} />
               </div>
-              <p className="text-xs text-muted-foreground mt-1">獲委任日期 Date of Appointment</p>
             </div>
           ))}
         </div>
@@ -825,12 +882,11 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
                 <CountryInput value={d.passportCountry} onChange={v => updateDirNat(d.id, { passportCountry: v })} />
               </div>
               <div className="grid grid-cols-2 gap-2 mt-2"><Input className="h-8 text-xs" placeholder="護照部分號碼" value={d.passportNumber} onChange={e => updateDirNat(d.id, { passportNumber: e.target.value })} /></div>
-              <div className="grid grid-cols-3 gap-2 mt-2 max-w-xs">
-                <Input className="h-8 text-xs" placeholder="日 DD" value={d.day} onChange={e => updateDirNat(d.id, { day: e.target.value })} />
-                <Input className="h-8 text-xs" placeholder="月 MM" value={d.month} onChange={e => updateDirNat(d.id, { month: e.target.value })} />
-                <Input className="h-8 text-xs" placeholder="年 YYYY" value={d.year} onChange={e => updateDirNat(d.id, { year: e.target.value })} />
+              <div className="max-w-xs mt-2">
+                <DatePickerInput label="獲委任日期 Date of Appointment"
+                  day={d.day} month={d.month} year={d.year}
+                  onChange={({ day, month, year }) => updateDirNat(d.id, { day, month, year })} />
               </div>
-              <p className="text-xs text-muted-foreground mt-1">獲委任日期 Date of Appointment</p>
             </div>
           ))}
         </div>
@@ -868,12 +924,11 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
                 <Input className="h-8 text-xs" placeholder="國家/地區" value={d.addrRegion} onChange={e => updateDirCorp(d.id, { addrRegion: e.target.value })} />
               </div>
               <div className="max-w-xs mt-2"><Input className="h-8 text-xs" placeholder="電郵 Email" value={d.email} onChange={e => updateDirCorp(d.id, { email: e.target.value })} /></div>
-              <div className="grid grid-cols-3 gap-2 mt-2 max-w-xs">
-                <Input className="h-8 text-xs" placeholder="日 DD" value={d.day} onChange={e => updateDirCorp(d.id, { day: e.target.value })} />
-                <Input className="h-8 text-xs" placeholder="月 MM" value={d.month} onChange={e => updateDirCorp(d.id, { month: e.target.value })} />
-                <Input className="h-8 text-xs" placeholder="年 YYYY" value={d.year} onChange={e => updateDirCorp(d.id, { year: e.target.value })} />
+              <div className="max-w-xs mt-2">
+                <DatePickerInput label="獲委任日期 Date of Appointment"
+                  day={d.day} month={d.month} year={d.year}
+                  onChange={({ day, month, year }) => updateDirCorp(d.id, { day, month, year })} />
               </div>
-              <p className="text-xs text-muted-foreground mt-1">獲委任日期 Date of Appointment</p>
             </div>
           ))}
         </div>
@@ -888,8 +943,12 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
           <Separator className="my-4" />
           <h4 className="text-sm font-medium mb-2">Section 10A — 會計年度 Accounts Period</h4>
           <div className="grid grid-cols-2 gap-4 mb-4">
-            <div><Label className="text-xs">由 From</Label><div className="grid grid-cols-3 gap-2 mt-1"><Input placeholder="日" value={acctFromDay} onChange={e => setAcctFromDay(e.target.value)} /><Input placeholder="月" value={acctFromMonth} onChange={e => setAcctFromMonth(e.target.value)} /><Input placeholder="年" value={acctFromYear} onChange={e => setAcctFromYear(e.target.value)} /></div></div>
-            <div><Label className="text-xs">至 To</Label><div className="grid grid-cols-3 gap-2 mt-1"><Input placeholder="日" value={acctToDay} onChange={e => setAcctToDay(e.target.value)} /><Input placeholder="月" value={acctToMonth} onChange={e => setAcctToMonth(e.target.value)} /><Input placeholder="年" value={acctToYear} onChange={e => setAcctToYear(e.target.value)} /></div></div>
+            <DatePickerInput label="由 From"
+              day={acctFromDay} month={acctFromMonth} year={acctFromYear}
+              onChange={({ day, month, year }) => { setAcctFromDay(day); setAcctFromMonth(month); setAcctFromYear(year); }} />
+            <DatePickerInput label="至 To"
+              day={acctToDay} month={acctToMonth} year={acctToYear}
+              onChange={({ day, month, year }) => { setAcctToDay(day); setAcctToMonth(month); setAcctToYear(year); }} />
           </div>
           <h4 className="text-sm font-medium mb-2">Section 10B — 陳述</h4>
           <div className="space-y-2 mb-4">
@@ -909,9 +968,11 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
           </div>
           <Separator className="my-4" />
           <h4 className="text-sm font-medium mb-2">簽署 Signature</h4>
-          <div className="grid grid-cols-2 gap-3 max-w-md">
+          <div className="grid grid-cols-2 gap-3 max-w-md items-end">
             <div><Label>簽署人姓名 Name of Signatory</Label><Input value={signatoryName} onChange={e => setSignatoryName(e.target.value)} className="mt-1" /></div>
-            <div><Label>簽署日期 Date</Label><Input value={signDate} onChange={e => setSignDate(e.target.value)} className="mt-1" /></div>
+            <DatePickerInput label="簽署日期 Date"
+              day={signDateDay} month={signDateMonth} year={signDateYear}
+              onChange={({ day, month, year }) => { setSignDateDay(day); setSignDateMonth(month); setSignDateYear(year); }} />
           </div>
         </div>
 
@@ -962,7 +1023,7 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
       <RelatedFormsPrompt
         open={showRelatedPrompt} onOpenChange={setShowRelatedPrompt}
         primaryFormCode="NN1" primaryFormName="NN1 — 註冊非香港公司的註冊申請書"
-        primaryFormData={{ proposedNameEn, proposedNameCn, placeOfIncorporation, estDay, estMonth, estYear, addrFlat, addrBuilding, addrStreet, addrDistrict, companyEmail, companyPhone, presenterNameCn: '', presenterNameEn, presenterAddress, presenterPhone, presenterFax, presenterEmail, presenterRef, signatoryName, signDate, company_id: selectedCompanyId }}
+        primaryFormData={{ proposedNameEn, proposedNameCn, placeOfIncorporation, estDay, estMonth, estYear, addrFlat, addrBuilding, addrStreet, addrDistrict, companyEmail, companyPhone, presenterNameCn: '', presenterNameEn, presenterAddress, presenterPhone, presenterFax, presenterEmail, presenterRef, signatoryName, signDate: signDateDay && signDateMonth && signDateYear ? `${signDateDay}/${signDateMonth}/${signDateYear}` : '', company_id: selectedCompanyId }}
         companyId={selectedCompanyId} companyName={proposedNameEn || selectedCompany?.brNumber || ''} linkages={relatedLinkages}
       />
     </div>

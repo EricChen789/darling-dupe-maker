@@ -296,11 +296,14 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
 
             if (fieldType === '/Tx') {
               // ── Text field ──
-              if (suffix === 'fill_1' || suffix.startsWith('fill_1.')) {
+              // Extract "fill_N" root for exact matching
+              const rootMatch = suffix.match(/^(fill_\d+)/);
+              const root = rootMatch ? rootMatch[1] : suffix;
+              if (root === 'fill_1') {
                 // Company name (CJK-safe)
                 setWidgetApV9(ctx, widget, companyName, true);
               } else {
-                const mapping = PI_FIELDS.find(f => suffix.includes(f.suffix));
+                const mapping = PI_FIELDS.find(f => f.suffix === root);
                 if (!mapping) continue;
                 const val = String((person as any)[mapping.key] ?? "").trim();
                 if (!val) continue;

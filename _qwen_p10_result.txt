@@ -1,0 +1,158 @@
+Here is a detailed analysis of **Page 10 (第十一頁)** of the **NN1 Form**, based on the provided image and its layout. This page contains critical information about continuation sheets, signatory details, and declarations related to accounts and constitutional documents.
+
+---
+
+### **1. Signature Area (Bottom Section) – Capacity Options**
+
+**Visual Position:**  
+Located at the bottom center of the page, below the "Continuation Sheet(s)" table and above the QR code.
+
+**Label:**  
+"簽署 Signed : 姓名 Name :" followed by a horizontal line for name entry.
+
+Below that:
+> 董事／公司秘書／經理／獲授權代表*  
+> Director / Company Secretary / Manager / Authorized Representative*
+
+Then:  
+> *請刪去不適用者 Delete whichever does not apply*
+
+**Capacity Options Listed (Exact Labels):**
+- **董事** (Director)
+- **公司秘書** (Company Secretary)
+- **經理** (Manager)
+- **獲授權代表** (Authorized Representative)
+
+**Type of Field:**  
+These are **not dropdowns or checkboxes**. Instead, they are **printed text labels** with an instruction to "**Delete whichever does not apply**". This means the user must **manually cross out** the roles that do not apply before signing. The intended role is implied by what remains after deletion.
+
+**Purpose:**  
+To specify the **official capacity** in which the person is signing the form. Only one role should remain (or none if all are irrelevant), indicating the signer's authority under Hong Kong company law.
+
+---
+
+### **2. Signing Date Field**
+
+**Visual Position:**  
+Immediately to the right of the "姓名 Name" field, aligned horizontally.
+
+**Label:**  
+"日期 Date :"
+
+**Format Expected:**  
+The date field is broken into three separate boxes:
+
+```
+日 DD / 月 MM / 年 YYYY
+```
+
+This indicates the expected format is **DD/MM/YYYY**.
+
+**Purpose:**  
+To record the date when the form was signed.
+
+---
+
+### **3. Continuation Sheet Counters (续页)**
+
+**Visual Position:**  
+Centered near the bottom of the page, above the signature block.
+
+**Layout:**  
+A two-row table labeled:
+
+> **本表格包括下列續頁／PI-NN1 頁 This Form includes the following Continuation Sheet(s)/PI-NN1 Sheet(s)**
+
+#### First Row:
+| 续页 Continuation Sheet(s) | A | B | C | D | E | F |
+|----------------------------|---|---|---|---|---|---|
+| 買數 Number of pages       |   |   |   |   |   |   |
+
+- Each column (A–F) has a blank cell beneath "Number of pages" where users fill in how many pages were attached for each type.
+- These fields are **text input boxes** (blank cells), not pre-filled or automated.
+
+#### Second Row:
+A separate box below this table:
+> **PI-NN1 (不會供公眾查閱 NOI for Public Inspection)**  
+> 買數 Number of pages | [Blank box]
+
+- This is a dedicated field for counting **PI-NN1 sheets**, which are **not publicly inspectable**.
+- Again, a **manual input box** for number of pages.
+
+**Purpose:**  
+To track the number of continuation sheets submitted, including those confidential (PI-NN1). This ensures completeness and compliance with filing requirements.
+
+---
+
+### **4. Section 8 – Charter/Constitution Documents**
+
+**Visual Position:**  
+Top section of the page, labeled as **8**, immediately after the header.
+
+**Label:**  
+> 8 隨本表格交付的公司的憲章、法規或章程大綱(包括章程細則(如有的話))或對公司的組織作出規定的其他文書的名稱  
+> Name of the Charter, Statutes, Memorandum (including Articles, if any) or any other Instruments Defining the Constitution of the Company Delivered with this Form
+
+**Field Type:**  
+A **large rectangular text box** (single-line or multi-line depending on printing), with no options or checkboxes.
+
+**Purpose:**  
+To list the **names of constitutional documents** delivered with the form — such as:
+- Memorandum and Articles of Association
+- Constitution
+- Trust Deed
+- Any other governing instrument
+
+**No toggles or checkboxes exist** — it's purely a **free-text description field**.
+
+---
+
+### **5. Section 9 – Specified Certificates**
+
+**Visual Position:**  
+Directly below Section 8, labeled as **9**.
+
+**Label:**  
+> 9 隨本表格交付的每份指明證明書的名稱  
+> Name of each of the Specified Certificate Delivered with this Form
+
+**Field Type:**  
+Another **large rectangular text box**, similar to Section 8.
+
+**Purpose:**  
+To list the **names of any specified certificates** required under the Companies Ordinance (e.g., statutory declarations, auditor’s reports, etc.) that are being filed with this form.
+
+**No toggles or checkboxes** — again, just a **free-text input area**.
+
+---
+
+### **6. Section 10 – Accounts (A & B Options)**
+
+**Visual Position:**  
+Below Section 9, labeled **10 帳目 Accounts**, with sub-sections **A** and **B**.
+
+#### **Section 10A: Accounts Delivered**
+**Label:**  
+> A. 根據《公司(非香港公司及本條例第16部適用的其他公司)規例》(第622J章)第4(1)(c)或(d)條隨本表格交付的帳目  
+> Accounts delivered with this form under section 4(1)(c) or (d) of the Companies (Non-Hong Kong Companies and Other Companies to which Part 16 of Ordinance Applies) Regulation (Cap. 622J)
+
+**Fields:**
+- Two date ranges:
+  - From: [Day] [Month] [Year]
+  - To: [Day] [Month] [Year]
+- Format: DD / MM / YYYY
+- Purpose: Specify the **accounting period covered** by the financial statements submitted.
+
+**Note:** This section assumes **accounts are included**.
+
+#### **Section 10B: No Accounts Delivered**
+**Label:**  
+> B. 沒有根據...條交付帳目的陳述書  
+> Statement of no accounts delivered...
+
+**Field Type:**  
+Two **checkboxes** (empty squares), each with accompanying text:
+
+1. ✅ **First checkbox**:  
+   > 公司的成立為法團所在地地方的法律或在其註冊為公司所在的任何其他司法管轄區的法律，以及該司法管轄區的任何證券交易所或類似的監管機構的規章，均沒有規定公司須發表帳目或須將其帳目的文本交付任何人，而公眾人士有權在該人的辦事處查閱該帳目。  
+   > The company is neither required by the law of the place

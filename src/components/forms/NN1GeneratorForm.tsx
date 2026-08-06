@@ -595,7 +595,7 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
           fields, checkboxes: checkboxes.length > 0 ? checkboxes : undefined,
           piPersons: piPersons.length > 0 ? piPersons : undefined,
           removePages: [17, 18, 19, 20, 21, 22, 23, 24],  // P.18-P.25 填表須知
-          fieldFontSizes: { 'fill_9_P.1': 8, 'fill_12_P.1': 7 },
+          fieldFontSizes: { 'fill_12_P.1': 7 },
           signatoryCapacity: signatoryCapacity || undefined,
         }),
       });

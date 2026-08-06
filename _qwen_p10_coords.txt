@@ -1,0 +1,70 @@
+To determine the **exact pixel coordinates** (x_start, x_end, y_center) for each of the four capacity labels in both the **Chinese** and **English** rows on **Page 10** of the form (NN1), we analyze the image provided.
+
+The image resolution is **1241 pixels wide × 1754 pixels high**, corresponding to an A4 page at a standard scale (~150 DPI). We will use visual estimation based on the layout, with precision as close as possible.
+
+---
+
+### 🔍 Observations:
+- The signature block is near the bottom of the page.
+- The Chinese text:  
+  `董事／公司秘書／經理／獲授權代表*`  
+  appears above the English version.
+- The English text:  
+  `Director / Company Secretary / Manager / Authorized Representative*`
+- There is a QR code on the right side, which helps anchor positioning.
+- The text is horizontally aligned and spaced consistently.
+
+We'll now estimate the **pixel positions**.
+
+---
+
+### ✅ Estimated Coordinates:
+
+#### **Chinese row**:  
+**y ≈ 1638**
+
+- 董事: x≈590–620  
+- 公司秘書: x≈630–690  
+- 經理: x≈700–730  
+- 獲授權代表: x≈740–810  
+
+> Note: These are approximate due to character spacing and font rendering. "董事" is shortest; "獲授權代表" is longest.
+
+#### **English row**:  
+**y ≈ 1665**
+
+- Director: x≈590–640  
+- Company Secretary: x≈650–740  
+- Manager: x≈750–790  
+- Authorized Representative: x≈800–890  
+
+> The English text is slightly lower than the Chinese one, consistent with line spacing.
+
+---
+
+### 🧮 Final Answer:
+
+```
+Chinese row y≈1638:
+- 董事: x≈590-620
+- 公司秘書: x≈630-690
+- 經理: x≈700-730
+- 獲授權代表: x≈740-810
+
+English row y≈1665:
+- Director: x≈590-640
+- Company Secretary: x≈650-740
+- Manager: x≈750-790
+- Authorized Representative: x≈800-890
+```
+
+---
+
+### 💡 Notes:
+- All values are **estimated from visual inspection** of the image.
+- The actual pixel values may vary slightly depending on rendering (e.g., anti-aliasing, DPI).
+- The **QR code** is located at approximately `(x=820, y=1700)` — used as a reference point.
+- The text is likely in a **standard sans-serif font** (like Arial or Helvetica), ~10pt size.
+- The *asterisk* (`*`) appears at the end of both lines, so it's not part of any label.
+
+Let me know if you'd like these values exported in CSV or JSON format.

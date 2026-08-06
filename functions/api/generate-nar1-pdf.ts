@@ -6,7 +6,7 @@
 //   只嵌入 Helvetica 用於 BR 蓋印，大幅節省 CPU（避免 NotoSansTC 5-8MB 嵌入）
 //   透過 NeedAppearances 讓 PDF 閱讀器用模板內建字體重建外觀流
 
-import { PDFDocument, PDFBool, PDFName, StandardFonts } from "pdf-lib";
+import { PDFDocument, PDFBool, PDFName, PDFString, StandardFonts } from "pdf-lib";
 import { verifyAuthRequest, type Env as AuthEnv } from './_auth';
 import {
   corsHeaders, jsonResp, uint8ToBase64,
@@ -229,6 +229,35 @@ async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Array> {
   if (presenterP1.fax) setF("fill_22_P.1", presenterP1.fax);
   if (presenterP1.email) setF("fill_23_P.1", presenterP1.email);
   if (presenterP1.reference) setF("fill_24_P.1", presenterP1.reference);
+
+  // ═══ P.1 提交人电话/传真/电邮/档号字体大小覆写 ═══
+  // 模板 DA: address=9pt, phone/fax/email/reference=12pt → 统一为9pt
+  const presenterFontFields = new Set(['fill_21_P.1', 'fill_22_P.1', 'fill_23_P.1', 'fill_24_P.1']);
+  const ctx = (pdfDoc as any).context;
+  const page1 = pdfDoc.getPages()[0];
+  const annots1 = page1.node.lookup(PDFName.of('Annots')) as any;
+  if (annots1 && typeof annots1.size === 'function') {
+    for (let i = 0; i < annots1.size(); i++) {
+      try {
+        const widget = ctx.lookup(annots1.get(i)) as any;
+        if (!widget || String(widget.get(PDFName.of('Subtype'))) !== '/Widget') continue;
+        const ft = widget.get(PDFName.of('FT'));
+        if (!ft || String(ft) !== '/Tx') continue;
+        // Read /T from parent (AcroForm field hierarchy)
+        let fieldName = '';
+        const parentRef = widget.get(PDFName.of('Parent'));
+        if (parentRef) {
+          try {
+            const parentObj = ctx.lookup(parentRef) as any;
+            const pT = parentObj?.get?.(PDFName.of('T'));
+            if (pT instanceof PDFString) fieldName = pT.decodeText();
+          } catch { /* skip */ }
+        }
+        if (!presenterFontFields.has(fieldName)) continue;
+        widget.set(PDFName.of('DA'), PDFString.of('/PMingLiU 9 Tf 0 g'));
+      } catch { /* skip */ }
+    }
+  }
 
   // ═══ Share Info ═══
   const normalizeClassName = (raw: string) => {

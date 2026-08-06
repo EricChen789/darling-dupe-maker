@@ -502,7 +502,7 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
         fields['fill_4_P.3'] = a.addrFlat; fields['fill_5_P.3'] = a.addrBuilding;
         fields['fill_6_P.3'] = a.addrStreet; fields['fill_7_P.3'] = a.addrDistrict;
         fields['fill_8_P.3'] = a.email;
-        fields['fill_9_P.3'] = a.hkidMain.slice(0, 4) + (a.hkidCheck ? `(${a.hkidCheck})` : ''); fields['fill_10_P.3'] = a.passportCountry; fields['fill_11_P.3'] = a.passportNumber;
+        fields['fill_9_P.3'] = a.hkidMain.slice(0, 4); fields['fill_10_P.3'] = a.passportCountry; fields['fill_11_P.3'] = a.passportNumber;
         fields['fill_12_P.3'] = a.day; fields['fill_13_P.3'] = a.month; fields['fill_14_P.3'] = a.year;
         // Continuation sheet A (P.11) for 2nd+
         for (let ai = 1; ai < Math.min(authRepNats.length - 1 + 1, 1); ai++) {
@@ -511,7 +511,7 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
           fields['fill_4_P.11'] = ca.addrFlat; fields['fill_5_P.11'] = ca.addrBuilding;
           fields['fill_6_P.11'] = ca.addrStreet; fields['fill_7_P.11'] = ca.addrDistrict;
           fields['fill_8_P.11'] = ca.email;
-          fields['fill_9_P.11'] = ca.hkidMain.slice(0, 4) + (ca.hkidCheck ? `(${ca.hkidCheck})` : ''); fields['fill_10_P.11'] = ca.passportCountry; fields['fill_11_P.11'] = ca.passportNumber;
+          fields['fill_9_P.11'] = ca.hkidMain.slice(0, 4); fields['fill_10_P.11'] = ca.passportCountry; fields['fill_11_P.11'] = ca.passportNumber;
           fields['fill_12_P.11'] = ca.day; fields['fill_13_P.11'] = ca.month; fields['fill_14_P.11'] = ca.year;
         }
       }
@@ -537,7 +537,7 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
         fields['fill_8_P.5'] = s.addrFlat; fields['fill_9_P.5'] = s.addrBuilding;
         fields['fill_10_P.5'] = s.addrStreet; fields['fill_11_P.5'] = s.addrDistrict; fields['fill_12_P.5'] = s.addrRegion;
         fields['fill_13_P.5'] = s.email;
-        fields['fill_14_P.5'] = s.hkidMain.slice(0, 4) + (s.hkidCheck ? `(${s.hkidCheck})` : ''); fields['fill_15_P.5'] = s.passportCountry; fields['fill_16_P.5'] = s.passportNumber;
+        fields['fill_14_P.5'] = s.hkidMain.slice(0, 4); fields['fill_15_P.5'] = s.passportCountry; fields['fill_16_P.5'] = s.passportNumber;
         fields['fill_17_P.5'] = s.day; fields['fill_18_P.5'] = s.month; fields['fill_19_P.5'] = s.year;
       }
 
@@ -563,7 +563,7 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
         fields[`fill_9_P.${pn}`] = d.addrFlat; fields[`fill_10_P.${pn}`] = d.addrBuilding;
         fields[`fill_11_P.${pn}`] = d.addrStreet; fields[`fill_12_P.${pn}`] = d.addrDistrict; fields[`fill_13_P.${pn}`] = d.addrRegion;
         fields[`fill_14_P.${pn}`] = d.email;
-        fields[`fill_15_P.${pn}`] = d.hkidMain.slice(0, 4) + (d.hkidCheck ? `(${d.hkidCheck})` : ''); fields[`fill_16_P.${pn}`] = d.passportCountry; fields[`fill_17_P.${pn}`] = d.passportNumber;
+        fields[`fill_15_P.${pn}`] = d.hkidMain.slice(0, 4); fields[`fill_16_P.${pn}`] = d.passportCountry; fields[`fill_17_P.${pn}`] = d.passportNumber;
         fields[`fill_18_P.${pn}`] = d.day; fields[`fill_19_P.${pn}`] = d.month; fields[`fill_20_P.${pn}`] = d.year;
       }
 

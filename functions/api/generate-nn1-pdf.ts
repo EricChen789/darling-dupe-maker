@@ -194,12 +194,29 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
             try {
               const widget = ctx.lookup(annots.get(i)) as any;
               if (!widget || String(widget.get(PDFName.of('Subtype'))) !== '/Widget') continue;
-              const ft = widget.get(PDFName.of('FT'));
-              if (!ft || String(ft) !== '/Btn') continue;
+
+              // Read /FT and /T from widget or parent (NN1 P.10 has them on parent)
+              let ft = widget.get(PDFName.of('FT'));
+              let fieldName = '';
               const t = widget.get(PDFName.of('T'));
-              if (!(t instanceof PDFString)) continue;
-              const name = t.decodeText();
-              const ddMatch = name.match(/^Dropdown(\d)$/);
+              if (t instanceof PDFString) fieldName = t.decodeText();
+
+              // If no /FT or /T on widget, try parent
+              const pRef = widget.get(PDFName.of('Parent'));
+              if (pRef) {
+                try {
+                  const parentObj = ctx.lookup(pRef) as any;
+                  if (!ft) ft = parentObj?.get?.(PDFName.of('FT'));
+                  if (!fieldName) {
+                    const pT = parentObj?.get?.(PDFName.of('T'));
+                    if (pT instanceof PDFString) fieldName = pT.decodeText();
+                  }
+                } catch { /* skip */ }
+              }
+
+              // Skip non-choice fields (dropdowns are /Ch)
+              if (!ft || String(ft) !== '/Ch') continue;
+              const ddMatch = fieldName.match(/^Dropdown(\d)$/);
               if (!ddMatch) continue;
               const ddIdx = parseInt(ddMatch[1]);
               const capForDD = allCaps[ddIdx - 1];
@@ -367,11 +384,7 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
       // 3) Rebuild AcroForm /Fields + set NeedAppearances=true
       rebuildAcroFormFields(pdfDoc);
 
-      // 4) Update P.10 續頁計數器 (sheet G = PI-NN1 count)
-      try {
-        const form = pdfDoc.getForm();
-        form.getTextField('fill_15_P.10').setText(String(piPersons.length));
-      } catch { /* skip */ }
+      // 4) No need to override fill_15_P.10 — frontend already sends correct count via fields
     }
 
     // ── Remove pages (descending order) ──

@@ -58,19 +58,36 @@ export function collectFormFields(
         const widgetName = decodePdfText(widget.get(PDFName.of("T")));
         const target = { widget, field };
 
-        addAlias(parentName, target);
+        // ── Handle 3-level field hierarchy (NN1 P.10) ──
+        // NN1 template P.10 has: grandparent/T=fill_15_P → parent/T=10 → widget
+        // Without this, all P.10 fields register as "10" and overwrite each other.
+        let resolvedName = parentName;
+        let resolvedSuffix = widgetName;
+        const grandParentRef = field?.get?.(PDFName.of("Parent"));
+        if (grandParentRef) {
+          try {
+            const grandParent = pdfDoc.context.lookup(grandParentRef) as any;
+            const gpName = decodePdfText(grandParent.get(PDFName.of("T")));
+            if (gpName) {
+              resolvedName = gpName;           // e.g. "fill_15_P"
+              resolvedSuffix = resolvedSuffix || parentName; // fallback to parent name as suffix e.g. "10"
+            }
+          } catch { /* skip */ }
+        }
+
+        addAlias(resolvedName, target);
         addAlias(widgetName, target);
-        if (parentName && widgetName)
-          addAlias(`${parentName}.${widgetName}`, target);
+        if (resolvedName && resolvedSuffix)
+          addAlias(`${resolvedName}.${resolvedSuffix}`, target);
 
         // Normalize: fill_4_P.9 <-> fill_4_P9
-        if (widgetName) {
-          addAlias(widgetName.replace(/_P\.(\d+)$/g, "_P$1"), target);
-          addAlias(widgetName.replace(/_P(\d+)$/g, "_P.$1"), target);
+        if (resolvedSuffix) {
+          addAlias(resolvedSuffix.replace(/_P\.(\d+)$/g, "_P$1"), target);
+          addAlias(resolvedSuffix.replace(/_P(\d+)$/g, "_P.$1"), target);
         }
-        if (parentName) {
-          addAlias(parentName.replace(/_P\.(\d+)$/g, "_P$1"), target);
-          addAlias(parentName.replace(/_P(\d+)$/g, "_P.$1"), target);
+        if (resolvedName) {
+          addAlias(resolvedName.replace(/_P\.(\d+)$/g, "_P$1"), target);
+          addAlias(resolvedName.replace(/_P(\d+)$/g, "_P.$1"), target);
         }
       } catch (_) {
         /* skip malformed widget */

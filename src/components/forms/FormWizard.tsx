@@ -224,8 +224,8 @@ const FormWizard = ({ formId, onBack }: FormWizardProps) => {
       region: formData.regRegion,
       country: formData.regRegion,
     },
-    email: formData.email,
-    phone: formData.website,
+    companyEmail: formData.email,
+    companyPhone: formData.website,
     directors: formData.directors.map(d => ({
       nameChinese: d.nameChinese,
       nameEnglish: d.nameEnglish,

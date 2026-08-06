@@ -9980,6 +9980,114 @@ def generate_generic_form_pdf():
         return jsonify({'error': str(e)}), 500
 
 
+# ─── Generate Resolution DOCX（Paul Tang 模板替換占位符） ───
+
+@app.route('/api/generate-resolution-docx', methods=['POST', 'OPTIONS'])
+def generate_resolution_docx():
+    """Generate resolution DOCX from Paul Tang templates.
+    Request: {resolutionType, companyName, oldName, newName, ciNumber, resolutionDate, signer1Name, signer2Name, meetingTime, includeConsent}"""
+    if request.method == 'OPTIONS':
+        return ('', 204)
+    try:
+        data = request.json or {}
+        rt_raw = data.get('resolutionType', 'members')
+        # Map frontend type names to template file names
+        type_map = {
+            'sole_director': 'sole_director',
+            'members': 'members_resolution',
+            'members_resolution': 'members_resolution',
+            'members_consent': 'members_consent',
+        }
+        rt = type_map.get(rt_raw)
+        if not rt:
+            return jsonify({'error': f'Unknown resolution type: {rt_raw}'}), 400
+
+        # Load template
+        template_dir = os.path.join(os.path.dirname(__file__), '..', 'public', 'templates', 'resolutions')
+        template_path = os.path.join(template_dir, f'{rt}.docx')
+        if not os.path.exists(template_path):
+            return jsonify({'error': f'Template not found: {rt}.docx'}), 500
+
+        from docx import Document
+        doc = Document(template_path)
+
+        # Format date
+        rd = data.get('resolutionDate', '')
+        d = rd.split('-') if rd else []
+        date_ddmmyyyy = f'{d[2]}/{d[1]}/{d[0]}' if len(d) == 3 else rd
+
+        company_name = data.get('oldName') or data.get('companyName') or ''
+        new_name = data.get('newName') or ''
+
+        vars_map = {
+            '{{COMPANY_NAME_EN}}': company_name,
+            '{{CI_NUMBER}}': data.get('ciNumber', ''),
+            '{{NEW_NAME_EN}}': new_name,
+            '{{DATE_DDMMYYYY}}': date_ddmmyyyy,
+            '{{DATE_BLANK}}': date_ddmmyyyy,
+            '{{TIME}}': data.get('meetingTime', '10:00AM'),
+            '{{SIGNER_1}}': data.get('signer1Name', ''),
+            '{{SIGNER_2}}': data.get('signer2Name', ''),
+        }
+
+        # Replace placeholders in all paragraphs
+        for para in doc.paragraphs:
+            full_text = para.text
+            modified = False
+            for old, new in vars_map.items():
+                if old in full_text:
+                    full_text = full_text.replace(old, new)
+                    modified = True
+            if modified:
+                # Clear runs and set text in first run
+                for run in para.runs:
+                    run.text = ''
+                if para.runs:
+                    para.runs[0].text = full_text
+
+        # Also handle tables
+        for table in doc.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    for para in cell.paragraphs:
+                        full_text = para.text
+                        modified = False
+                        for old, new in vars_map.items():
+                            if old in full_text:
+                                full_text = full_text.replace(old, new)
+                                modified = True
+                        if modified:
+                            for run in para.runs:
+                                run.text = ''
+                            if para.runs:
+                                para.runs[0].text = full_text
+
+        # Save to temp file
+        import tempfile, base64 as b64
+        with tempfile.NamedTemporaryFile(suffix='.docx', delete=False) as tmp:
+            doc.save(tmp.name)
+            tmp.flush()
+            with open(tmp.name, 'rb') as f:
+                docx_bytes = f.read()
+        try:
+            os.unlink(tmp.name)
+        except:
+            pass
+
+        filename = f"Resolution_{rt}_{company_name.replace(' ', '_')}.docx"
+        return jsonify({
+            'success': True,
+            'docx': b64.b64encode(docx_bytes).decode('ascii'),
+            'filename': filename,
+            'doc_type': rt,
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
 # ─── Auto-Fill CR Form PDF（自動填入公司資料的政府表格 PDF） ───
 
 @app.route('/api/generate-cr-form-pdf', methods=['POST', 'OPTIONS'])

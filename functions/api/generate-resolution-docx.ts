@@ -172,7 +172,7 @@ export async function onRequest(context: { request: Request; env: Env }) {
 
   try {
     const data = await request.json() as {
-      resolutionType: 'sole_director' | 'members' | 'members_consent';
+      resolutionType: 'sole_director' | 'members' | 'members_consent' | 'members_resolution';
       includeConsent?: boolean;
       companyName?: string;
       oldName?: string;
@@ -186,7 +186,14 @@ export async function onRequest(context: { request: Request; env: Env }) {
       signer2Name?: string;
     };
 
-    const rt = data.resolutionType;
+    // Map frontend type names to template keys
+    const TYPE_MAP: Record<string, string> = {
+      'sole_director': 'sole_director',
+      'members': 'members_resolution',
+      'members_resolution': 'members_resolution',
+      'members_consent': 'members_consent',
+    };
+    const rt = TYPE_MAP[data.resolutionType];
     if (!rt || !RESOLUTION_TEMPLATES[rt]) {
       return json({ error: `Unknown resolution type: ${rt}. Valid: ${Object.keys(RESOLUTION_TEMPLATES).join(', ')}` }, 400);
     }

@@ -317,17 +317,56 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
   const [signatoryName, setSignatoryName] = useState('');
   const [signDateDay, setSignDateDay] = useState(''); const [signDateMonth, setSignDateMonth] = useState(''); const [signDateYear, setSignDateYear] = useState('');
 
-  // ═══ P.17: PI-NN1 ═══
-  const [piCompanyName, setPiCompanyName] = useState('');
-  const [piIsAR, setPiIsAR] = useState(false); const [piIsSec, setPiIsSec] = useState(false);
-  const [piIsDir, setPiIsDir] = useState(false); const [piIsAltDir, setPiIsAltDir] = useState(false);
-  const [piNameChinese, setPiNameChinese] = useState(''); const [piSurname, setPiSurname] = useState('');
-  const [piOtherNames, setPiOtherNames] = useState('');
-  const [piHkidMain, setPiHkidMain] = useState(''); const [piHkidCheck, setPiHkidCheck] = useState('');
-  const [piPassportCountry, setPiPassportCountry] = useState(''); const [piPassportNumber, setPiPassportNumber] = useState('');
-  const [piAddrFlat, setPiAddrFlat] = useState(''); const [piAddrBuilding, setPiAddrBuilding] = useState('');
-  const [piAddrStreet, setPiAddrStreet] = useState(''); const [piAddrDistrict, setPiAddrDistrict] = useState('');
-  const [piAddrCountry, setPiAddrCountry] = useState('');
+  // ═══ P.17: PI-NN1 — 自動從表單自然人提取（借鑒 NNC1 piPersons 模式）═���═
+  interface PiPersonData {
+    nameChinese: string; surname: string; otherNames: string;
+    hkidMain: string; hkidCheck: string; isHkid: boolean;
+    passportCountry: string; passportNumber: string;
+    addrFlat: string; addrBuilding: string; addrStreet: string; addrDistrict: string; addrCountry: string;
+    isAR: boolean; isSec: boolean; isDir: boolean; isAltDir: boolean;
+    label: string;
+  }
+  const piPersons = useMemo<PiPersonData[]>(() => {
+    const result: PiPersonData[] = [];
+    // 授權代表（自然人）
+    for (const a of authRepNats) {
+      result.push({
+        nameChinese: a.nameChinese, surname: a.surname, otherNames: a.otherNames,
+        hkidMain: a.hkidPartial || '', hkidCheck: '', isHkid: !!a.hkidPartial,
+        passportCountry: a.passportCountry, passportNumber: a.passportNumber,
+        addrFlat: a.addrFlat, addrBuilding: a.addrBuilding, addrStreet: a.addrStreet, addrDistrict: a.addrDistrict,
+        addrCountry: 'Hong Kong',
+        isAR: true, isSec: false, isDir: false, isAltDir: false,
+        label: `授權代表 #${result.length + 1}`,
+      });
+    }
+    // 公司秘書（自然人）
+    if (hasSecNat && (secNat.surname || secNat.nameChinese)) {
+      result.push({
+        nameChinese: secNat.nameChinese, surname: secNat.surname, otherNames: secNat.otherNames,
+        hkidMain: secNat.hkidPartial || '', hkidCheck: '', isHkid: !!secNat.hkidPartial,
+        passportCountry: secNat.passportCountry, passportNumber: secNat.passportNumber,
+        addrFlat: secNat.addrFlat, addrBuilding: secNat.addrBuilding, addrStreet: secNat.addrStreet, addrDistrict: secNat.addrDistrict,
+        addrCountry: secNat.addrRegion,
+        isAR: false, isSec: true, isDir: false, isAltDir: false,
+        label: '公司秘書（自然人）',
+      });
+    }
+    // 董事（自然人）
+    for (const d of dirNats) {
+      if (!d.surname && !d.nameChinese) continue;
+      result.push({
+        nameChinese: d.nameChinese, surname: d.surname, otherNames: d.otherNames,
+        hkidMain: d.hkidPartial || '', hkidCheck: '', isHkid: !!d.hkidPartial,
+        passportCountry: d.passportCountry, passportNumber: d.passportNumber,
+        addrFlat: d.addrFlat, addrBuilding: d.addrBuilding, addrStreet: d.addrStreet, addrDistrict: d.addrDistrict,
+        addrCountry: d.addrRegion,
+        isAR: false, isSec: false, isDir: !d.isAlternate, isAltDir: d.isAlternate,
+        label: d.isAlternate ? `候補董事 #${result.length + 1}` : `董事 #${result.length + 1}`,
+      });
+    }
+    return result;
+  }, [authRepNats, hasSecNat, secNat, dirNats]);
 
   const { mutate: saveFormHistory } = useSaveFormHistory();
 
@@ -507,23 +546,15 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
       fields['fill_17_P.10'] = signDateDay && signDateMonth && signDateYear
         ? `${signDateDay}/${signDateMonth}/${signDateYear}` : '';
 
-      // ── P.17 ──
-      fields['fill_1_P.17'] = piCompanyName || proposedNameEn;
-      if (piIsAR) checkboxes.push('cb_1_P.17');
-      if (piIsSec) checkboxes.push('cb_2_P.17');
-      if (piIsDir) checkboxes.push('cb_3_P.17');
-      if (piIsAltDir) checkboxes.push('cb_4_P.17');
-      fields['fill_2_P.17'] = piNameChinese; fields['fill_3_P.17'] = piSurname; fields['fill_4_P.17'] = piOtherNames;
-      fields['fill_5_P.17'] = piHkidMain; fields['fill_6_P.17'] = piHkidCheck;
-      fields['fill_7_P.17'] = piPassportCountry; fields['fill_8_P.17'] = piPassportNumber;
-      fields['fill_9_P.17'] = piAddrFlat; fields['fill_10_P.17'] = piAddrBuilding;
-      fields['fill_11_P.17'] = piAddrStreet; fields['fill_12_P.17'] = piAddrDistrict; fields['fill_13_P.17'] = piAddrCountry;
+      // ── P.17: PI-NN1 — 自動從 piPersons 填充（後端 widget-level 處理多頁複製）──
 
       // ── API ──
       const resp = await fetch(`/api/generate-nn1-pdf`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({
           fields, checkboxes: checkboxes.length > 0 ? checkboxes : undefined,
+          piPersons: piPersons.length > 0 ? piPersons : undefined,
+          removePages: [17, 18, 19, 20, 21, 22, 23, 24],  // P.18-P.25 填表須知
           keepWidgets: true,
           alignCenterFields: ['fill_1_P.1', 'fill_2_P.1'],
           alignVCenterFields: ['fill_1_P.1', 'fill_2_P.1'],
@@ -976,40 +1007,45 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
           </div>
         </div>
 
-        {/* ═══ P.17: PI-NN1 ═══ */}
+        {/* ═══ P.17: PI-NN1 — 自動從表單自然人生成 ═══ */}
         <div className="border rounded-lg p-4 bg-card">
           <h3 className="font-semibold mb-3">🔒 受保護資料 PI-NN1 — Protected Information（P.17）</h3>
-          <p className="text-xs text-muted-foreground mb-3">填寫需要保護其個人資料的人員（不供公眾查閱）</p>
-          <div className="mb-3 max-w-md"><Label>公司名稱 Company Name</Label><Input value={piCompanyName} onChange={e => setPiCompanyName(e.target.value)} className="mt-1" placeholder={proposedNameEn || '同 P.1'} /></div>
-          <Label className="text-sm mb-2 block">該人員身分</Label>
-          <div className="flex gap-4 mb-3">
-            <label className="flex items-center gap-2 text-sm"><Checkbox checked={piIsAR} onCheckedChange={v => setPiIsAR(!!v)} />獲授權代表</label>
-            <label className="flex items-center gap-2 text-sm"><Checkbox checked={piIsSec} onCheckedChange={v => setPiIsSec(!!v)} />公司秘書</label>
-            <label className="flex items-center gap-2 text-sm"><Checkbox checked={piIsDir} onCheckedChange={v => setPiIsDir(!!v)} />董事</label>
-            <label className="flex items-center gap-2 text-sm"><Checkbox checked={piIsAltDir} onCheckedChange={v => setPiIsAltDir(!!v)} />候補董事</label>
-          </div>
-          <div className="grid grid-cols-3 gap-2 mb-3">
-            <Input className="h-8 text-xs" placeholder="中文姓名" value={piNameChinese} onChange={e => setPiNameChinese(e.target.value)} />
-            <Input className="h-8 text-xs" placeholder="英文姓氏 Surname" value={piSurname} onChange={e => setPiSurname(e.target.value)} />
-            <Input className="h-8 text-xs" placeholder="英文名字 Other Names" value={piOtherNames} onChange={e => setPiOtherNames(e.target.value)} />
-          </div>
-          <div className="grid grid-cols-2 gap-2 mb-3 max-w-xs">
-            <Input className="h-8 text-xs" placeholder="HKID 完整號碼（前段）" value={piHkidMain} onChange={e => setPiHkidMain(e.target.value)} />
-            <Input className="h-8 text-xs" placeholder="HKID 括號內數字" value={piHkidCheck} onChange={e => setPiHkidCheck(e.target.value)} />
-          </div>
-          <div className="grid grid-cols-2 gap-2 mb-3 max-w-md">
-            <Label className="text-xs">護照簽發國家／地區</Label>
-            <CountryInput value={piPassportCountry} onChange={setPiPassportCountry} placeholder="Search country..." />
-          </div>
-          <div className="max-w-xs mb-3"><Input className="h-8 text-xs" placeholder="護照完整號碼" value={piPassportNumber} onChange={e => setPiPassportNumber(e.target.value)} /></div>
-          <Label className="text-sm mb-2 block">通常住址 Usual Residential Address</Label>
-          <div className="grid grid-cols-3 gap-2">
-            <Input className="h-8 text-xs" placeholder="室／樓／座" value={piAddrFlat} onChange={e => setPiAddrFlat(e.target.value)} />
-            <Input className="h-8 text-xs" placeholder="大廈" value={piAddrBuilding} onChange={e => setPiAddrBuilding(e.target.value)} />
-            <Input className="h-8 text-xs" placeholder="街道／屋苑" value={piAddrStreet} onChange={e => setPiAddrStreet(e.target.value)} />
-            <Input className="h-8 text-xs" placeholder="區／市／省" value={piAddrDistrict} onChange={e => setPiAddrDistrict(e.target.value)} />
-            <div><Label className="text-xs">國家／地區</Label><CountryInput value={piAddrCountry} onChange={setPiAddrCountry} placeholder="Search country..." /></div>
-          </div>
+          <p className="text-xs text-muted-foreground mb-3">
+            以下自然人的個人資料將自動填入 PI-NN1，每人一頁（不供公眾查閱）。
+            資料來源自上方已填寫的授權代表、公司秘書、董事。
+          </p>
+          {piPersons.length === 0 ? (
+            <div className="text-sm text-muted-foreground p-4 border border-dashed rounded-md text-center">
+              ⚠️ 尚未填寫任何自然人（授權代表／秘書／董事）。<br />
+              請先在上方各區塊填寫自然人的姓名地址，PI-NN1 頁面將自動生成。
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {piPersons.map((p, i) => (
+                <div key={i} className="flex items-start gap-3 p-3 border rounded-md bg-muted/30">
+                  <span className="text-xs font-mono font-bold text-muted-foreground mt-0.5">P{i + 1}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium">
+                      {p.surname} {p.otherNames}{p.nameChinese ? ` (${p.nameChinese})` : ''}
+                    </div>
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {p.isAR && <span className="text-xs bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded">授權代表</span>}
+                      {p.isSec && <span className="text-xs bg-green-100 text-green-800 px-1.5 py-0.5 rounded">公司秘書</span>}
+                      {p.isDir && <span className="text-xs bg-purple-100 text-purple-800 px-1.5 py-0.5 rounded">董事</span>}
+                      {p.isAltDir && <span className="text-xs bg-orange-100 text-orange-800 px-1.5 py-0.5 rounded">候補董事</span>}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      {p.isHkid ? `HKID: ${p.hkidMain}${p.hkidCheck ? `(${p.hkidCheck})` : ''}` : `護照: ${p.passportCountry} ${p.passportNumber}`}
+                      {' · '}{[p.addrFlat, p.addrBuilding, p.addrStreet, p.addrDistrict, p.addrCountry].filter(Boolean).join(', ')}
+                    </div>
+                  </div>
+                </div>
+              ))}
+              <p className="text-xs text-muted-foreground pt-1">
+                ✅ 共 {piPersons.length} 位自然人，將生成 {piPersons.length} 頁 PI-NN1。
+              </p>
+            </div>
+          )}
         </div>
 
         {/* ═══ GENERATE ═══ */}

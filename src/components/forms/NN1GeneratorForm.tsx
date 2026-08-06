@@ -1075,7 +1075,7 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
                     </div>
                     <div className="text-xs text-muted-foreground mt-1">
                       {[
-    p.hkidMain ? `HKID: ${p.hkidMain.slice(0, 4)}${p.hkidMain.length > 4 ? '****' : ''}${p.hkidCheck ? `(${p.hkidCheck})` : ''}` : '',
+    p.hkidMain ? `HKID: ${p.hkidMain.slice(0, 4)}${p.hkidMain.length > 4 ? '****' : ''}${p.hkidCheck || ''}` : '',
     (p.passportCountry || p.passportNumber) ? `護照: ${p.passportCountry} ${p.passportNumber}`.trim() : '',
   ].filter(Boolean).join(' · ')}
                       {' · '}{[p.addrFlat, p.addrBuilding, p.addrStreet, p.addrDistrict, p.addrCountry].filter(Boolean).join(', ')}

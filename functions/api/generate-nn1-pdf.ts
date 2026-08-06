@@ -166,7 +166,7 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
     for (const [name, fontSize] of Object.entries(fieldFontSizes)) {
       const value = (fields as any)?.[name];
       if (value != null && String(value).length > 0) {
-        setText(name, String(value), fontSize);
+        setText(name, String(value), Number(fontSize));
       }
     }
 

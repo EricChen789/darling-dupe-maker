@@ -112,7 +112,9 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
             const sizeMatch = String(da).match(/(\d+(?:\.\d+)?)\s+Tf/);
             const fontSize = sizeMatch ? parseFloat(sizeMatch[1]) : 10;
 
-            const fontName = hasCjk ? 'C2_0' : 'Helv';
+            // CJK: /PMingLiU from AcroForm /DR (full font, not subset)
+            // ASCII: /Helv from page Resources or DR
+            const fontName = hasCjk ? 'PMingLiU' : 'Helv';
             let textOp: string;
             if (hasCjk) {
               textOp = `<${toUtf16Hex(value)}> Tj`;

@@ -704,7 +704,7 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
             <Input className="h-8 text-xs" placeholder="室／樓／座 Flat／Floor／Block" value={ppbFlat} onChange={e => setPpbFlat(e.target.value)} />
             <Input className="h-8 text-xs" placeholder="大廈 Building" value={ppbBuilding} onChange={e => setPpbBuilding(e.target.value)} />
             <Input className="h-8 text-xs" placeholder="街道／屋苑 Street／Estate" value={ppbStreet} onChange={e => setPpbStreet(e.target.value)} />
-            <Input className="h-8 text-xs" placeholder="區／市／省／郵遞區號 District/City/Province/Postal Code" value={ppbDistrict} onChange={e => setPpbDistrict(e.target.value)} />
+            <Input className="h-8 text-xs" placeholder="District/City/Province/Postal Code" value={ppbDistrict} onChange={e => setPpbDistrict(e.target.value)} />
             <div className="col-span-2 max-w-xs"><Label className="text-xs">國家／地區 Country/Region</Label><CountryInput value={ppbCountry} onChange={setPpbCountry} placeholder="Search country..." /></div>
           </div>
           <h4 className="text-sm font-medium mb-2 mt-4">Section 4(c) — 電郵地址 Email Address</h4>

@@ -1,14 +1,16 @@
 // POST /api/generate-nnc2-pdf
 // NNC2 更改公司名稱通知書 — 專用端點（Phase 2.2）
-// 使用 R2 模板 + Noto Sans TC CJK 字體填充
-// Optimized: only CJK fields get updateAppearances, useObjectStreams:false saves CPU
+// 使用 R2 模板 + pdf-lib AcroForm 填充
+//   Strategy (学 IRBR2): acroField.setValue() 只设 /V，不重新生成外观
+//   + save({ updateFieldAppearances: false }) 保留模板原始蓝色可编辑框
+//   + 不 flatten — 保留所有 widget annotations
 
-import { PDFDocument } from "pdf-lib";
+import { PDFDocument, PDFString } from "pdf-lib";
 import {
   corsHeaders, jsonResp, uint8ToBase64,
-  fetchAndEmbedFont
 } from "./_pdf-utils";
 import { verifyAuthRequest, type Env } from "./_auth";
+import { enableNeedAppearances } from "./_acroform";
 
 const TEMPLATE_NAME = "NNC2-template.pdf";
 
@@ -35,34 +37,29 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
     const templateBytes = new Uint8Array(await templateObj.arrayBuffer());
     const pdfDoc = await PDFDocument.load(templateBytes, { ignoreEncryption: true });
 
-    // R2-first font loading
-    const { cjk } = await fetchAndEmbedFont(pdfDoc, env as any);
-
     const form = pdfDoc.getForm();
 
-    // Fill text fields — only updateAppearances for CJK (saves CPU vs NNC1 old approach)
+    // Fill text fields — acroField.setValue() 只设 /V，不重新生成外观，保留蓝框
     const fields = data.fields || {};
     for (const [name, value] of Object.entries(fields)) {
       try {
         const vstr = value != null ? String(value) : "";
         if (!vstr) continue;
-        const tf = form.getTextField(name);
-        tf.setText(vstr);
-        if (cjk) {
-          const hasCjk = /[^\x00-\x7F]/.test(vstr);
-          if (hasCjk) tf.updateAppearances(cjk);
-        }
+        form.getTextField(name).acroField.setValue(PDFString.of(vstr));
       } catch { /* field missing — skip */ }
     }
 
-    // Check checkboxes
+    // Check checkboxes — check() 设 /V=/On，配合 updateFieldAppearances:false 保留原始 ✓ 外观
     for (const name of data.checkboxes || []) {
       try { form.getCheckBox(name).check(); } catch { /* skip */ }
     }
 
-    // Flatten & save (useObjectStreams: false saves CPU)
-    form.flatten();
-    const pdfBytes = await pdfDoc.save({ useObjectStreams: false });
+    // NeedAppearances=true — 让 PDF 阅读器从 /V 重新生成外观
+    // （蓝框来自 widget /MK /BG，文字来自 /V + /DA，两者都不依赖模板旧的 AP 流）
+    enableNeedAppearances(pdfDoc);
+
+    // Save — 不 flatten，updateFieldAppearances:false 保留模板原始蓝色可编辑框
+    const pdfBytes = await pdfDoc.save({ useObjectStreams: false, updateFieldAppearances: false });
     return jsonResp({ pdf: uint8ToBase64(new Uint8Array(pdfBytes)) });
   } catch (err: any) {
     console.error("generate-nnc2-pdf error:", err);

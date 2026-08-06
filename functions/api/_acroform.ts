@@ -114,11 +114,15 @@ export function detachWidget(widget: any, field: any) {
         if (v !== undefined && v !== null) widget.set(key, v);
       }
     }
-    if (parentName && widgetName)
+    if (parentName && widgetName) {
       widget.set(
         PDFName.of("T"),
         PDFString.of(`${parentName}.${widgetName}`)
       );
+    } else if (parentName) {
+      // Widget has no /T (e.g. NN1 P.10 3-level hierarchy), use parent's /T
+      widget.set(PDFName.of("T"), PDFString.of(parentName));
+    }
     widget.delete(PDFName.of("Parent"));
   } catch (_) {
     /* best-effort */
@@ -173,13 +177,17 @@ export function enableNeedAppearances(pdfDoc: PDFDocument) {
 export function buildCjkDA(originalDA: string | undefined): string {
   const m = originalDA?.match(/(\d+(?:\.\d+)?)\s+Tf/);
   const size = m ? m[1] : "12";
-  return `/PMingLiU ${size} Tf 0 g`;
+  // Guard against zero font size (e.g. NN1 P.10 fill_16 has /PMingLiU 0 Tf)
+  const actualSize = parseFloat(size) > 0 ? size : "12";
+  return `/PMingLiU ${actualSize} Tf 0 g`;
 }
 
 export function buildHelvDA(originalDA: string | undefined): string {
   const m = originalDA?.match(/(\d+(?:\.\d+)?)\s+Tf/);
   const size = m ? m[1] : "12";
-  return `/Helv ${size} Tf 0 g`;
+  // Guard against zero font size (e.g. NN1 P.10 fill_16 has /PMingLiU 0 Tf)
+  const actualSize = parseFloat(size) > 0 ? size : "12";
+  return `/Helv ${actualSize} Tf 0 g`;
 }
 
 /** Build /DA with a forced font size (useful for shrinking oversized fields). */

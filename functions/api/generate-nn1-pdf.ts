@@ -203,9 +203,10 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
 
               // If no /FT or /T on widget, try parent
               const pRef = widget.get(PDFName.of('Parent'));
+              let parentObj: any = null;
               if (pRef) {
                 try {
-                  const parentObj = ctx.lookup(pRef) as any;
+                  parentObj = ctx.lookup(pRef) as any;
                   if (!ft) ft = parentObj?.get?.(PDFName.of('FT'));
                   if (!fieldName) {
                     const pT = parentObj?.get?.(PDFName.of('T'));
@@ -223,6 +224,9 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
               if (!capForDD) continue;
 
               const isSelected = capForDD === signatoryCapacity;
+
+              // Detach widget from parent so rebuildAcroFormFields includes it
+              if (parentObj) detachWidget(widget, parentObj);
 
               // Rewrite /Opt with distinct export values so /V can disambiguate:
               //   [ ['blank', ' '] ['line', '──────────'] ]

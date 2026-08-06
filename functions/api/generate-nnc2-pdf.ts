@@ -27,7 +27,7 @@
 //   fill_17 → 提交人檔號
 
 import {
-  PDFDocument, PDFName, PDFHexString,
+  PDFDocument, PDFName, PDFHexString, PDFDict,
   PDFArray, PDFNumber,
 } from "pdf-lib";
 import { corsHeaders, jsonResp, uint8ToBase64 } from "./_pdf-utils";
@@ -82,11 +82,21 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
     const form = pdfDoc.getForm();
     const ctx = (pdfDoc as any).context;
 
+    // ── Get /C2_0 font ref from page Resources for CJK AP Resources ──
+    let c2_0FontRef: any = null;
+    try {
+      const pages = pdfDoc.getPages();
+      const page0 = pages[0];
+      const pageResources = (page0.node as any).lookup(PDFName.of("Resources"), PDFDict);
+      const pageFonts = pageResources.lookup(PDFName.of("Font"), PDFDict);
+      c2_0FontRef = pageFonts.lookup(PDFName.of("C2_0"));
+    } catch { /* C2_0 not in page Resources */ }
+
     // ── Generate AP streams for each text field ──
     // Iterate over data entries (keys like fill_1_P.1), not form fields
-    // (field.getName() may omit the .1 suffix, causing name mismatch)
-    // AP Form XObject: blue bg rect + text using page-internal fonts
-    // Font /C2_0 = MingLiU (page Resources), /Helv = Helvetica (DR)
+    // AP Form XObject: blue bg rect + text
+    //   CJK: /C2_0 from page Resources (explicit Resources dict → works in all viewers)
+    //   ASCII: /Helv from page Resources
     const encoder = new TextEncoder();
     const fieldsData = data.fields || {};
     for (const [name, value] of Object.entries(fieldsData)) {
@@ -112,9 +122,9 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
             const sizeMatch = String(da).match(/(\d+(?:\.\d+)?)\s+Tf/);
             const fontSize = sizeMatch ? parseFloat(sizeMatch[1]) : 10;
 
-            // CJK: /PMingLiU from AcroForm /DR (full font, not subset)
-            // ASCII: /Helv from page Resources or DR
-            const fontName = hasCjk ? 'PMingLiU' : 'Helv';
+            // CJK: /C2_0 from page Resources (MingLiU subset, referenced in AP Resources)
+            // ASCII: /Helv from page Resources
+            const fontName = hasCjk ? 'C2_0' : 'Helv';
             let textOp: string;
             if (hasCjk) {
               textOp = `<${toUtf16Hex(value)}> Tj`;
@@ -145,7 +155,7 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
               'EMC',
             ].join('\n');
 
-            // Build Form XObject (no Resources dict — inherits from page)
+            // Build Form XObject with explicit font Resources for CJK
             const bbox = PDFArray.withContext(ctx);
             bbox.push(PDFNumber.of(0));
             bbox.push(PDFNumber.of(0));
@@ -156,6 +166,15 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
             streamDict.set(PDFName.of('Type'), PDFName.of('XObject'));
             streamDict.set(PDFName.of('Subtype'), PDFName.of('Form'));
             streamDict.set(PDFName.of('BBox'), bbox);
+
+            // Add font Resources so /C2_0 is explicitly available to the AP stream
+            if (hasCjk && c2_0FontRef) {
+              const fontRes = ctx.obj({});
+              fontRes.set(PDFName.of('C2_0'), c2_0FontRef);
+              const resDict = ctx.obj({});
+              resDict.set(PDFName.of('Font'), fontRes);
+              streamDict.set(PDFName.of('Resources'), resDict);
+            }
 
             const apStream = ctx.stream(encoder.encode(apContent), streamDict);
             const apRef = ctx.register(apStream);

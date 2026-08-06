@@ -637,7 +637,7 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
         </Select>
       </div>
 
-      <FormHistorySelector formType="NN1" onLoad={handleLoadHistory} />
+      <FormHistorySelector formType="NN1" onSelect={handleLoadHistory} />
 
       <div className="space-y-6">
 

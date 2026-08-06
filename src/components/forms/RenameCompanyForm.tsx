@@ -212,7 +212,7 @@ We, being all the Members of the Company entitled to attend and vote at the Gene
         oldChineseName,
         newName,
         newChineseName,
-        ciNumber: company.ciNumber || '',
+        ciNumber: company.ciNumber || company.brNumber || '',
         resolutionDate,
         meetingTime: '10:00AM',
         signer1Name: signerNames[0] || '',

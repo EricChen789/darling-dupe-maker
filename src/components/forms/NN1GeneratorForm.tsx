@@ -101,11 +101,13 @@ interface SecCorpEntry {
   id: string;
   nameChinese: string; nameEnglish: string;
   addrFlat: string; addrBuilding: string; addrStreet: string; addrDistrict: string; addrRegion: string;
+  brNumber: string;
   email: string; day: string; month: string; year: string;
 }
 const emptySecCorp = (id: string): SecCorpEntry => ({
   id, nameChinese: '', nameEnglish: '',
   addrFlat: '', addrBuilding: '', addrStreet: '', addrDistrict: '', addrRegion: '',
+  brNumber: '',
   email: '', day: '', month: '', year: '',
 });
 
@@ -533,7 +535,7 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
         fields['fill_3_P.6'] = s.addrFlat; fields['fill_4_P.6'] = s.addrBuilding;
         fields['fill_5_P.6'] = s.addrStreet; fields['fill_6_P.6'] = s.addrDistrict; fields['fill_7_P.6'] = s.addrRegion;
         fields['fill_8_P.6'] = s.email;
-        fields['fill_9_P.6'] = '';
+        fields['fill_9_P.6'] = s.brNumber;
         fields['fill_10_P.6'] = s.day; fields['fill_11_P.6'] = s.month; fields['fill_12_P.6'] = s.year;
       }
 
@@ -591,11 +593,7 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
           fields, checkboxes: checkboxes.length > 0 ? checkboxes : undefined,
           piPersons: piPersons.length > 0 ? piPersons : undefined,
           removePages: [17, 18, 19, 20, 21, 22, 23, 24],  // P.18-P.25 填表須知
-          keepWidgets: true,
-          alignCenterFields: ['fill_1_P.1', 'fill_2_P.1'],
-          alignVCenterFields: ['fill_1_P.1', 'fill_2_P.1'],
-          forceWidgetAp: ['fill_9_P.1'],
-          fieldMinFontSize: { 'fill_10_P.1': 12, 'fill_11_P.1': 12, 'fill_12_P.1': 8 },
+          fieldFontSizes: { 'fill_9_P.1': 8, 'fill_12_P.1': 7 },
         }),
       });
       const result = await resp.json();
@@ -881,7 +879,7 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
                 <Button variant="ghost" size="sm" onClick={() => removeSecCorp(s.id)} className="text-red-500"><Trash2 className="h-4 w-4" /></Button>
               </div>
               <PersonQuickPick companyId={selectedCompanyId} includeAllPersons
-                onPick={p => updateSecCorp(s.id, { nameChinese: p.nameChinese || '', nameEnglish: p.nameEnglish || '', addrFlat: p.addrFlat || '', addrBuilding: p.addrBuilding || '', addrStreet: p.addrStreet || '', addrDistrict: p.addrDistrict || '', addrRegion: p.addrRegion || '' })} />
+                onPick={p => updateSecCorp(s.id, { nameChinese: p.nameChinese || '', nameEnglish: p.nameEnglish || '', addrFlat: p.addrFlat || '', addrBuilding: p.addrBuilding || '', addrStreet: p.addrStreet || '', addrDistrict: p.addrDistrict || '', addrRegion: p.addrRegion || '', brNumber: p.companyNumberRef || '' })} />
               <div className="grid grid-cols-2 gap-2 mt-2">
                 <Input className="h-8 text-xs" placeholder="中文名稱" value={s.nameChinese} onChange={e => updateSecCorp(s.id, { nameChinese: e.target.value })} />
                 <Input className="h-8 text-xs" placeholder="英文名稱" value={s.nameEnglish} onChange={e => updateSecCorp(s.id, { nameEnglish: e.target.value })} />
@@ -897,6 +895,7 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
                 <Input className="h-8 text-xs" placeholder="國家/地區" value={s.addrRegion} onChange={e => updateSecCorp(s.id, { addrRegion: e.target.value })} />
               </div>
               <div className="max-w-xs mt-2"><Input className="h-8 text-xs" placeholder="電郵 Email" value={s.email} onChange={e => updateSecCorp(s.id, { email: e.target.value })} /></div>
+              <div className="max-w-xs mt-2"><Input className="h-8 text-xs" placeholder="商業登記號碼 BR Number" value={s.brNumber} onChange={e => updateSecCorp(s.id, { brNumber: e.target.value })} /></div>
               <div className="max-w-xs mt-2">
                 <DatePickerInput label="獲委任日期 Date of Appointment"
                   day={s.day} month={s.month} year={s.year}

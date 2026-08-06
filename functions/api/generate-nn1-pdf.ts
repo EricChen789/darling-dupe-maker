@@ -117,6 +117,8 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
       fields?: Record<string, unknown>;
       checkboxes?: string[];
       removePages?: number[];
+      /** Per-field font size override (e.g. { 'fill_12_P.1': 8 }) */
+      fieldFontSizes?: Record<string, number>;
       piPersons?: Array<{
         nameChinese: string;
         surname: string;
@@ -156,6 +158,15 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
       if (name.endsWith('_P.17')) continue;
       if (value != null && String(value).length > 0) {
         setText(name, String(value));
+      }
+    }
+
+    // Apply per-field font size overrides (re-set with smaller font)
+    const fieldFontSizes = data.fieldFontSizes || {};
+    for (const [name, fontSize] of Object.entries(fieldFontSizes)) {
+      const value = (fields as any)?.[name];
+      if (value != null && String(value).length > 0) {
+        setText(name, String(value), fontSize);
       }
     }
 

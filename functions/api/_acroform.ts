@@ -194,6 +194,7 @@ export interface FormHelpers {
   setText: (
     fieldName: string,
     value: string,
+    alignOrFontSize?: "left" | "center" | "right" | number,
     align?: "left" | "center" | "right"
   ) => boolean;
   check: (fieldName: string, shouldCheck: boolean) => boolean;
@@ -208,8 +209,18 @@ export function createFormHelpers(pdfDoc: PDFDocument): FormHelpers {
   const setText = (
     fieldName: string,
     value: string,
+    alignOrFontSize?: "left" | "center" | "right" | number,
     align?: "left" | "center" | "right"
   ): boolean => {
+    // Resolve fontSize override vs align from the 3rd arg
+    let fontSizeOverride: number | undefined;
+    let resolvedAlign: "left" | "center" | "right" | undefined;
+    if (typeof alignOrFontSize === 'number') {
+      fontSizeOverride = alignOrFontSize;
+      resolvedAlign = align;
+    } else {
+      resolvedAlign = alignOrFontSize;
+    }
     const v = (value ?? "").toString();
     const target = fields.get(fieldName);
     if (!target) {
@@ -227,18 +238,24 @@ export function createFormHelpers(pdfDoc: PDFDocument): FormHelpers {
       if (v.length > 0 && !isAscii(v)) {
         // CJK: use template-embedded /PMingLiU (Type0, UniCNS-UTF16-H)
         // /V must be UTF-16BE hex string
-        target.widget.set(PDFName.of("DA"), PDFString.of(buildCjkDA(da)));
+        const daStr = fontSizeOverride
+          ? `/PMingLiU ${fontSizeOverride} Tf 0 g`
+          : buildCjkDA(da);
+        target.widget.set(PDFName.of("DA"), PDFString.of(daStr));
         target.widget.set(PDFName.of("V"), PDFHexString.fromText(v));
       } else {
         // ASCII: keep Helv
-        target.widget.set(PDFName.of("DA"), PDFString.of(buildHelvDA(da)));
+        const daStr = fontSizeOverride
+          ? `/Helv ${fontSizeOverride} Tf 0 g`
+          : buildHelvDA(da);
+        target.widget.set(PDFName.of("DA"), PDFString.of(daStr));
         target.widget.set(PDFName.of("V"), PDFString.of(v));
       }
 
       // Alignment via /Q (0=left, 1=center, 2=right)
-      if (align === "right") {
+      if (resolvedAlign === "right") {
         target.widget.set(PDFName.of("Q"), pdfDoc.context.obj(2));
-      } else if (align === "center") {
+      } else if (resolvedAlign === "center") {
         target.widget.set(PDFName.of("Q"), pdfDoc.context.obj(1));
       }
 

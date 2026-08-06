@@ -177,32 +177,43 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
       check(name, true);
     }
 
-    // ═══ P.10 Signatory Capacity — cross out unused capacities ═══
-    // Template has printed text: 董事／公司秘書／經理／獲授權代表*
-    //                           Director / Company Secretary / Manager / Authorized Rep*
-    // Instruction: "請刪去不適用者 Delete whichever does not apply"
-    // Draw horizontal lines through the 3 UNUSED capacities
+    // ═══ P.10 Signatory Capacity — use template dropdowns ═══
+    // Each capacity (董事/公司秘書/經理/獲授權代表) has a dropdown (Dropdown1-4)
+    // with two options: blank (selected) / horizontal line (crossed out)
+    // Both Chinese & English rows share the same dropdown name
     const signatoryCapacity = data.signatoryCapacity;
     if (signatoryCapacity) {
-      const pages = pdfDoc.getPages();
-      const p10 = pages[9]; // P.10 (0-indexed)
+      const CAP_TO_DROPDOWN: Record<string, string> = {
+        director: 'Dropdown1', secretary: 'Dropdown2',
+        manager: 'Dropdown3', authorizedRep: 'Dropdown4',
+      };
+      const allCaps = ['director', 'secretary', 'manager', 'authorizedRep'];
+      const p10 = pdfDoc.getPages()[9]; // P.10 (0-indexed)
       if (p10) {
-        // Approximate x ranges in PDF points for each capacity label
-        // Chinese row y≈56, English row y≈43 (from bottom of A4 842pt)
-        const CAP_POSITIONS: Record<string, { cn_x: [number, number]; en_x: [number, number] }> = {
-          director:      { cn_x: [283, 298], en_x: [283, 307] },
-          secretary:     { cn_x: [302, 331], en_x: [312, 355] },
-          manager:       { cn_x: [336, 350], en_x: [360, 379] },
-          authorizedRep: { cn_x: [355, 389], en_x: [384, 427] },
-        };
-        const CROSSOUT = ['director', 'secretary', 'manager', 'authorizedRep'].filter(c => c !== signatoryCapacity);
-        for (const cap of CROSSOUT) {
-          const pos = CAP_POSITIONS[cap];
-          if (!pos) continue;
-          // Chinese row
-          p10.drawLine({ start: { x: pos.cn_x[0], y: 56 }, end: { x: pos.cn_x[1], y: 56 }, thickness: 1.5, color: rgb(0, 0, 0) });
-          // English row
-          p10.drawLine({ start: { x: pos.en_x[0], y: 43 }, end: { x: pos.en_x[1], y: 43 }, thickness: 1.5, color: rgb(0, 0, 0) });
+        const ctx = (pdfDoc as any).context;
+        const annots = p10.node.lookup(PDFName.of('Annots')) as any;
+        if (annots && typeof annots.size === 'function') {
+          for (let i = 0; i < annots.size(); i++) {
+            try {
+              const widget = ctx.lookup(annots.get(i)) as any;
+              if (!widget || String(widget.get(PDFName.of('Subtype'))) !== '/Widget') continue;
+              const ft = widget.get(PDFName.of('FT'));
+              if (!ft || String(ft) !== '/Btn') continue; // dropdowns are /Btn type
+              const t = widget.get(PDFName.of('T'));
+              if (!(t instanceof PDFString)) continue;
+              const name = t.decodeText();
+              // Match Dropdown1-4
+              const ddMatch = name.match(/^Dropdown(\d)$/);
+              if (!ddMatch) continue;
+              const ddIdx = parseInt(ddMatch[1]); // 1-4
+              const capForDD = allCaps[ddIdx - 1]; // 1→director, 2→secretary, etc.
+              if (!capForDD) continue;
+              // Selected → blank display, unused → horizontal line
+              const isSelected = capForDD === signatoryCapacity;
+              widget.set(PDFName.of('V'), PDFString.of(isSelected ? ' ' : '─────────────────────────────'));
+              widget.delete(PDFName.of('AP'));
+            } catch (_) { /* skip */ }
+          }
         }
       }
     }

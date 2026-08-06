@@ -9,7 +9,7 @@
 //   - updateFieldAppearances:false — 保留自定义 AP
 
 import {
-  PDFDocument, StandardFonts, PDFName, PDFString, PDFHexString,
+  PDFDocument, StandardFonts, PDFName, PDFString,
   PDFArray, PDFNumber,
 } from "pdf-lib";
 import {

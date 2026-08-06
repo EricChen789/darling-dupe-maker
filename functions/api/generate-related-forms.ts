@@ -303,7 +303,7 @@ export async function onRequest(context: any) {
             const irbr1Yes = linkedData.irbr1_yes !== false;
             try { if (irbr1Yes) form.getCheckBox('cb_1_P.1').check(); else form.getCheckBox('cb_2_P.1').check(); } catch (_) {}
           } else {
-            // IRBR2: acroField.setValue() — 只设 /V，保留原始蓝框外观
+            // IRBR2: radio button 用 rg.select() 正确更新 /AS 外观状态
             if (linkedData.brNumber) form.getTextField('topmostSubform[0].Page1[0].TextField1[0]').acroField.setValue(PDFString.of(linkedData.brNumber));
             if (linkedData.businessNameChinese) form.getTextField('topmostSubform[0].Page1[0].TextField2[0]').acroField.setValue(PDFString.of(linkedData.businessNameChinese));
             if (linkedData.businessNameEnglish) form.getTextField('topmostSubform[0].Page1[0].TextField2[1]').acroField.setValue(PDFString.of(linkedData.businessNameEnglish));
@@ -312,12 +312,12 @@ export async function onRequest(context: any) {
             try {
               const rg1 = form.getRadioGroup('topmostSubform[0].Page1[0].RadioButtonList[1]');
               const o1 = rg1.getOptions();
-              if (o1.length >= 2) rg1.acroField.setValue(PDFName.of(linkedData.irbr2_registered !== false ? o1[0] : o1[1]));
+              if (o1.length >= 2) rg1.select(linkedData.irbr2_registered !== false ? o1[0] : o1[1]);
             } catch (_) {}
             try {
               const rg0 = form.getRadioGroup('topmostSubform[0].Page1[0].RadioButtonList[0]');
               const o0 = rg0.getOptions();
-              if (o0.length >= 2) rg0.acroField.setValue(PDFName.of(linkedData.irbr2_elect3yr !== false ? o0[0] : o0[1]));
+              if (o0.length >= 2) rg0.select(linkedData.irbr2_elect3yr !== false ? o0[0] : o0[1]);
             } catch (_) {}
           }
 

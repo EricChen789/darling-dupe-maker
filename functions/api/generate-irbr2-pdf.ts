@@ -64,14 +64,14 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
     try {
       const rg1 = form.getRadioGroup('topmostSubform[0].Page1[0].RadioButtonList[1]');
       const o1 = rg1.getOptions();
-      if (o1.length >= 2) rg1.acroField.setValue(PDFName.of(irbr2Registered ? o1[0] : o1[1]));
+      if (o1.length >= 2) rg1.select(irbr2Registered ? o1[0] : o1[1]);
     } catch (e) { console.warn("IRBR2 RadioButtonList[1] error:", e); }
 
     // ── RadioButtonList[0] (bottom): Elect 3-year certificate? ──
     try {
       const rg0 = form.getRadioGroup('topmostSubform[0].Page1[0].RadioButtonList[0]');
       const o0 = rg0.getOptions();
-      if (o0.length >= 2) rg0.acroField.setValue(PDFName.of(irbr2Elect3yr ? o0[0] : o0[1]));
+      if (o0.length >= 2) rg0.select(irbr2Elect3yr ? o0[0] : o0[1]);
     } catch (e) { console.warn("IRBR2 RadioButtonList[0] error:", e); }
 
     // ── Save — keep form interactive, keep editable blue boxes ──

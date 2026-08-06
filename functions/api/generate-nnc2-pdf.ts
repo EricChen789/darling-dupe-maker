@@ -1,11 +1,11 @@
 // POST /api/generate-nnc2-pdf
 // NNC2 更改公司名稱通知書 — 專用端點（Phase 2.2）
 // 使用 R2 模板 + pdf-lib AcroForm 填充
-//   Strategy (学 IRBR2): acroField.setValue() 只设 /V，不重新生成外观
+//   Strategy: setText() 设 /V（标准 API 维护 /Fields 数组）
+//   + 不 updateAppearances + 不 flatten
 //   + save({ updateFieldAppearances: false }) 保留模板原始蓝色可编辑框
-//   + 不 flatten — 保留所有 widget annotations
 
-import { PDFDocument, PDFString } from "pdf-lib";
+import { PDFDocument } from "pdf-lib";
 import {
   corsHeaders, jsonResp, uint8ToBase64,
 } from "./_pdf-utils";
@@ -39,23 +39,22 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
 
     const form = pdfDoc.getForm();
 
-    // Fill text fields — acroField.setValue() 只设 /V，不重新生成外观，保留蓝框
+    // Fill text fields — setText() 设 /V，不调 updateAppearances 保留蓝框
     const fields = data.fields || {};
     for (const [name, value] of Object.entries(fields)) {
       try {
         const vstr = value != null ? String(value) : "";
         if (!vstr) continue;
-        form.getTextField(name).acroField.setValue(PDFString.of(vstr));
+        form.getTextField(name).setText(vstr);
       } catch { /* field missing — skip */ }
     }
 
-    // Check checkboxes — check() 设 /V=/On，配合 updateFieldAppearances:false 保留原始 ✓ 外观
+    // Check checkboxes
     for (const name of data.checkboxes || []) {
       try { form.getCheckBox(name).check(); } catch { /* skip */ }
     }
 
-    // NeedAppearances=true — 让 PDF 阅读器从 /V 重新生成外观
-    // （蓝框来自 widget /MK /BG，文字来自 /V + /DA，两者都不依赖模板旧的 AP 流）
+    // NeedAppearances=true — 让 PDF 阅读器用模板内建 PMingLiU 字体从 /V 重建外观
     enableNeedAppearances(pdfDoc);
 
     // Save — 不 flatten，updateFieldAppearances:false 保留模板原始蓝色可编辑框

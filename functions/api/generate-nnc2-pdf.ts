@@ -82,24 +82,20 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
     const form = pdfDoc.getForm();
     const ctx = (pdfDoc as any).context;
 
-    // Collect field values first
-    const fieldValues = new Map<string, string>();
-    const fieldsData = data.fields || {};
-    for (const [name, value] of Object.entries(fieldsData)) {
-      const vstr = value != null ? String(value) : "";
-      if (vstr) fieldValues.set(name, vstr);
-    }
-
-    // ── Generate AP streams for each text field widget ──
+    // ── Generate AP streams for each text field ──
+    // Iterate over data entries (keys like fill_1_P.1), not form fields
+    // (field.getName() may omit the .1 suffix, causing name mismatch)
     // AP Form XObject: blue bg rect + text using page-internal fonts
     // Font /C2_0 = MingLiU (page Resources), /Helv = Helvetica (DR)
     const encoder = new TextEncoder();
-    const allFields = form.getFields();
-    for (const field of allFields) {
+    const fieldsData = data.fields || {};
+    for (const [name, value] of Object.entries(fieldsData)) {
+      const vstr = value != null ? String(value) : "";
+      if (!vstr) continue;
+
       try {
-        const fieldName = field.getName();
-        const value = fieldValues.get(fieldName);
-        if (!value) continue;
+        const field = form.getTextField(name);
+        if (!field) continue;
 
         const widgets = field.acroField.getWidgets();
         for (const w of widgets) {
@@ -109,7 +105,7 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
             const rh = rect.height;
             if (rw <= 2 || rh <= 2) continue;
 
-            const hasCjk = /[^\x00-\x7F]/.test(value);
+            const hasCjk = /[^\x00-\x7F]/.test(vstr);
 
             // Font size from DA or default
             const da = field.acroField.getDefaultAppearance() ?? '/Helv 10 Tf 0 g';
@@ -121,7 +117,7 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
             if (hasCjk) {
               textOp = `<${toUtf16Hex(value)}> Tj`;
             } else {
-              const escaped = value.replace(/([()\\])/g, '\\$1');
+              const escaped = vstr.replace(/([()\\])/g, '\\$1');
               textOp = `(${escaped}) Tj`;
             }
 
@@ -147,7 +143,7 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
               'EMC',
             ].join('\n');
 
-            // Build Form XObject (no Resources — inherits from page)
+            // Build Form XObject (no Resources dict — inherits from page)
             const bbox = PDFArray.withContext(ctx);
             bbox.push(PDFNumber.of(0));
             bbox.push(PDFNumber.of(0));
@@ -166,15 +162,11 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
             apDict.set(PDFName.of('N'), apRef);
             (w as any).dict.set(PDFName.of('AP'), apDict);
 
-            // Set /V (fallback for viewers that don't use /NeedAppearances)
-            if (hasCjk) {
-              (w as any).dict.set(PDFName.of('V'), PDFHexString.fromText(value));
-            } else {
-              (w as any).dict.set(PDFName.of('V'), PDFHexString.fromText(value));
-            }
+            // Set /V (fallback)
+            (w as any).dict.set(PDFName.of('V'), PDFHexString.fromText(vstr));
           } catch { /* skip unmodifiable widget */ }
         }
-      } catch { /* skip inaccessible field */ }
+      } catch { /* skip missing field */ }
     }
 
     // ── Dropdown fields ──

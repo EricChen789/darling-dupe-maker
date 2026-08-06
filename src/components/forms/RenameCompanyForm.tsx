@@ -1,11 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
-import { ArrowLeft, Download, Loader2, FileText, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, Download, Loader2, FileText, CheckCircle2, Lightbulb } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { useCompanies } from '@/hooks/useCompanies';
 import { useSaveResolution } from '@/hooks/useResolutions';
@@ -15,6 +15,8 @@ import { useSaveFormHistory } from '@/hooks/useFormHistory';
 import FormHistorySelector from './FormHistorySelector';
 import PresenterSelector from './PresenterSelector';
 import AddressQuickPick from './AddressQuickPick';
+
+type ResolutionType = 'sole_director' | 'members';
 
 interface Props { onBack: () => void; initialCompanyId?: string; }
 
@@ -42,8 +44,20 @@ export default function RenameCompanyForm({ onBack, initialCompanyId }: Props) {
   const [resolutionId, setResolutionId] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const { mutate: saveFormHistory } = useSaveFormHistory();
+  // 決議書類型
+  const [resolutionType, setResolutionType] = useState<ResolutionType | 'auto'>('auto');
+  const [includeConsent, setIncludeConsent] = useState(false);
 
   const company = companies.find(c => c.id === companyId);
+
+  // Auto-detect resolution type based on company structure
+  const detectedType = useMemo<ResolutionType>(() => {
+    if (!company) return 'members';
+    const dirs = company.directors || [];
+    return dirs.length === 1 ? 'sole_director' : 'members';
+  }, [company]);
+
+  const effectiveType: ResolutionType = resolutionType === 'auto' ? detectedType : resolutionType;
 
   useEffect(() => {
     if (initialCompanyId && companies.length && !companyId) setCompanyId(initialCompanyId);
@@ -66,26 +80,94 @@ export default function RenameCompanyForm({ onBack, initialCompanyId }: Props) {
   const oldNameFull = `${oldName || '[old name]'}${oldChineseName ? ` (${oldChineseName})` : ''}`;
   const newNameFull = `${newName || '[new name]'}${newChineseName ? ` (${newChineseName})` : ''}`;
 
-  const resolutionContentEn = `SPECIAL RESOLUTION
-PASSED on ${resolutionDate}
+  // ─── Resolution content builders ───
+  // Template 3: Sole Director Resolution
+  const soleDirContentEn = `WRITTEN RESOLUTIONS OF THE SOLE DIRECTOR OF THE COMPANY
 
-RESOLVED THAT the name of the Company be changed:
-  From: ${oldNameFull}
-  To:   ${newNameFull}
+Pursuant to the Company's Articles of Association, I, the undersigned, being the sole Director of the Company for the time being, hereby confirm that the following resolution was duly passed on ${resolutionDate}:
 
-with effect from the date of issue of the Certificate of Change of Name by the Registrar of Companies, and that Form NNC2 be filed with the Companies Registry pursuant to s.108 of the Companies Ordinance (Cap.622) within 15 days.`;
+Change of Company Name
 
-  const resolutionContentCn = `特別決議
-於 ${resolutionDate} 通過
+It was resolved by Special Resolution:
 
-茲決議：本公司名稱變更：
-  由：${oldNameFull}
-  改為：${newNameFull}
+That the name of the Company be changed from ${oldNameFull} to ${newNameFull}, with effect from the date of issue of the Certificate of Change of Name by the Registrar of Companies, and that Form NNC2 be filed with the Companies Registry pursuant to s.108 of the Companies Ordinance (Cap.622) within 15 days.
 
-於公司註冊處長簽發更改公司名稱證書當日起生效，並依《公司條例》（第622章）第108條於 15 日內提交 NNC2 表格。`;
+Preparation of Documents:
+The secretary was requested to complete the documents required to change the name of the company.`;
+
+  const soleDirContentCn = `單獨董事書面決議
+
+根據公司章程，本人（以下簽署人）作為本公司現時唯一董事，茲確認以下決議已於${resolutionDate}正式通過：
+
+更改公司名稱
+
+通過特別決議：
+
+本公司名稱由「${oldNameFull}」更改為「${newNameFull}」，於公司註冊處處長簽發更改公司名稱證書當日起生效，並依《公司條例》（第622章）第108條於15日內提交NNC2表格。
+
+文件準備：
+已要求公司秘書完成更改公司名稱所需之文件。`;
+
+  // Template 2: Members Written Resolution
+  const membersContentEn = `WRITTEN RESOLUTIONS OF THE MEMBERS OF THE COMPANY
+
+Change of Name
+
+At an Extraordinary General Meeting of the Company duly convened and held on ${resolutionDate}, the following Special Resolution was duly passed:
+
+That the name of the Company be changed to ${newNameFull}, with effect from the date of issue of the Certificate of Change of Name by the Registrar of Companies, and that Form NNC2 be filed with the Companies Registry pursuant to s.108 of the Companies Ordinance (Cap.622) within 15 days.`;
+
+  const membersContentCn = `股東書面決議
+
+更改公司名稱
+
+於${resolutionDate}正式召開及舉行之公司股東特別大會上，已正式通過以下特別決議：
+
+本公司名稱更改為「${newNameFull}」，於公司註冊處處長簽發更改公司名稱證書當日起生效，並依《公司條例》（第622章）第108條於15日內提交NNC2表格。`;
+
+  // Template 1: Members Consent to Short Notice (supplementary)
+  const consentContentEn = `MEMBERS' CONSENT TO SHORT NOTICE
+
+We, being all the Members of the Company entitled to attend and vote at the General Meeting, hereby consent to such Meeting being held on ${resolutionDate} notwithstanding that less than 21 clear days' notice has been given to us.`;
+
+  const consentContentCn = `股東同意短通知
+
+吾等為本公司全體有權出席股東大會並表決之股東，茲同意上述會議於${resolutionDate}舉行，即使該會議通知期少於21整天。`;
+
+  // Active content based on selected type
+  const resolutionContentEn = effectiveType === 'sole_director' ? soleDirContentEn : membersContentEn;
+  const resolutionContentCn = effectiveType === 'sole_director' ? soleDirContentCn : membersContentCn;
+
+  // Build with consent if checked
+  const fullEn = includeConsent
+    ? `${consentContentEn}\n\n${resolutionContentEn}`
+    : resolutionContentEn;
+  const fullCn = includeConsent
+    ? `${consentContentCn}\n\n${resolutionContentCn}`
+    : resolutionContentCn;
 
   // Combined for display preview and storage
-  const resolutionContent = `${resolutionContentEn}\n\n${resolutionContentCn}`;
+  const resolutionContent = `${fullEn}\n\n${fullCn}`;
+
+  const resolutionTitle = effectiveType === 'sole_director'
+    ? '更改公司名稱 — 單獨董事書面決議 / Written Resolutions of the Sole Director'
+    : '更改公司名稱 — 股東書面決議 / Written Resolutions of the Members';
+
+  const resolutionSubtitle = effectiveType === 'sole_director'
+    ? '單獨董事書面決議 / Written Resolutions of the Sole Director'
+    : '股東書面決議 / Written Resolutions of the Members';
+
+  const signatureLines = effectiveType === 'sole_director'
+    ? [
+        'Sole Director / 唯一董事：____________________   Date 日期：____________________',
+        'Company Secretary / 公司秘書：____________________   Date 日期：____________________',
+      ]
+    : [
+        'Signed by all the members of the company / 全體股東簽署：',
+        '____________________________   Date 日期：____________________',
+        '____________________________   Date 日期：____________________',
+        'Company Secretary / 公司秘書：____________________   Date 日期：____________________',
+      ];
 
   const handleLoadHistory = (data: any) => {
     if (data.formData) {
@@ -105,6 +187,8 @@ with effect from the date of issue of the Certificate of Change of Name by the R
       if (d.presEmail !== undefined) setPresEmail(d.presEmail);
       if (d.presRef !== undefined) setPresRef(d.presRef);
       if (d.step !== undefined) setStep(d.step);
+      if (d.resolutionType !== undefined) setResolutionType(d.resolutionType);
+      if (d.includeConsent !== undefined) setIncludeConsent(d.includeConsent);
     }
     if (data.selectedCompanyId) setCompanyId(data.selectedCompanyId);
   };
@@ -116,27 +200,31 @@ with effect from the date of issue of the Certificate of Change of Name by the R
     }
     setGenerating(true);
     try {
+      const sections: any[] = [
+        { rows: [['Resolution Date 決議日期', resolutionDate], ['Effective Date 生效日期', effectiveDate]] },
+      ];
+      // Insert consent sections if checked
+      if (includeConsent) {
+        sections.push({ heading: "Members' Consent to Short Notice", paragraph: consentContentEn });
+        sections.push({ heading: '股東同意短通知', paragraph: consentContentCn });
+      }
+      sections.push({ heading: effectiveType === 'sole_director' ? 'Written Resolutions of the Sole Director' : 'Written Resolutions of the Members', paragraph: resolutionContentEn });
+      sections.push({ heading: effectiveType === 'sole_director' ? '單獨董事書面決議' : '股東書面決議', paragraph: resolutionContentCn });
+
       const ok = await downloadGenericFormPdf({
         formCode: 'Resolution-Rename',
-        title: '更改公司名稱特別決議書 / Special Resolution — Change of Name',
-        subtitle: '股東書面特別決議 / Written Resolution of Members',
+        title: resolutionTitle,
+        subtitle: resolutionSubtitle,
         companyName: oldName || company.name,
         brNumber: company.brNumber,
-        sections: [
-          { rows: [['Resolution Date 決議日期', resolutionDate], ['Effective Date 生效日期', effectiveDate]] },
-          { heading: 'Special Resolution', paragraph: resolutionContentEn },
-          { heading: '特別決議', paragraph: resolutionContentCn },
-        ],
-        signatureLines: [
-          'Director / 董事：____________________   Date 日期：____________________',
-          'Company Secretary / 公司秘書：____________________   Date 日期：____________________',
-        ],
+        sections,
+        signatureLines,
       }, 'Resolution_Rename');
       if (ok) {
         save.mutate({
           company_id: company.id,
           resolution_type: 'rename',
-          title: '更改公司名稱特別決議書',
+          title: resolutionTitle,
           resolution_date: resolutionDate,
           content: resolutionContent,
           signers,
@@ -195,7 +283,7 @@ with effect from the date of issue of the Certificate of Change of Name by the R
       if (!resp.ok) throw new Error(result.error || 'Unknown error');
       downloadBase64Pdf(result.pdf, 'NNC2-form.pdf');
       toast({ title: 'NNC2 表格已生成', description: '使用官方模板填寫' });
-      saveFormHistory({ formType: 'NNC2', formData: { formData: { oldName, newName, oldChineseName, newChineseName, resolutionDate, effectiveDate, signers, presNameCn, presNameEn, presAddress, presPhone, presFax, presEmail, presRef, step }, selectedCompanyId: companyId } });
+      saveFormHistory({ formType: 'NNC2', formData: { formData: { oldName, newName, oldChineseName, newChineseName, resolutionDate, effectiveDate, signers, presNameCn, presNameEn, presAddress, presPhone, presFax, presEmail, presRef, step, resolutionType, includeConsent }, selectedCompanyId: companyId } });
     } catch (err: any) {
       toast({ title: '生成失敗', description: err.message, variant: 'destructive' });
     } finally {
@@ -280,6 +368,55 @@ with effect from the date of issue of the Certificate of Change of Name by the R
 
       <Separator />
 
+      {/* ─── 決議書類型選擇 ─── */}
+      <div className="rounded-md border border-border p-4 space-y-3 bg-muted/20">
+        <div className="flex items-center justify-between">
+          <Label className="text-sm font-semibold">決議書類型 Resolution Type</Label>
+          {resolutionType === 'auto' && (
+            <span className="flex items-center gap-1 text-xs text-muted-foreground">
+              <Lightbulb className="h-3 w-3" />
+              已為你自動偵測
+            </span>
+          )}
+        </div>
+        <Select value={resolutionType} onValueChange={(v) => setResolutionType(v as ResolutionType | 'auto')}>
+          <SelectTrigger className="w-full">
+            <SelectValue placeholder="選擇決議書類型" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="auto">
+              自動偵測（{detectedType === 'sole_director' ? '單獨董事' : '全體股東'}）
+            </SelectItem>
+            <SelectItem value="sole_director">
+              單獨董事書面決議 — Written Resolutions of the Sole Director
+            </SelectItem>
+            <SelectItem value="members">
+              股東書面決議 — Written Resolutions of the Members
+            </SelectItem>
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground">
+          {effectiveType === 'sole_director'
+            ? '適用於唯一董事同時為唯一股東的公司，由該董事單獨簽署即可。'
+            : '適用於有多位股東的公司，需由全體股東簽署。'}
+        </p>
+
+        <div className="flex items-center gap-2 pt-1">
+          <input
+            type="checkbox"
+            id="includeConsent"
+            checked={includeConsent}
+            onChange={(e) => setIncludeConsent(e.target.checked)}
+            className="h-4 w-4 rounded border-gray-300 accent-primary"
+          />
+          <Label htmlFor="includeConsent" className="text-xs cursor-pointer">
+            附加「股東同意短通知」Members' Consent to Short Notice（會議通知不足 21 天時使用）
+          </Label>
+        </div>
+      </div>
+
+      <Separator />
+
       <div className="space-y-1">
         <Label className="text-xs">特別決議書內容預覽（可由 PDF 上看到）</Label>
         <Textarea rows={10} value={resolutionContent} readOnly className="font-mono text-xs bg-muted/30" />
@@ -290,10 +427,15 @@ with effect from the date of issue of the Certificate of Change of Name by the R
       <div className="grid grid-cols-2 gap-3">
         <div className="rounded-md border border-border p-4 space-y-2">
           <h3 className="font-semibold text-sm flex items-center gap-2">
-            <FileText className="h-4 w-4" /> 步驟 1：股東特別決議書
+            <FileText className="h-4 w-4" /> 步驟 1：決議書
             {resolutionDone && <CheckCircle2 className="h-4 w-4 text-primary" />}
           </h3>
-          <p className="text-xs text-muted-foreground">先生成決議書，由全體股東簽署。</p>
+          <p className="text-xs text-muted-foreground">
+            {effectiveType === 'sole_director'
+              ? '生成單獨董事書面決議，由唯一董事簽署。'
+              : '生成股東書面決議，由全體股東簽署。'}
+            {includeConsent && ' 包含短通知同意書。'}
+          </p>
           <Button size="sm" onClick={handleGenerateResolution} disabled={generating} className="w-full bg-primary text-primary-foreground">
             {generating ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Download className="h-4 w-4 mr-1" />}
             生成決議書 PDF

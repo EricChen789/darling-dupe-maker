@@ -178,15 +178,12 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
     }
 
     // ═══ P.10 Signatory Capacity — use template dropdowns ═══
-    // Each capacity (董事/公司秘書/經理/獲授權代表) has a dropdown (Dropdown1-4)
-    // with two options: blank (selected) / horizontal line (crossed out)
-    // Both Chinese & English rows share the same dropdown name
+    // Each capacity has Dropdown1-4 with two /Opt entries:
+    //   [['Yes', '  '], ['Yes', '─────────────────────────────']]
+    // Both have export value 'Yes' so we rewrite /Opt to distinct values
+    // and set /V accordingly. This avoids ambiguous match on duplicate exports.
     const signatoryCapacity = data.signatoryCapacity;
     if (signatoryCapacity) {
-      const CAP_TO_DROPDOWN: Record<string, string> = {
-        director: 'Dropdown1', secretary: 'Dropdown2',
-        manager: 'Dropdown3', authorizedRep: 'Dropdown4',
-      };
       const allCaps = ['director', 'secretary', 'manager', 'authorizedRep'];
       const p10 = pdfDoc.getPages()[9]; // P.10 (0-indexed)
       if (p10) {
@@ -198,19 +195,32 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
               const widget = ctx.lookup(annots.get(i)) as any;
               if (!widget || String(widget.get(PDFName.of('Subtype'))) !== '/Widget') continue;
               const ft = widget.get(PDFName.of('FT'));
-              if (!ft || String(ft) !== '/Btn') continue; // dropdowns are /Btn type
+              if (!ft || String(ft) !== '/Btn') continue;
               const t = widget.get(PDFName.of('T'));
               if (!(t instanceof PDFString)) continue;
               const name = t.decodeText();
-              // Match Dropdown1-4
               const ddMatch = name.match(/^Dropdown(\d)$/);
               if (!ddMatch) continue;
-              const ddIdx = parseInt(ddMatch[1]); // 1-4
-              const capForDD = allCaps[ddIdx - 1]; // 1→director, 2→secretary, etc.
+              const ddIdx = parseInt(ddMatch[1]);
+              const capForDD = allCaps[ddIdx - 1];
               if (!capForDD) continue;
-              // Selected → blank display, unused → horizontal line
+
               const isSelected = capForDD === signatoryCapacity;
-              widget.set(PDFName.of('V'), PDFString.of(isSelected ? ' ' : '─────────────────────────────'));
+
+              // Rewrite /Opt with distinct export values so /V can disambiguate:
+              //   [ ['blank', ' '] ['line', '──────────'] ]
+              const newOpt = PDFArray.withContext(ctx);
+              const opt0 = PDFArray.withContext(ctx);
+              opt0.push(PDFString.of('blank'));
+              opt0.push(PDFString.of(' '));
+              const opt1 = PDFArray.withContext(ctx);
+              opt1.push(PDFString.of('line'));
+              opt1.push(PDFString.of('─────────────────────────────'));
+              newOpt.push(opt0);
+              newOpt.push(opt1);
+              widget.set(PDFName.of('Opt'), newOpt);
+              // /V picks which option — 'blank' or 'line'
+              widget.set(PDFName.of('V'), PDFString.of(isSelected ? 'blank' : 'line'));
               widget.delete(PDFName.of('AP'));
             } catch (_) { /* skip */ }
           }

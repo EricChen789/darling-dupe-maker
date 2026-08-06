@@ -854,19 +854,17 @@ export default function NewCompanyGeneratorForm({ onBack, initialCompanyId }: Pr
             ))}
           </SelectContent>
         </Select>
-        {referenceCompanyId && (
-          <div className="mt-2">
-            <AddressQuickPick companyId={referenceCompanyId}
-              onPick={(d) => {
-                if (d.flat) setAddrFlat(d.flat);
-                if (d.building) setAddrBuilding(d.building);
-                if (d.street) setAddrStreet(d.street);
-                if (d.district) setAddrDistrict(d.district);
-                if (d.country || d.region) setAddrRegion(d.country || d.region || '');
-              }}
-            />
-          </div>
-        )}
+        <div className="mt-2">
+          <AddressQuickPick companyId={referenceCompanyId} includeAllCompanies
+            onPick={(d) => {
+              if (d.flat) setAddrFlat(d.flat);
+              if (d.building) setAddrBuilding(d.building);
+              if (d.street) setAddrStreet(d.street);
+              if (d.district) setAddrDistrict(d.district);
+              if (d.country || d.region) setAddrRegion(d.country || d.region || '');
+            }}
+          />
+        </div>
       </div>
 
       {/* 註冊辦事處地址 — 5 欄拆分 */}
@@ -973,20 +971,18 @@ export default function NewCompanyGeneratorForm({ onBack, initialCompanyId }: Pr
               });
             }}
           />
-          {initialCompanyId && (
-            <AddressQuickPick
-              companyId={initialCompanyId}
-              onPick={(d) => {
-                const parts = (o.address || '').split(/[,，]\s*/);
-                const flat = d.flat || parts[0] || '';
-                const building = d.building || parts[1] || '';
-                const street = d.street || parts[2] || '';
-                const district = d.district || parts[3] || '';
-                const region = d.country || d.region || parts[4] || '';
-                updateOfficer(i, { address: [flat, building, street, district, region].join(', ') });
-              }}
-            />
-          )}
+          <AddressQuickPick
+            companyId={initialCompanyId} includeAllCompanies
+            onPick={(d) => {
+              const parts = (o.address || '').split(/[,，]\s*/);
+              const flat = d.flat || parts[0] || '';
+              const building = d.building || parts[1] || '';
+              const street = d.street || parts[2] || '';
+              const district = d.district || parts[3] || '';
+              const region = d.country || d.region || parts[4] || '';
+              updateOfficer(i, { address: [flat, building, street, district, region].join(', ') });
+            }}
+          />
           <div className="grid grid-cols-2 gap-2">
             <Input className="h-8 text-xs" placeholder="英文姓名" value={o.nameEnglish} onChange={e => updateOfficer(i, { nameEnglish: e.target.value })} />
             <Input className="h-8 text-xs" placeholder="中文姓名" value={o.nameChinese} onChange={e => updateOfficer(i, { nameChinese: e.target.value })} />
@@ -1116,21 +1112,19 @@ export default function NewCompanyGeneratorForm({ onBack, initialCompanyId }: Pr
             )}
           </div>
           {/* 地址選擇（從系統選擇） */}
-          {initialCompanyId && (
-            <AddressQuickPick
-              companyId={initialCompanyId}
-              label="🏠 從公司地址選擇（選後自動填入）"
-              onPick={(d) => {
-                const parts = (s.address || '').split(/[,，]\s*/);
-                const flat = d.flat || parts[0] || '';
-                const building = d.building || parts[1] || '';
-                const street = d.street || parts[2] || '';
-                const district = d.district || parts[3] || '';
-                const region = d.country || d.region || parts[4] || '';
-                updateShare(i, { address: [flat, building, street, district, region].join(', ') });
+          <AddressQuickPick
+            companyId={initialCompanyId} includeAllCompanies
+            label="🏠 從公司地址選擇（選後自動填入）"
+            onPick={(d) => {
+              const parts = (s.address || '').split(/[,，]\s*/);
+              const flat = d.flat || parts[0] || '';
+              const building = d.building || parts[1] || '';
+              const street = d.street || parts[2] || '';
+              const district = d.district || parts[3] || '';
+              const region = d.country || d.region || parts[4] || '';
+              updateShare(i, { address: [flat, building, street, district, region].join(', ') });
               }}
             />
-          )}
           <div className="grid grid-cols-3 gap-2 items-end">
             <Input className="h-8 text-xs" placeholder="中文姓名" value={s.name} onChange={e => updateShare(i, { name: e.target.value })} />
             <Input className="h-8 text-xs" placeholder="英文姓氏 Surname" value={s.surname} onChange={e => updateShare(i, { surname: e.target.value })} />

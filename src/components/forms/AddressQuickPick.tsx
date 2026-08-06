@@ -28,6 +28,8 @@ interface AddressQuickPickProps {
   label?: string;
   placeholder?: string;
   onPick: (data: AddressQuickPickData) => void;
+  /** If true, show addresses from ALL companies in the system (not just companyId's) */
+  includeAllCompanies?: boolean;
 }
 
 // ── Defaults ──
@@ -69,6 +71,7 @@ export default function AddressQuickPick({
   label = DEFAULT_LABEL,
   placeholder,
   onPick,
+  includeAllCompanies = false,
 }: AddressQuickPickProps) {
   const { data: companies = [] } = useCompanies();
   const { data: presenters = [] } = usePresenterList();
@@ -76,21 +79,21 @@ export default function AddressQuickPick({
   // ── Build options ──
   const options = useMemo(() => {
     const groups: { group: string; items: AddressOption[] }[] = [];
+    const seen = new Set<string>();
 
-    if (!companyId) return groups;
+    // Helper: add a single company's registered + personnel addresses
+    const addCompanyAddrs = (company: any, isPrimary: boolean) => {
+      const prefix = isPrimary ? '' : `all_`;
+      const icon = isPrimary ? '🏢' : '🏢';
 
-    const company = companies.find(c => c.id === companyId);
-    if (!company) return groups;
-
-    // 1. Company registered address
-    const regAddr = buildAddrStr(company);
-    if (regAddr) {
-      groups.push({
-        group: `🏢 ${company.name}`,
-        items: [{
-          id: 'company_reg',
-          label: '公司註冊地址 Registered Office',
-          sublabel: regAddr.slice(0, 60),
+      // Registered address
+      const regAddr = buildAddrStr(company);
+      if (regAddr && !seen.has(regAddr)) {
+        seen.add(regAddr);
+        const items: AddressOption[] = [{
+          id: `${prefix}company_reg_${company.id}`,
+          label: `公司註冊地址 Registered Office`,
+          sublabel: `${company.name} · ${regAddr.slice(0, 50)}`,
           data: {
             flat: company.regFlat || '',
             building: company.regBuilding || '',
@@ -99,52 +102,71 @@ export default function AddressQuickPick({
             country: company.regRegion || 'Hong Kong',
             region: company.regRegion || 'Hong Kong',
           },
-        }],
-      });
-    }
-
-    // 2. Company personnel addresses (deduplicated)
-    const personAddrs: AddressOption[] = [];
-    const seen = new Set<string>();
-    const allPeople = [
-      ...(company.directors || []).map(d => ({ ...d, _role: 'director' as const })),
-      ...(company.secretaries || []).map(s => ({ ...s, _role: 'secretary' as const })),
-    ];
-    for (const p of allPeople) {
-      // Prefer structured fields
-      const hasStructured = p.addrFlat || p.addrBuilding || p.addrStreet || p.addrDistrict || p.addrRegion;
-      let addrStr: string;
-      let data: AddressQuickPickData;
-      if (hasStructured) {
-        addrStr = buildAddrStr(p);
-        data = {
-          flat: p.addrFlat || '',
-          building: p.addrBuilding || '',
-          street: p.addrStreet || '',
-          district: p.addrDistrict || '',
-          country: p.addrRegion || 'Hong Kong',
-          region: p.addrRegion || 'Hong Kong',
-        };
-      } else if (p.address) {
-        addrStr = p.address;
-        data = { ...splitFlatAddress(p.address), country: data?.country || 'Hong Kong' };
-      } else {
-        continue; // no address at all
+        }];
+        groups.push({ group: `${icon} ${company.name}`, items });
       }
-      if (!addrStr || seen.has(addrStr)) continue;
-      seen.add(addrStr);
-      personAddrs.push({
-        id: `addr_${p._role}_${p.id}`,
-        label: p.nameEnglish || p.nameChinese || '?',
-        sublabel: `${p._role === 'director' ? '董事' : '秘書'} · ${addrStr.slice(0, 40)}`,
-        data,
-      });
-    }
-    if (personAddrs.length > 0) {
-      groups.push({ group: '👥 公司人員地址', items: personAddrs });
+
+      // Personnel addresses
+      const personAddrs: AddressOption[] = [];
+      const allPeople = [
+        ...(company.directors || []).map((d: any) => ({ ...d, _role: 'director' as const })),
+        ...(company.secretaries || []).map((s: any) => ({ ...s, _role: 'secretary' as const })),
+      ];
+      for (const p of allPeople) {
+        const hasStructured = p.addrFlat || p.addrBuilding || p.addrStreet || p.addrDistrict || p.addrRegion;
+        let addrStr: string;
+        let data: AddressQuickPickData;
+        if (hasStructured) {
+          addrStr = buildAddrStr(p);
+          data = {
+            flat: p.addrFlat || '',
+            building: p.addrBuilding || '',
+            street: p.addrStreet || '',
+            district: p.addrDistrict || '',
+            country: p.addrRegion || 'Hong Kong',
+            region: p.addrRegion || 'Hong Kong',
+          };
+        } else if (p.address) {
+          addrStr = p.address;
+          data = { ...splitFlatAddress(p.address), country: 'Hong Kong' };
+        } else {
+          continue;
+        }
+        if (!addrStr || seen.has(addrStr)) continue;
+        seen.add(addrStr);
+        personAddrs.push({
+          id: `${prefix}addr_${p._role}_${p.id}`,
+          label: p.nameEnglish || p.nameChinese || '?',
+          sublabel: `${p._role === 'director' ? '董事' : '秘書'} · ${addrStr.slice(0, 40)}`,
+          data,
+        });
+      }
+      if (personAddrs.length > 0) {
+        // Extend existing group or create new one
+        const existing = groups.find(g => g.group === `${icon} ${company.name}`);
+        if (existing) {
+          existing.items.push(...personAddrs);
+        } else {
+          groups.push({ group: `${icon} ${company.name}`, items: personAddrs });
+        }
+      }
+    };
+
+    // 1. Primary company (if companyId provided)
+    if (companyId) {
+      const company = companies.find(c => c.id === companyId);
+      if (company) addCompanyAddrs(company, true);
     }
 
-    // 3. Presenter addresses
+    // 2. All other companies (if includeAllCompanies)
+    if (includeAllCompanies && companies.length > 0) {
+      for (const company of companies) {
+        if (companyId && company.id === companyId) continue; // already shown as primary
+        addCompanyAddrs(company, false);
+      }
+    }
+
+    // 3. Presenter addresses (always available)
     if (presenters.length > 0) {
       const presAddrs = presenters.filter(p => p.address).map(p => ({
         id: `addr_pres_${p.id}`,
@@ -162,13 +184,13 @@ export default function AddressQuickPick({
     }
 
     return groups;
-  }, [companyId, companies, presenters]);
+  }, [companyId, companies, presenters, includeAllCompanies]);
 
   const disabled = options.length === 0;
 
   const resolvedPlaceholder = placeholder || (
     disabled
-      ? (companyId ? NO_OPTIONS_PLACEHOLDER : NO_COMPANY_PLACEHOLDER)
+      ? (companyId || includeAllCompanies ? NO_OPTIONS_PLACEHOLDER : NO_COMPANY_PLACEHOLDER)
       : DEFAULT_PLACEHOLDER
   );
 

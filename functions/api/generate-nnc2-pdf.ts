@@ -24,10 +24,11 @@
 //   fill_17 → 提交人檔號
 
 import {
-  PDFDocument, PDFName, PDFArray, PDFNumber, PDFBool, PDFDict,
+  PDFDocument, PDFName, PDFArray, PDFNumber,
 } from "pdf-lib";
 import { corsHeaders, jsonResp, uint8ToBase64, fetchAndEmbedFont } from "./_pdf-utils";
 import { verifyAuthRequest, type Env } from "./_auth";
+import { enableNeedAppearances } from "./_acroform";
 
 const TEMPLATE_NAME = "NNC2-template.pdf";
 
@@ -60,7 +61,19 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
     const form = pdfDoc.getForm();
     const ctx = (pdfDoc as any).context;
 
-    // ── Fill text fields: setText() → /V with UTF-16BE BOM ──
+    // ── Fill text fields + Blue BG: setText → updateAppearances → /MK /BG ──
+    // Set /MK /BG on EACH widget RIGHT AFTER filling, before updateAppearances
+    // may recreate widget objects
+    const setBlueBg = (w: any) => {
+      const bgArr = PDFArray.withContext(ctx);
+      bgArr.push(PDFNumber.of(0.91));
+      bgArr.push(PDFNumber.of(0.93));
+      bgArr.push(PDFNumber.of(0.96));
+      const mkDict = ctx.obj({});
+      mkDict.set(PDFName.of("BG"), bgArr);
+      w.dict.set(PDFName.of("MK"), mkDict);
+    };
+
     const fields = data.fields || {};
     for (const [name, value] of Object.entries(fields)) {
       try {
@@ -68,9 +81,33 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
         if (!vstr) continue;
         const tf = form.getTextField(name);
         tf.setText(vstr);
+
+        // Set blue BG first
+        const widgets = tf.acroField.getWidgets();
+        for (const w of widgets) {
+          try { setBlueBg(w); } catch { /* skip */ }
+        }
+
+        // Then updateAppearances (may re-set /AP, but shouldn't touch /MK)
         if (cjk) {
           const hasCjk = /[^\x00-\x7F]/.test(vstr);
           if (hasCjk) tf.updateAppearances(cjk);
+        }
+      } catch { /* skip */ }
+    }
+
+    // ── Also set blue BG on unfilled text widgets (for visual consistency) ──
+    for (const field of form.getFields()) {
+      try {
+        for (const w of field.acroField.getWidgets()) {
+          try {
+            const mk = w.dict.get(PDFName.of("MK"));
+            if (!mk) { setBlueBg(w); continue; }
+            // If MK exists but no BG, add BG
+            if (typeof (mk as any).lookup === "function") {
+              try { (mk as any).lookup(PDFName.of("BG")); } catch { /* no BG */ setBlueBg(w); }
+            }
+          } catch { /* skip */ }
         }
       } catch { /* skip */ }
     }
@@ -88,29 +125,8 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
       try { form.getCheckBox(name).check(); } catch { /* skip */ }
     }
 
-    // ── Blue background via /MK /BG on all widgets ──
-    for (const field of form.getFields()) {
-      try {
-        const widgets = field.acroField.getWidgets();
-        for (const w of widgets) {
-          try {
-            const bgArr = PDFArray.withContext(ctx);
-            bgArr.push(PDFNumber.of(0.91));
-            bgArr.push(PDFNumber.of(0.93));
-            bgArr.push(PDFNumber.of(0.96));
-            const mkDict = ctx.obj({});
-            mkDict.set(PDFName.of("BG"), bgArr);
-            (w as any).dict.set(PDFName.of("MK"), mkDict);
-          } catch { /* skip */ }
-        }
-      } catch { /* skip */ }
-    }
-
     // ── Enable NeedAppearances ──
-    try {
-      const acroForm = pdfDoc.catalog.lookup(PDFName.of("AcroForm"), PDFDict);
-      if (acroForm) acroForm.set(PDFName.of("NeedAppearances"), PDFBool.True);
-    } catch { /* ignore */ }
+    enableNeedAppearances(pdfDoc);
 
     // ── Save: no flatten, no updateFieldAppearances → preserve /MK and AP ──
     const pdfBytes = await pdfDoc.save({ useObjectStreams: false, updateFieldAppearances: false });

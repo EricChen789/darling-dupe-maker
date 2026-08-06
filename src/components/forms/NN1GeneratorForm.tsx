@@ -311,16 +311,6 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
   const [acctToDay, setAcctToDay] = useState(''); const [acctToMonth, setAcctToMonth] = useState(''); const [acctToYear, setAcctToYear] = useState('');
   const [noAcctsRequired, setNoAcctsRequired] = useState(false);
   const [incorpLess18m, setIncorpLess18m] = useState(false);
-  // Auto-calculated continuation sheet counts (not user-editable)
-  const continuationCounts = useMemo(() => ({
-    sheetA: Math.max(0, authRepNats.length - 1),   // first on P.3, rest on P.11
-    sheetB: Math.max(0, authRepCorps.length - 1),  // first on P.4, rest on P.12
-    sheetC: 0,                                      // only one sec nat on P.5, no continuation
-    sheetD: Math.max(0, secCorps.length - 1),       // first on P.6, rest on P.14
-    sheetE: Math.max(0, dirNats.length - 2),        // first two on P.7/P.8, rest on P.15
-    sheetF: Math.max(0, dirCorps.length - 1),       // first on P.9, rest on P.16
-    sheetPINN1: piPersons.length,
-  }), [authRepNats.length, authRepCorps.length, secCorps.length, dirNats.length, dirCorps.length, piPersons.length]);
   const [signatoryName, setSignatoryName] = useState('');
   const [signDateDay, setSignDateDay] = useState(''); const [signDateMonth, setSignDateMonth] = useState(''); const [signDateYear, setSignDateYear] = useState('');
 
@@ -374,6 +364,17 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
     }
     return result;
   }, [authRepNats, hasSecNat, secNat, dirNats]);
+
+  // Auto-calculated continuation sheet counts (computed from arrays, after piPersons)
+  const continuationCounts = useMemo(() => ({
+    sheetA: Math.max(0, authRepNats.length - 1),   // first on P.3, rest on P.11
+    sheetB: Math.max(0, authRepCorps.length - 1),  // first on P.4, rest on P.12
+    sheetC: 0,                                      // only one sec nat on P.5, no continuation
+    sheetD: Math.max(0, secCorps.length - 1),       // first on P.6, rest on P.14
+    sheetE: Math.max(0, dirNats.length - 2),        // first two on P.7/P.8, rest on P.15
+    sheetF: Math.max(0, dirCorps.length - 1),       // first on P.9, rest on P.16
+    sheetPINN1: piPersons.length,
+  }), [authRepNats.length, authRepCorps.length, secCorps.length, dirNats.length, dirCorps.length, piPersons.length]);
 
   const { mutate: saveFormHistory } = useSaveFormHistory();
 

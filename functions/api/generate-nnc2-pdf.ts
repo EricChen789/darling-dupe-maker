@@ -62,17 +62,20 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
     }
 
     // Set blue background via /MK /BG on each text field widget
-    // pdf-lib's generated AP doesn't draw a white background (uses clip path),
-    // so /MK /BG should show through as blue editable box.
     const ctx = (pdfDoc as any).context;
-    const blueBg = ctx.obj([0.91, 0.93, 0.96]);
     const allFields = form.getFields();
     for (const field of allFields) {
       try {
         const widgets = field.acroField.getWidgets();
         for (const w of widgets) {
           try {
-            const mkDict = ctx.obj({ BG: blueBg });
+            // Build /MK << /BG [0.91 0.93 0.96] >>
+            const bgArr = PDFArray.withContext(ctx);
+            bgArr.push(PDFNumber.of(0.91));
+            bgArr.push(PDFNumber.of(0.93));
+            bgArr.push(PDFNumber.of(0.96));
+            const mkDict = ctx.obj({});
+            mkDict.set(PDFName.of("BG"), bgArr);
             (w as any).dict.set(PDFName.of("MK"), mkDict);
           } catch { /* skip */ }
         }

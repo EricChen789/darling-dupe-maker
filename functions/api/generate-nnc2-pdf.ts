@@ -29,8 +29,7 @@
 //   fill_17 → 提交人檔號 Presenter Reference
 
 import {
-  PDFDocument, PDFName, PDFString,
-  PDFArray, PDFNumber,
+  PDFDocument, PDFName, PDFArray, PDFNumber,
 } from "pdf-lib";
 import { corsHeaders, jsonResp, uint8ToBase64 } from "./_pdf-utils";
 import { verifyAuthRequest, type Env } from "./_auth";
@@ -64,15 +63,16 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
     const form = pdfDoc.getForm();
     const ctx = (pdfDoc as any).context;
 
-    // ── Fill text fields: acroField.setValue(PDFString.of()) ──
-    // PDFString.of() adds UTF-16BE BOM for non-ASCII text → correct CJK in /V
+    // ── Fill text fields: setText() → PDFHexString UTF-16BE with BOM in /V ──
+    // setText() uses PDFHexString.fromText internally → correct CJK encoding
+    // markAsDirty() is harmless since we save with updateFieldAppearances:false
     const fields = data.fields || {};
     for (const [name, value] of Object.entries(fields)) {
       try {
         const vstr = value != null ? String(value) : "";
         if (!vstr) continue;
         const tf = form.getTextField(name);
-        tf.acroField.setValue(PDFString.of(vstr));
+        tf.setText(vstr);
       } catch { /* skip missing/readonly fields */ }
     }
 

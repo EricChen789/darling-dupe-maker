@@ -58,13 +58,13 @@ interface AuthRepNatEntry {
   id: string;
   nameChinese: string; surname: string; otherNames: string;
   addrFlat: string; addrBuilding: string; addrStreet: string; addrDistrict: string;
-  email: string; hkidPartial: string; passportCountry: string; passportNumber: string;
+  email: string; hkidFull: string; passportCountry: string; passportNumber: string;
   day: string; month: string; year: string;
 }
 const emptyAuthRepNat = (id: string): AuthRepNatEntry => ({
   id, nameChinese: '', surname: '', otherNames: '',
   addrFlat: '', addrBuilding: '', addrStreet: '', addrDistrict: '',
-  email: '', hkidPartial: '', passportCountry: '', passportNumber: '',
+  email: '', hkidFull: '', passportCountry: '', passportNumber: '',
   day: '', month: '', year: '',
 });
 
@@ -86,14 +86,14 @@ interface SecNatData {
   prevNameChinese: string; prevNameEnglish: string;
   aliasChinese: string; aliasEnglish: string;
   addrFlat: string; addrBuilding: string; addrStreet: string; addrDistrict: string; addrRegion: string;
-  email: string; hkidPartial: string; passportCountry: string; passportNumber: string;
+  email: string; hkidFull: string; passportCountry: string; passportNumber: string;
   day: string; month: string; year: string;
 }
 const emptySecNat = (): SecNatData => ({
   nameChinese: '', surname: '', otherNames: '',
   prevNameChinese: '', prevNameEnglish: '', aliasChinese: '', aliasEnglish: '',
   addrFlat: '', addrBuilding: '', addrStreet: '', addrDistrict: '', addrRegion: '',
-  email: '', hkidPartial: '', passportCountry: '', passportNumber: '',
+  email: '', hkidFull: '', passportCountry: '', passportNumber: '',
   day: '', month: '', year: '',
 });
 
@@ -116,7 +116,7 @@ interface DirNatEntry {
   prevNameChinese: string; prevNameEnglish: string;
   aliasChinese: string; aliasEnglish: string;
   addrFlat: string; addrBuilding: string; addrStreet: string; addrDistrict: string; addrRegion: string;
-  email: string; hkidPartial: string; passportCountry: string; passportNumber: string;
+  email: string; hkidFull: string; passportCountry: string; passportNumber: string;
   day: string; month: string; year: string;
 }
 const emptyDirNat = (id: string): DirNatEntry => ({
@@ -124,7 +124,7 @@ const emptyDirNat = (id: string): DirNatEntry => ({
   nameChinese: '', surname: '', otherNames: '',
   prevNameChinese: '', prevNameEnglish: '', aliasChinese: '', aliasEnglish: '',
   addrFlat: '', addrBuilding: '', addrStreet: '', addrDistrict: '', addrRegion: '',
-  email: '', hkidPartial: '', passportCountry: '', passportNumber: '',
+  email: '', hkidFull: '', passportCountry: '', passportNumber: '',
   day: '', month: '', year: '',
 });
 
@@ -220,7 +220,8 @@ function DatePickerInput({ label, day, month, year, onChange }: {
           </Button>
         </PopoverTrigger>
         <PopoverContent className="w-auto p-0" align="start">
-          <Calendar mode="single" selected={date || undefined} onSelect={handleSelect} initialFocus />
+          <Calendar mode="single" selected={date || undefined} onSelect={handleSelect} initialFocus
+            captionLayout="dropdown-buttons" fromYear={1950} toYear={new Date().getFullYear() + 10} />
           {date && (
             <div className="px-3 pb-2">
               <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground"
@@ -310,10 +311,16 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
   const [acctToDay, setAcctToDay] = useState(''); const [acctToMonth, setAcctToMonth] = useState(''); const [acctToYear, setAcctToYear] = useState('');
   const [noAcctsRequired, setNoAcctsRequired] = useState(false);
   const [incorpLess18m, setIncorpLess18m] = useState(false);
-  const [sheetACount, setSheetACount] = useState(''); const [sheetBCount, setSheetBCount] = useState('');
-  const [sheetCCount, setSheetCCount] = useState(''); const [sheetDCount, setSheetDCount] = useState('');
-  const [sheetECount, setSheetECount] = useState(''); const [sheetFCount, setSheetFCount] = useState('');
-  const [sheetPINN1Count, setSheetPINN1Count] = useState('');
+  // Auto-calculated continuation sheet counts (not user-editable)
+  const continuationCounts = useMemo(() => ({
+    sheetA: Math.max(0, authRepNats.length - 1),   // first on P.3, rest on P.11
+    sheetB: Math.max(0, authRepCorps.length - 1),  // first on P.4, rest on P.12
+    sheetC: 0,                                      // only one sec nat on P.5, no continuation
+    sheetD: Math.max(0, secCorps.length - 1),       // first on P.6, rest on P.14
+    sheetE: Math.max(0, dirNats.length - 2),        // first two on P.7/P.8, rest on P.15
+    sheetF: Math.max(0, dirCorps.length - 1),       // first on P.9, rest on P.16
+    sheetPINN1: piPersons.length,
+  }), [authRepNats.length, authRepCorps.length, secCorps.length, dirNats.length, dirCorps.length, piPersons.length]);
   const [signatoryName, setSignatoryName] = useState('');
   const [signDateDay, setSignDateDay] = useState(''); const [signDateMonth, setSignDateMonth] = useState(''); const [signDateYear, setSignDateYear] = useState('');
 
@@ -332,7 +339,7 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
     for (const a of authRepNats) {
       result.push({
         nameChinese: a.nameChinese, surname: a.surname, otherNames: a.otherNames,
-        hkidMain: a.hkidPartial || '', hkidCheck: '', isHkid: !!a.hkidPartial,
+        hkidMain: a.hkidFull || '', hkidCheck: '', isHkid: !!a.hkidFull,
         passportCountry: a.passportCountry, passportNumber: a.passportNumber,
         addrFlat: a.addrFlat, addrBuilding: a.addrBuilding, addrStreet: a.addrStreet, addrDistrict: a.addrDistrict,
         addrCountry: 'Hong Kong',
@@ -344,7 +351,7 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
     if (hasSecNat && (secNat.surname || secNat.nameChinese)) {
       result.push({
         nameChinese: secNat.nameChinese, surname: secNat.surname, otherNames: secNat.otherNames,
-        hkidMain: secNat.hkidPartial || '', hkidCheck: '', isHkid: !!secNat.hkidPartial,
+        hkidMain: secNat.hkidFull || '', hkidCheck: '', isHkid: !!secNat.hkidFull,
         passportCountry: secNat.passportCountry, passportNumber: secNat.passportNumber,
         addrFlat: secNat.addrFlat, addrBuilding: secNat.addrBuilding, addrStreet: secNat.addrStreet, addrDistrict: secNat.addrDistrict,
         addrCountry: secNat.addrRegion,
@@ -357,7 +364,7 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
       if (!d.surname && !d.nameChinese) continue;
       result.push({
         nameChinese: d.nameChinese, surname: d.surname, otherNames: d.otherNames,
-        hkidMain: d.hkidPartial || '', hkidCheck: '', isHkid: !!d.hkidPartial,
+        hkidMain: d.hkidFull || '', hkidCheck: '', isHkid: !!d.hkidFull,
         passportCountry: d.passportCountry, passportNumber: d.passportNumber,
         addrFlat: d.addrFlat, addrBuilding: d.addrBuilding, addrStreet: d.addrStreet, addrDistrict: d.addrDistrict,
         addrCountry: d.addrRegion,
@@ -384,6 +391,7 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
   }, [initialCompanyId, companies]);
 
   const handleLoadHistory = (data: any) => {
+    // formData stores simple fields; arrays/objects are at data.* level
     const fd = data.formData || data;
     if (fd.proposedNameEn !== undefined) setProposedNameEn(fd.proposedNameEn);
     if (fd.proposedNameCn !== undefined) setProposedNameCn(fd.proposedNameCn);
@@ -397,6 +405,18 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
     if (fd.addrDistrict !== undefined) setAddrDistrict(fd.addrDistrict);
     if (fd.companyEmail !== undefined) setCompanyEmail(fd.companyEmail);
     if (fd.companyPhone !== undefined) setCompanyPhone(fd.companyPhone);
+    // P.2
+    if (fd.regOffFlat !== undefined) setRegOffFlat(fd.regOffFlat);
+    if (fd.regOffBuilding !== undefined) setRegOffBuilding(fd.regOffBuilding);
+    if (fd.regOffStreet !== undefined) setRegOffStreet(fd.regOffStreet);
+    if (fd.regOffDistrict !== undefined) setRegOffDistrict(fd.regOffDistrict);
+    if (fd.regOffCountry !== undefined) setRegOffCountry(fd.regOffCountry);
+    if (fd.ppbFlat !== undefined) setPpbFlat(fd.ppbFlat);
+    if (fd.ppbBuilding !== undefined) setPpbBuilding(fd.ppbBuilding);
+    if (fd.ppbStreet !== undefined) setPpbStreet(fd.ppbStreet);
+    if (fd.ppbDistrict !== undefined) setPpbDistrict(fd.ppbDistrict);
+    if (fd.ppbCountry !== undefined) setPpbCountry(fd.ppbCountry);
+    if (fd.overseasEmail !== undefined) setOverseasEmail(fd.overseasEmail);
     if (fd.presenterNameCn !== undefined) setPresenterNameCn(fd.presenterNameCn);
     if (fd.presenterNameEn !== undefined) setPresenterNameEn(fd.presenterNameEn);
     if (fd.presenterAddress !== undefined) setPresenterAddress(fd.presenterAddress);
@@ -404,18 +424,30 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
     if (fd.presenterFax !== undefined) setPresenterFax(fd.presenterFax);
     if (fd.presenterEmail !== undefined) setPresenterEmail(fd.presenterEmail);
     if (fd.presenterRef !== undefined) setPresenterRef(fd.presenterRef);
+    // P.10
+    if (fd.charterDocs !== undefined) setCharterDocs(fd.charterDocs);
+    if (fd.incorpCert !== undefined) setIncorpCert(fd.incorpCert);
+    if (fd.acctFromDay !== undefined) setAcctFromDay(fd.acctFromDay);
+    if (fd.acctFromMonth !== undefined) setAcctFromMonth(fd.acctFromMonth);
+    if (fd.acctFromYear !== undefined) setAcctFromYear(fd.acctFromYear);
+    if (fd.acctToDay !== undefined) setAcctToDay(fd.acctToDay);
+    if (fd.acctToMonth !== undefined) setAcctToMonth(fd.acctToMonth);
+    if (fd.acctToYear !== undefined) setAcctToYear(fd.acctToYear);
+    if (fd.noAcctsRequired !== undefined) setNoAcctsRequired(fd.noAcctsRequired);
+    if (fd.incorpLess18m !== undefined) setIncorpLess18m(fd.incorpLess18m);
     if (fd.signatoryName !== undefined) setSignatoryName(fd.signatoryName);
     if (fd.signDateDay !== undefined) setSignDateDay(fd.signDateDay);
     if (fd.signDateMonth !== undefined) setSignDateMonth(fd.signDateMonth);
     if (fd.signDateYear !== undefined) setSignDateYear(fd.signDateYear);
-    if (fd.selectedCompanyId) setSelectedCompanyId(fd.selectedCompanyId);
+    if (fd.selectedCompanyId) setSelectedCompanyId(data.selectedCompanyId || fd.selectedCompanyId);
     if (fd.hasSecNat !== undefined) setHasSecNat(fd.hasSecNat);
-    if (fd.secNat) setSecNat(fd.secNat);
-    if (fd.authRepNats && Array.isArray(fd.authRepNats)) setAuthRepNats(fd.authRepNats);
-    if (fd.authRepCorps && Array.isArray(fd.authRepCorps)) setAuthRepCorps(fd.authRepCorps);
-    if (fd.secCorps && Array.isArray(fd.secCorps)) setSecCorps(fd.secCorps);
-    if (fd.dirNats && Array.isArray(fd.dirNats)) setDirNats(fd.dirNats);
-    if (fd.dirCorps && Array.isArray(fd.dirCorps)) setDirCorps(fd.dirCorps);
+    // Arrays / objects stored at data.* level
+    if (data.secNat) setSecNat(data.secNat);
+    if (data.authRepNats && Array.isArray(data.authRepNats)) setAuthRepNats(data.authRepNats);
+    if (data.authRepCorps && Array.isArray(data.authRepCorps)) setAuthRepCorps(data.authRepCorps);
+    if (data.secCorps && Array.isArray(data.secCorps)) setSecCorps(data.secCorps);
+    if (data.dirNats && Array.isArray(data.dirNats)) setDirNats(data.dirNats);
+    if (data.dirCorps && Array.isArray(data.dirCorps)) setDirCorps(data.dirCorps);
   };
 
   // ═══════════ GENERATE ═══════════
@@ -454,7 +486,7 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
         fields['fill_4_P.3'] = a.addrFlat; fields['fill_5_P.3'] = a.addrBuilding;
         fields['fill_6_P.3'] = a.addrStreet; fields['fill_7_P.3'] = a.addrDistrict;
         fields['fill_8_P.3'] = a.email;
-        fields['fill_9_P.3'] = a.hkidPartial; fields['fill_10_P.3'] = a.passportCountry; fields['fill_11_P.3'] = a.passportNumber;
+        fields['fill_9_P.3'] = a.hkidFull; fields['fill_10_P.3'] = a.passportCountry; fields['fill_11_P.3'] = a.passportNumber;
         fields['fill_12_P.3'] = a.day; fields['fill_13_P.3'] = a.month; fields['fill_14_P.3'] = a.year;
         // Continuation sheet A (P.11) for 2nd+
         for (let ai = 1; ai < Math.min(authRepNats.length - 1 + 1, 1); ai++) {
@@ -463,7 +495,7 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
           fields['fill_4_P.11'] = ca.addrFlat; fields['fill_5_P.11'] = ca.addrBuilding;
           fields['fill_6_P.11'] = ca.addrStreet; fields['fill_7_P.11'] = ca.addrDistrict;
           fields['fill_8_P.11'] = ca.email;
-          fields['fill_9_P.11'] = ca.hkidPartial; fields['fill_10_P.11'] = ca.passportCountry; fields['fill_11_P.11'] = ca.passportNumber;
+          fields['fill_9_P.11'] = ca.hkidFull; fields['fill_10_P.11'] = ca.passportCountry; fields['fill_11_P.11'] = ca.passportNumber;
           fields['fill_12_P.11'] = ca.day; fields['fill_13_P.11'] = ca.month; fields['fill_14_P.11'] = ca.year;
         }
       }
@@ -489,7 +521,7 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
         fields['fill_8_P.5'] = s.addrFlat; fields['fill_9_P.5'] = s.addrBuilding;
         fields['fill_10_P.5'] = s.addrStreet; fields['fill_11_P.5'] = s.addrDistrict; fields['fill_12_P.5'] = s.addrRegion;
         fields['fill_13_P.5'] = s.email;
-        fields['fill_14_P.5'] = s.hkidPartial; fields['fill_15_P.5'] = s.passportCountry; fields['fill_16_P.5'] = s.passportNumber;
+        fields['fill_14_P.5'] = s.hkidFull; fields['fill_15_P.5'] = s.passportCountry; fields['fill_16_P.5'] = s.passportNumber;
         fields['fill_17_P.5'] = s.day; fields['fill_18_P.5'] = s.month; fields['fill_19_P.5'] = s.year;
       }
 
@@ -515,7 +547,7 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
         fields[`fill_9_P.${pn}`] = d.addrFlat; fields[`fill_10_P.${pn}`] = d.addrBuilding;
         fields[`fill_11_P.${pn}`] = d.addrStreet; fields[`fill_12_P.${pn}`] = d.addrDistrict; fields[`fill_13_P.${pn}`] = d.addrRegion;
         fields[`fill_14_P.${pn}`] = d.email;
-        fields[`fill_15_P.${pn}`] = d.hkidPartial; fields[`fill_16_P.${pn}`] = d.passportCountry; fields[`fill_17_P.${pn}`] = d.passportNumber;
+        fields[`fill_15_P.${pn}`] = d.hkidFull; fields[`fill_16_P.${pn}`] = d.passportCountry; fields[`fill_17_P.${pn}`] = d.passportNumber;
         fields[`fill_18_P.${pn}`] = d.day; fields[`fill_19_P.${pn}`] = d.month; fields[`fill_20_P.${pn}`] = d.year;
       }
 
@@ -538,10 +570,13 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
       fields['fill_6_P.10'] = acctToDay; fields['fill_7_P.10'] = acctToMonth; fields['fill_8_P.10'] = acctToYear;
       if (noAcctsRequired) checkboxes.push('toggle_1_P.10');
       if (incorpLess18m) checkboxes.push('toggle_2_P.10');
-      fields['fill_9_P.10'] = sheetACount; fields['fill_10_P.10'] = sheetBCount;
-      fields['fill_11_P.10'] = sheetCCount; fields['fill_12_P.10'] = sheetDCount;
-      fields['fill_13_P.10'] = sheetECount; fields['fill_14_P.10'] = sheetFCount;
-      fields['fill_15_P.10'] = sheetPINN1Count;
+      fields['fill_9_P.10'] = String(continuationCounts.sheetA);
+      fields['fill_10_P.10'] = String(continuationCounts.sheetB);
+      fields['fill_11_P.10'] = String(continuationCounts.sheetC);
+      fields['fill_12_P.10'] = String(continuationCounts.sheetD);
+      fields['fill_13_P.10'] = String(continuationCounts.sheetE);
+      fields['fill_14_P.10'] = String(continuationCounts.sheetF);
+      fields['fill_15_P.10'] = String(continuationCounts.sheetPINN1);
       fields['fill_16_P.10'] = signatoryName;
       fields['fill_17_P.10'] = signDateDay && signDateMonth && signDateYear
         ? `${signDateDay}/${signDateMonth}/${signDateYear}` : '';
@@ -559,7 +594,7 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
           alignCenterFields: ['fill_1_P.1', 'fill_2_P.1'],
           alignVCenterFields: ['fill_1_P.1', 'fill_2_P.1'],
           forceWidgetAp: ['fill_9_P.1'],
-          fieldMinFontSize: { 'fill_10_P.1': 12, 'fill_11_P.1': 12, 'fill_12_P.1': 13 },
+          fieldMinFontSize: { 'fill_10_P.1': 12, 'fill_11_P.1': 12, 'fill_12_P.1': 8 },
         }),
       });
       const result = await resp.json();
@@ -569,8 +604,7 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
 
       saveFormHistory({
         formType: 'NN1',
-        formData: { proposedNameEn, proposedNameCn, placeOfIncorporation, estDay, estMonth, estYear, addrFlat, addrBuilding, addrStreet, addrDistrict, companyEmail, companyPhone, presenterNameCn, presenterNameEn, presenterAddress, presenterPhone, presenterFax, presenterEmail, presenterRef, hasSecNat, signatoryName, signDateDay, signDateMonth, signDateYear, selectedCompanyId },
-        authRepNats, authRepCorps, secNat: hasSecNat ? secNat : null, secCorps, dirNats, dirCorps,
+        formData: { proposedNameEn, proposedNameCn, placeOfIncorporation, estDay, estMonth, estYear, addrFlat, addrBuilding, addrStreet, addrDistrict, companyEmail, companyPhone, regOffFlat, regOffBuilding, regOffStreet, regOffDistrict, regOffCountry, ppbFlat, ppbBuilding, ppbStreet, ppbDistrict, ppbCountry, overseasEmail, presenterNameCn, presenterNameEn, presenterAddress, presenterPhone, presenterFax, presenterEmail, presenterRef, charterDocs, incorpCert, acctFromDay, acctFromMonth, acctFromYear, acctToDay, acctToMonth, acctToYear, noAcctsRequired, incorpLess18m, signatoryName, signDateDay, signDateMonth, signDateYear, hasSecNat, selectedCompanyId, authRepNats, authRepCorps, secNat: hasSecNat ? secNat : null, secCorps, dirNats, dirCorps },
       });
 
       try {
@@ -655,7 +689,9 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
           </div>
           <Separator className="my-4" />
           <h4 className="text-sm font-medium mb-2">Section 4(a) — 在成立所在地的註冊辦事處地址 Registered Office in Place of Incorporation</h4>
-          <div className="grid grid-cols-2 gap-2 mb-3">
+          <AddressQuickPick includeAllCompanies
+            onPick={d => { if (d.flat) setRegOffFlat(d.flat); if (d.building) setRegOffBuilding(d.building); if (d.street) setRegOffStreet(d.street); if (d.district) setRegOffDistrict(d.district); if (d.country || d.region) setRegOffCountry(d.country || d.region || ''); }} />
+          <div className="grid grid-cols-2 gap-2 mt-3 mb-3">
             <Input className="h-8 text-xs" placeholder="室／樓／座 Flat／Floor／Block" value={regOffFlat} onChange={e => setRegOffFlat(e.target.value)} />
             <Input className="h-8 text-xs" placeholder="大廈 Building" value={regOffBuilding} onChange={e => setRegOffBuilding(e.target.value)} />
             <Input className="h-8 text-xs" placeholder="街道／屋苑 Street／Estate" value={regOffStreet} onChange={e => setRegOffStreet(e.target.value)} />
@@ -663,7 +699,9 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
             <div className="col-span-2 max-w-xs"><Label className="text-xs">國家／地區 Country/Region</Label><CountryInput value={regOffCountry} onChange={setRegOffCountry} placeholder="Search country..." /></div>
           </div>
           <h4 className="text-sm font-medium mb-2 mt-4">Section 4(b) — 主要營業地點地址 Principal Place of Business</h4>
-          <div className="grid grid-cols-2 gap-2 mb-3">
+          <AddressQuickPick includeAllCompanies
+            onPick={d => { if (d.flat) setPpbFlat(d.flat); if (d.building) setPpbBuilding(d.building); if (d.street) setPpbStreet(d.street); if (d.district) setPpbDistrict(d.district); if (d.country || d.region) setPpbCountry(d.country || d.region || ''); }} />
+          <div className="grid grid-cols-2 gap-2 mt-3 mb-3">
             <Input className="h-8 text-xs" placeholder="室／樓／座 Flat／Floor／Block" value={ppbFlat} onChange={e => setPpbFlat(e.target.value)} />
             <Input className="h-8 text-xs" placeholder="大廈 Building" value={ppbBuilding} onChange={e => setPpbBuilding(e.target.value)} />
             <Input className="h-8 text-xs" placeholder="街道／屋苑 Street／Estate" value={ppbStreet} onChange={e => setPpbStreet(e.target.value)} />
@@ -709,7 +747,7 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
                 <span className="font-medium text-sm">授權代表（自然人）#{i + 1} {i === 0 ? '— P.3' : '— 續頁 P.11'}</span>
                 <Button variant="ghost" size="sm" onClick={() => removeAuthRepNat(a.id)} className="text-red-500"><Trash2 className="h-4 w-4" /></Button>
               </div>
-              <PersonQuickPick companyId={selectedCompanyId}
+              <PersonQuickPick companyId={selectedCompanyId} includeAllPersons
                 onPick={p => updateAuthRepNat(a.id, { nameChinese: p.nameChinese || '', surname: p.surname || '', otherNames: p.otherNames || '', addrFlat: p.addrFlat || '', addrBuilding: p.addrBuilding || '', addrStreet: p.addrStreet || '', addrDistrict: p.addrDistrict || '' })} />
               <div className="grid grid-cols-3 gap-2 mt-3">
                 <Input className="h-8 text-xs" placeholder="中文姓名" value={a.nameChinese} onChange={e => updateAuthRepNat(a.id, { nameChinese: e.target.value })} />
@@ -727,11 +765,11 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
               </div>
               <div className="grid grid-cols-4 gap-2 mt-2">
                 <Input className="h-8 text-xs" placeholder="電郵 Email" value={a.email} onChange={e => updateAuthRepNat(a.id, { email: e.target.value })} />
-                <Input className="h-8 text-xs" placeholder="HKID 部分號碼" value={a.hkidPartial} onChange={e => updateAuthRepNat(a.id, { hkidPartial: e.target.value })} />
+                <Input className="h-8 text-xs" placeholder="HKID 號碼" value={a.hkidFull} onChange={e => updateAuthRepNat(a.id, { hkidFull: e.target.value })} />
                 <Label className="text-xs">護照簽發國</Label>
                 <CountryInput value={a.passportCountry} onChange={v => updateAuthRepNat(a.id, { passportCountry: v })} />
               </div>
-              <div className="grid grid-cols-2 gap-2 mt-2"><Input className="h-8 text-xs" placeholder="護照部分號碼" value={a.passportNumber} onChange={e => updateAuthRepNat(a.id, { passportNumber: e.target.value })} /></div>
+              <div className="grid grid-cols-2 gap-2 mt-2"><Input className="h-8 text-xs" placeholder="護照號碼" value={a.passportNumber} onChange={e => updateAuthRepNat(a.id, { passportNumber: e.target.value })} /></div>
               <div className="max-w-xs mt-2">
                 <DatePickerInput label="獲授權日期 Date of Authorization"
                   day={a.day} month={a.month} year={a.year}
@@ -758,7 +796,7 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
                 <label className="flex items-center gap-2 text-sm"><Checkbox checked={c.isLawFirm} onCheckedChange={v => updateAuthRepCorp(c.id, { isLawFirm: !!v })} />律師行／律師法團</label>
                 <label className="flex items-center gap-2 text-sm"><Checkbox checked={c.isCpaFirm} onCheckedChange={v => updateAuthRepCorp(c.id, { isCpaFirm: !!v })} />會計師事務所／執業法團</label>
               </div>
-              <PersonQuickPick companyId={selectedCompanyId}
+              <PersonQuickPick companyId={selectedCompanyId} includeAllPersons
                 onPick={p => updateAuthRepCorp(c.id, { nameChinese: p.nameChinese || '', nameEnglish: p.nameEnglish || '', addrFlat: p.addrFlat || '', addrBuilding: p.addrBuilding || '', addrStreet: p.addrStreet || '', addrDistrict: p.addrDistrict || '' })} />
               <div className="grid grid-cols-2 gap-2 mt-2">
                 <Input className="h-8 text-xs" placeholder="中文名稱" value={c.nameChinese} onChange={e => updateAuthRepCorp(c.id, { nameChinese: e.target.value })} />
@@ -790,7 +828,7 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
             <label className="flex items-center gap-2 text-sm"><Checkbox checked={hasSecNat} onCheckedChange={v => setHasSecNat(!!v)} />啟用此項</label>
           </div>
           {hasSecNat && (<>
-            <PersonQuickPick companyId={selectedCompanyId}
+            <PersonQuickPick companyId={selectedCompanyId} includeAllPersons
               onPick={p => setSecNat(prev => ({ ...prev, nameChinese: p.nameChinese || '', surname: p.surname || '', otherNames: p.otherNames || '', prevNameChinese: p.previousNameChinese || '', prevNameEnglish: p.previousNameEnglish || '', aliasChinese: p.aliasChinese || '', aliasEnglish: p.aliasEnglish || '', addrFlat: p.addrFlat || '', addrBuilding: p.addrBuilding || '', addrStreet: p.addrStreet || '', addrDistrict: p.addrDistrict || '', addrRegion: p.addrRegion || '' }))} />
             <div className="grid grid-cols-3 gap-2 mt-3">
               <Input className="h-8 text-xs" placeholder="中文姓名" value={secNat.nameChinese} onChange={e => setSecNat({ ...secNat, nameChinese: e.target.value })} />
@@ -815,11 +853,11 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
             </div>
             <div className="grid grid-cols-4 gap-2 mt-2">
               <Input className="h-8 text-xs" placeholder="電郵 Email" value={secNat.email} onChange={e => setSecNat({ ...secNat, email: e.target.value })} />
-              <Input className="h-8 text-xs" placeholder="HKID 部分號碼" value={secNat.hkidPartial} onChange={e => setSecNat({ ...secNat, hkidPartial: e.target.value })} />
+              <Input className="h-8 text-xs" placeholder="HKID 號碼" value={secNat.hkidFull} onChange={e => setSecNat({ ...secNat, hkidFull: e.target.value })} />
               <Label className="text-xs">護照簽發國</Label>
               <CountryInput value={secNat.passportCountry} onChange={v => setSecNat({ ...secNat, passportCountry: v })} />
             </div>
-            <div className="grid grid-cols-2 gap-2 mt-2"><Input className="h-8 text-xs" placeholder="護照部分號碼" value={secNat.passportNumber} onChange={e => setSecNat({ ...secNat, passportNumber: e.target.value })} /></div>
+            <div className="grid grid-cols-2 gap-2 mt-2"><Input className="h-8 text-xs" placeholder="護照號碼" value={secNat.passportNumber} onChange={e => setSecNat({ ...secNat, passportNumber: e.target.value })} /></div>
             <div className="max-w-xs mt-2">
               <DatePickerInput label="獲委任日期 Date of Appointment"
                 day={secNat.day} month={secNat.month} year={secNat.year}
@@ -841,7 +879,7 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
                 <span className="font-medium text-sm">公司秘書（法人）#{i + 1} {i === 0 ? '— P.6' : '— 續頁 P.14'}</span>
                 <Button variant="ghost" size="sm" onClick={() => removeSecCorp(s.id)} className="text-red-500"><Trash2 className="h-4 w-4" /></Button>
               </div>
-              <PersonQuickPick companyId={selectedCompanyId}
+              <PersonQuickPick companyId={selectedCompanyId} includeAllPersons
                 onPick={p => updateSecCorp(s.id, { nameChinese: p.nameChinese || '', nameEnglish: p.nameEnglish || '', addrFlat: p.addrFlat || '', addrBuilding: p.addrBuilding || '', addrStreet: p.addrStreet || '', addrDistrict: p.addrDistrict || '', addrRegion: p.addrRegion || '' })} />
               <div className="grid grid-cols-2 gap-2 mt-2">
                 <Input className="h-8 text-xs" placeholder="中文名稱" value={s.nameChinese} onChange={e => updateSecCorp(s.id, { nameChinese: e.target.value })} />
@@ -883,7 +921,7 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
                   <Button variant="ghost" size="sm" onClick={() => removeDirNat(d.id)} className="text-red-500" disabled={dirNats.length <= 1}><Trash2 className="h-4 w-4" /></Button>
                 </div>
               </div>
-              <PersonQuickPick companyId={selectedCompanyId}
+              <PersonQuickPick companyId={selectedCompanyId} includeAllPersons
                 onPick={p => updateDirNat(d.id, { nameChinese: p.nameChinese || '', surname: p.surname || '', otherNames: p.otherNames || '', prevNameChinese: p.previousNameChinese || '', prevNameEnglish: p.previousNameEnglish || '', aliasChinese: p.aliasChinese || '', aliasEnglish: p.aliasEnglish || '', addrFlat: p.addrFlat || '', addrBuilding: p.addrBuilding || '', addrStreet: p.addrStreet || '', addrDistrict: p.addrDistrict || '', addrRegion: p.addrRegion || '' })} />
               <div className="grid grid-cols-3 gap-2 mt-3">
                 <Input className="h-8 text-xs" placeholder="中文姓名" value={d.nameChinese} onChange={e => updateDirNat(d.id, { nameChinese: e.target.value })} />
@@ -908,11 +946,11 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
               </div>
               <div className="grid grid-cols-4 gap-2 mt-2">
                 <Input className="h-8 text-xs" placeholder="電郵 Email" value={d.email} onChange={e => updateDirNat(d.id, { email: e.target.value })} />
-                <Input className="h-8 text-xs" placeholder="HKID 部分號碼" value={d.hkidPartial} onChange={e => updateDirNat(d.id, { hkidPartial: e.target.value })} />
+                <Input className="h-8 text-xs" placeholder="HKID 號碼" value={d.hkidFull} onChange={e => updateDirNat(d.id, { hkidFull: e.target.value })} />
                 <Label className="text-xs">護照簽發國</Label>
                 <CountryInput value={d.passportCountry} onChange={v => updateDirNat(d.id, { passportCountry: v })} />
               </div>
-              <div className="grid grid-cols-2 gap-2 mt-2"><Input className="h-8 text-xs" placeholder="護照部分號碼" value={d.passportNumber} onChange={e => updateDirNat(d.id, { passportNumber: e.target.value })} /></div>
+              <div className="grid grid-cols-2 gap-2 mt-2"><Input className="h-8 text-xs" placeholder="護照號碼" value={d.passportNumber} onChange={e => updateDirNat(d.id, { passportNumber: e.target.value })} /></div>
               <div className="max-w-xs mt-2">
                 <DatePickerInput label="獲委任日期 Date of Appointment"
                   day={d.day} month={d.month} year={d.year}
@@ -938,7 +976,7 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
                   <Button variant="ghost" size="sm" onClick={() => removeDirCorp(d.id)} className="text-red-500"><Trash2 className="h-4 w-4" /></Button>
                 </div>
               </div>
-              <PersonQuickPick companyId={selectedCompanyId}
+              <PersonQuickPick companyId={selectedCompanyId} includeAllPersons
                 onPick={p => updateDirCorp(d.id, { nameChinese: p.nameChinese || '', nameEnglish: p.nameEnglish || '', addrFlat: p.addrFlat || '', addrBuilding: p.addrBuilding || '', addrStreet: p.addrStreet || '', addrDistrict: p.addrDistrict || '', addrRegion: p.addrRegion || '' })} />
               <div className="grid grid-cols-2 gap-2 mt-2">
                 <Input className="h-8 text-xs" placeholder="中文名稱" value={d.nameChinese} onChange={e => updateDirCorp(d.id, { nameChinese: e.target.value })} />
@@ -987,16 +1025,17 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
             <label className="flex items-center gap-2 text-sm"><Checkbox checked={incorpLess18m} onCheckedChange={v => setIncorpLess18m(!!v)} />成立少於18個月，帳目尚未擬備</label>
           </div>
           <Separator className="my-4" />
-          <h4 className="text-sm font-medium mb-2">續頁頁數 Continuation Sheet Page Counts</h4>
-          <div className="grid grid-cols-4 gap-2 mb-4">
-            <div><Label className="text-xs">A (AR 自然人)</Label><Input className="h-8 text-xs" value={sheetACount} onChange={e => setSheetACount(e.target.value)} /></div>
-            <div><Label className="text-xs">B (AR 法人)</Label><Input className="h-8 text-xs" value={sheetBCount} onChange={e => setSheetBCount(e.target.value)} /></div>
-            <div><Label className="text-xs">C (Sec 自然人)</Label><Input className="h-8 text-xs" value={sheetCCount} onChange={e => setSheetCCount(e.target.value)} /></div>
-            <div><Label className="text-xs">D (Sec 法人)</Label><Input className="h-8 text-xs" value={sheetDCount} onChange={e => setSheetDCount(e.target.value)} /></div>
-            <div><Label className="text-xs">E (Dir 自然人)</Label><Input className="h-8 text-xs" value={sheetECount} onChange={e => setSheetECount(e.target.value)} /></div>
-            <div><Label className="text-xs">F (Dir 法人)</Label><Input className="h-8 text-xs" value={sheetFCount} onChange={e => setSheetFCount(e.target.value)} /></div>
-            <div><Label className="text-xs">PI-NN1</Label><Input className="h-8 text-xs" value={sheetPINN1Count} onChange={e => setSheetPINN1Count(e.target.value)} /></div>
+          <h4 className="text-sm font-medium mb-2">續頁頁數 Continuation Sheet Page Counts（自動計算）</h4>
+          <div className="grid grid-cols-4 gap-2 mb-4 text-sm">
+            <div className="bg-muted/50 rounded p-2 text-center"><div className="text-xs text-muted-foreground">A (AR 自然人)</div><div className="font-mono font-bold text-lg">{continuationCounts.sheetA}</div></div>
+            <div className="bg-muted/50 rounded p-2 text-center"><div className="text-xs text-muted-foreground">B (AR 法人)</div><div className="font-mono font-bold text-lg">{continuationCounts.sheetB}</div></div>
+            <div className="bg-muted/50 rounded p-2 text-center"><div className="text-xs text-muted-foreground">C (Sec 自然人)</div><div className="font-mono font-bold text-lg">{continuationCounts.sheetC}</div></div>
+            <div className="bg-muted/50 rounded p-2 text-center"><div className="text-xs text-muted-foreground">D (Sec 法人)</div><div className="font-mono font-bold text-lg">{continuationCounts.sheetD}</div></div>
+            <div className="bg-muted/50 rounded p-2 text-center"><div className="text-xs text-muted-foreground">E (Dir 自然人)</div><div className="font-mono font-bold text-lg">{continuationCounts.sheetE}</div></div>
+            <div className="bg-muted/50 rounded p-2 text-center"><div className="text-xs text-muted-foreground">F (Dir 法人)</div><div className="font-mono font-bold text-lg">{continuationCounts.sheetF}</div></div>
+            <div className="bg-muted/50 rounded p-2 text-center"><div className="text-xs text-muted-foreground">PI-NN1</div><div className="font-mono font-bold text-lg">{continuationCounts.sheetPINN1}</div></div>
           </div>
+          <p className="text-xs text-muted-foreground -mt-2 mb-2">以上頁數根據您填寫的人員數量自動計算，無需手動輸入。</p>
           <Separator className="my-4" />
           <h4 className="text-sm font-medium mb-2">簽署 Signature</h4>
           <div className="grid grid-cols-2 gap-3 max-w-md items-end">
@@ -1035,7 +1074,7 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
                       {p.isAltDir && <span className="text-xs bg-orange-100 text-orange-800 px-1.5 py-0.5 rounded">候補董事</span>}
                     </div>
                     <div className="text-xs text-muted-foreground mt-1">
-                      {p.isHkid ? `HKID: ${p.hkidMain}${p.hkidCheck ? `(${p.hkidCheck})` : ''}` : `護照: ${p.passportCountry} ${p.passportNumber}`}
+                      {p.isHkid ? `HKID: ${(p.hkidMain || '').slice(0, 4)}${(p.hkidMain || '').length > 4 ? '****' : ''}${p.hkidCheck ? `(${p.hkidCheck})` : ''}` : `護照: ${p.passportCountry} ${p.passportNumber}`}
                       {' · '}{[p.addrFlat, p.addrBuilding, p.addrStreet, p.addrDistrict, p.addrCountry].filter(Boolean).join(', ')}
                     </div>
                   </div>

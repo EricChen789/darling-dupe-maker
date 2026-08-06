@@ -253,7 +253,7 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
 
             if (fieldType === '/Tx') {
               // ── Text field ──
-              if (fieldName.includes('fill_1')) {
+              if (suffix === 'fill_1' || suffix.startsWith('fill_1.')) {
                 // Company name (CJK-safe)
                 setWidgetApV9(ctx, widget, companyName, true);
               } else {

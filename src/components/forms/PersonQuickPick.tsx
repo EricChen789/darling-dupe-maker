@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { useCompanies } from '@/hooks/useCompanies';
@@ -43,6 +44,8 @@ interface PersonQuickPickProps {
   includePresenters?: boolean;
   /** If true, show people from ALL companies in the system (ignores companyId for people list) */
   includeAllCompanies?: boolean;
+  /** If true, fetch ALL persons from D1 API (bypasses Supabase company→role chain) */
+  includeAllPersons?: boolean;
 }
 
 // ── Defaults ──
@@ -51,6 +54,32 @@ const DEFAULT_LABEL = '👤 從系統選擇人員（選後自動填入）';
 const DEFAULT_PLACEHOLDER = '— 選擇人員自動填入 —';
 const NO_COMPANY_PLACEHOLDER = '— 選擇公司後可從公司人員載入 —';
 const NO_OPTIONS_PLACEHOLDER = '— 該公司暫無董事／秘書，且無已儲存提交人 —';
+
+/** Fetch all persons via D1 API */
+function useAllPersons(enabled: boolean) {
+  const token = typeof window !== 'undefined' ? localStorage.getItem('secretary_jwt') || '' : '';
+  return useQuery({
+    queryKey: ['all-persons-d1'],
+    queryFn: async () => {
+      const resp = await fetch('/api/persons?limit=5000', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!resp.ok) {
+        console.error('[PersonQuickPick] D1 persons fetch failed:', resp.status, await resp.text().catch(() => ''));
+        return [];
+      }
+      const data = await resp.json();
+      if (!Array.isArray(data)) {
+        console.error('[PersonQuickPick] Unexpected response shape:', typeof data, data);
+        return [];
+      }
+      return data;
+    },
+    enabled,
+    staleTime: 60_000,
+    retry: 1,
+  });
+}
 
 // ── Component ──
 
@@ -61,9 +90,11 @@ export default function PersonQuickPick({
   onPick,
   includePresenters = true,
   includeAllCompanies = false,
+  includeAllPersons = false,
 }: PersonQuickPickProps) {
   const { data: companies = [] } = useCompanies();
   const { data: presenters = [] } = usePresenterList();
+  const { data: allPersons = [] } = useAllPersons(includeAllPersons);
 
   // ── Build options ──
   const options = useMemo(() => {
@@ -194,7 +225,54 @@ export default function PersonQuickPick({
       }
     }
 
-    // 3. Saved presenters
+    // 3. ALL persons from D1 (when includeAllPersons is true)
+    if (includeAllPersons && allPersons.length > 0) {
+      const seen = new Set<string>();
+      // Collect already-shown person names to avoid duplicates
+      for (const grp of groups) {
+        for (const item of grp.items) {
+          const key = (item.data.nameEnglish || '') + '|' + (item.data.nameChinese || '');
+          if (key !== '|') seen.add(key);
+        }
+      }
+      const personItems: PersonOption[] = [];
+      for (const p of allPersons as any[]) {
+        const nameEn = p.name_english || '';
+        const nameCn = p.name_chinese || '';
+        const key = nameEn + '|' + nameCn;
+        if (key === '|' || seen.has(key)) continue;
+        seen.add(key);
+        const identity = p.identity || 'natural';
+        personItems.push({
+          id: `d1p_${p.id}`,
+          label: nameEn || nameCn || '?',
+          sublabel: `${identity === 'corporate' ? '🏢 法人' : '👤 自然人'}${nameCn ? ` · ${nameCn}` : ''}${p.id_number ? ` · ${p.id_number}` : ''}`,
+          data: {
+            nameChinese: nameCn,
+            nameEnglish: nameEn,
+            surname: nameEn.split(' ')[0] || '',
+            otherNames: nameEn.split(' ').slice(1).join(' ') || '',
+            addrFlat: p.addr_flat || '',
+            addrBuilding: p.addr_building || '',
+            addrStreet: p.addr_street || '',
+            addrDistrict: p.addr_district || '',
+            addrRegion: p.addr_region || '',
+            phone: p.phone || '',
+            fax: p.fax || '',
+            email: p.email || '',
+            idNumber: p.id_number || '',
+            identity: identity as 'natural' | 'corporate',
+            tcspLicense: p.tcsp_number || '',
+            companyNumberRef: p.company_number_ref || '',
+          },
+        });
+      }
+      if (personItems.length > 0) {
+        groups.push({ group: '🗂️ 系統所有人員（全部公司）', items: personItems });
+      }
+    }
+
+    // 4. Saved presenters
     if (includePresenters && presenters.length > 0) {
       groups.push({
         group: '👤 已儲存提交人',
@@ -218,7 +296,7 @@ export default function PersonQuickPick({
     }
 
     return groups;
-  }, [companyId, companies, presenters, includePresenters]);
+  }, [companyId, companies, presenters, includePresenters, includeAllCompanies, includeAllPersons, allPersons]);
 
   const disabled = options.length === 0;
 

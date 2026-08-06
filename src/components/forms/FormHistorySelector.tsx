@@ -49,13 +49,18 @@ export default function FormHistorySelector({ formType, onSelect }: FormHistoryS
       const resp = await fetch(`/api/form-history/load?id=${id}`, {
         headers: { Authorization: `Bearer ${t}` },
       });
-      if (!resp.ok) throw new Error('Failed to load');
+      if (!resp.ok) {
+        const errBody = await resp.json().catch(() => ({}));
+        throw new Error(errBody.error || `Server error (${resp.status})`);
+      }
       const item = await resp.json();
       const data = item.entry?.form_data;
-      if (data) {
-        onSelect(data);
-        toast({ title: '已載入', description: `已載入過往紀錄：${item.entry?.label || id}` });
+      if (!data) {
+        toast({ title: '載入提示', description: '此紀錄沒有儲存的表單資料' });
+        return;
       }
+      onSelect(data);
+      toast({ title: '已載入', description: `已載入過往紀錄：${item.entry?.label || id}` });
     } catch (err: any) {
       toast({ title: '載入失敗', description: err.message, variant: 'destructive' });
     } finally {

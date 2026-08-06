@@ -671,7 +671,7 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
                 <Select value={addrDistrict} onValueChange={setAddrDistrict}>
                   <SelectTrigger className="mt-1"><SelectValue placeholder="— 選擇地區 —" /></SelectTrigger>
                   <SelectContent>
-                    {['中西區 Central and Western','灣仔 Wan Chai','東區 Eastern','南區 Southern','油尖旺 Yau Tsim Mong','深水埗 Sham Shui Po','九龍城 Kowloon City','黃大仙 Wong Tai Sin','觀塘 Kwun Tong','葵青 Kwai Tsing','荃灣 Tsuen Wan','屯門 Tuen Mun','元朗 Yuen Long','北區 North','大埔 Tai Po','沙田 Sha Tin','西貢 Sai Kung','離島 Islands'].map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}
+                    {['Central and Western','Wan Chai','Eastern','Southern','Yau Tsim Mong','Sham Shui Po','Kowloon City','Wong Tai Sin','Kwun Tong','Kwai Tsing','Tsuen Wan','Tuen Mun','Yuen Long','North','Tai Po','Sha Tin','Sai Kung','Islands'].map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>

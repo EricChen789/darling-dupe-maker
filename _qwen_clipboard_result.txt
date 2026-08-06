@@ -1,0 +1,5 @@
+1. Searchable select  
+2. Yes  
+3. 中西區, 灣仔, 東區, 南區, 深水埗, 九龍城, 黃大仙, 觀塘, 葵青, 荃灣  
+4. District  
+5. Replace all Chinese district names with their English equivalents (e.g., "Central and Western", "Wan Chai", etc.) and remove the Chinese text from the dropdown options.

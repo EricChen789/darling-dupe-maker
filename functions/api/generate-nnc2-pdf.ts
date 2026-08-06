@@ -136,6 +136,10 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
     const pages = pdfDoc.getPages();
 
     // Fill text fields with custom blue AP
+    // IMPORTANT: Do NOT call tf.setText() — it marks the field dirty and
+    // pdf-lib regenerates AP (overwriting our custom blue-background AP)
+    // even with updateFieldAppearances:false.
+    // Instead: use acroField to set /V + custom AP directly on widgets.
     const fields = data.fields || {};
     for (const [name, value] of Object.entries(fields)) {
       try {
@@ -143,12 +147,17 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
         if (!vstr) continue;
 
         const tf = form.getTextField(name);
-        tf.setText(vstr); // Register with form model
-
-        // Generate custom blue AP for each widget
         const hasCjk = /[^\x00-\x7F]/.test(vstr);
         const fontSize = hasCjk ? 11 : 10;
 
+        // Set /V via acroField (no markAsDirty)
+        if (hasCjk) {
+          tf.acroField.setValue(PDFHexString.fromText(vstr));
+        } else {
+          tf.acroField.setValue(PDFString.of(vstr));
+        }
+
+        // Generate custom blue AP on each widget
         const widgets = tf.acroField.getWidgets();
         for (const widget of widgets) {
           try {

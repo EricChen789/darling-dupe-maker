@@ -114,15 +114,11 @@ export function detachWidget(widget: any, field: any) {
         if (v !== undefined && v !== null) widget.set(key, v);
       }
     }
-    if (parentName && widgetName) {
+    if (parentName && widgetName)
       widget.set(
         PDFName.of("T"),
         PDFString.of(`${parentName}.${widgetName}`)
       );
-    } else if (parentName) {
-      // Widget has no /T (e.g. NN1 P.10 3-level hierarchy), use parent's /T
-      widget.set(PDFName.of("T"), PDFString.of(parentName));
-    }
     widget.delete(PDFName.of("Parent"));
   } catch (_) {
     /* best-effort */

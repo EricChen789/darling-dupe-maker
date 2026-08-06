@@ -8,8 +8,8 @@
 //   - /C2_1 (PMingLiU) for CJK, /Helv for ASCII → 字體繼承自頁面 Resources
 
 import {
-  PDFDocument, StandardFonts, PDFName, PDFString, PDFHexString,
-  PDFArray, PDFNumber, rgb,
+  PDFDocument, PDFName, PDFString, PDFHexString,
+  PDFArray, PDFNumber,
 } from "pdf-lib";
 import {
   corsHeaders, jsonResp, uint8ToBase64,
@@ -177,73 +177,31 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
       check(name, true);
     }
 
-    // ═══ P.10 Signatory Capacity — use template dropdowns ═══
-    // Each capacity has Dropdown1-4 with two /Opt entries:
-    //   [['Yes', '  '], ['Yes', '─────────────────────────────']]
-    // Both have export value 'Yes' so we rewrite /Opt to distinct values
-    // and set /V accordingly. This avoids ambiguous match on duplicate exports.
+    // ═══ P.10 Signatory Capacity — drawLine like NAR1 P.8 ═══
+    // NN1 P.10 has printed labels for 4 capacities. We draw a line through
+    // the unselected ones (matching NAR1's approach for its 2-option layout).
+    // Label positions (from PyMuPDF text search, page coords bottom-left):
+    //   Director:              x=[154, 189], y_center ≈ 89
+    //   Company Secretary:     x=[198, 286], y_center ≈ 89
+    //   Manager:               x=[296, 336], y_center ≈ 89
+    //   Authorized Rep (2nd line): x=[188, 306], y_center ≈ 76.5
     const signatoryCapacity = data.signatoryCapacity;
     if (signatoryCapacity) {
-      const allCaps = ['director', 'secretary', 'manager', 'authorizedRep'];
       const p10 = pdfDoc.getPages()[9]; // P.10 (0-indexed)
       if (p10) {
-        const ctx = (pdfDoc as any).context;
-        const annots = p10.node.lookup(PDFName.of('Annots')) as any;
-        if (annots && typeof annots.size === 'function') {
-          for (let i = 0; i < annots.size(); i++) {
-            try {
-              const widget = ctx.lookup(annots.get(i)) as any;
-              if (!widget || String(widget.get(PDFName.of('Subtype'))) !== '/Widget') continue;
-
-              // Read /FT and /T from widget or parent (NN1 P.10 has them on parent)
-              let ft = widget.get(PDFName.of('FT'));
-              let fieldName = '';
-              const t = widget.get(PDFName.of('T'));
-              if (t instanceof PDFString) fieldName = t.decodeText();
-
-              // If no /FT or /T on widget, try parent
-              const pRef = widget.get(PDFName.of('Parent'));
-              let parentObj: any = null;
-              if (pRef) {
-                try {
-                  parentObj = ctx.lookup(pRef) as any;
-                  if (!ft) ft = parentObj?.get?.(PDFName.of('FT'));
-                  if (!fieldName) {
-                    const pT = parentObj?.get?.(PDFName.of('T'));
-                    if (pT instanceof PDFString) fieldName = pT.decodeText();
-                  }
-                } catch { /* skip */ }
-              }
-
-              // Skip non-choice fields (dropdowns are /Ch)
-              if (!ft || String(ft) !== '/Ch') continue;
-              const ddMatch = fieldName.match(/^Dropdown(\d)$/);
-              if (!ddMatch) continue;
-              const ddIdx = parseInt(ddMatch[1]);
-              const capForDD = allCaps[ddIdx - 1];
-              if (!capForDD) continue;
-
-              const isSelected = capForDD === signatoryCapacity;
-
-              // Detach widget from parent so rebuildAcroFormFields includes it
-              if (parentObj) detachWidget(widget, parentObj);
-
-              // Rewrite /Opt with distinct export values so /V can disambiguate:
-              //   [ ['blank', ' '] ['line', '──────────'] ]
-              const newOpt = PDFArray.withContext(ctx);
-              const opt0 = PDFArray.withContext(ctx);
-              opt0.push(PDFString.of('blank'));
-              opt0.push(PDFString.of(' '));
-              const opt1 = PDFArray.withContext(ctx);
-              opt1.push(PDFString.of('line'));
-              opt1.push(PDFString.of('─────────────────────────────'));
-              newOpt.push(opt0);
-              newOpt.push(opt1);
-              widget.set(PDFName.of('Opt'), newOpt);
-              // /V picks which option — 'blank' or 'line'
-              widget.set(PDFName.of('V'), PDFString.of(isSelected ? 'blank' : 'line'));
-              widget.delete(PDFName.of('AP'));
-            } catch (_) { /* skip */ }
+        const capLines: Array<{ x0: number; x1: number; y: number; cap: string }> = [
+          { x0: 148, x1: 194, y: 89, cap: 'director' },
+          { x0: 192, x1: 292, y: 89, cap: 'secretary' },
+          { x0: 290, x1: 342, y: 89, cap: 'manager' },
+          { x0: 182, x1: 312, y: 76.5, cap: 'authorizedRep' },
+        ];
+        for (const { x0, x1, y, cap } of capLines) {
+          if (cap !== signatoryCapacity) {
+            p10.drawLine({
+              start: { x: x0, y },
+              end: { x: x1, y },
+              thickness: 1.2,
+            });
           }
         }
       }

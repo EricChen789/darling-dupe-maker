@@ -1,13 +1,9 @@
 // POST /api/generate-nnc2-pdf
-// NNC2 更改公司名稱通知書 — 專用端點（Phase 2.2）
+// NNC2 更改公司名稱通知書 — 專用端點
 // 使用 R2 NNC2_fillable 模板 + pdf-lib AcroForm 填充
-//   Strategy: 手动生成 AP stream（蓝底 + 文字），用页面内置字体
-//     - CJK: /C2_0 (MingLiU subset, 已在 page Resources)
-//     - ASCII: /Helv (已在 template DR)
-//     - AP Form XObject 不设 Resources → 字体从 page 继承
-//     - 蓝底 0.91 0.93 0.96 画在 AP 里（所有 reader 都显示）
-//     - updateFieldAppearances: false → 保留我们手动设置的 AP
-//   No fontkit, no external font embedding.
+//   Strategy: setText() + updateAppearances(cjk) → 嵌入字体生成 AP
+//   + /MK /BG [0.91 0.93 0.96] 蓝底 + NeedAppearances
+//   + updateFieldAppearances:false → 保留所有 widget 修改
 //
 // Field mapping (new fillable template, P.1):
 //   fill_1  → 商業登記號碼
@@ -17,6 +13,7 @@
 //   fill_7  → 擬用的公司英文名稱
 //   fill_8  → 擬用的公司中文名稱
 //   fill_9  → 簽署姓名
+//   Dropdown_1/2 → 董事/公司秘書
 //   fill_10 → 簽署日期
 //   fill_11 → 提交人中文姓名
 //   fill_12 → 提交人英文姓名
@@ -27,34 +24,12 @@
 //   fill_17 → 提交人檔號
 
 import {
-  PDFDocument, PDFName, PDFHexString, PDFDict,
-  PDFArray, PDFNumber,
+  PDFDocument, PDFName, PDFArray, PDFNumber, PDFBool, PDFDict,
 } from "pdf-lib";
-import { corsHeaders, jsonResp, uint8ToBase64 } from "./_pdf-utils";
+import { corsHeaders, jsonResp, uint8ToBase64, fetchAndEmbedFont } from "./_pdf-utils";
 import { verifyAuthRequest, type Env } from "./_auth";
 
 const TEMPLATE_NAME = "NNC2-template.pdf";
-
-/** Generate a hex string for PDF Form XObject content stream (UTF-16BE with BOM) */
-function toUtf16Hex(value: string): string {
-  let hex = 'FEFF'; // BOM
-  for (let i = 0; i < value.length; i++) {
-    const code = value.charCodeAt(i);
-    // Handle surrogate pairs
-    if (code >= 0xD800 && code <= 0xDBFF && i + 1 < value.length) {
-      const lo = value.charCodeAt(i + 1);
-      if (lo >= 0xDC00 && lo <= 0xDFFF) {
-        const cp = 0x10000 + (code - 0xD800) * 0x400 + (lo - 0xDC00);
-        hex += cp.toString(16).padStart(8, '0').toUpperCase();
-        i++;
-        continue;
-      }
-    }
-    hex += (code >> 8).toString(16).padStart(2, '0').toUpperCase();
-    hex += (code & 0xFF).toString(16).padStart(2, '0').toUpperCase();
-  }
-  return hex;
-}
 
 export async function onRequest(context: { request: Request; env: Env }): Promise<Response> {
   const { request, env } = context;
@@ -79,124 +54,32 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
     const templateBytes = new Uint8Array(await templateObj.arrayBuffer());
     const pdfDoc = await PDFDocument.load(templateBytes, { ignoreEncryption: true });
 
+    // Embed CJK font (Noto Sans TC from R2/CDN)
+    const { cjk } = await fetchAndEmbedFont(pdfDoc, env as any);
+
     const form = pdfDoc.getForm();
     const ctx = (pdfDoc as any).context;
 
-    // ── Get /C2_0 font ref from page Resources for CJK AP Resources ──
-    let c2_0FontRef: any = null;
-    try {
-      const pages = pdfDoc.getPages();
-      const page0 = pages[0];
-      const pageResources = (page0.node as any).lookup(PDFName.of("Resources"), PDFDict);
-      const pageFonts = pageResources.lookup(PDFName.of("Font"), PDFDict);
-      c2_0FontRef = pageFonts.lookup(PDFName.of("C2_0"));
-    } catch { /* C2_0 not in page Resources */ }
-
-    // ── Generate AP streams for each text field ──
-    // Iterate over data entries (keys like fill_1_P.1), not form fields
-    // AP Form XObject: blue bg rect + text
-    //   CJK: /C2_0 from page Resources (explicit Resources dict → works in all viewers)
-    //   ASCII: /Helv from page Resources
-    const encoder = new TextEncoder();
-    const fieldsData = data.fields || {};
-    for (const [name, value] of Object.entries(fieldsData)) {
-      const vstr = value != null ? String(value) : "";
-      if (!vstr) continue;
-
+    // ── Fill text fields: setText() → /V with UTF-16BE BOM ──
+    const fields = data.fields || {};
+    for (const [name, value] of Object.entries(fields)) {
       try {
-        const field = form.getTextField(name);
-        if (!field) continue;
-
-        const widgets = field.acroField.getWidgets();
-        for (const w of widgets) {
-          try {
-            const rect = w.getRectangle();
-            const rw = rect.width;
-            const rh = rect.height;
-            if (rw <= 2 || rh <= 2) continue;
-
-            const hasCjk = /[^\x00-\x7F]/.test(vstr);
-
-            // Font size from DA or default
-            const da = field.acroField.getDefaultAppearance() ?? '/Helv 10 Tf 0 g';
-            const sizeMatch = String(da).match(/(\d+(?:\.\d+)?)\s+Tf/);
-            const fontSize = sizeMatch ? parseFloat(sizeMatch[1]) : 10;
-
-            // CJK: /C2_0 from page Resources (MingLiU subset, referenced in AP Resources)
-            // ASCII: /Helv from page Resources
-            const fontName = hasCjk ? 'C2_0' : 'Helv';
-            let textOp: string;
-            if (hasCjk) {
-              textOp = `<${toUtf16Hex(value)}> Tj`;
-            } else {
-              const escaped = vstr.replace(/([()\\])/g, '\\$1');
-              textOp = `(${escaped}) Tj`;
-            }
-
-            // AP content: blue background + black text
-            const textX = 2;
-            const textY = Math.max(2, rh * 0.18);
-            const boxW = rw.toFixed(1);
-            const boxH = rh.toFixed(1);
-
-            const apContent = [
-              '/Tx BMC',
-              'q',
-              '0.91 0.93 0.96 rg',
-              `0 0 ${boxW} ${boxH} re`,
-              'f',
-              'Q',
-              'BT',
-              `/${fontName} ${fontSize} Tf`,
-              '0 0 0 rg',
-              `${textX.toFixed(1)} ${textY.toFixed(1)} Td`,
-              textOp,
-              'ET',
-              'EMC',
-            ].join('\n');
-
-            // Build Form XObject with explicit font Resources for CJK
-            const bbox = PDFArray.withContext(ctx);
-            bbox.push(PDFNumber.of(0));
-            bbox.push(PDFNumber.of(0));
-            bbox.push(PDFNumber.of(rw));
-            bbox.push(PDFNumber.of(rh));
-
-            const streamDict = ctx.obj({});
-            streamDict.set(PDFName.of('Type'), PDFName.of('XObject'));
-            streamDict.set(PDFName.of('Subtype'), PDFName.of('Form'));
-            streamDict.set(PDFName.of('BBox'), bbox);
-
-            // Add font Resources so /C2_0 is explicitly available to the AP stream
-            if (hasCjk && c2_0FontRef) {
-              const fontRes = ctx.obj({});
-              fontRes.set(PDFName.of('C2_0'), c2_0FontRef);
-              const resDict = ctx.obj({});
-              resDict.set(PDFName.of('Font'), fontRes);
-              streamDict.set(PDFName.of('Resources'), resDict);
-            }
-
-            const apStream = ctx.stream(encoder.encode(apContent), streamDict);
-            const apRef = ctx.register(apStream);
-
-            const apDict = ctx.obj({});
-            apDict.set(PDFName.of('N'), apRef);
-            (w as any).dict.set(PDFName.of('AP'), apDict);
-
-            // Set /V (fallback)
-            (w as any).dict.set(PDFName.of('V'), PDFHexString.fromText(vstr));
-          } catch { /* skip unmodifiable widget */ }
+        const vstr = value != null ? String(value) : "";
+        if (!vstr) continue;
+        const tf = form.getTextField(name);
+        tf.setText(vstr);
+        if (cjk) {
+          const hasCjk = /[^\x00-\x7F]/.test(vstr);
+          if (hasCjk) tf.updateAppearances(cjk);
         }
-      } catch { /* skip missing field */ }
+      } catch { /* skip */ }
     }
 
     // ── Dropdown fields ──
-    const dropdowns = data.dropdowns || {};
-    for (const [name, option] of Object.entries(dropdowns)) {
+    for (const [name, option] of Object.entries(data.dropdowns || {})) {
       try {
         if (!option) continue;
-        const dd = form.getDropdown(name);
-        dd.select(option);
+        form.getDropdown(name).select(option);
       } catch { /* skip */ }
     }
 
@@ -205,7 +88,31 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
       try { form.getCheckBox(name).check(); } catch { /* skip */ }
     }
 
-    // ── Save: no flatten, no updateFieldAppearances → preserve our AP streams ──
+    // ── Blue background via /MK /BG on all widgets ──
+    for (const field of form.getFields()) {
+      try {
+        const widgets = field.acroField.getWidgets();
+        for (const w of widgets) {
+          try {
+            const bgArr = PDFArray.withContext(ctx);
+            bgArr.push(PDFNumber.of(0.91));
+            bgArr.push(PDFNumber.of(0.93));
+            bgArr.push(PDFNumber.of(0.96));
+            const mkDict = ctx.obj({});
+            mkDict.set(PDFName.of("BG"), bgArr);
+            (w as any).dict.set(PDFName.of("MK"), mkDict);
+          } catch { /* skip */ }
+        }
+      } catch { /* skip */ }
+    }
+
+    // ── Enable NeedAppearances ──
+    try {
+      const acroForm = pdfDoc.catalog.lookup(PDFName.of("AcroForm"), PDFDict);
+      if (acroForm) acroForm.set(PDFName.of("NeedAppearances"), PDFBool.True);
+    } catch { /* ignore */ }
+
+    // ── Save: no flatten, no updateFieldAppearances → preserve /MK and AP ──
     const pdfBytes = await pdfDoc.save({ useObjectStreams: false, updateFieldAppearances: false });
     return jsonResp({ pdf: uint8ToBase64(new Uint8Array(pdfBytes)) });
   } catch (err: any) {

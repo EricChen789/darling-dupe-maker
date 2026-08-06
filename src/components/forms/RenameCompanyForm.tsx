@@ -63,23 +63,29 @@ export default function RenameCompanyForm({ onBack, initialCompanyId }: Props) {
     }
   }, [company]);
 
-  const resolutionContent = `SPECIAL RESOLUTION
+  const oldNameFull = `${oldName || '[old name]'}${oldChineseName ? ` (${oldChineseName})` : ''}`;
+  const newNameFull = `${newName || '[new name]'}${newChineseName ? ` (${newChineseName})` : ''}`;
+
+  const resolutionContentEn = `SPECIAL RESOLUTION
 PASSED on ${resolutionDate}
 
 RESOLVED THAT the name of the Company be changed:
-  From: ${oldName || '[old name]'}${oldChineseName ? ` (${oldChineseName})` : ''}
-  To:   ${newName || '[new name]'}${newChineseName ? ` (${newChineseName})` : ''}
+  From: ${oldNameFull}
+  To:   ${newNameFull}
 
-with effect from the date of issue of the Certificate of Change of Name by the Registrar of Companies, and that Form NNC2 be filed with the Companies Registry pursuant to s.108 of the Companies Ordinance (Cap.622) within 15 days.
+with effect from the date of issue of the Certificate of Change of Name by the Registrar of Companies, and that Form NNC2 be filed with the Companies Registry pursuant to s.108 of the Companies Ordinance (Cap.622) within 15 days.`;
 
-特別決議
+  const resolutionContentCn = `特別決議
 於 ${resolutionDate} 通過
 
 茲決議：本公司名稱變更：
-  由：${oldName || '[舊名稱]'}${oldChineseName ? `（${oldChineseName}）` : ''}
-  改為：${newName || '[新名稱]'}${newChineseName ? `（${newChineseName}）` : ''}
+  由：${oldNameFull}
+  改為：${newNameFull}
 
 於公司註冊處長簽發更改公司名稱證書當日起生效，並依《公司條例》（第622章）第108條於 15 日內提交 NNC2 表格。`;
+
+  // Combined for display preview and storage
+  const resolutionContent = `${resolutionContentEn}\n\n${resolutionContentCn}`;
 
   const handleLoadHistory = (data: any) => {
     if (data.formData) {
@@ -112,15 +118,19 @@ with effect from the date of issue of the Certificate of Change of Name by the R
     try {
       const ok = await downloadGenericFormPdf({
         formCode: 'Resolution-Rename',
-        title: '更改公司名稱特別決議書 Special Resolution — Change of Name',
-        subtitle: 'Written Resolution of Members / 股東書面特別決議',
+        title: '更改公司名稱特別決議書 / Special Resolution — Change of Name',
+        subtitle: '股東書面特別決議 / Written Resolution of Members',
         companyName: oldName || company.name,
         brNumber: company.brNumber,
         sections: [
-          { rows: [['Resolution Date 決議日期', resolutionDate], ['Effective 生效日期', effectiveDate]] },
-          { heading: 'Resolution / 決議內容', paragraph: resolutionContent },
+          { rows: [['Resolution Date 決議日期', resolutionDate], ['Effective Date 生效日期', effectiveDate]] },
+          { heading: 'Special Resolution', paragraph: resolutionContentEn },
+          { heading: '特別決議', paragraph: resolutionContentCn },
         ],
-        signatureLines: ['簽署人：____________________   Date: __________'],
+        signatureLines: [
+          'Director / 董事：____________________   Date 日期：____________________',
+          'Company Secretary / 公司秘書：____________________   Date 日期：____________________',
+        ],
       }, 'Resolution_Rename');
       if (ok) {
         save.mutate({

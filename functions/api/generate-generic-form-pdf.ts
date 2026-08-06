@@ -1,10 +1,11 @@
 // Generic form/document PDF generator.
 // Generates NNC1 (HK), NNC1-BVI, NNC2 (rename), and resolution PDFs from scratch.
-// Uses Noto Sans TC via R2-first font loading (shared _pdf-utils).
-import { PDFDocument, rgb } from "pdf-lib";
+// Uses Noto Sans TC via R2-first font loading + Helvetica for ASCII.
+// Draws bilingual text with drawMixed() for professional mixed CJK/English typography.
+import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import {
   corsHeaders, jsonResp, uint8ToBase64,
-  fetchAndEmbedFont,
+  fetchAndEmbedFont, drawMixed, widthOfText,
 } from "./_pdf-utils";
 import { verifyAuthRequest, type Env } from "./_auth";
 
@@ -16,20 +17,19 @@ interface Section {
 }
 
 interface DocPayload {
-  formCode: string;          // "NNC1", "NNC1-BVI", "NNC2", "RESOLUTION"
-  title: string;             // Big title at top, e.g. "Incorporation Form (NNC1)"
+  formCode: string;
+  title: string;
   subtitle?: string;
   companyName?: string;
   brNumber?: string;
   sections: Section[];
-  signatureLines?: string[]; // e.g. ["Director: ____________", "Date: ____________"]
+  signatureLines?: string[];
 }
 
 export async function onRequest(context: { request: Request; env: Env }) {
   const { request, env } = context;
   if (request.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
-  // Auth
   const { errorResponse } = await verifyAuthRequest(request, env);
   if (errorResponse) return errorResponse;
 
@@ -41,7 +41,9 @@ export async function onRequest(context: { request: Request; env: Env }) {
 
     const pdf = await PDFDocument.create();
 
-    // R2-first font loading (shared helper — much faster than CDN)
+    // Embed fonts: ASCII (built-in Helvetica) + CJK (Noto Sans TC from R2/CDN)
+    const helv = pdf.embedStandardFont(StandardFonts.Helvetica);
+    const helvBold = pdf.embedStandardFont(StandardFonts.HelveticaBold);
     const { cjk } = await fetchAndEmbedFont(pdf, env as any);
 
     let page = pdf.addPage([595, 842]);
@@ -50,35 +52,74 @@ export async function onRequest(context: { request: Request; env: Env }) {
     const right = 545;
     const maxWidth = right - left;
 
-    const draw = (text: string, x: number, opts: { size?: number; color?: any } = {}) => {
-      page.drawText(text || "", { x, y, size: opts.size ?? 10, font: cjk, color: opts.color ?? rgb(0, 0, 0) });
-    };
+    // ── Helpers ──
     const newLine = (delta = 14) => {
       y -= delta;
       if (y < 60) { page = pdf.addPage([595, 842]); y = 800; }
     };
 
-    // Word-wrap that respects font metrics (handles CJK by splitting on chars when needed).
-    const wrapText = (text: string, size: number, width: number): string[] => {
-      if (!text) return [""];
-      const words = text.split(/(\s+)/);
+    // Draw a horizontal separator line
+    const drawSep = (color: any = rgb(0.7, 0.7, 0.7)) => {
+      page.drawLine({
+        start: { x: left, y },
+        end: { x: right, y },
+        thickness: 0.5,
+        color,
+      });
+      newLine(10);
+    };
+
+    // Simple draw with specific font
+    const drawF = (text: string, font: any, x: number, size: number, color?: any) => {
+      try {
+        page.drawText(text || "", { x, y, size, font, color: color ?? rgb(0, 0, 0) });
+      } catch (_e) {
+        // Fallback to Helvetica
+        try { page.drawText(text || "", { x, y, size, font: helv, color: color ?? rgb(0, 0, 0) }); } catch (_e2) { }
+      }
+    };
+
+    // Mixed draw shortcut — always passes cjk + helv fonts
+    const dm = (text: string, x: number, size: number, color?: any) => {
+      drawMixed(page, text, { x, y, size, cjk, ascii: helv, color });
+    };
+
+    // Draw mixed text centered
+    const dmCenter = (text: string, size: number, color?: any) => {
+      const w = widthOfText(text || "", cjk, helv, size);
+      const x = Math.max(0, (595 - w) / 2);
+      dm(text, x, size, color);
+    };
+
+    // Word-wrap mixed text paragraph
+    const drawPara = (text: string, x: number, width: number, size: number, lh: number, color?: any) => {
+      const paragraphs = (text || "").split("\n");
+      for (const para of paragraphs) {
+        if (!para) { newLine(lh); continue; }
+        const lines = wrapPara(para, size, width);
+        for (const line of lines) {
+          dm(line, x, size, color);
+          newLine(lh);
+        }
+      }
+    };
+
+    const wrapPara = (text: string, size: number, width: number): string[] => {
       const lines: string[] = [];
+      const words = text.split(/(\s+)/);
       let cur = "";
-      const measure = (s: string) => cjk.widthOfTextAtSize(s, size);
       for (const w of words) {
         const trial = cur + w;
-        if (measure(trial) <= width) {
+        if (widthOfText(trial, cjk, helv, size) <= width) {
           cur = trial;
-        } else if (measure(w) > width) {
+        } else if (widthOfText(w, cjk, helv, size) > width) {
           if (cur) { lines.push(cur); cur = ""; }
           let chunk = "";
           for (const ch of w) {
-            if (measure(chunk + ch) > width) {
+            if (widthOfText(chunk + ch, cjk, helv, size) > width) {
               if (chunk) lines.push(chunk);
               chunk = ch;
-            } else {
-              chunk += ch;
-            }
+            } else { chunk += ch; }
           }
           if (chunk) cur = chunk;
         } else {
@@ -90,74 +131,113 @@ export async function onRequest(context: { request: Request; env: Env }) {
       return lines;
     };
 
-    const drawWrapped = (text: string, x: number, width: number, opts: { size?: number; color?: any; lineHeight?: number } = {}) => {
-      const size = opts.size ?? 10;
-      const lh = opts.lineHeight ?? size + 4;
-      const lines = wrapText(text, size, width);
-      lines.forEach((ln) => {
-        draw(ln, x, { size, color: opts.color });
-        newLine(lh);
-      });
-    };
+    // ── Header — Title ──
+    const titleText = data.title || "";
+    const titleW = widthOfText(titleText, cjk, helv, 18);
+    if (titleW <= maxWidth) {
+      dmCenter(titleText, 18);
+    } else {
+      drawF(titleText, cjk, (595 - cjk.widthOfTextAtSize(titleText, 18)) / 2, 18);
+    }
+    newLine(26);
 
-    // Header
-    draw(data.title, left, { size: 18 });
-    newLine(24);
     if (data.subtitle) {
-      draw(data.subtitle, left, { size: 11, color: rgb(0.4, 0.4, 0.4) });
-      newLine(18);
+      const sw = widthOfText(data.subtitle, cjk, helv, 11);
+      if (sw <= maxWidth) {
+        dmCenter(data.subtitle, 11, rgb(0.4, 0.4, 0.4));
+      } else {
+        drawF(data.subtitle, cjk, (595 - cjk.widthOfTextAtSize(data.subtitle, 11)) / 2, 11, rgb(0.4, 0.4, 0.4));
+      }
+      newLine(22);
     }
+
+    // ── Company info ──
     if (data.companyName || data.brNumber) {
-      draw(`公司名稱 / Company: ${data.companyName || "-"}`, left, { size: 10 });
-      newLine();
-      draw(`商業登記號碼 / BR No.: ${data.brNumber || "-"}`, left, { size: 10 });
-      newLine();
-      draw(`生成日期 / Date Generated: ${new Date().toISOString().slice(0, 10)}`, left, { size: 10 });
-      newLine(18);
+      newLine(4);
+      const ix = left + 8;
+      if (data.companyName) {
+        drawF("Company / 公司名稱：", helv, ix, 9, rgb(0.4, 0.4, 0.4));
+        dm(data.companyName, ix + 130, 10);
+        newLine(14);
+      }
+      if (data.brNumber) {
+        drawF("BR No. / 商業登記號碼：", helv, ix, 9, rgb(0.4, 0.4, 0.4));
+        drawF(data.brNumber, helv, ix + 130, 10);
+        newLine(14);
+      }
+      drawF(`Date Generated / 生成日期：${new Date().toISOString().slice(0, 10)}`, helv, ix, 9, rgb(0.4, 0.4, 0.4));
+      newLine(14);
     }
 
-    page.drawLine({ start: { x: left, y: y + 4 }, end: { x: right, y: y + 4 }, thickness: 0.5, color: rgb(0.7, 0.7, 0.7) });
-    newLine(10);
+    drawSep();
 
-    // Sections
-    for (const sec of data.sections || []) {
+    // ── Sections ──
+    const lastIdx = (data.sections || []).length - 1;
+    for (let si = 0; si < (data.sections || []).length; si++) {
+      const sec = data.sections[si];
+
       if (sec.heading) {
-        draw(sec.heading, left, { size: 13 });
+        const hw = widthOfText(sec.heading, cjk, helvBold, 12);
+        if (hw <= maxWidth) {
+          dm(sec.heading, left + 6, 12);
+        } else {
+          drawF(sec.heading, helvBold, left + 6, 12);
+        }
         newLine(18);
       }
-      if (sec.paragraph) {
-        drawWrapped(sec.paragraph, left, maxWidth, { size: 10, lineHeight: 14 });
+
+      if (sec.rows && sec.rows.length) {
+        for (const [k, v] of sec.rows) {
+          drawF(k + "：", helv, left + 10, 10, rgb(0.4, 0.4, 0.4));
+          dm(v || "—", left + 180, 10);
+          newLine(14);
+        }
         newLine(6);
       }
+
+      if (sec.paragraph) {
+        drawPara(sec.paragraph, left + 10, maxWidth - 10, 10, 15);
+        newLine(8);
+      }
+
       if (sec.bullets && sec.bullets.length) {
         for (const b of sec.bullets) {
-          draw("•", left, { size: 10 });
-          drawWrapped(b, left + 14, maxWidth - 14, { size: 10, lineHeight: 14 });
+          drawF("•", helv, left + 10, 10);
+          drawPara(b, left + 24, maxWidth - 24, 10, 14);
         }
         newLine(4);
       }
-      if (sec.rows && sec.rows.length) {
-        for (const [k, v] of sec.rows) {
-          draw(`${k}:`, left, { size: 9, color: rgb(0.4, 0.4, 0.4) });
-          drawWrapped(v || "-", left + 180, maxWidth - 180, { size: 9, lineHeight: 12 });
-        }
-        newLine(6);
+
+      // Separator between sections
+      if (si < lastIdx) {
+        newLine(4);
+        drawSep();
       }
-      newLine(8);
     }
 
-    // Signature lines
+    // ── Signature block ──
     if (data.signatureLines && data.signatureLines.length) {
-      newLine(20);
-      page.drawLine({ start: { x: left, y: y + 4 }, end: { x: right, y: y + 4 }, thickness: 0.5, color: rgb(0.7, 0.7, 0.7) });
       newLine(16);
-      draw("簽署 / Signatures", left, { size: 11 });
-      newLine(20);
+      drawSep();
+      newLine(6);
+      dm("Signatures / 簽署", left + 6, 12);
+      newLine(26);
       for (const line of data.signatureLines) {
-        draw(line, left, { size: 10 });
-        newLine(28);
+        const lw = widthOfText(line, cjk, helv, 10);
+        if (lw <= maxWidth) {
+          dm(line, left + 10, 10);
+        } else {
+          drawF(line, cjk, left + 10, 10);
+        }
+        newLine(30);
       }
     }
+
+    // ── Footer ──
+    newLine(24);
+    drawSep();
+    const footer = "本文件由公司秘書管理系統自動生成 · Generated by Secretary Management System";
+    dmCenter(footer, 7, rgb(0.6, 0.6, 0.6));
 
     const bytes = await pdf.save();
     return jsonResp({ pdf: uint8ToBase64(new Uint8Array(bytes)) });

@@ -9860,7 +9860,10 @@ def generate_generic_form_pdf():
             return jsonify({'error': 'Empty request body'}), 400
 
         pdf = FPDF()
+        pdf.set_auto_page_break(auto=True, margin=20)
         pdf.add_page()
+        pdf.set_left_margin(20)
+        pdf.set_right_margin(20)
         # Use system CJK font directly (font download in find_font() can hang)
         font_path = None
         for sys_font in ['C:/Windows/Fonts/msjh.ttc', 'C:/Windows/Fonts/Deng.ttf', 'C:/Windows/Fonts/simsun.ttc']:
@@ -9874,67 +9877,99 @@ def generate_generic_form_pdf():
         else:
             font_name = 'Helvetica'
 
+        w = pdf.w - pdf.l_margin - pdf.r_margin  # effective width
+        left = pdf.l_margin
+
         def safe_text(text):
             return (text or '').encode('utf-8', errors='replace').decode('utf-8')
 
-        # Title
+        def draw_sep():
+            """Draw a thin grey horizontal line."""
+            y = pdf.get_y()
+            pdf.set_draw_color(180, 180, 180)
+            pdf.line(left, y, pdf.w - pdf.r_margin, y)
+            pdf.set_draw_color(0, 0, 0)
+            pdf.ln(6)
+
+        # ── Title ──
         pdf.set_font(font_name, 'B', 16)
-        pdf.cell(0, 10, safe_text(data.get('title', '')), new_x=XPos.LMARGIN, new_y=YPos.NEXT, align='C')
+        pdf.cell(w, 10, safe_text(data.get('title', '')), new_x=XPos.LMARGIN, new_y=YPos.NEXT, align='C')
         if data.get('subtitle'):
             pdf.set_font(font_name, '', 10)
-            pdf.cell(0, 7, safe_text(data['subtitle']), new_x=XPos.LMARGIN, new_y=YPos.NEXT, align='C')
-        pdf.ln(4)
+            pdf.set_text_color(110, 110, 110)
+            pdf.cell(w, 7, safe_text(data['subtitle']), new_x=XPos.LMARGIN, new_y=YPos.NEXT, align='C')
+            pdf.set_text_color(0, 0, 0)
+        pdf.ln(6)
 
-        # Form code + company info
+        # ── Company info ──
         pdf.set_font(font_name, '', 10)
-        if data.get('formCode'):
-            pdf.cell(30, 6, 'Form Code:', 0, 0)
-            pdf.cell(0, 6, safe_text(data['formCode']), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        company_info_shown = False
         if data.get('companyName'):
-            pdf.cell(30, 6, 'Company:', 0, 0)
-            pdf.cell(0, 6, safe_text(data['companyName']), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            company_info_shown = True
+            pdf.cell(50, 6, 'Company / 公司名稱：', 0, 0)
+            pdf.cell(w - 50, 6, safe_text(data['companyName']), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         if data.get('brNumber'):
-            pdf.cell(30, 6, 'BR No.:', 0, 0)
-            pdf.cell(0, 6, safe_text(data['brNumber']), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        pdf.ln(4)
+            company_info_shown = True
+            pdf.cell(50, 6, 'BR No. / 商業登記號碼：', 0, 0)
+            pdf.cell(w - 50, 6, safe_text(data['brNumber']), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        if company_info_shown:
+            pdf.ln(4)
 
-        # Sections
+        draw_sep()
+
+        # ── Sections ──
         sections = data.get('sections') or []
-        for sec in sections:
+        for si, sec in enumerate(sections):
             if sec.get('heading'):
-                pdf.set_font(font_name, 'B', 11)
-                pdf.cell(0, 7, safe_text(sec['heading']), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-                pdf.ln(1)
+                pdf.set_font(font_name, 'B', 12)
+                pdf.cell(w, 8, safe_text(sec['heading']), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                pdf.ln(2)
 
             if sec.get('rows'):
-                pdf.set_font(font_name, '', 9)
+                pdf.set_font(font_name, '', 10)
                 for row in sec['rows']:
                     label = safe_text(row[0]) if len(row) > 0 else ''
                     value = safe_text(row[1]) if len(row) > 1 else ''
-                    pdf.cell(50, 5, label + ':', 0, 0)
-                    pdf.cell(0, 5, value, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-                pdf.ln(2)
+                    pdf.cell(55, 6, label + '：', 0, 0)
+                    pdf.cell(w - 55, 6, value, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                pdf.ln(3)
 
             if sec.get('paragraph'):
-                pdf.set_font(font_name, '', 9)
-                pdf.multi_cell(0, 5, safe_text(sec['paragraph']))
-                pdf.ln(2)
+                pdf.set_font(font_name, '', 10)
+                pdf.multi_cell(w, 5.5, safe_text(sec['paragraph']))
+                pdf.ln(3)
 
             if sec.get('bullets'):
-                pdf.set_font(font_name, '', 9)
+                pdf.set_font(font_name, '', 10)
                 for b in sec['bullets']:
-                    pdf.cell(5, 5, '', 0, 0)
-                    pdf.cell(0, 5, chr(8226) + ' ' + safe_text(b), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                    pdf.cell(6, 5, '', 0, 0)
+                    pdf.cell(w - 6, 5, '• ' + safe_text(b), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
                 pdf.ln(2)
 
-        # Signature lines
+            # Separator between sections
+            if si < len(sections) - 1:
+                draw_sep()
+
+        # ── Signature block ──
         sig_lines = data.get('signatureLines') or []
         if sig_lines:
             pdf.ln(6)
-            pdf.set_font(font_name, '', 10)
+            draw_sep()
+            pdf.set_font(font_name, 'B', 12)
+            pdf.cell(w, 8, 'Signatures / 簽署', new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.ln(6)
+            pdf.set_font(font_name, '', 11)
             for sl in sig_lines:
-                pdf.cell(0, 8, safe_text(sl), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                pdf.cell(w, 10, safe_text(sl), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
                 pdf.ln(2)
+
+        # ── Footer ──
+        pdf.ln(10)
+        draw_sep()
+        pdf.set_font(font_name, '', 7)
+        pdf.set_text_color(150, 150, 150)
+        pdf.cell(w, 4, '本文件由公司秘書管理系統自動生成 · Generated by Secretary Management System', align='C')
+        pdf.set_text_color(0, 0, 0)
 
         pdf_bytes = bytes(pdf.output())
         import base64 as b64

@@ -326,9 +326,20 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
             field.set(PDFName.of('V'), dashValue);
           }
 
-          // Delete /AP so the viewer regenerates appearance for the new value
-          if (typeof field.lookup === 'function') {
-            try { field.delete(PDFName.of('AP')); } catch { /* skip */ }
+          // Delete /AP from the parent field (if any)
+          try { field.delete(PDFName.of('AP')); } catch { /* skip */ }
+
+          // Delete /AP from kid widgets so viewer regenerates from new /V
+          const kids = field.get(PDFName.of('Kids'));
+          if (kids && typeof kids.size === 'function') {
+            for (let k = 0; k < kids.size(); k++) {
+              try {
+                const kid = ctx.lookup(kids.get(k)) as any;
+                if (kid && typeof kid.delete === 'function') {
+                  kid.delete(PDFName.of('AP'));
+                }
+              } catch { /* skip */ }
+            }
           }
         }
       }

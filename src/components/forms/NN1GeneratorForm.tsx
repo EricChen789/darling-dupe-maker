@@ -18,7 +18,6 @@ import { useSaveFormHistory } from '@/hooks/useFormHistory';
 import { downloadBase64Pdf } from '@/lib/downloadPdf';
 import FormHistorySelector from './FormHistorySelector';
 import PresenterSelector from './PresenterSelector';
-import RelatedFormsPrompt from './RelatedFormsPrompt';
 import type { Presenter } from '@/hooks/usePresenters';
 import AddressQuickPick from './AddressQuickPick';
 import PersonQuickPick from './PersonQuickPick';
@@ -255,8 +254,6 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
   const { data: companies = [] } = useCompanies();
   const [selectedCompanyId, setSelectedCompanyId] = useState(initialCompanyId || '');
   const [generating, setGenerating] = useState(false);
-  const [showRelatedPrompt, setShowRelatedPrompt] = useState(false);
-  const [relatedLinkages, setRelatedLinkages] = useState<any[]>([]);
   const selectedCompany = useMemo(() => companies.find(c => c.id === selectedCompanyId), [companies, selectedCompanyId]);
 
   // ═══ P.1: Company Info ═══
@@ -720,11 +717,6 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
         formData: { proposedNameEn, proposedNameCn, placeOfIncorporation, estDay, estMonth, estYear, addrFlat, addrBuilding, addrStreet, addrDistrict, companyEmail, companyPhone, regOffFlat, regOffBuilding, regOffStreet, regOffDistrict, regOffCountry, ppbFlat, ppbBuilding, ppbStreet, ppbDistrict, ppbCountry, overseasEmail, presenterNameCn, presenterNameEn, presenterAddress, presenterPhone, presenterFax, presenterEmail, presenterRef, charterDocs, incorpCert, acctFromDay, acctFromMonth, acctFromYear, acctToDay, acctToMonth, acctToYear, noAcctsRequired, incorpLess18m, signatoryName, signDateDay, signDateMonth, signDateYear, signatoryCapacity, hasSecNat, selectedCompanyId, authRepNats, authRepCorps, secNat: hasSecNat ? secNat : null, secCorps, dirNats, dirCorps, includeIRBR2, irbr2Registered, irbr2Elect3yr },
       });
 
-      try {
-        const linkResp = await fetch(`/api/form-linkages?primary=NN1`, { headers: { Authorization: `Bearer ${token}` } });
-        const linkData = await linkResp.json();
-        if (linkData.linkages && linkData.linkages.length > 0) { setRelatedLinkages(linkData.linkages); setShowRelatedPrompt(true); }
-      } catch (_) { /* ok */ }
     } catch (err: any) {
       toast({ title: '生成失敗', description: err.message, variant: 'destructive' });
     } finally { setGenerating(false); }
@@ -1322,13 +1314,6 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      <RelatedFormsPrompt
-        open={showRelatedPrompt} onOpenChange={setShowRelatedPrompt}
-        primaryFormCode="NN1" primaryFormName="NN1 — 註冊非香港公司的註冊申請書"
-        primaryFormData={{ proposedNameEn, proposedNameCn, placeOfIncorporation, estDay, estMonth, estYear, addrFlat, addrBuilding, addrStreet, addrDistrict, companyEmail, companyPhone, presenterNameCn: '', presenterNameEn, presenterAddress, presenterPhone, presenterFax, presenterEmail, presenterRef, signatoryName, signDate: signDateDay && signDateMonth && signDateYear ? `${signDateDay}/${signDateMonth}/${signDateYear}` : '', company_id: selectedCompanyId }}
-        companyId={selectedCompanyId} companyName={proposedNameEn || selectedCompany?.brNumber || ''} linkages={relatedLinkages}
-      />
     </div>
   );
 }

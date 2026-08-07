@@ -266,6 +266,7 @@ const FormWizard = ({ formId, onBack }: FormWizardProps) => {
       shareType: sh.shareClass,
     })),
     returnDate: `${formData.returnDateYear}-${formData.returnDateMonth}-${formData.returnDateDay}`,
+    incorporationDate: company.incorporationDate || '',
     financialStartDay: formData.financialStartDay,
     financialStartMonth: formData.financialStartMonth,
     financialStartYear: formData.financialStartYear,

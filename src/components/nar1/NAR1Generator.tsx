@@ -31,16 +31,31 @@ interface NAR1GeneratorProps {
   company: Company | null;
 }
 
-// 結算日期 = 成立日期的月/日 + 今年。如沒成立日期，就用今天。
+// 結算日期 = 成立日期的月/日 + 今年；若今年已過則自動變為下一年。如沒成立日期，就用今天。
 const computeReturnDate = (incorporationDate?: string): string => {
   const today = new Date();
+  today.setHours(0, 0, 0, 0);
   const currentYear = today.getFullYear();
   if (incorporationDate) {
-    const d = new Date(incorporationDate);
+    // Support both YYYY-MM-DD and DD/MM/YYYY formats
+    let d: Date;
+    if (incorporationDate.includes('/')) {
+      const parts = incorporationDate.split('/');
+      d = new Date(Number(parts[2]), Number(parts[1]) - 1, Number(parts[0]));
+    } else {
+      d = new Date(incorporationDate);
+    }
     if (!isNaN(d.getTime())) {
       const mm = String(d.getMonth() + 1).padStart(2, '0');
       const dd = String(d.getDate()).padStart(2, '0');
-      return `${currentYear}-${mm}-${dd}`;
+      // 今年年份 + 成立月日
+      let targetYear = currentYear;
+      const candidate = new Date(targetYear, d.getMonth(), d.getDate());
+      // 若今年的周年日已過，自動變成下一年
+      if (candidate < today) {
+        targetYear = currentYear + 1;
+      }
+      return `${targetYear}-${mm}-${dd}`;
     }
   }
   return today.toISOString().split('T')[0];
@@ -72,6 +87,8 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
     street: '',
     district: '',
     region: '',
+    companyEmail: '',
+    companyPhone: '',
     presenterId: '',
     presenterName: '',
     presenterAddress: '',
@@ -105,6 +122,8 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
         street: company.regStreet || prev.street,
         district: company.regDistrict || '',
         region: company.regRegion || '',
+        companyEmail: company.email || prev.companyEmail || '',
+        companyPhone: company.phone || prev.companyPhone || '',
         presenterId: preferred?.id || '',
         presenterName: preferred?.name || '',
         presenterAddress: preferred?.address || '',
@@ -247,8 +266,9 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
           unpaid: sh.unpaid || '',
         })),
         returnDate: formData.returnDate,
-        companyEmail: company.email || '',
-        companyPhone: company.phone || '',
+        incorporationDate: company.incorporationDate || '',
+        companyEmail: formData.companyEmail || company.email || '',
+        companyPhone: formData.companyPhone || company.phone || '',
         presenter: {
           name: formData.presenterName || '',
           address: formData.presenterAddress || '',
@@ -547,6 +567,30 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
                   value={formData.region}
                   onChange={(e) => setFormData({ ...formData, region: e.target.value })}
                   placeholder="e.g. 香港"
+                />
+              </div>
+            </div>
+
+            {/* Company Contact (P.2) */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="companyEmail">公司電郵（P.2）</Label>
+                <Input
+                  id="companyEmail"
+                  type="email"
+                  placeholder="company@example.com"
+                  value={formData.companyEmail}
+                  onChange={(e) => setFormData({ ...formData, companyEmail: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="companyPhone">公司電話（P.2）</Label>
+                <Input
+                  id="companyPhone"
+                  type="text"
+                  placeholder="+852 XXXX XXXX"
+                  value={formData.companyPhone}
+                  onChange={(e) => setFormData({ ...formData, companyPhone: e.target.value })}
                 />
               </div>
             </div>

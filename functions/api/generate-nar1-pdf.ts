@@ -72,6 +72,7 @@ interface CompanyData {
   secretaries: OfficerData[];
   shareholders: ShareholderData[];
   returnDate?: string;
+  incorporationDate?: string;
   companyRecords?: Array<{ records: string; address: string }>;
   presenter?: {
     name?: string;
@@ -90,6 +91,34 @@ interface CompanyData {
 
 // ═══ 共用工具 ═══
 const CJK_RE = /[㐀-鿿豈-﫿]/;
+
+// 結算日期 = 成立日期的月/日 + 今年；若今年已過則自動變為下一年。若沒成立日期則用今天。
+function computeReturnDate(incorporationDate?: string): string {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const currentYear = today.getFullYear();
+  if (incorporationDate) {
+    // Support both YYYY-MM-DD and DD/MM/YYYY formats
+    let d: Date;
+    if (incorporationDate.includes('/')) {
+      const parts = incorporationDate.split('/');
+      d = new Date(Number(parts[2]), Number(parts[1]) - 1, Number(parts[0]));
+    } else {
+      d = new Date(incorporationDate);
+    }
+    if (!isNaN(d.getTime())) {
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      let targetYear = currentYear;
+      const candidate = new Date(targetYear, d.getMonth(), d.getDate());
+      if (candidate < today) {
+        targetYear = currentYear + 1;
+      }
+      return `${targetYear}-${mm}-${dd}`;
+    }
+  }
+  return today.toISOString().split('T')[0];
+}
 const PURE_NUMBER_RE = /^[\d,.\s]+$/;
 const ADDR_FLAT_RE = /^(?:flat|room|rm|unit|shop|suite|ste|workshop|portion|floor|fl|\d+\/f|g\/f|gf|lg\/f|ug\/f|m\/f|b\d*\/f)\b/i;
 const ADDR_COUNTRY_RE = /(hong\s*kong|hk\b|china|prc|macau|macao|singapore|taiwan|united\s+\w+|\busa\b|\buk\b|canada|australia|japan|korea|h\.?k\.?\s*sar|香港|中國|澳門|台灣|新加坡|日本|韓國|英國|美國|加拿大|澳洲)/i;
@@ -165,7 +194,7 @@ async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Array> {
   // 3) 準備資料
   const now = new Date();
   const hkNow = new Date(now.getTime() + 8 * 60 * 60 * 1000);
-  const returnDate = data.returnDate || hkNow.toISOString().split("T")[0];
+  const returnDate = data.returnDate || computeReturnDate(data.incorporationDate);
   const [year, month, day] = returnDate.split("-");
   const office = data.registeredOffice || {};
   if (!office.region && !(office as any).country) {

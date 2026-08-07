@@ -89,15 +89,30 @@ export interface NAR1Shareholder {
 
 export function createEmptyFormData(incorporationDate?: string): NAR1FormData {
   const today = new Date();
-  // 結算日期 = 成立日期的月/日 + 今年；若沒成立日期則用今天
+  today.setHours(0, 0, 0, 0);
+  // 結算日期 = 成立日期的月/日 + 今年；若今年已過則自動變為下一年。若沒成立日期則用今天
   let returnDay = String(today.getDate()).padStart(2, '0');
   let returnMonth = String(today.getMonth() + 1).padStart(2, '0');
-  const returnYear = String(today.getFullYear());
+  let returnYear = today.getFullYear();
   if (incorporationDate) {
-    const d = new Date(incorporationDate);
+    // Support both YYYY-MM-DD and DD/MM/YYYY formats
+    let d: Date;
+    if (incorporationDate.includes('/')) {
+      const parts = incorporationDate.split('/');
+      d = new Date(Number(parts[2]), Number(parts[1]) - 1, Number(parts[0]));
+    } else {
+      d = new Date(incorporationDate);
+    }
     if (!isNaN(d.getTime())) {
       returnDay = String(d.getDate()).padStart(2, '0');
       returnMonth = String(d.getMonth() + 1).padStart(2, '0');
+      // 今年年份 + 成立月日
+      returnYear = today.getFullYear();
+      const candidate = new Date(returnYear, d.getMonth(), d.getDate());
+      // 若今年的周年日已過，自動變成下一年
+      if (candidate < today) {
+        returnYear = today.getFullYear() + 1;
+      }
     }
   }
   return {
@@ -109,7 +124,7 @@ export function createEmptyFormData(incorporationDate?: string): NAR1FormData {
     businessNature: '',
     returnDateDay: returnDay,
     returnDateMonth: returnMonth,
-    returnDateYear: returnYear,
+    returnDateYear: String(returnYear),
     financialStartDay: '',
     financialStartMonth: '',
     financialStartYear: '',

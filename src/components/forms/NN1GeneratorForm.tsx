@@ -11,6 +11,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
 import { ArrowLeft, Download, Loader2, Plus, Trash2 } from 'lucide-react';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { toast } from '@/hooks/use-toast';
 import { useCompanies } from '@/hooks/useCompanies';
 import { useSaveFormHistory } from '@/hooks/useFormHistory';
@@ -328,6 +329,12 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
   const [signDateDay, setSignDateDay] = useState(''); const [signDateMonth, setSignDateMonth] = useState(''); const [signDateYear, setSignDateYear] = useState('');
   const [signatoryCapacity, setSignatoryCapacity] = useState<'director' | 'secretary' | 'manager' | 'authorizedRep' | ''>('');
 
+  // IRBR2 — 兄弟表單（致商業登記署通知書 — 非香港公司）
+  const [includeIRBR2, setIncludeIRBR2] = useState(false);
+  const [irbr2Registered, setIrbr2Registered] = useState(true); // 默認勾選是
+  const [irbr2Elect3yr, setIrbr2Elect3yr] = useState(true);
+  const [showIRBR2Reminder, setShowIRBR2Reminder] = useState(false);
+
   // ═══ P.17: PI-NN1 — 自動從表單自然人提取（借鑒 NNC1 piPersons 模式）═���═
   interface PiPersonData {
     nameChinese: string; surname: string; otherNames: string;
@@ -455,6 +462,9 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
     if (fd.signDateMonth !== undefined) setSignDateMonth(fd.signDateMonth);
     if (fd.signDateYear !== undefined) setSignDateYear(fd.signDateYear);
     if (fd.signatoryCapacity !== undefined) setSignatoryCapacity(fd.signatoryCapacity);
+    if (data.includeIRBR2 !== undefined) setIncludeIRBR2(data.includeIRBR2);
+    if (data.irbr2Registered !== undefined) setIrbr2Registered(data.irbr2Registered);
+    if (data.irbr2Elect3yr !== undefined) setIrbr2Elect3yr(data.irbr2Elect3yr);
     if (fd.selectedCompanyId) setSelectedCompanyId(data.selectedCompanyId || fd.selectedCompanyId);
     if (fd.hasSecNat !== undefined) setHasSecNat(fd.hasSecNat);
     // Arrays / objects stored at data.* level
@@ -675,9 +685,39 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
       downloadBase64Pdf(result.pdf, 'NN1-form.pdf');
       toast({ title: '生成成功', description: 'NN1 表格已下載' });
 
+      // ── IRBR2 兄弟表單（致商業登記署通知書 — 非香港公司）──
+      if (includeIRBR2) {
+        try {
+          const irbr2Resp = await fetch('/api/generate-irbr2-pdf', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({
+              irbr2_registered: irbr2Registered,
+              irbr2_elect3yr: irbr2Elect3yr,
+              businessNameEnglish: proposedNameEn,
+              businessNameChinese: proposedNameCn,
+              commencementDate: estDay && estMonth && estYear ? `${estDay}/${estMonth}/${estYear}` : '',
+              brNumber: (selectedCompany as any)?.brNumber || '',
+            }),
+          });
+          const irbr2Result = await irbr2Resp.json();
+          if (irbr2Resp.ok) {
+            downloadBase64Pdf(irbr2Result.pdf, 'IRBR2-form.pdf');
+            toast({ title: 'IRBR2 已一併生成', description: '致商業登記署通知書已下載' });
+          } else {
+            toast({ title: 'IRBR2 生成失敗', description: irbr2Result.error, variant: 'destructive' });
+          }
+        } catch (err: any) {
+          toast({ title: 'IRBR2 生成失敗', description: err.message, variant: 'destructive' });
+        }
+      } else {
+        // 提醒用戶可以一併生成 IRBR2
+        setShowIRBR2Reminder(true);
+      }
+
       saveFormHistory({
         formType: 'NN1',
-        formData: { proposedNameEn, proposedNameCn, placeOfIncorporation, estDay, estMonth, estYear, addrFlat, addrBuilding, addrStreet, addrDistrict, companyEmail, companyPhone, regOffFlat, regOffBuilding, regOffStreet, regOffDistrict, regOffCountry, ppbFlat, ppbBuilding, ppbStreet, ppbDistrict, ppbCountry, overseasEmail, presenterNameCn, presenterNameEn, presenterAddress, presenterPhone, presenterFax, presenterEmail, presenterRef, charterDocs, incorpCert, acctFromDay, acctFromMonth, acctFromYear, acctToDay, acctToMonth, acctToYear, noAcctsRequired, incorpLess18m, signatoryName, signDateDay, signDateMonth, signDateYear, signatoryCapacity, hasSecNat, selectedCompanyId, authRepNats, authRepCorps, secNat: hasSecNat ? secNat : null, secCorps, dirNats, dirCorps },
+        formData: { proposedNameEn, proposedNameCn, placeOfIncorporation, estDay, estMonth, estYear, addrFlat, addrBuilding, addrStreet, addrDistrict, companyEmail, companyPhone, regOffFlat, regOffBuilding, regOffStreet, regOffDistrict, regOffCountry, ppbFlat, ppbBuilding, ppbStreet, ppbDistrict, ppbCountry, overseasEmail, presenterNameCn, presenterNameEn, presenterAddress, presenterPhone, presenterFax, presenterEmail, presenterRef, charterDocs, incorpCert, acctFromDay, acctFromMonth, acctFromYear, acctToDay, acctToMonth, acctToYear, noAcctsRequired, incorpLess18m, signatoryName, signDateDay, signDateMonth, signDateYear, signatoryCapacity, hasSecNat, selectedCompanyId, authRepNats, authRepCorps, secNat: hasSecNat ? secNat : null, secCorps, dirNats, dirCorps, includeIRBR2, irbr2Registered, irbr2Elect3yr },
       });
 
       try {
@@ -707,6 +747,50 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
             {companies.map(c => (<SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>))}
           </SelectContent>
         </Select>
+      </div>
+
+      {/* ── IRBR2 兄弟表單入口 ── */}
+      <div className="rounded-md border border-amber-200 bg-amber-50 p-4 space-y-3 dark:bg-amber-950/20 dark:border-amber-800">
+        <div className="flex items-center gap-2">
+          <Checkbox
+            id="irbr2-toggle"
+            checked={includeIRBR2}
+            onCheckedChange={(v) => setIncludeIRBR2(!!v)}
+          />
+          <Label htmlFor="irbr2-toggle" className="text-sm font-medium cursor-pointer">
+            同時生成 IRBR2 表格（致商業登記署通知書 — 非香港公司）
+          </Label>
+        </div>
+        {includeIRBR2 && (
+          <div className="pl-6 space-y-3">
+            <div>
+              <Label className="text-xs">是否已根據《商業登記條例》(第310章)登記？</Label>
+              <div className="flex gap-4 mt-1">
+                <label className="flex items-center gap-1.5 cursor-pointer">
+                  <input type="radio" name="irbr2-reg310" checked={irbr2Registered} onChange={() => setIrbr2Registered(true)} className="h-3.5 w-3.5" />
+                  <span className="text-xs">是 Yes</span>
+                </label>
+                <label className="flex items-center gap-1.5 cursor-pointer">
+                  <input type="radio" name="irbr2-reg310" checked={!irbr2Registered} onChange={() => setIrbr2Registered(false)} className="h-3.5 w-3.5" />
+                  <span className="text-xs">否 No</span>
+                </label>
+              </div>
+            </div>
+            <div>
+              <Label className="text-xs">是否選擇3年有效期商業登記證？</Label>
+              <div className="flex gap-4 mt-1">
+                <label className="flex items-center gap-1.5 cursor-pointer">
+                  <input type="radio" name="irbr2-3yr" checked={irbr2Elect3yr} onChange={() => setIrbr2Elect3yr(true)} className="h-3.5 w-3.5" />
+                  <span className="text-xs">是（三年證）</span>
+                </label>
+                <label className="flex items-center gap-1.5 cursor-pointer">
+                  <input type="radio" name="irbr2-3yr" checked={!irbr2Elect3yr} onChange={() => setIrbr2Elect3yr(false)} className="h-3.5 w-3.5" />
+                  <span className="text-xs">否（一年證）</span>
+                </label>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       <FormHistorySelector formType="NN1" onSelect={handleLoadHistory} />
@@ -1212,6 +1296,32 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
           </Button>
         </div>
       </div>
+
+      {/* ── IRBR2 Reminder Dialog ── */}
+      <Dialog open={showIRBR2Reminder} onOpenChange={setShowIRBR2Reminder}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>IRBR2 補充表格</DialogTitle>
+            <DialogDescription>
+              NN1 註冊申請書通常需要連同 IRBR2（致商業登記署通知書 — 非香港公司）一起提交。
+              <br /><br />
+              確定只生成 NN1 而不生成 IRBR2 嗎？
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => {
+              setIncludeIRBR2(true);
+              setShowIRBR2Reminder(false);
+              toast({ title: '已選中 IRBR2', description: '請再次點擊「生成 NN1 PDF」來同時生成兩份表格' });
+            }}>
+              一併生成 IRBR2
+            </Button>
+            <Button variant="ghost" onClick={() => setShowIRBR2Reminder(false)}>
+              只生成 NN1
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <RelatedFormsPrompt
         open={showRelatedPrompt} onOpenChange={setShowRelatedPrompt}

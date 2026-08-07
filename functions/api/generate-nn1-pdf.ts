@@ -151,13 +151,16 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
     const templateBytes = new Uint8Array(await templateObj.arrayBuffer());
     const pdfDoc = await PDFDocument.load(templateBytes);
 
-    // ── Fill P.1-P.10 using simple form API ──
+    // ── Fill P.1-P.9 using simple form API ──
+    // P.10 excluded: its 3-level field hierarchy needs non-detaching fill
+    // to preserve template's native blue fillable backgrounds.
     const { setText, check } = createFormHelpers(pdfDoc);
 
     const fields = data.fields || {};
     // Skip P.17 fields (handled via widget-level PI fill below)
+    // Skip P.10 fields (handled separately — set /V on page-specific parent)
     for (const [name, value] of Object.entries(fields)) {
-      if (name.endsWith('_P.17')) continue;
+      if (name.endsWith('_P.17') || name.endsWith('_P.10')) continue;
       if (value != null && String(value).length > 0) {
         setText(name, String(value));
       }
@@ -166,6 +169,7 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
     // Apply per-field font size overrides (re-set with smaller font)
     const fieldFontSizes = data.fieldFontSizes || {};
     for (const [name, fontSize] of Object.entries(fieldFontSizes)) {
+      if (name.endsWith('_P.10')) continue;
       const value = (fields as any)?.[name];
       if (value != null && String(value).length > 0) {
         setText(name, String(value), Number(fontSize));
@@ -173,35 +177,158 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
     }
 
     for (const name of data.checkboxes || []) {
-      if (name.endsWith('_P.17')) continue;
+      if (name.endsWith('_P.17') || name.endsWith('_P.10')) continue;
       check(name, true);
     }
 
-    // ═══ P.10 Signatory Capacity — drawLine like NAR1 P.8 ═══
-    // NN1 P.10 has printed labels for 4 capacities. We draw a line through
-    // the unselected ones (matching NAR1's approach for its 2-option layout).
-    // Label positions (from PyMuPDF text search, page coords bottom-left):
-    //   Director:              x=[154, 189], y_center ≈ 89
-    //   Company Secretary:     x=[198, 286], y_center ≈ 89
-    //   Manager:               x=[296, 336], y_center ≈ 89
-    //   Authorized Rep (2nd line): x=[188, 306], y_center ≈ 76.5
-    const signatoryCapacity = data.signatoryCapacity;
-    if (signatoryCapacity) {
+    // ═══ P.10 fields: Set /V on page-specific parent WITHOUT detach ═══
+    // NN1 P.10 uses a 3-level hierarchy: grandparent (fill_N_P) → parent (10/11/12) → widget.
+    // Each P.10 parent has exactly 1 widget kid → we can set /V on the parent
+    // without detaching, preserving the template's native appearance and keeping
+    // /Annots indirect (critical for /MK /BG rendering in PDF viewers).
+    {
       const p10 = pdfDoc.getPages()[9]; // P.10 (0-indexed)
       if (p10) {
-        const capLines: Array<{ x0: number; x1: number; y: number; cap: string }> = [
-          { x0: 148, x1: 194, y: 89, cap: 'director' },
-          { x0: 192, x1: 292, y: 89, cap: 'secretary' },
-          { x0: 290, x1: 342, y: 89, cap: 'manager' },
-          { x0: 182, x1: 312, y: 76.5, cap: 'authorizedRep' },
-        ];
-        for (const { x0, x1, y, cap } of capLines) {
-          if (cap !== signatoryCapacity) {
-            p10.drawLine({
-              start: { x: x0, y },
-              end: { x: x1, y },
-              thickness: 1.2,
-            });
+        const ctx = (pdfDoc as any).context;
+        const annots = (p10 as any).node.lookup(PDFName.of("Annots")) as any;
+        if (annots && typeof annots.size === "function") {
+          for (let i = 0; i < annots.size(); i++) {
+            try {
+              const widget = ctx.lookup(annots.get(i)) as any;
+              if (!widget || typeof widget.get !== "function") continue;
+              const subtype = widget.get(PDFName.of("Subtype"));
+              if (!subtype || String(subtype) !== "/Widget") continue;
+
+              // Get parent field
+              const parentRef = widget.get(PDFName.of("Parent"));
+              if (!parentRef) continue;
+              const parent = ctx.lookup(parentRef) as any;
+              if (!parent || typeof parent.get !== "function") continue;
+
+              // Get grandparent to resolve field name
+              const gpRef = parent.get(PDFName.of("Parent"));
+              const gp = gpRef ? ctx.lookup(gpRef) as any : null;
+              const gpT = gp ? (gp.get(PDFName.of("T")) as any) : null;
+              const gpName = gpT instanceof PDFString ? gpT.decodeText() : "";
+
+              const pT = parent.get(PDFName.of("T")) as any;
+              const parentName = pT instanceof PDFString ? pT.decodeText() : "";
+
+              // Reconstruct full field name: fill_N_P.<parentName>
+              const fullName = gpName && parentName ? `${gpName}.${parentName}` : "";
+              const fieldValue = fullName ? (fields as any)?.[fullName] : undefined;
+              if (!fieldValue || String(fieldValue).length === 0) continue;
+
+              const ft = parent.get(PDFName.of("FT"));
+              const fieldType = ft ? String(ft) : "";
+
+              if (fieldType === "/Tx") {
+                // Text field: set /V directly on parent
+                const rawDa = parent.get(PDFName.of("DA")) as any;
+                const daStr = rawDa instanceof PDFString ? rawDa.decodeText() : "/Helv 12 Tf 0 g";
+                const val = String(fieldValue);
+                if (/[^\x00-\x7F]/.test(val)) {
+                  // CJK: use PMingLiU, hex string
+                  const m = daStr.match(/(\d+(?:\.\d+)?)\s+Tf/);
+                  const size = m ? m[1] : "12";
+                  const actualSize = parseFloat(size) > 0 ? size : "12";
+                  parent.set(PDFName.of("DA"), PDFString.of(`/PMingLiU ${actualSize} Tf 0 g`));
+                  parent.set(PDFName.of("V"), PDFHexString.fromText(val));
+                } else {
+                  // ASCII
+                  parent.set(PDFName.of("V"), PDFString.of(val));
+                }
+                // Set /MK /BG on widget for blue fillable background (NNC2 pattern)
+                try {
+                  const bgArr = PDFArray.withContext(ctx);
+                  bgArr.push(PDFNumber.of(0.91));
+                  bgArr.push(PDFNumber.of(0.93));
+                  bgArr.push(PDFNumber.of(0.96));
+                  const mk = widget.get(PDFName.of("MK"));
+                  if (!mk) {
+                    const mkDict = ctx.obj({});
+                    mkDict.set(PDFName.of("BG"), bgArr);
+                    widget.set(PDFName.of("MK"), mkDict);
+                  } else if (typeof mk.lookup === "function") {
+                    if (!mk.lookup(PDFName.of("BG"))) {
+                      mk.set(PDFName.of("BG"), bgArr);
+                    }
+                  }
+                } catch { /* best-effort */ }
+              } else if (fieldType === "/Btn") {
+                // Checkbox
+                // Look up checkbox field name via grandparent
+                const shouldCheck = String(fieldValue) === "true" || fieldValue === true;
+                if (shouldCheck && gpName) {
+                  const cbName = gpName; // cb_N_P
+                  const cbValue = (data.checkboxes || []).includes(cbName);
+                  // For now, handle checkbox via check() in main loop — skip here
+                }
+              }
+            } catch { /* skip malformed widget */ }
+          }
+        }
+      }
+    }
+
+    // ═══ P.10 Signatory Capacity — Template dropdown (click-to-cross-out) ═══
+    // NN1 P.10 has 4 built-in dropdown fields (Dropdown1-4) positioned over
+    // the signatory capacity labels. Each dropdown has 2 options:
+    //   [0]: display "Yes", export " " (blank → label visible beneath)
+    //   [1]: display "Yes", export "────" (dash → crosses out label visually)
+    //
+    // Template layout (based on widget Rect x-coordinates):
+    //   Dropdown1 (x~155) → Director        Dropdown3 (x~245) → Manager
+    //   Dropdown2 (x~189) → Company Secretary  Dropdown4 (x~278) → Authorized Rep
+    //
+    // This replaces the old drawLine approach — the "click" interaction is
+    // native to the PDF: opening the dropdown shows two "Yes" options, one
+    // that visually blanks the label and one that draws a line through it.
+    const signatoryCapacity = data.signatoryCapacity;
+    if (signatoryCapacity) {
+      const ctx = (pdfDoc as any).context;
+      // Mapping: frontend capacity key → template dropdown field name
+      const capDropdowns: Record<string, string> = {
+        director:      'Dropdown1',
+        secretary:     'Dropdown2',
+        manager:       'Dropdown3',
+        authorizedRep: 'Dropdown4',
+      };
+
+      // Build the dash-line value (U+2500 "─" × 25, UTF-16BE)
+      const dashValue = PDFHexString.fromText('─'.repeat(25));
+      const blankValue = PDFString.of(' ');
+
+      const catalog = (pdfDoc as any).catalog;
+      const acroForm = catalog?.lookup(PDFName.of('AcroForm'));
+      const fields = acroForm?.lookup?.(PDFName.of('Fields'));
+
+      if (fields && typeof fields.size === 'function') {
+        for (let i = 0; i < fields.size(); i++) {
+          let field: any;
+          try { field = ctx.lookup(fields.get(i)); } catch { continue; }
+          if (!field || typeof field.get !== 'function') continue;
+
+          const t = field.get(PDFName.of('T'));
+          const name = t instanceof PDFString ? t.decodeText() : '';
+          if (!name) continue;
+
+          // Match dropdown to capacity
+          const entry = Object.entries(capDropdowns).find(([, dn]) => dn === name);
+          if (!entry) continue;
+          const [cap] = entry;
+          const isSelected = cap === signatoryCapacity;
+
+          // Set /V to blank (label shows) or dash (crosses out label)
+          if (isSelected) {
+            field.set(PDFName.of('V'), blankValue);
+          } else {
+            field.set(PDFName.of('V'), dashValue);
+          }
+
+          // Delete /AP so the viewer regenerates appearance for the new value
+          if (typeof field.lookup === 'function') {
+            try { field.delete(PDFName.of('AP')); } catch { /* skip */ }
           }
         }
       }
@@ -363,6 +490,29 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
     // SKIP flatten() — NN1 template is large, flatten() exceeds Workers CPU budget
     rebuildAcroFormFields(pdfDoc);
     enableNeedAppearances(pdfDoc);
+
+    // ═══ Fix: Force all page /Annots to stay as indirect references ═══
+    // pdf-lib's drawLine and other page modifications can inline /Annots during
+    // save, which breaks /MK /BG rendering in PDF viewers (confirmed: MuPDF).
+    // Re-register each page's /Annots as an indirect object right before save.
+    {
+      const ctx = (pdfDoc as any).context;
+      for (const page of pdfDoc.getPages()) {
+        try {
+          const node = (page as any).node;
+          const annots = node.lookup(PDFName.of("Annots")) as any;
+          if (!annots || typeof annots.size !== "function") continue;
+          // Delete old /Annots first to clear any inline state, then set indirect ref
+          const newAnnots = PDFArray.withContext(ctx);
+          for (let i = 0; i < annots.size(); i++) {
+            newAnnots.push(annots.get(i));
+          }
+          const ref = ctx.register(newAnnots);
+          node.delete(PDFName.of("Annots"));
+          node.set(PDFName.of("Annots"), ref);
+        } catch { /* skip */ }
+      }
+    }
 
     const pdfBytes = await pdfDoc.save({ updateFieldAppearances: false });
     return jsonResp({ pdf: uint8ToBase64(new Uint8Array(pdfBytes)) });

@@ -505,7 +505,7 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
         fields['fill_9_P.3'] = a.hkidMain.slice(0, 4); fields['fill_10_P.3'] = a.passportCountry; fields['fill_11_P.3'] = a.passportNumber;
         fields['fill_12_P.3'] = a.day; fields['fill_13_P.3'] = a.month; fields['fill_14_P.3'] = a.year;
         // Continuation sheet A (P.11) for 2nd+
-        for (let ai = 1; ai < Math.min(authRepNats.length - 1 + 1, 1); ai++) {
+        for (let ai = 1; ai < authRepNats.length; ai++) {
           const ca = authRepNats[ai];
           fields['fill_1_P.11'] = ca.nameChinese; fields['fill_2_P.11'] = ca.surname; fields['fill_3_P.11'] = ca.otherNames;
           fields['fill_4_P.11'] = ca.addrFlat; fields['fill_5_P.11'] = ca.addrBuilding;
@@ -526,6 +526,15 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
         fields['fill_5_P.4'] = c.addrStreet; fields['fill_6_P.4'] = c.addrDistrict;
         fields['fill_7_P.4'] = c.email;
         fields['fill_8_P.4'] = c.day; fields['fill_9_P.4'] = c.month; fields['fill_10_P.4'] = c.year;
+        // Continuation sheet B (P.12) for 2nd+
+        for (let ci = 1; ci < authRepCorps.length; ci++) {
+          const cc = authRepCorps[ci];
+          fields['fill_1_P.12'] = cc.nameChinese; fields['fill_2_P.12'] = cc.nameEnglish;
+          fields['fill_3_P.12'] = cc.addrFlat; fields['fill_4_P.12'] = cc.addrBuilding;
+          fields['fill_5_P.12'] = cc.addrStreet; fields['fill_6_P.12'] = cc.addrDistrict;
+          fields['fill_7_P.12'] = cc.email;
+          fields['fill_8_P.12'] = cc.day; fields['fill_9_P.12'] = cc.month; fields['fill_10_P.12'] = cc.year;
+        }
       }
 
       // ── P.5: Company Secretary 自然人 ──
@@ -550,6 +559,16 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
         fields['fill_8_P.6'] = s.email;
         fields['fill_9_P.6'] = s.brNumber;
         fields['fill_10_P.6'] = s.day; fields['fill_11_P.6'] = s.month; fields['fill_12_P.6'] = s.year;
+        // Continuation sheet D (P.14) for 2nd+
+        for (let si = 1; si < secCorps.length; si++) {
+          const cs = secCorps[si];
+          fields['fill_1_P.14'] = cs.nameChinese; fields['fill_2_P.14'] = cs.nameEnglish;
+          fields['fill_3_P.14'] = cs.addrFlat; fields['fill_4_P.14'] = cs.addrBuilding;
+          fields['fill_5_P.14'] = cs.addrStreet; fields['fill_6_P.14'] = cs.addrDistrict; fields['fill_7_P.14'] = cs.addrRegion;
+          fields['fill_8_P.14'] = cs.email;
+          fields['fill_9_P.14'] = cs.brNumber;
+          fields['fill_10_P.14'] = cs.day; fields['fill_11_P.14'] = cs.month; fields['fill_12_P.14'] = cs.year;
+        }
       }
 
       // ── P.7-8: Directors 自然人 ──
@@ -566,6 +585,20 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
         fields[`fill_15_P.${pn}`] = d.hkidMain.slice(0, 4); fields[`fill_16_P.${pn}`] = d.passportCountry; fields[`fill_17_P.${pn}`] = d.passportNumber;
         fields[`fill_18_P.${pn}`] = d.day; fields[`fill_19_P.${pn}`] = d.month; fields[`fill_20_P.${pn}`] = d.year;
       }
+      // ── P.15: Directors 自然人 續頁E (3rd+) ──
+      if (dirNats.length > 2) {
+        const d = dirNats[2];
+        checkboxes.push(d.isAlternate ? 'toggle_2_P.15' : 'toggle_1_P.15');
+        if (d.isAlternate) fields['fill_1_P.15'] = d.alternateTo;
+        fields['fill_2_P.15'] = d.nameChinese; fields['fill_3_P.15'] = d.surname; fields['fill_4_P.15'] = d.otherNames;
+        fields['fill_5_P.15'] = d.prevNameChinese; fields['fill_6_P.15'] = d.prevNameEnglish;
+        fields['fill_7_P.15'] = d.aliasChinese; fields['fill_8_P.15'] = d.aliasEnglish;
+        fields['fill_9_P.15'] = d.addrFlat; fields['fill_10_P.15'] = d.addrBuilding;
+        fields['fill_11_P.15'] = d.addrStreet; fields['fill_12_P.15'] = d.addrDistrict; fields['fill_13_P.15'] = d.addrRegion;
+        fields['fill_14_P.15'] = d.email;
+        fields['fill_15_P.15'] = d.hkidMain.slice(0, 4); fields['fill_16_P.15'] = d.passportCountry; fields['fill_17_P.15'] = d.passportNumber;
+        fields['fill_18_P.15'] = d.day; fields['fill_19_P.15'] = d.month; fields['fill_20_P.15'] = d.year;
+      }
 
       // ── P.9: Director 法人 ──
       if (dirCorps.length > 0) {
@@ -578,6 +611,18 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
         fields['fill_9_P.9'] = d.email;
         fields['fill_10_P.9'] = '';
         fields['fill_11_P.9'] = d.day; fields['fill_12_P.9'] = d.month; fields['fill_13_P.9'] = d.year;
+        // Continuation sheet F (P.16) for 2nd+
+        for (let fi = 1; fi < dirCorps.length; fi++) {
+          const cd = dirCorps[fi];
+          checkboxes.push(cd.isAlternate ? 'toggle_2_P.16' : 'toggle_1_P.16');
+          if (cd.isAlternate) fields['fill_1_P.16'] = cd.alternateTo;
+          fields['fill_2_P.16'] = cd.nameChinese; fields['fill_3_P.16'] = cd.nameEnglish;
+          fields['fill_4_P.16'] = cd.addrFlat; fields['fill_5_P.16'] = cd.addrBuilding;
+          fields['fill_6_P.16'] = cd.addrStreet; fields['fill_7_P.16'] = cd.addrDistrict; fields['fill_8_P.16'] = cd.addrRegion;
+          fields['fill_9_P.16'] = cd.email;
+          fields['fill_10_P.16'] = '';
+          fields['fill_11_P.16'] = cd.day; fields['fill_12_P.16'] = cd.month; fields['fill_13_P.16'] = cd.year;
+        }
       }
 
       // ── P.10 ──
@@ -599,13 +644,28 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
 
       // ── P.17: PI-NN1 — 自動從 piPersons 填充（後端 widget-level 處理多頁複製）──
 
+      // ── Build dynamic removePages ──
+      const removePages: number[] = [];
+      // Always remove notes pages (P.18-P.27, 0-indexed 17-26)
+      for (let p = 17; p <= 26; p++) removePages.push(p);
+      // Conditionally remove empty continuation sheets
+      if (authRepNats.length <= 1) removePages.push(10);       // P.11 Cont A
+      if (authRepCorps.length <= 1) removePages.push(11);      // P.12 Cont B
+      removePages.push(12);                                     // P.13 Cont C — always removed (only 1 sec nat supported)
+      if (secCorps.length <= 1) removePages.push(13);          // P.14 Cont D
+      if (dirNats.length <= 2) removePages.push(14);           // P.15 Cont E
+      if (dirCorps.length <= 1) removePages.push(15);          // P.16 Cont F
+
+      // ── PI-NN1 adjust: if no piPersons, also remove P.17 ──
+      if (piPersons.length === 0) removePages.push(16);        // P.17 PI-NN1
+
       // ── API ──
       const resp = await fetch(`/api/generate-nn1-pdf`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({
           fields, checkboxes: checkboxes.length > 0 ? checkboxes : undefined,
           piPersons: piPersons.length > 0 ? piPersons : undefined,
-          removePages: [17, 18, 19, 20, 21, 22, 23, 24],  // P.18-P.25 填表須知
+          removePages,
           fieldFontSizes: { 'fill_12_P.1': 7 },
           signatoryCapacity: signatoryCapacity || undefined,
         }),

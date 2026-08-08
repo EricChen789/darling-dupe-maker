@@ -1,16 +1,21 @@
 // POST /api/generate-nar1-pdf
-// NAR1 — Annual Return (本地 PyMuPDF 端點對標)
+// NAR1 — Annual Return
 //
-// 策略：使用單一合併模板 + pdf-lib 標準表單 API
+// 策略：使用 createFormHelpers + 跨文檔 copyPages 動態續頁
 //   模板內建 /PMingLiU 字體（Type0, UniCNS-UTF16-H），不需另外嵌入 CJK 字體
-//   只嵌入 Helvetica 用於 BR 蓋印，大幅節省 CPU（避免 NotoSansTC 5-8MB 嵌入）
+//   只嵌入 Helvetica 用於 BR 蓋印，大幅節省 CPU
 //   透過 NeedAppearances 讓 PDF 閱讀器用模板內建字體重建外觀流
 
-import { PDFDocument, PDFBool, PDFName, PDFString, StandardFonts } from "pdf-lib";
+import { PDFDocument, PDFBool, PDFName, PDFString, PDFHexString, StandardFonts } from "pdf-lib";
 import { verifyAuthRequest, type Env as AuthEnv } from './_auth';
 import {
   corsHeaders, jsonResp, uint8ToBase64,
 } from './_pdf-utils';
+import {
+  createFormHelpers, collectFormFields, detachWidget, rebuildAcroFormFields,
+  buildCjkDA, buildHelvDA, isAscii, decodePdfText,
+  type FormHelpers, type AcroFieldEntry,
+} from './_acroform';
 
 interface Env {
   PDF_TEMPLATES: R2Bucket;
@@ -87,18 +92,24 @@ interface CompanyData {
     name?: string;
     role?: 'director' | 'secretary' | null;
   } | null;
+  mortgageAmount?: string;
+  continuationCounts?: {
+    sheetA: number;
+    sheetB: number;
+    sheetC: number;
+    sheetD: number;
+    sched1: number;
+  };
 }
 
 // ═══ 共用工具 ═══
 const CJK_RE = /[㐀-鿿豈-﫿]/;
 
-// 結算日期 = 成立日期的月/日 + 今年；若今年已過則自動變為下一年。若沒成立日期則用今天。
 function computeReturnDate(incorporationDate?: string): string {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const currentYear = today.getFullYear();
   if (incorporationDate) {
-    // Support both YYYY-MM-DD and DD/MM/YYYY formats
     let d: Date;
     if (incorporationDate.includes('/')) {
       const parts = incorporationDate.split('/');
@@ -111,14 +122,13 @@ function computeReturnDate(incorporationDate?: string): string {
       const dd = String(d.getDate()).padStart(2, '0');
       let targetYear = currentYear;
       const candidate = new Date(targetYear, d.getMonth(), d.getDate());
-      if (candidate < today) {
-        targetYear = currentYear + 1;
-      }
+      if (candidate < today) targetYear = currentYear + 1;
       return `${targetYear}-${mm}-${dd}`;
     }
   }
   return today.toISOString().split('T')[0];
 }
+
 const PURE_NUMBER_RE = /^[\d,.\s]+$/;
 const ADDR_FLAT_RE = /^(?:flat|room|rm|unit|shop|suite|ste|workshop|portion|floor|fl|\d+\/f|g\/f|gf|lg\/f|ug\/f|m\/f|b\d*\/f)\b/i;
 const ADDR_COUNTRY_RE = /(hong\s*kong|hk\b|china|prc|macau|macao|singapore|taiwan|united\s+\w+|\busa\b|\buk\b|canada|australia|japan|korea|h\.?k\.?\s*sar|香港|中國|澳門|台灣|新加坡|日本|韓國|英國|美國|加拿大|澳洲)/i;
@@ -177,9 +187,102 @@ const parsePassportPartial = (passportNumber: string): string => {
   return cleaned.slice(0, Math.ceil(cleaned.length / 2));
 };
 
-// ═══ 主流程 ═══
-async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Array> {
-  // 1) 載入合併模板
+// ═══ Dynamic Continuation Page Helper ═══
+// Copies a template page into the main doc, detaches all widgets,
+// renames them with a suffix, and sets their values.
+// Returns the index of the newly inserted page.
+
+interface ContinuationSlot {
+  fieldNames: string[];   // original field names on this page (e.g., ["fill_5_P11","fill_6_P11",...])
+  values: Record<string, string>;  // originalName → value
+  checkboxes?: string[];  // checkbox names to check
+}
+
+async function addDynamicContinuationSheet(
+  pdfDoc: PDFDocument,
+  templateBytes: Uint8Array,
+  sourcePageIndex: number,
+  insertAfterIndex: number,
+  slot: ContinuationSlot,
+  suffix: string,
+): Promise<number> {
+  // 1) Load fresh template and copy the page
+  const freshDoc = await PDFDocument.load(templateBytes, { ignoreEncryption: true });
+  const [copiedPage] = await pdfDoc.copyPages(freshDoc, [sourcePageIndex]);
+  const newIndex = insertAfterIndex + 1;
+  pdfDoc.insertPage(newIndex, copiedPage);
+
+  // 2) Process widgets on the copied page
+  const ctx = (pdfDoc as any).context;
+  const annots = copiedPage.node.lookup(PDFName.of('Annots')) as any;
+  if (!annots || typeof annots.size !== 'function') return newIndex;
+
+  for (let i = 0; i < annots.size(); i++) {
+    try {
+      const widget = ctx.lookup(annots.get(i)) as any;
+      if (!widget || typeof widget.get !== 'function') continue;
+      const subtype = widget.get(PDFName.of('Subtype'));
+      if (!subtype || String(subtype) !== '/Widget') continue;
+
+      const parentRef = widget.get(PDFName.of('Parent'));
+      const parent = parentRef ? (ctx.lookup(parentRef) as any) : widget;
+      const parentName = decodePdfText(parent.get(PDFName.of('T')));
+      const widgetName = decodePdfText(widget.get(PDFName.of('T')));
+      const resolvedName = parentName || widgetName;
+
+      // Only process fields in our slot
+      if (!resolvedName || !slot.fieldNames.some(fn =>
+        resolvedName === fn || resolvedName.startsWith(fn) || fn.startsWith(resolvedName)
+      )) continue;
+
+      // Detach + rename
+      detachWidget(widget, parent);
+      const newName = `${resolvedName}_${suffix}`;
+      widget.set(PDFName.of('T'), PDFString.of(newName));
+
+      // Check if this is a checkbox or text field
+      const ft = widget.get(PDFName.of('FT'));
+      const ftStr = ft ? String(ft) : '';
+
+      if (ftStr === '/Btn' && slot.checkboxes?.some(cb => resolvedName === cb || resolvedName.startsWith(cb))) {
+        // Checkbox: set /AS to "Yes" (On state)
+        try {
+          const ap = widget.get(PDFName.of('AP')) as any;
+          const apN = ap?.get?.(PDFName.of('N')) as any;
+          const dict = apN?.dict;
+          let onState = 'Yes';
+          if (dict && typeof dict.keys === 'function') {
+            for (const k of dict.keys()) {
+              if (k !== 'Off') { onState = k; break; }
+            }
+          }
+          widget.set(PDFName.of('AS'), PDFName.of(onState));
+        } catch { widget.set(PDFName.of('AS'), PDFName.of('Yes')); }
+        widget.delete(PDFName.of('AP'));
+      } else if (ftStr === '/Tx') {
+        // Text field: set value
+        const value = slot.values[resolvedName] || '';
+        if (!value) continue;
+
+        const da = decodePdfText(widget.get(PDFName.of('DA'))) || '/Helv 12 Tf 0 g';
+        if (value.length > 0 && !isAscii(value)) {
+          widget.set(PDFName.of('DA'), PDFString.of(buildCjkDA(da)));
+          widget.set(PDFName.of('V'), PDFHexString.fromText(value));
+        } else {
+          widget.set(PDFName.of('DA'), PDFString.of(buildHelvDA(da)));
+          widget.set(PDFName.of('V'), PDFString.of(value));
+        }
+        widget.delete(PDFName.of('AP'));
+      }
+    } catch { /* skip malformed widget */ }
+  }
+
+  return newIndex;
+}
+
+// ═══ Main build function ═══
+export async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Array> {
+  // 1) Load template
   const r2Bucket = (env as any).PDF_TEMPLATES || (env as any).R2;
   const templateObj = await r2Bucket.get("NAR1-template.pdf");
   if (!templateObj) throw new Error("Template not found: NAR1-template.pdf");
@@ -187,13 +290,23 @@ async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Array> {
   const templateBytes = new Uint8Array(await templateObj.arrayBuffer());
   const pdfDoc = await PDFDocument.load(templateBytes);
 
-  // 2) 嵌入 Helvetica（用於 BR 蓋印）
+  // 2) Embed Helvetica for BR stamp
   const helv = await pdfDoc.embedFont(StandardFonts.Helvetica);
-  const form = pdfDoc.getForm();
+  const helpers = createFormHelpers(pdfDoc);
+  const setF = (name: string, value?: string) => {
+    if (value == null || value === "") return;
+    helpers.setText(name, String(value));
+  };
+  const checkF = (name: string, shouldCheck?: boolean) => {
+    if (!shouldCheck) return;
+    helpers.check(name, true);
+  };
+  const selectDD = (name: string, value: string) => {
+    if (!value) return;
+    helpers.selectDropdown(name, value);
+  };
 
-  // 3) 準備資料
-  const now = new Date();
-  const hkNow = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+  // 3) Prepare data
   const returnDate = data.returnDate || computeReturnDate(data.incorporationDate);
   const [year, month, day] = returnDate.split("-");
   const office = data.registeredOffice || {};
@@ -206,30 +319,7 @@ async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Array> {
   const ctLower = companyType.toLowerCase();
   const isListedCo = companyType.includes("上市") || ctLower.includes("listed");
 
-  // ═══ Helpers ═══
-  const setF = (name: string, value?: string) => {
-    if (value == null || value === "") return;
-    try {
-      form.getTextField(name).setText(String(value));
-    } catch { /* skip */ }
-  };
-
-  const checkF = (name: string, shouldCheck?: boolean) => {
-    if (!shouldCheck) return;
-    try { form.getCheckBox(name).check(); } catch { /* skip */ }
-  };
-
-  const selectDD = (name: string, value: string) => {
-    if (!value) return;
-    try {
-      const dd = form.getDropdown(name);
-      const opts = dd.getOptions();
-      const match = opts.find((o: string) => value.includes(o) || o.includes(value));
-      if (match) dd.select(match);
-    } catch { /* skip */ }
-  };
-
-  // ═══ P.1 公司資料 ═══
+  // ═══ P.1 ═══
   setF("fill_1_P.1", br8);
   const fullCompanyName = [data.name, data.chineseName].filter(Boolean).join("\n");
   setF("fill_2_P.1", fullCompanyName);
@@ -247,9 +337,7 @@ async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Array> {
   setF("fill_17_P.1", office.street || "");
   setF("fill_18_P.1", office.district || "");
   const p1Region = office.region || (office as any).country || '';
-  if (p1Region) {
-    try { selectDD("Dropdown1_P.1", p1Region); } catch { try { selectDD("Dropdown_1_P.1", p1Region); } catch { /* */ } }
-  }
+  if (p1Region) { try { selectDD("Dropdown1_P.1", p1Region); } catch { try { selectDD("Dropdown_1_P.1", p1Region); } catch { /* */ } } }
 
   const presenterP1 = data.presenter || {};
   if (presenterP1.name) setF("fill_19_P.1", presenterP1.name);
@@ -259,8 +347,7 @@ async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Array> {
   if (presenterP1.email) setF("fill_23_P.1", presenterP1.email);
   if (presenterP1.reference) setF("fill_24_P.1", presenterP1.reference);
 
-  // ═══ P.1 提交人电话/传真/电邮/档号字体大小覆写 ═══
-  // 模板 DA: address=9pt, phone/fax/email/reference=12pt → 统一为9pt
+  // P.1 presenter font size override
   const presenterFontFields = new Set(['fill_21_P.1', 'fill_22_P.1', 'fill_23_P.1', 'fill_24_P.1']);
   const ctx = (pdfDoc as any).context;
   const page1 = pdfDoc.getPages()[0];
@@ -272,23 +359,18 @@ async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Array> {
         if (!widget || String(widget.get(PDFName.of('Subtype'))) !== '/Widget') continue;
         const ft = widget.get(PDFName.of('FT'));
         if (!ft || String(ft) !== '/Tx') continue;
-        // Read /T from parent (AcroForm field hierarchy)
         let fieldName = '';
         const parentRef = widget.get(PDFName.of('Parent'));
         if (parentRef) {
-          try {
-            const parentObj = ctx.lookup(parentRef) as any;
-            const pT = parentObj?.get?.(PDFName.of('T'));
-            if (pT instanceof PDFString) fieldName = pT.decodeText();
-          } catch { /* skip */ }
+          try { const pT = (ctx.lookup(parentRef) as any)?.get?.(PDFName.of('T')); if (pT instanceof PDFString) fieldName = pT.decodeText(); } catch { /* */ }
         }
         if (!presenterFontFields.has(fieldName)) continue;
         widget.set(PDFName.of('DA'), PDFString.of('/PMingLiU 9 Tf 0 g'));
-      } catch { /* skip */ }
+      } catch { /* */ }
     }
   }
 
-  // ═══ Share Info ═══
+  // ═══ Share capital summary ═══
   const normalizeClassName = (raw: string) => {
     const t = (raw || "").trim();
     if (!t || /^ord(inary)?$/i.test(t) || t.includes("普通")) return "ORDINARY SHARES";
@@ -322,10 +404,14 @@ async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Array> {
   }
   const shareInfos = Array.from(shareTypeMap.values());
 
-  // ═══ P.2 股本 ═══
+  // ═══ P.2 ═══
   setF("fill_1_P.2", br8);
   if (data.companyEmail) setF("fill_2_P.2", data.companyEmail);
   if (data.companyPhone) setF("fill_3_P.2", data.companyPhone);
+
+  // Mortgage amount
+  if (data.mortgageAmount) setF("fill_4_P.2", data.mortgageAmount);
+
   let totalShares = 0, totalAmountSum = 0, totalPaidUpSum = 0, firstCurrency = "";
   for (let i = 0; i < Math.min(4, shareInfos.length); i++) {
     const info = shareInfos[i];
@@ -430,6 +516,8 @@ async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Array> {
     setF("fill_10_P.6", d.email || "");
     setF("fill_11_P.6", d.companyNumberRef || d.brNumber || d.idNumber || "");
   }
+  // TODO: 千问 VL 确认 P.6 是否有第 2 个法人董事 slot
+  // 如有 (如 fill_13_P.6 ~ fill_21_P.6), 在此填入 corpDirs[1]
 
   // ═══ P.7 ═══
   setF("fill_1_P.7", br8);
@@ -439,11 +527,24 @@ async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Array> {
   checkF("cb_1_P.8", true);
   if (!isListedCo) checkF("cb_4_P.8", true);
 
-  const sheetA = Math.max(0, natSecs.length - 1);
-  const sheetB = Math.max(0, corpSecs.length - 1);
-  const sheetC = Math.max(0, natDirs.length - 1);
-  const sheetD = corpDirs.length > 1 ? Math.ceil((corpDirs.length - 1) / 2) : 0;
-  const sched1Pages = isListedCo ? 0 : (validMembers.length > 0 ? Math.ceil(validMembers.length / 2) : 0);
+  // Calculate continuation counts
+  // These counts include BOTH pre-built continuation pages AND dynamic ones.
+  // sheetA/B/C: each person beyond P.3/P.4/P.5 needs 1 page (pre-built P.11/12/13 = 1st extra)
+  // sheetD: P.6 holds 1 corp dir, P.14 holds 2 corp dirs → beyond 1st = ceil((n-1)/2)
+  // sched1: P.9 holds 2 members, P.10 holds 2 members → ceil(n/2) total pages
+  const contCounts = data.continuationCounts || {
+    sheetA: Math.max(0, natSecs.length - 1),
+    sheetB: Math.max(0, corpSecs.length - 1),
+    sheetC: Math.max(0, natDirs.length - 1),
+    sheetD: corpDirs.length > 1 ? Math.ceil((corpDirs.length - 1) / 2) : 0,
+    sched1: isListedCo ? 0 : (validMembers.length > 0 ? Math.ceil(validMembers.length / 2) : 0),
+  };
+
+  const sheetA = contCounts.sheetA;
+  const sheetB = contCounts.sheetB;
+  const sheetC = contCounts.sheetC;
+  const sheetD = contCounts.sheetD;
+  const sched1Pages = contCounts.sched1;
   const sched2Pages = isListedCo ? 1 : 0;
 
   if (sheetA > 0) setF("fill_4_P.8", String(sheetA));
@@ -463,7 +564,7 @@ async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Array> {
   if (signerRole === 'secretary' || signerRole === 'director') {
     try {
       const page8 = pdfDoc.getPage(7);
-      const yLine = 91; // approx center of the dropdown lines
+      const yLine = 91;
       if (signerRole === 'secretary') {
         page8.drawLine({ start: { x: 143, y: yLine }, end: { x: 205, y: yLine }, thickness: 1.2 });
       } else {
@@ -472,7 +573,7 @@ async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Array> {
     } catch { /* skip */ }
   }
 
-  // ═══ P.9 附表一（股東，前2人）═══
+  // ═══ Pre-built pages: P.9 Schedule 1 (shareholders #1+#2) ═══
   if (validMembers.length > 0 && !isListedCo) {
     setF("fill_1_P.9", day);
     setF("fill_2_P.9", month);
@@ -516,7 +617,7 @@ async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Array> {
     setF("fill_30_P.9", String(sched1Pages));
   }
 
-  // ═══ P.10 附表一續（股東#3+#4）或 附表二（上市公司）═══
+  // ═══ Pre-built: P.10 (shareholders #3+#4 or Schedule 2) ═══
   if (validMembers.length > 2 && !isListedCo) {
     setF("fill_1_P.10", day);
     setF("fill_2_P.10", month);
@@ -568,7 +669,7 @@ async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Array> {
     }
   }
 
-  // ═══ P.11 續頁A：自然人秘書 #2 ═══
+  // ═══ Pre-built: P.11 續頁A (nat sec #2) ═══
   if (natSecs.length > 1) {
     const s = natSecs[1];
     setF("fill_1_P11", day);
@@ -592,7 +693,7 @@ async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Array> {
     if (s.tcspNumber) setF("fill_20_P11", s.tcspNumber);
   }
 
-  // ═══ P.12 續頁B：法人秘書 #2 ═══
+  // ═══ Pre-built: P.12 續頁B (corp sec #2) ═══
   if (corpSecs.length > 1) {
     const s = corpSecs[1];
     setF("fill_1_P12", day);
@@ -611,7 +712,7 @@ async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Array> {
     if (s.tcspNumber) setF("fill_13_P12", s.tcspNumber);
   }
 
-  // ═══ P.13 續頁C：自然人董事 #2 ═══
+  // ═══ Pre-built: P.13 續頁C (nat dir #2) ═══
   if (natDirs.length > 1) {
     const d = natDirs[1];
     setF("fill_1_P.13", day);
@@ -635,7 +736,7 @@ async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Array> {
     if (d.passportNumber) setF("fill_23_P.13", parsePassportPartial(d.passportNumber));
   }
 
-  // ═══ P.14 續頁D：法人董事 #2+#3 ═══
+  // ═══ Pre-built: P.14 續頁D (corp dirs #2+#3) ═══
   if (corpDirs.length > 1) {
     const extraCorpDirs = corpDirs.slice(1);
     setF("fill_1_P14", day);
@@ -660,7 +761,7 @@ async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Array> {
     if (extraCorpDirs[1]) fillSlotP14(extraCorpDirs[1], 2);
   }
 
-  // ═══ P.15 續頁E：備存紀錄 ═══
+  // ═══ Pre-built: P.15 續頁E (company records) ═══
   const validRecords = (data.companyRecords || []).filter(
     r => (r.records && r.records.trim()) || (r.address && r.address.trim())
   );
@@ -675,52 +776,310 @@ async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Array> {
     setF("fill_6_P15", addressText);
   }
 
+  // ═══════════════════════════════════════
+  // DYNAMIC CONTINUATION PAGES (Phase 2)
+  // ═══════════════════════════════════════
+
+  // Template page indices (0-based):
+  // 10=P.11(Sheet A), 11=P.12(Sheet B), 12=P.13(Sheet C), 13=P.14(Sheet D), 8=P.9(Sched1)
+
+  let hasDynamicPages = false;
+
+  // ── Sheet A: Extra nat secs (3rd+) ──
+  // Pre-built: 2 (P.3 + P.11). Extra beyond 2 need dynamic copies of P.11 (index 10).
+  // Insert at end of document — all dynamic continuation sheets go after pre-built pages.
+  if (natSecs.length > 2) {
+    let insertAfter = pdfDoc.getPageCount() - 1;
+    for (let si = 2; si < natSecs.length; si++) {
+      const s = natSecs[si];
+      const suffix = `dynA_${si}`;
+      const { surname, otherNames } = parseEnglishName(s.nameEnglish);
+      const addr = parseAddress(s.address || '');
+
+      const values: Record<string, string> = {};
+      const setV = (k: string, v: string) => { if (v) values[k] = v; };
+      setV("fill_1_P11", day);
+      setV("fill_2_P11", month);
+      setV("fill_3_P11", year);
+      setV("fill_4_P11", br8);
+      setV("fill_5_P11", s.nameChinese || "");
+      setV("fill_6_P11", surname);
+      setV("fill_7_P11", otherNames);
+      setV("fill_12_P11", addr.flat);
+      setV("fill_13_P11", addr.building);
+      setV("fill_14_P11", addr.street);
+      setV("fill_15_P11", addr.district);
+      setV("fill_16_P11", s.email || "");
+      const hkid = parseHkidPartial(s.idNumber || '');
+      if (hkid) setV("fill_17_P11", hkid);
+      if ((s as any).passportCountry) setV("fill_18_P11", (s as any).passportCountry);
+      if (s.passportNumber) setV("fill_19_P11", parsePassportPartial(s.passportNumber));
+      if (s.tcspNumber) setV("fill_20_P11", s.tcspNumber);
+
+      const slot: ContinuationSlot = {
+        fieldNames: Object.keys(values),
+        values,
+      };
+      insertAfter = await addDynamicContinuationSheet(pdfDoc, templateBytes, 10, insertAfter, slot, suffix);
+      hasDynamicPages = true;
+    }
+  }
+
+  // ── Sheet B: Extra corp secs (3rd+) ──
+  // Insert at end of document.
+  if (corpSecs.length > 2) {
+    let insertAfter = pdfDoc.getPageCount() - 1;
+    for (let si = 2; si < corpSecs.length; si++) {
+      const s = corpSecs[si];
+      const suffix = `dynB_${si}`;
+      const addr = parseAddress(s.address || '');
+
+      const values: Record<string, string> = {};
+      const setV = (k: string, v: string) => { if (v) values[k] = v; };
+      setV("fill_1_P12", day);
+      setV("fill_2_P12", month);
+      setV("fill_3_P12", year);
+      setV("fill_4_P12", br8);
+      setV("fill_5_P12", s.nameChinese || "");
+      setV("fill_6_P12", s.nameEnglish || "");
+      setV("fill_7_P12", addr.flat);
+      setV("fill_8_P12", addr.building);
+      setV("fill_9_P12", addr.street);
+      setV("fill_10_P12", addr.district);
+      setV("fill_11_P12", s.email || "");
+      setV("fill_12_P12", s.companyNumberRef || s.brNumber || s.idNumber || "");
+      if (s.tcspNumber) setV("fill_13_P12", s.tcspNumber);
+
+      const slot: ContinuationSlot = {
+        fieldNames: Object.keys(values),
+        values,
+      };
+      // Insert after the last dynamic page (or end of doc)
+      insertAfter = await addDynamicContinuationSheet(pdfDoc, templateBytes, 11, insertAfter, slot, suffix);
+      hasDynamicPages = true;
+    }
+  }
+
+  // ── Sheet C: Extra nat dirs (3rd+) ──
+  // Insert at end of document.
+  if (natDirs.length > 2) {
+    let insertAfter = pdfDoc.getPageCount() - 1;
+    for (let di = 2; di < natDirs.length; di++) {
+      const d = natDirs[di];
+      const suffix = `dynC_${di}`;
+      const { surname, otherNames } = parseEnglishName(d.nameEnglish);
+
+      const values: Record<string, string> = {};
+      const setV = (k: string, v: string) => { if (v) values[k] = v; };
+      setV("fill_1_P.13", day);
+      setV("fill_2_P.13", month);
+      setV("fill_3_P.13", year);
+      setV("fill_4_P.13", br8);
+      // checkbox handled separately
+      setV("fill_8_P.13", d.nameChinese || "");
+      setV("fill_9_P.13", surname);
+      setV("fill_10_P.13", otherNames);
+      setV("fill_15_P.13", office.flat || "");
+      setV("fill_16_P.13", office.building || "");
+      setV("fill_17_P.13", office.street || "");
+      setV("fill_18_P.13", office.district || "");
+      setV("fill_19_P.13", office.region || (office as any).country || "");
+      setV("fill_20_P.13", d.email || "");
+      const hkid = parseHkidPartial(d.idNumber || '');
+      if (hkid) setV("fill_21_P.13", hkid);
+      if ((d as any).passportCountry || d.nationality) setV("fill_22_P.13", (d as any).passportCountry || d.nationality || '');
+      if (d.passportNumber) setV("fill_23_P.13", parsePassportPartial(d.passportNumber));
+
+      const slot: ContinuationSlot = {
+        fieldNames: Object.keys(values),
+        values,
+        checkboxes: ['cb_1_P.13'],
+      };
+      insertAfter = await addDynamicContinuationSheet(pdfDoc, templateBytes, 12, insertAfter, slot, suffix);
+      hasDynamicPages = true;
+    }
+  }
+
+  // ── Sheet D: Extra corp dirs (4th+) ──
+  // Pre-built: 3 (1 on P.6 + 2 on P.14). Extra beyond 3 need dynamic copies of P.14 (index 13).
+  // Insert at end of document.
+  if (corpDirs.length > 3) {
+    let insertAfter = pdfDoc.getPageCount() - 1;
+    for (let di = 3; di < corpDirs.length; di += 2) {
+      const suffix = `dynD_${di}`;
+      const dir1 = corpDirs[di];
+      const dir2 = corpDirs[di + 1];
+
+      const values: Record<string, string> = {};
+      const setV = (k: string, v: string) => { if (v) values[k] = v; };
+      setV("fill_1_P14", day);
+      setV("fill_2_P14", month);
+      setV("fill_3_P14", year);
+      setV("fill_4_P14", br8);
+
+      // Slot 1 (base=0..11)
+      if (dir1) {
+        setV("fill_5_P14", "X");
+        setV("fill_8_P14", dir1.nameChinese || "");
+        setV("fill_9_P14", dir1.nameEnglish || "");
+        setV("fill_10_P14", office.flat || "");
+        setV("fill_11_P14", office.building || "");
+        setV("fill_12_P14", office.street || "");
+        setV("fill_13_P14", office.district || "");
+        setV("fill_14_P14", office.region || (office as any).country || "");
+        setV("fill_15_P14", dir1.email || "");
+        setV("fill_16_P14", dir1.companyNumberRef || dir1.brNumber || dir1.idNumber || "");
+      }
+      // Slot 2 (base=12..23)
+      if (dir2) {
+        setV("fill_17_P14", "X");
+        setV("fill_20_P14", dir2.nameChinese || "");
+        setV("fill_21_P14", dir2.nameEnglish || "");
+        setV("fill_22_P14", office.flat || "");
+        setV("fill_23_P14", office.building || "");
+        setV("fill_24_P14", office.street || "");
+        setV("fill_25_P14", office.district || "");
+        setV("fill_26_P14", office.region || (office as any).country || "");
+        setV("fill_27_P14", dir2.email || "");
+        setV("fill_28_P14", dir2.companyNumberRef || dir2.brNumber || dir2.idNumber || "");
+      }
+
+      const slot: ContinuationSlot = {
+        fieldNames: Object.keys(values),
+        values,
+      };
+      insertAfter = await addDynamicContinuationSheet(pdfDoc, templateBytes, 13, insertAfter, slot, suffix);
+      hasDynamicPages = true;
+    }
+  }
+
+  // ── Schedule 1: Extra shareholders (5th+) ──
+  // Pre-built: 4 (2 on P.9 + 2 on P.10). Extra beyond 4 need dynamic copies of P.9 (index 8).
+  // Schedule 1 goes BEFORE Sheet continuations, so we process it after all Sheets.
+  // Insert at end of document — all dynamic continuation sheets go after pre-built pages.
+  if (validMembers.length > 4 && !isListedCo) {
+    let insertAfter = pdfDoc.getPageCount() - 1;
+    for (let si = 4; si < validMembers.length; si += 2) {
+      const suffix = `dynS1_${si}`;
+      const sh1 = validMembers[si];
+      const sh2 = validMembers[si + 1];
+
+      const values: Record<string, string> = {};
+      const setV = (k: string, v: string) => { if (v) values[k] = v; };
+      setV("fill_1_P.9", day);
+      setV("fill_2_P.9", month);
+      setV("fill_3_P.9", year);
+      setV("fill_4_P.9", br8);
+      if (shareInfos.length > 0) {
+        setV("fill_5_P.9", shareInfos[0].className);
+        setV("fill_6_P.9", fmtInt(shareInfos[0].shares));
+      }
+
+      const slots = [
+        { name: 7, surname: 8, other: 9, shares: 16, flat: 11, building: 12, street: 13, district: 14, country: 15 },
+        { name: 18, surname: 19, other: 20, shares: 27, flat: 22, building: 23, street: 24, district: 25, country: 26 },
+      ];
+
+      [sh1, sh2].forEach((sh, idx) => {
+        if (!sh) return;
+        const F = slots[idx];
+        const isCorp = sh.identity === "corporate";
+        const fullName = sh.nameEnglish || sh.name || "";
+        const { surname, otherNames } = parseEnglishName(fullName);
+        const addr = parseAddress(sh.address || "");
+        const safe = (v: string) => (v && PURE_NUMBER_RE.test(v) ? "" : v);
+        const country = safe(addr.country) || "Hong Kong";
+
+        setV(`fill_${F.name}_P.9`, sh.nameChinese || "");
+        if (isCorp) {
+          setV(`fill_${F.surname}_P.9`, fullName);
+        } else {
+          setV(`fill_${F.surname}_P.9`, surname);
+          setV(`fill_${F.other}_P.9`, otherNames);
+        }
+        setV(`fill_${F.shares}_P.9`, String(sh.shares || 0));
+        setV(`fill_${F.flat}_P.9`, safe(addr.flat));
+        setV(`fill_${F.building}_P.9`, safe(addr.building));
+        setV(`fill_${F.street}_P.9`, safe(addr.street));
+        setV(`fill_${F.district}_P.9`, safe(addr.district));
+        setV(`fill_${F.country}_P.9`, country);
+      });
+
+      setV("fill_29_P.9", String(Math.floor(si / 2) + 1));
+      setV("fill_30_P.9", String(sched1Pages));
+
+      const slot: ContinuationSlot = { fieldNames: Object.keys(values), values };
+      insertAfter = await addDynamicContinuationSheet(pdfDoc, templateBytes, 8, insertAfter, slot, suffix);
+      hasDynamicPages = true;
+    }
+  }
+
   // ═══ BR 蓋印在所有頁面 ═══
   if (br8) {
     for (const page of pdfDoc.getPages()) {
-      try {
-        page.drawText(br8, { x: 500, y: 820, size: 8, font: helv });
-      } catch { /* skip */ }
+      try { page.drawText(br8, { x: 500, y: 820, size: 8, font: helv }); } catch { /* skip */ }
     }
   }
 
   // ═══ 刪除不需要的頁面 ═══
-  // 從最後一頁開始倒序刪除，避免索引偏移
-  // 頁面編號 (0-indexed): 0=P.1, 1=P.2, ..., 7=P.8, 8=P.9, 9=P.10, 10=P.11, 11=P.12, 12=P.13, 13=P.14, 14=P.15
-  const pagesToKeep = new Set<number>();
-  // Always keep P.1-P.8 (index 0-7)
-  for (let i = 0; i <= 7; i++) pagesToKeep.add(i);
-  // P.9 (index 8): keep if there are shareholders and not listed
-  if (validMembers.length > 0 && !isListedCo) pagesToKeep.add(8);
-  // P.10 (index 9): keep if schedule1 cont (3+ members) or schedule2 (listed)
-  if ((validMembers.length > 2 && !isListedCo) || isListedCo) pagesToKeep.add(9);
-  // P.11 (index 10): sheetA — 自然人秘書 #2
-  if (natSecs.length > 1) pagesToKeep.add(10);
-  // P.12 (index 11): sheetB — 法人秘書 #2
-  if (corpSecs.length > 1) pagesToKeep.add(11);
-  // P.13 (index 12): sheetC — 自然人董事 #2
-  if (natDirs.length > 1) pagesToKeep.add(12);
-  // P.14 (index 13): sheetD — 法人董事 #2+#3
-  if (corpDirs.length > 1) pagesToKeep.add(13);
-  // P.15 (index 14): sheetE — 備存紀錄
-  if (validRecords.length > 0) pagesToKeep.add(14);
+  // Template structure (27 pages total):
+  //   Pages 0-14: 15 content pages with AcroForm widgets (P.1-P.15)
+  //   Pages 15-26: 12 blank spare pages (copy sources for dynamic continuation)
+  // Dynamic continuation pages are inserted at end (index 27+).
+  //
+  // Strategy: keep only needed content pages + dynamic pages, remove the rest.
 
-  const totalPages = pdfDoc.getPageCount();
-  for (let i = totalPages - 1; i >= 0; i--) {
-    if (!pagesToKeep.has(i)) {
-      pdfDoc.removePage(i);
+  // Pre-built content pages to KEEP (indices 0-14):
+  const keepPrebuiltPages = new Set<number>();
+  for (let i = 0; i <= 7; i++) keepPrebuiltPages.add(i);  // P.1-P.8 always
+  if (validMembers.length > 0 && !isListedCo) keepPrebuiltPages.add(8);  // P.9
+  if ((validMembers.length > 2 && !isListedCo) || isListedCo) keepPrebuiltPages.add(9);  // P.10
+  if (natSecs.length > 1) keepPrebuiltPages.add(10);  // P.11
+  if (corpSecs.length > 1) keepPrebuiltPages.add(11);  // P.12
+  if (natDirs.length > 1) keepPrebuiltPages.add(12);  // P.13
+  if (corpDirs.length > 1) keepPrebuiltPages.add(13);  // P.14
+  if (validRecords.length > 0) keepPrebuiltPages.add(14);  // P.15
+
+  // Collect pages to remove
+  const pagesToRemove: number[] = [];
+
+  // Unneeded pre-built content pages (indices 0-14)
+  for (let i = 14; i >= 0; i--) {
+    if (!keepPrebuiltPages.has(i)) {
+      pagesToRemove.push(i);
     }
   }
 
-  // ═══ 儲存 ═══
-  // 設置 NeedAppearances=true，讓 PDF 閱讀器用模板內建 /PMingLiU 重建外觀流
-  // 不調用 updateAppearances 以避免嵌入 5-8MB CJK 字體導致 CPU 超時
-  try {
-    const acroForm = pdfDoc.catalog.lookup(PDFName.of("AcroForm")) as any;
-    if (acroForm && typeof acroForm.set === "function") {
-      acroForm.set(PDFName.of("NeedAppearances"), PDFBool.True);
-    }
-  } catch { /* ignore */ }
+  // Blank spare pages (indices 15-26). These are copy sources for
+  // addDynamicContinuationSheet and are never needed in the final output.
+  const spareStart = 15;  // first blank spare page index
+  const spareCount = 12;  // 27-page template has 12 spare pages
+  for (let i = spareStart + spareCount - 1; i >= spareStart; i--) {
+    pagesToRemove.push(i);
+  }
+
+  // Sort descending so higher indices are removed first (no index drift)
+  pagesToRemove.sort((a, b) => b - a);
+
+  // Execute removal
+  for (const idx of pagesToRemove) {
+    try { pdfDoc.removePage(idx); } catch { /* */ }
+  }
+
+  // ═══ Rebuild AcroForm Fields (needed after dynamic pages) ═══
+  if (hasDynamicPages) {
+    rebuildAcroFormFields(pdfDoc);
+  } else {
+    // Set NeedAppearances for standard flow
+    try {
+      const acroForm = pdfDoc.catalog.lookup(PDFName.of("AcroForm")) as any;
+      if (acroForm && typeof acroForm.set === "function") {
+        acroForm.set(PDFName.of("NeedAppearances"), PDFBool.True);
+      }
+    } catch { /* ignore */ }
+  }
+
+  // ═══ Save ═══
   const pdfBytes = await pdfDoc.save({ updateFieldAppearances: false });
   return pdfBytes;
 }
@@ -777,7 +1136,6 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
 
     const result: Record<string, any> = { pdf: uint8ToBase64(pdfBytes) };
 
-    // Phase 4: Auto-assign change events to NAR1 periods
     const companyId = (companyData as any).company_id || (companyData as any).selectedCompanyId;
     if (companyId && env.DB) {
       try {

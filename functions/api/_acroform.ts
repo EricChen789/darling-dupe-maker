@@ -302,14 +302,19 @@ export function createFormHelpers(pdfDoc: PDFDocument): FormHelpers {
       // Discover the checkbox's "On" state name.
       // 1) Try /AP/N dict (NAR1, ND2A templates use /Yes, /On, /1)
       // 2) Fallback to /Opt (NR1 template)
-      let onState = "Yes";
+      // Discover the checkbox's "On" state name — must be a plain string
+      let onState: string = "Yes";
       try {
         const ap = target.widget.get(PDFName.of("AP")) as any;
         const apN = ap?.get?.(PDFName.of("N")) as any;
         const dict = apN?.dict;
         if (dict && typeof dict.keys === "function") {
           for (const k of dict.keys()) {
-            if (k !== "Off") { onState = k; break; }
+            // dict.keys() returns PDFName objects; extract string value
+            const kStr: string = (typeof k === "string") ? k :
+              (typeof k.decodeText === "function") ? k.decodeText() :
+              String(k).replace(/^\//, "");
+            if (kStr !== "Off") { onState = kStr; break; }
           }
         } else {
           const opt = target.field.get(PDFName.of("Opt"));
@@ -322,8 +327,8 @@ export function createFormHelpers(pdfDoc: PDFDocument): FormHelpers {
         } catch (_2) { /* fallback to "Yes" */ }
       }
 
+      target.widget.set(PDFName.of("V"), PDFName.of(onState));
       target.widget.set(PDFName.of("AS"), PDFName.of(onState));
-      target.widget.delete(PDFName.of("AP"));
       return true;
     } catch (e) {
       console.warn(`⚠ check failed for ${fieldName}:`, e);

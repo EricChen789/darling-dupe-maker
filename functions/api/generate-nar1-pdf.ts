@@ -406,20 +406,23 @@ async function addDynamicContinuationSheet(
       const ftStr = ft ? String(ft) : '';
 
       if (ftStr === '/Btn' && isCheckbox) {
-        // Checkbox: set /AS to "Yes" (On state)
+        // Checkbox: set both /V and /AS — match _acroform.ts ND2A pattern
+        let onState = 'Yes';
         try {
           const ap = widget.get(PDFName.of('AP')) as any;
           const apN = ap?.get?.(PDFName.of('N')) as any;
           const dict = apN?.dict;
-          let onState = 'Yes';
           if (dict && typeof dict.keys === 'function') {
             for (const k of dict.keys()) {
-              if (k !== 'Off') { onState = k; break; }
+              const kStr: string = (typeof k === 'string') ? k :
+                (typeof k.decodeText === 'function') ? k.decodeText() :
+                String(k).replace(/^\//, '');
+              if (kStr !== 'Off') { onState = kStr; break; }
             }
           }
-          widget.set(PDFName.of('AS'), PDFName.of(onState));
-        } catch { widget.set(PDFName.of('AS'), PDFName.of('Yes')); }
-        widget.delete(PDFName.of('AP'));
+        } catch { /* fallback to "Yes" */ }
+        widget.set(PDFName.of('V'), PDFName.of(onState));
+        widget.set(PDFName.of('AS'), PDFName.of(onState));
       } else if (ftStr === '/Tx') {
         // Text field: look up value using the matched key (Bug fix: resolvedName
         // is the parent-level name like "fill_8_P" which doesn't exist as a key

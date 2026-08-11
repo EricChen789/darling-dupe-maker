@@ -10,8 +10,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import {
   Plus, Edit, Trash2, Save, X, Download, Loader2, FileText, ArrowRight,
   Users, UserCheck, Briefcase, Clock, MapPin, Hash, Mail, Phone,
-  Shield, FileDigit, FileCheck, Stamp,
+  Shield, FileDigit, FileCheck, Stamp, ChevronRight, Sparkles,
 } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { toast } from '@/hooks/use-toast';
 import { downloadAndOpenBase64Pdf, downloadBase64File, DOCX_MIME, RTF_MIME } from '@/lib/downloadPdf';
 import { Company, Person, Shareholder } from '@/types';
@@ -140,6 +141,46 @@ export function RegistersTab({ company }: { company: Company }) {
   const upsertTx = useUpsertShareTransaction();
   const delTx = useDeleteShareTransaction();
   const [editingTx, setEditingTx] = useState<EditTx | null>(null);
+
+  // ── RTF 交易選擇對話框 ──
+  const [rtfPickerOpen, setRtfPickerOpen] = useState(false);
+  const [pendingDocType, setPendingDocType] = useState<string>('');
+  const [rtfGenerating, setRtfGenerating] = useState(false);
+
+  const openRtfPicker = (docType: string) => {
+    if (txs.length > 0) {
+      setPendingDocType(docType);
+      setRtfPickerOpen(true);
+    } else {
+      // 沒有交易記錄，直接自動生成
+      handleDownload('generate-share-transfer-rtf',
+        docType === 'instrument_of_transfer' ? 'InstrumentOfTransfer' :
+        docType === 'bought_sold_note' ? 'BoughtSoldNote' : 'ShareCertificate',
+        { documentType: docType });
+    }
+  };
+
+  const handleRtfPickTx = async (tx: ShareTransaction) => {
+    setRtfGenerating(true);
+    try {
+      await genCert(tx, pendingDocType);
+      setRtfPickerOpen(false);
+    } finally {
+      setRtfGenerating(false);
+    }
+  };
+
+  const handleRtfAutoGenerate = async () => {
+    setRtfGenerating(true);
+    try {
+      const label = pendingDocType === 'instrument_of_transfer' ? 'InstrumentOfTransfer' :
+        pendingDocType === 'bought_sold_note' ? 'BoughtSoldNote' : 'ShareCertificate';
+      await downloadRegister('generate-share-transfer-rtf', company.id, company.brNumber, company.name, label, { documentType: pendingDocType });
+      setRtfPickerOpen(false);
+    } finally {
+      setRtfGenerating(false);
+    }
+  };
 
   // ── 凭证 RTF 生成 ──
   const genCert = async (tx: ShareTransaction, docType: string) => {
@@ -435,28 +476,31 @@ export function RegistersTab({ company }: { company: Company }) {
         </h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 mb-2">
           <Button variant="outline" size="sm"
-            onClick={() => handleDownload('generate-share-transfer-rtf', 'InstrumentOfTransfer', { documentType: 'instrument_of_transfer' })}
-            disabled={downloading !== null}>
-            {downloading === 'generate-share-transfer-rtf'
+            onClick={() => openRtfPicker('instrument_of_transfer')}
+            disabled={downloading !== null || rtfGenerating}>
+            {downloading === 'generate-share-transfer-rtf' || rtfGenerating
               ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
               : <FileCheck className="h-3.5 w-3.5 mr-1" />}
             轉讓文書 (RTF)
+            {txs.length > 0 && <Badge variant="secondary" className="ml-1.5 text-[10px] px-1 py-0">{txs.length}</Badge>}
           </Button>
           <Button variant="outline" size="sm"
-            onClick={() => handleDownload('generate-share-transfer-rtf', 'BoughtSoldNote', { documentType: 'bought_sold_note' })}
-            disabled={downloading !== null}>
-            {downloading === 'generate-share-transfer-rtf'
+            onClick={() => openRtfPicker('bought_sold_note')}
+            disabled={downloading !== null || rtfGenerating}>
+            {downloading === 'generate-share-transfer-rtf' || rtfGenerating
               ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
               : <FileDigit className="h-3.5 w-3.5 mr-1" />}
             買賣票據 (RTF)
+            {txs.length > 0 && <Badge variant="secondary" className="ml-1.5 text-[10px] px-1 py-0">{txs.length}</Badge>}
           </Button>
           <Button variant="outline" size="sm"
-            onClick={() => handleDownload('generate-share-transfer-rtf', 'ShareCertificate', { documentType: 'share_certificate' })}
-            disabled={downloading !== null}>
-            {downloading === 'generate-share-transfer-rtf'
+            onClick={() => openRtfPicker('share_certificate')}
+            disabled={downloading !== null || rtfGenerating}>
+            {downloading === 'generate-share-transfer-rtf' || rtfGenerating
               ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
               : <Stamp className="h-3.5 w-3.5 mr-1" />}
             股票證書 (RTF)
+            {txs.length > 0 && <Badge variant="secondary" className="ml-1.5 text-[10px] px-1 py-0">{txs.length}</Badge>}
           </Button>
         </div>
         {/* Transfer resolution DOCX — template pending */}
@@ -471,6 +515,85 @@ export function RegistersTab({ company }: { company: Company }) {
           </Button>
         </div> */}
       </div>
+
+      {/* ── RTF 交易選擇對話框 ── */}
+      <Dialog open={rtfPickerOpen} onOpenChange={setRtfPickerOpen}>
+        <DialogContent className="w-full max-w-[95vw] sm:max-w-lg max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              {pendingDocType === 'instrument_of_transfer' ? <FileCheck className="h-4 w-4 text-primary" /> :
+               pendingDocType === 'bought_sold_note' ? <FileDigit className="h-4 w-4 text-primary" /> :
+               <Stamp className="h-4 w-4 text-primary" />}
+              選擇交易記錄 —
+              {pendingDocType === 'instrument_of_transfer' ? ' 轉讓文書' :
+               pendingDocType === 'bought_sold_note' ? ' 買賣票據' : ' 股票證書'}
+            </DialogTitle>
+            <DialogDescription>
+              選擇一筆股份交易記錄來生成 RTF 文件，或使用自動生成模式
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 mt-2">
+            {/* 自動生成選項 */}
+            <button
+              onClick={handleRtfAutoGenerate}
+              disabled={rtfGenerating}
+              className="w-full text-left rounded-lg border-2 border-dashed border-primary/30 bg-primary/5 hover:bg-primary/10 hover:border-primary/50 p-3 transition-colors disabled:opacity-50"
+            >
+              <div className="flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-primary" />
+                <span className="font-medium text-sm text-primary">自動生成（使用公司資料）</span>
+                <ChevronRight className="h-4 w-4 ml-auto text-muted-foreground" />
+              </div>
+              <p className="text-xs text-muted-foreground mt-0.5 ml-6">
+                無需選擇特定交易，系統將自動從股東資料生成 RTF
+              </p>
+            </button>
+
+            {/* 分隔線 */}
+            {txs.length > 0 && (
+              <div className="flex items-center gap-2 py-1">
+                <div className="flex-1 border-t border-border" />
+                <span className="text-xs text-muted-foreground">或選擇現有交易</span>
+                <div className="flex-1 border-t border-border" />
+              </div>
+            )}
+
+            {/* 交易列表 */}
+            {txs.map(tx => {
+              const txTypeLabels: Record<string, string> = {
+                transfer: '轉讓', allotment: '配發', repurchase: '購回', capital_increase: '增資',
+              };
+              return (
+                <button
+                  key={tx.id}
+                  onClick={() => handleRtfPickTx(tx)}
+                  disabled={rtfGenerating}
+                  className="w-full text-left rounded-lg border border-border bg-card hover:bg-muted/50 p-3 transition-colors disabled:opacity-50"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="font-medium text-sm">{tx.transaction_date || '(無日期)'}</span>
+                      <Badge variant="outline" className="text-[10px] px-1 py-0 shrink-0">
+                        {txTypeLabels[tx.transaction_type] || tx.transaction_type}
+                      </Badge>
+                    </div>
+                    <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                  </div>
+                  <div className="flex items-center gap-1.5 mt-1 text-xs text-muted-foreground">
+                    <span className="truncate">{tx.from_name || '(新發行)'}</span>
+                    <ArrowRight className="h-3 w-3 shrink-0" />
+                    <span className="truncate">{tx.to_name || '(未指定)'}</span>
+                    <span className="ml-auto shrink-0">{tx.shares?.toLocaleString() || 0} 股</span>
+                    {tx.instrument_number && (
+                      <Badge variant="secondary" className="text-[10px] px-1 py-0 shrink-0">{tx.instrument_number}</Badge>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

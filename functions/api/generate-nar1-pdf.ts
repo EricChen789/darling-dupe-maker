@@ -912,19 +912,18 @@ export async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Ar
     checkF("cb_1_P.13", !d.isAlternate);
     checkF("cb_2_P.13", !!d.isAlternate);
     const { surname, otherNames } = parseEnglishName(d.nameEnglish);
-    setF("fill_8_P.13", d.nameChinese || "");
-    setF("fill_9_P.13", surname);
-    setF("fill_10_P.13", otherNames);
+    setF("fill_6_P.13", d.nameChinese || "");
+    setF("fill_7_P.13", surname);
+    setF("fill_8_P.13", otherNames);
     setF("fill_13_P.13", office.flat || "");
     setF("fill_14_P.13", office.building || "");
     setF("fill_15_P.13", office.street || "");
     setF("fill_16_P.13", office.district || "");
     setF("fill_17_P.13", office.region || (office as any).country || "");
-    setF("fill_20_P.13", d.email || "");
     const hkid = parseHkidPartial(d.idNumber || '');
-    if (hkid) setF("fill_21_P.13", hkid);
-    if ((d as any).passportCountry || d.nationality) setF("fill_22_P.13", (d as any).passportCountry || d.nationality || '');
-    if (d.passportNumber) setF("fill_23_P.13", parsePassportPartial(d.passportNumber));
+    if (hkid) setF("fill_19_P.13", hkid);
+    if ((d as any).passportCountry || d.nationality) setF("fill_20_P.13", (d as any).passportCountry || d.nationality || '');
+    if (d.passportNumber) setF("fill_21_P.13", parsePassportPartial(d.passportNumber));
   }
 
   // ═══ Pre-built: P.14 續頁D (corp dirs #2+#3) ═══
@@ -1065,18 +1064,17 @@ export async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Ar
       setV("fill_2_P.13", month);
       setV("fill_3_P.13", year);
       setV("fill_4_P.13", br8);
-      setV("fill_8_P.13", d.nameChinese || "");
-      setV("fill_9_P.13", surname);
-      setV("fill_10_P.13", otherNames);
+      setV("fill_6_P.13", d.nameChinese || "");
+      setV("fill_7_P.13", surname);
+      setV("fill_8_P.13", otherNames);
       setV("fill_13_P.13", office.flat || "");
       setV("fill_14_P.13", office.building || "");
       setV("fill_15_P.13", office.street || "");
       setV("fill_16_P.13", office.district || "");
       setV("fill_17_P.13", office.region || (office as any).country || "");
-      setV("fill_20_P.13", d.email || "");
-      setV("fill_21_P.13", parseHkidPartial(d.idNumber || ''));
-      setV("fill_22_P.13", (d as any).passportCountry || d.nationality || '');
-      setV("fill_23_P.13", d.passportNumber ? parsePassportPartial(d.passportNumber) : '');
+      setV("fill_19_P.13", parseHkidPartial(d.idNumber || ''));
+      setV("fill_20_P.13", (d as any).passportCountry || d.nationality || '');
+      setV("fill_21_P.13", d.passportNumber ? parsePassportPartial(d.passportNumber) : '');
 
       const checkboxes = d.isAlternate ? ['cb_2_P.13'] : ['cb_1_P.13'];
       const slot: ContinuationSlot = {

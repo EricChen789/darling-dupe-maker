@@ -2249,7 +2249,7 @@ def generate_directors_register_pdf():
         return jsonify({'error': 'Company not found'}), 404
 
     roles = db.execute(
-        "SELECT * FROM person_company_roles WHERE company_id = ? AND role IN ('director', 'secretary')",
+        "SELECT * FROM person_company_roles WHERE company_id = ? AND role = 'director'",
         (company_id,)).fetchall()
     person_ids = [r['person_id'] for r in roles]
     person_map = {}
@@ -2259,8 +2259,7 @@ def generate_directors_register_pdf():
             f"SELECT * FROM persons WHERE id IN ({placeholders})", person_ids).fetchall()
         person_map = {p['id']: p for p in persons}
 
-    directors = [r for r in roles if r['role'] == 'director']
-    secretaries = [r for r in roles if r['role'] == 'secretary']
+    directors = roles
 
     # ── Try DOCX → Word COM → PDF first ──
     if _HAS_WORD_COM and _HAS_DOCX:
@@ -2297,7 +2296,7 @@ def generate_directors_register_pdf():
 
     row_num = 0
 
-    def render_section(items, is_secretary=False):
+    def render_section(items):
         nonlocal y, row_num
         for r in items:
             p = person_map.get(r['person_id'], {})
@@ -2327,10 +2326,7 @@ def generate_directors_register_pdf():
             id_info = (rget(p, 'id_number') or rget(p, 'passport_number') or '-') if is_nat else (rget(p, 'company_number_ref') or '-')
 
             # Position
-            if is_secretary:
-                position = "Secretary"
-            else:
-                position = "Reserve Director" if rget(r, 'is_reserve') else "Director"
+            position = "Reserve Director" if rget(r, 'is_reserve') else "Director"
 
             # Date Appointed
             date_app = rget(r, 'date_appointed') or '-'
@@ -2358,20 +2354,11 @@ def generate_directors_register_pdf():
             ]
             y = draw_data_row(pdf, row_data, y, alt=(row_num % 2 == 0))
 
-    # Directors first
     if directors:
         render_section(directors)
     else:
         pdf_draw(pdf, "(No directors / 尚無董事記錄)", MARGIN + 5, y + 12, size=8)
         y += 22
-
-    # Secretaries below directors with same column layout
-    if secretaries:
-        if y + 40 > PAGE_H - 50:
-            pdf.add_page()
-            y = draw_register_header(pdf, company, "REGISTER OF OFFICERS (Cont'd)", quorum)
-        y += 6
-        render_section(secretaries, is_secretary=True)
 
     pdf_bytes = bytes(pdf.output())
     import base64 as b64

@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import { QuickFormDialog } from '@/components/forms/QuickFormDialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { downloadBase64Pdf } from '@/lib/downloadPdf';
+import { downloadBase64File, RTF_MIME } from '@/lib/downloadPdf';
 import { ShareTransactionForm } from '@/components/forms/ShareTransactionForm';
 
 // ── 日期工具 ──
@@ -339,11 +339,11 @@ export function CompanyChronicleTab({ company }: { company: Company }) {
     });
   };
 
-  // ── 凭证 PDF 生成 ──
+  // ── 凭证 RTF 生成 ──
   const genCert = async (tx: ShareTransaction, docType: string) => {
     try {
       const token = localStorage.getItem('secretary_jwt') || '';
-      const resp = await fetch('/api/generate-share-transfer-pdf', {
+      const resp = await fetch('/api/generate-share-transfer-rtf', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ companyId: tx.company_id, transactionId: tx.id, documentType: docType }),
@@ -353,10 +353,10 @@ export function CompanyChronicleTab({ company }: { company: Company }) {
         throw new Error(err.error || `HTTP ${resp.status}`);
       }
       const result = await resp.json();
-      if (result.pdf) {
-        const typeLabel = docType === 'bought_sold_note' ? 'BoughtSoldNote' : docType === 'instrument_of_transfer' ? 'InstrumentOfTransfer' : 'ShareCertificate';
-        downloadBase64Pdf(result.pdf, `${typeLabel}_${tx.instrument_number || tx.id}.pdf`);
-        toast({ title: '憑證已生成', description: 'PDF 已下載' });
+      if (result.rtf) {
+        const filename = result.filename || `${docType}_${tx.instrument_number || tx.id}.rtf`;
+        downloadBase64File(result.rtf, filename, RTF_MIME);
+        toast({ title: '憑證已生成', description: 'RTF 已下載' });
         // 同步寫入公司日誌
         const certTypeMap: Record<string, string> = { bought_sold_note: '買賣票據', instrument_of_transfer: '轉讓文書', share_certificate: '股票證書' };
         createLog.mutate({

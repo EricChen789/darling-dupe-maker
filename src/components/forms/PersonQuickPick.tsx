@@ -28,6 +28,13 @@ export interface PersonQuickPickData {
   identity?: 'natural' | 'corporate';
   tcspLicense?: string;
   companyNumberRef?: string;
+  // Shareholder-specific (picked up by NAR1/etc. forms)
+  shares?: number;
+  shareType?: string;
+  issuePrice?: string;
+  paidUp?: string;
+  unpaid?: string;
+  currency?: string;
 }
 
 interface PersonOption {
@@ -158,8 +165,39 @@ export default function PersonQuickPick({
             },
           });
         }
+        for (const sh of company.shareholders || []) {
+          people.push({
+            id: `sh_${sh.id}`,
+            label: sh.nameEnglish || sh.nameChinese || sh.name || '?',
+            sublabel: `股東 Shareholder${sh.nameChinese ? ` · ${sh.nameChinese}` : ''}${sh.shares ? ` · ${Number(sh.shares).toLocaleString()}股` : ''}`,
+            data: {
+              nameChinese: sh.nameChinese || sh.name || '',
+              nameEnglish: sh.nameEnglish || '',
+              surname: (sh.nameEnglish || '').split(' ')[0] || '',
+              otherNames: (sh.nameEnglish || '').split(' ').slice(1).join(' ') || '',
+              address: sh.address || '',
+              addrFlat: sh.addrFlat || '',
+              addrBuilding: sh.addrBuilding || '',
+              addrStreet: sh.addrStreet || '',
+              addrDistrict: sh.addrDistrict || '',
+              addrRegion: sh.addrRegion || '',
+              phone: (sh as any).phone || '',
+              fax: (sh as any).fax || '',
+              email: sh.email || '',
+              idNumber: (sh as any).hkidPartial || (sh as any).idNumber || '',
+              identity: sh.identity || 'natural',
+              companyNumberRef: (sh as any).companyNumberRef || (sh as any).company_number_ref || '',
+              shares: sh.shares,
+              shareType: sh.shareType,
+              issuePrice: sh.issuePrice,
+              paidUp: sh.paidUp,
+              unpaid: sh.unpaid,
+              currency: sh.currency,
+            },
+          });
+        }
         if (people.length > 0) {
-          groups.push({ group: `🏢 ${company.name} — 董事／秘書`, items: people });
+          groups.push({ group: `🏢 ${company.name} — 董事／秘書／股東`, items: people });
         }
       }
     }
@@ -221,8 +259,39 @@ export default function PersonQuickPick({
             },
           });
         }
+        for (const sh of company.shareholders || []) {
+          people.push({
+            id: `all_sh_${sh.id}`,
+            label: sh.nameEnglish || sh.nameChinese || sh.name || '?',
+            sublabel: `${company.name} · 股東 Shareholder${sh.nameChinese ? ` · ${sh.nameChinese}` : ''}${sh.shares ? ` · ${Number(sh.shares).toLocaleString()}股` : ''}`,
+            data: {
+              nameChinese: sh.nameChinese || sh.name || '',
+              nameEnglish: sh.nameEnglish || '',
+              surname: (sh.nameEnglish || '').split(' ')[0] || '',
+              otherNames: (sh.nameEnglish || '').split(' ').slice(1).join(' ') || '',
+              address: sh.address || '',
+              addrFlat: sh.addrFlat || '',
+              addrBuilding: sh.addrBuilding || '',
+              addrStreet: sh.addrStreet || '',
+              addrDistrict: sh.addrDistrict || '',
+              addrRegion: sh.addrRegion || '',
+              phone: (sh as any).phone || '',
+              fax: (sh as any).fax || '',
+              email: sh.email || '',
+              idNumber: (sh as any).hkidPartial || (sh as any).idNumber || '',
+              identity: sh.identity || 'natural',
+              companyNumberRef: (sh as any).companyNumberRef || (sh as any).company_number_ref || '',
+              shares: sh.shares,
+              shareType: sh.shareType,
+              issuePrice: sh.issuePrice,
+              paidUp: sh.paidUp,
+              unpaid: sh.unpaid,
+              currency: sh.currency,
+            },
+          });
+        }
         if (people.length > 0) {
-          groups.push({ group: `🏢 ${company.name} — 董事／秘書`, items: people });
+          groups.push({ group: `🏢 ${company.name} — 董事／秘書／股東`, items: people });
         }
       }
     }

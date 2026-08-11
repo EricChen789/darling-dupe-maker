@@ -1,0 +1,32 @@
+{
+  "choices": [
+    {
+      "message": {
+        "content": "该页面无中文内容，因此不存在中文显示或乱码问题。",
+        "reasoning_content": "",
+        "role": "assistant"
+      },
+      "finish_reason": "stop",
+      "index": 0,
+      "logprobs": null
+    }
+  ],
+  "object": "chat.completion",
+  "usage": {
+    "prompt_tokens": 686,
+    "completion_tokens": 16,
+    "total_tokens": 702,
+    "completion_tokens_details": {
+      "text_tokens": 16
+    },
+    "prompt_tokens_details": {
+      "image_tokens": 653,
+      "text_tokens": 33,
+      "cached_tokens": 0
+    }
+  },
+  "created": 1786385211,
+  "system_fingerprint": null,
+  "model": "qwen-vl-max",
+  "id": "chatcmpl-2d17d10f-fa3c-90be-8679-d59bc3a8ff89"
+}

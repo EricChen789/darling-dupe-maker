@@ -9,7 +9,7 @@
 //   import { createFormHelpers } from "./_acroform";
 //   const { setText, check, selectDropdown } = createFormHelpers(pdfDoc);
 
-import { PDFDocument, PDFName, PDFString, PDFHexString, PDFBool, PDFArray, PDFNumber } from "pdf-lib";
+import { PDFDocument, PDFName, PDFString, PDFHexString, PDFBool, PDFArray } from "pdf-lib";
 
 // ═══ String utilities ═══
 
@@ -282,28 +282,8 @@ export function createFormHelpers(pdfDoc: PDFDocument): FormHelpers {
 
       // Remove old appearance, force reader to rebuild via NeedAppearances
       target.widget.delete(PDFName.of("AP"));
-
-      // Set light blue background (/MK /BG) so fields appear as blue fillable boxes
-      // Follows NNC2 proven pattern: PDFArray.withContext + PDFNumber.of
-      try {
-        const ctx = (pdfDoc as any).context;
-        const bgArr = PDFArray.withContext(ctx);
-        bgArr.push(PDFNumber.of(0.91));
-        bgArr.push(PDFNumber.of(0.93));
-        bgArr.push(PDFNumber.of(0.96));
-        const mk = target.widget.get(PDFName.of("MK"));
-        if (!mk) {
-          const mkDict = ctx.obj({});
-          mkDict.set(PDFName.of("BG"), bgArr);
-          target.widget.set(PDFName.of("MK"), mkDict);
-        } else if (typeof mk.lookup === 'function') {
-          // lookup() returns undefined (does NOT throw) for missing keys
-          const existingBg = mk.lookup(PDFName.of("BG"));
-          if (!existingBg) {
-            mk.set(PDFName.of("BG"), bgArr);
-          }
-        }
-      } catch { /* best-effort */ }
+      // ⚠ 不要設定 /MK /BG 背景色 — 會覆蓋模板原有的表格線和結構
+      // 策略：直接使用模板的 PDF 外觀，只寫入數據不動結構
 
       return true;
     } catch (e) {

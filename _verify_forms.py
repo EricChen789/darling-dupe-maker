@@ -411,7 +411,7 @@ If identical, match=true and issues=[]."""
                 "Content-Type": "application/json",
             },
             json={
-                "model": "qwen-vl-max",
+                "model": "qwen3.8-max",
                 "messages": [{
                     "role": "user",
                     "content": [

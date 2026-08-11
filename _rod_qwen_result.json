@@ -1,0 +1,32 @@
+{
+  "choices": [
+    {
+      "message": {
+        "content": "1) 公司名称中文“測試有限公司”显示正常。  \n2) 无乱码或方块，文字清晰可读。  \n3) 字体排版整齐，中英文对齐合理，整体格式规范。",
+        "reasoning_content": "",
+        "role": "assistant"
+      },
+      "finish_reason": "stop",
+      "index": 0,
+      "logprobs": null
+    }
+  ],
+  "object": "chat.completion",
+  "usage": {
+    "prompt_tokens": 503,
+    "completion_tokens": 51,
+    "total_tokens": 554,
+    "completion_tokens_details": {
+      "text_tokens": 51
+    },
+    "prompt_tokens_details": {
+      "image_tokens": 444,
+      "text_tokens": 59,
+      "cached_tokens": 0
+    }
+  },
+  "created": 1786385148,
+  "system_fingerprint": null,
+  "model": "qwen-vl-max",
+  "id": "chatcmpl-b7855ea2-50c1-9c5e-aceb-6469380a8cb8"
+}

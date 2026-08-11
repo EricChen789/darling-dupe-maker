@@ -6,7 +6,7 @@
 //   只嵌入 Helvetica 用於 BR 蓋印，大幅節省 CPU
 //   透過 NeedAppearances 讓 PDF 閱讀器用模板內建字體重建外觀流
 
-import { PDFDocument, PDFBool, PDFName, PDFString, PDFHexString, StandardFonts } from "pdf-lib";
+import { PDFDocument, PDFBool, PDFName, PDFString, PDFHexString, PDFArray, PDFNumber, StandardFonts } from "pdf-lib";
 import { verifyAuthRequest, type Env as AuthEnv } from './_auth';
 import {
   corsHeaders, jsonResp, uint8ToBase64,
@@ -28,6 +28,8 @@ interface OfficerData {
   nameEnglish: string;
   email: string;
   identity: 'natural' | 'corporate';
+  isAlternate?: boolean;      // 候補董事 checkbox
+  alternateTo?: string;       // 代替誰
   brNumber?: string;
   address?: string;
   serviceAddress?: string;
@@ -129,6 +131,12 @@ function computeReturnDate(incorporationDate?: string): string {
   return today.toISOString().split('T')[0];
 }
 
+/** Compute period start = returnDate minus 1 year */
+function computePeriodStart(returnDate: string): string {
+  const [y, m, d] = returnDate.split('-').map(Number);
+  return `${y - 1}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+}
+
 const PURE_NUMBER_RE = /^[\d,.\s]+$/;
 const ADDR_FLAT_RE = /^(?:flat|room|rm|unit|shop|suite|ste|workshop|portion|floor|fl|\d+\/f|g\/f|gf|lg\/f|ug\/f|m\/f|b\d*\/f)\b/i;
 const ADDR_COUNTRY_RE = /(hong\s*kong|hk\b|china|prc|macau|macao|singapore|taiwan|united\s+\w+|\busa\b|\buk\b|canada|australia|japan|korea|h\.?k\.?\s*sar|香港|中國|澳門|台灣|新加坡|日本|韓國|英國|美國|加拿大|澳洲)/i;
@@ -187,6 +195,102 @@ const parsePassportPartial = (passportNumber: string): string => {
   return cleaned.slice(0, Math.ceil(cleaned.length / 2));
 };
 
+// ═══ AP Stream Generator (from NN1 v9) ═══
+// Generates explicit Appearance stream using page's internal font names.
+// C2_1 = PMingLiU (CJK), Helv = Helvetica (ASCII).
+// No Resources dict — font resolution inherits from page Resources.
+
+function setWidgetApV9(
+  ctx: any,
+  widget: any,
+  value: string,
+  isCjk: boolean,
+  fontSize: number = 10,
+): void {
+  const fontName = isCjk ? "C2_1" : "Helv";
+
+  let textOp: string;
+  if (isCjk) {
+    let hex = 'FEFF'; // UTF-16BE BOM
+    for (let i = 0; i < value.length; i++) {
+      const code = value.charCodeAt(i);
+      if (code >= 0xD800 && code <= 0xDBFF && i + 1 < value.length) {
+        const lo = value.charCodeAt(i + 1);
+        if (lo >= 0xDC00 && lo <= 0xDFFF) {
+          const cp = 0x10000 + (code - 0xD800) * 0x400 + (lo - 0xDC00);
+          hex += cp.toString(16).padStart(8, '0').toUpperCase();
+          i++;
+          continue;
+        }
+      }
+      hex += (code >> 8).toString(16).padStart(2, '0').toUpperCase();
+      hex += (code & 0xFF).toString(16).padStart(2, '0').toUpperCase();
+    }
+    textOp = `<${hex}> Tj`;
+  } else {
+    const escaped = value.replace(/([()\\])/g, '\\$1');
+    textOp = `(${escaped}) Tj`;
+  }
+
+  const apContent = `/${fontName} ${fontSize} Tf\n0 g\nBT\n2 2 Td\n${textOp}\nET`;
+
+  const bbox = PDFArray.withContext(ctx);
+  bbox.push(PDFNumber.of(0));
+  bbox.push(PDFNumber.of(0));
+  bbox.push(PDFNumber.of(1000));
+  bbox.push(PDFNumber.of(1000));
+
+  const dict = ctx.obj({});
+  dict.set(PDFName.of('Type'), PDFName.of('XObject'));
+  dict.set(PDFName.of('Subtype'), PDFName.of('Form'));
+  dict.set(PDFName.of('BBox'), bbox);
+
+  const apStream = ctx.stream(new TextEncoder().encode(apContent), dict);
+  const apRef = ctx.register(apStream);
+
+  const apDict = ctx.obj({});
+  apDict.set(PDFName.of('N'), apRef);
+  widget.set(PDFName.of('AP'), apDict);
+
+  if (isCjk) {
+    widget.set(PDFName.of('V'), PDFHexString.fromText(value));
+  } else {
+    widget.set(PDFName.of('V'), PDFString.of(value));
+  }
+
+  widget.set(PDFName.of('DA'), PDFString.of(`/${fontName} ${fontSize} Tf 0 g`));
+}
+
+/** Generate AP streams for ALL filled text widgets across all pages.
+ *  Called after all setF()/addDynamicContinuationSheet calls.
+ *  This replaces the unreliable delete-AP + NeedAppearances approach. */
+function generateAllApStreams(pdfDoc: PDFDocument): void {
+  const ctx = (pdfDoc as any).context;
+  for (const page of pdfDoc.getPages()) {
+    const annots = page.node.lookup(PDFName.of('Annots')) as any;
+    if (!annots || typeof annots.size !== 'function') continue;
+    for (let i = 0; i < annots.size(); i++) {
+      try {
+        const widget = ctx.lookup(annots.get(i)) as any;
+        if (!widget || String(widget.get(PDFName.of('Subtype'))) !== '/Widget') continue;
+        const ft = widget.get(PDFName.of('FT'));
+        if (!ft || String(ft) !== '/Tx') continue;
+        const v = widget.get(PDFName.of('V'));
+        if (!v) continue;
+        const value = typeof v.decodeText === 'function' ? v.decodeText() : String(v).replace(/^\((.*)\)$/s, '$1');
+        if (!value) continue;
+        const isCjk = !isAscii(value);
+        // Use fontSize from existing /DA (preserve original field font size)
+        const da = widget.get(PDFName.of('DA'));
+        const daStr = da ? (typeof da.decodeText === 'function' ? da.decodeText() : String(da)) : '';
+        const m = daStr.match(/(\d+(?:\.\d+)?)\s+Tf/);
+        const fontSize = (m && parseFloat(m[1]) > 0) ? parseFloat(m[1]) : 10;
+        setWidgetApV9(ctx, widget, value, isCjk, fontSize);
+      } catch { /* skip */ }
+    }
+  }
+}
+
 // ═══ Dynamic Continuation Page Helper ═══
 // Copies a template page into the main doc, detaches all widgets,
 // renames them with a suffix, and sets their values.
@@ -217,23 +321,80 @@ async function addDynamicContinuationSheet(
   const annots = copiedPage.node.lookup(PDFName.of('Annots')) as any;
   if (!annots || typeof annots.size !== 'function') return newIndex;
 
+  let widgetCount = 0;
+  let matchCount = 0;
+  let failCount = 0;
+
+  // Build alias maps: collectFormFields normalizes _P.13 ↔ _P13, but this
+  // function does raw name matching. Without aliases, widgets on dynamic
+  // pages won't match and remain blank (Bug 3: 續頁C blank pages).
+  const aliasValues: Record<string, string> = { ...slot.values };
+  const aliasCheckboxes: string[] = [...(slot.checkboxes || [])];
+  for (const [key, val] of Object.entries(slot.values)) {
+    const noDot = key.replace(/_P\.(\d+)$/g, '_P$1');
+    const withDot = key.replace(/_P(\d+)$/g, '_P.$1');
+    if (noDot !== key) aliasValues[noDot] = val;
+    if (withDot !== key) aliasValues[withDot] = val;
+  }
+  for (const cb of (slot.checkboxes || [])) {
+    const noDot = cb.replace(/_P\.(\d+)$/g, '_P$1');
+    const withDot = cb.replace(/_P(\d+)$/g, '_P.$1');
+    if (noDot !== cb) aliasCheckboxes.push(noDot);
+    if (withDot !== cb) aliasCheckboxes.push(withDot);
+  }
+  const allFieldNames = Object.keys(aliasValues);
+
   for (let i = 0; i < annots.size(); i++) {
     try {
       const widget = ctx.lookup(annots.get(i)) as any;
       if (!widget || typeof widget.get !== 'function') continue;
       const subtype = widget.get(PDFName.of('Subtype'));
       if (!subtype || String(subtype) !== '/Widget') continue;
+      widgetCount++;
 
-      const parentRef = widget.get(PDFName.of('Parent'));
-      const parent = parentRef ? (ctx.lookup(parentRef) as any) : widget;
-      const parentName = decodePdfText(parent.get(PDFName.of('T')));
+      // ⚠️  After pdf-lib copyPages, widget Parent refs may be broken
+      // (point to objects that weren't copied into the destination doc).
+      // ctx.lookup() on a broken ref THROWS → silently caught by outer
+      // try-catch → widget skipped → template sample data persists.
+      // Fix: guard every lookup so a broken parent doesn't take down the widget.
       const widgetName = decodePdfText(widget.get(PDFName.of('T')));
-      const resolvedName = parentName || widgetName;
+      const parentRef = widget.get(PDFName.of('Parent'));
+      let parent = widget;
+      let parentName = '';
+      if (parentRef) {
+        try { parent = ctx.lookup(parentRef) as any; } catch { parent = widget; }
+        try { parentName = decodePdfText(parent.get(PDFName.of('T'))); } catch { parentName = ''; }
+      }
+      // Handle 3-level field hierarchy (matching collectFormFields)
+      let resolvedName = parentName || widgetName;
+      if (parent && parent !== widget) {
+        const grandParentRef = parent.get?.(PDFName.of('Parent'));
+        if (grandParentRef) {
+          try {
+            const grandParent = ctx.lookup(grandParentRef) as any;
+            const gpName = decodePdfText(grandParent.get(PDFName.of('T')));
+            if (gpName) resolvedName = gpName;
+          } catch { /* skip */ }
+        }
+      }
+      // Fallback: if resolvedName is still empty/meaningless, try widgetName directly
+      if (!resolvedName || /^\d+$/.test(resolvedName)) {
+        resolvedName = widgetName || resolvedName;
+      }
 
-      // Only process fields in our slot
-      if (!resolvedName || !slot.fieldNames.some(fn =>
+      // Find the matching key in our fieldNames (resolvedName is the parent-level
+      // name like "fill_8_P", but aliasValues keys are full names like "fill_8_P.13"
+      // or dot/no-dot aliases like "fill_8_P13").
+      const matchedTextKey = allFieldNames.find(fn =>
         resolvedName === fn || resolvedName.startsWith(fn) || fn.startsWith(resolvedName)
-      )) continue;
+      );
+      const isCheckbox = aliasCheckboxes.some(cb =>
+        resolvedName === cb || resolvedName.startsWith(cb) || cb.startsWith(resolvedName)
+      );
+
+      if (!matchedTextKey && !isCheckbox) continue;
+
+      matchCount++;
 
       // Detach + rename
       detachWidget(widget, parent);
@@ -244,7 +405,7 @@ async function addDynamicContinuationSheet(
       const ft = widget.get(PDFName.of('FT'));
       const ftStr = ft ? String(ft) : '';
 
-      if (ftStr === '/Btn' && slot.checkboxes?.some(cb => resolvedName === cb || resolvedName.startsWith(cb))) {
+      if (ftStr === '/Btn' && isCheckbox) {
         // Checkbox: set /AS to "Yes" (On state)
         try {
           const ap = widget.get(PDFName.of('AP')) as any;
@@ -260,12 +421,22 @@ async function addDynamicContinuationSheet(
         } catch { widget.set(PDFName.of('AS'), PDFName.of('Yes')); }
         widget.delete(PDFName.of('AP'));
       } else if (ftStr === '/Tx') {
-        // Text field: set value
-        const value = slot.values[resolvedName] || '';
-        if (!value) continue;
+        // Text field: look up value using the matched key (Bug fix: resolvedName
+        // is the parent-level name like "fill_8_P" which doesn't exist as a key
+        // in aliasValues — only the full names like "fill_8_P.13" do).
+        const value = (matchedTextKey ? aliasValues[matchedTextKey] : '') || '';
+        // Always process matched fields — even if value is empty, we must
+        // clear template sample data that would otherwise persist (Bug: 續頁C
+        // dynamic pages showing wrong names).
+        if (value.length === 0) {
+          // Clear: set empty V, delete AP so generateAllApStreams won't render stale content
+          widget.set(PDFName.of('V'), PDFString.of(''));
+          widget.delete(PDFName.of('AP'));
+          continue;
+        }
 
         const da = decodePdfText(widget.get(PDFName.of('DA'))) || '/Helv 12 Tf 0 g';
-        if (value.length > 0 && !isAscii(value)) {
+        if (!isAscii(value)) {
           widget.set(PDFName.of('DA'), PDFString.of(buildCjkDA(da)));
           widget.set(PDFName.of('V'), PDFHexString.fromText(value));
         } else {
@@ -274,9 +445,10 @@ async function addDynamicContinuationSheet(
         }
         widget.delete(PDFName.of('AP'));
       }
-    } catch { /* skip malformed widget */ }
+    } catch { failCount++; /* skip malformed widget */ }
   }
 
+  console.log(`[addDynamicContinuationSheet] page=${sourcePageIndex} suffix=${suffix} widgets=${widgetCount} matched=${matchCount} failed=${failCount} fieldNames=${slot.fieldNames.length}`);
   return newIndex;
 }
 
@@ -308,7 +480,9 @@ export async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Ar
 
   // 3) Prepare data
   const returnDate = data.returnDate || computeReturnDate(data.incorporationDate);
+  const periodStart = computePeriodStart(returnDate);
   const [year, month, day] = returnDate.split("-");
+  const [psYear, psMonth, psDay] = periodStart.split("-");
   const office = data.registeredOffice || {};
   if (!office.region && !(office as any).country) {
     const hasAddr = !!(office.flat || office.building || office.street || office.district);
@@ -332,6 +506,13 @@ export async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Ar
   setF("fill_6_P.1", day);
   setF("fill_7_P.1", month);
   setF("fill_8_P.1", year);
+  // Return period dates (fill_9-14_P.1 = start/end DD/MM/YYYY)
+  setF("fill_9_P.1", psDay);
+  setF("fill_10_P.1", psMonth);
+  setF("fill_11_P.1", psYear);
+  setF("fill_12_P.1", day);
+  setF("fill_13_P.1", month);
+  setF("fill_14_P.1", year);
   setF("fill_15_P.1", office.flat || "");
   setF("fill_16_P.1", office.building || "");
   setF("fill_17_P.1", office.street || "");
@@ -379,8 +560,8 @@ export async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Ar
   };
   const formatCurrency = (raw: string) => {
     const c = (raw || "HKD").trim().toUpperCase();
-    if (c === "HKD" || c === "HK$") return "HK$";
-    if (c === "USD" || c === "US$") return "US$";
+    if (c === "HKD" || c === "HK$") return "HKD";
+    if (c === "USD" || c === "US$") return "USD";
     return c;
   };
   const toNum = (v: string | number | undefined) => {
@@ -398,11 +579,15 @@ export async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Ar
     const key = `${className}||${currency}||${issuePrice}`;
     if (!shareTypeMap.has(key)) shareTypeMap.set(key, { className, currency, issuePrice, shares: 0, paidUp: 0, unpaid: 0 });
     const info = shareTypeMap.get(key)!;
-    info.shares += Number(sh.shares) || 0;
+    info.shares += toNum(sh.shares);
     info.paidUp += toNum(sh.paidUp);
     info.unpaid += toNum(sh.unpaid);
   }
   const shareInfos = Array.from(shareTypeMap.values());
+
+  // Total across ALL share classes (used by Schedule 1 header)
+  const totalAllShares = shareInfos.reduce((s, info) => s + info.shares, 0);
+  const allClassNames = shareInfos.map(info => info.className).join(' / ');
 
   // ═══ P.2 ═══
   setF("fill_1_P.2", br8);
@@ -412,26 +597,35 @@ export async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Ar
   // Mortgage amount
   if (data.mortgageAmount) setF("fill_4_P.2", data.mortgageAmount);
 
-  let totalShares = 0, totalAmountSum = 0, totalPaidUpSum = 0, firstCurrency = "";
+  let totalShares = 0, totalAmountSum = 0, totalPaidUpSum = 0, totalUnpaidSum = 0, firstCurrency = "";
   for (let i = 0; i < Math.min(4, shareInfos.length); i++) {
     const info = shareInfos[i];
     const base = 6 + i * 5;
-    const issuedAmount = (info.paidUp + info.unpaid) || (info.issuePrice ? info.issuePrice * info.shares : 0);
+    // 總款額 = 股數 × 每股價格
+    const totalAmount = info.issuePrice != null ? info.issuePrice * info.shares : 0;
     setF(`fill_${base}_P.2`, info.className);
     setF(`fill_${base + 1}_P.2`, info.currency);
     setF(`fill_${base + 2}_P.2`, fmtInt(info.shares));
-    setF(`fill_${base + 3}_P.2`, issuedAmount ? fmtAmount(issuedAmount) : "");
-    setF(`fill_${base + 4}_P.2`, info.paidUp ? fmtAmount(info.paidUp) : (issuedAmount ? fmtAmount(issuedAmount) : ""));
+    if (info.shares > 0) {
+      setF(`fill_${base + 3}_P.2`, fmtAmount(totalAmount));
+      // Paid-up field: show paid-up, append unpaid if any
+      const paidUpStr = fmtAmount(info.paidUp);
+      const unpaidStr = info.unpaid > 0 ? fmtAmount(info.unpaid) : '';
+      setF(`fill_${base + 4}_P.2`, unpaidStr ? `${paidUpStr}(未缴${unpaidStr})` : paidUpStr);
+    }
     totalShares += info.shares;
-    totalAmountSum += issuedAmount;
-    totalPaidUpSum += info.paidUp || issuedAmount;
+    totalAmountSum += totalAmount;
+    totalPaidUpSum += info.paidUp || 0;
+    totalUnpaidSum += info.unpaid || 0;
     if (!firstCurrency) firstCurrency = info.currency;
   }
   if (shareInfos.length > 0) {
     setF("fill_26_P.2", firstCurrency);
     setF("fill_27_P.2", fmtInt(totalShares));
-    setF("fill_28_P.2", totalAmountSum ? fmtAmount(totalAmountSum) : "");
-    setF("fill_29_P.2", totalPaidUpSum ? fmtAmount(totalPaidUpSum) : "");
+    setF("fill_28_P.2", fmtAmount(totalAmountSum));
+    setF("fill_29_P.2", totalUnpaidSum > 0
+      ? `${fmtAmount(totalPaidUpSum)}(未缴${fmtAmount(totalUnpaidSum)})`
+      : fmtAmount(totalPaidUpSum));
   }
 
   const secretaries = data.secretaries || [];
@@ -441,7 +635,7 @@ export async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Ar
   const corpSecs = secretaries.filter(s => s.identity === "corporate");
   const natDirs = directors.filter(d => d.identity === "natural");
   const corpDirs = directors.filter(d => d.identity === "corporate");
-  const validMembers = shareholders.filter(sh => (Number(sh.shares) || 0) > 0);
+  const validMembers = shareholders.filter(sh => toNum(sh.shares) > 0);
 
   // ═══ P.3 自然人秘書 ═══
   setF("fill_1_P.3", br8);
@@ -484,7 +678,8 @@ export async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Ar
   setF("fill_1_P.5", br8);
   if (natDirs.length > 0) {
     const d = natDirs[0];
-    checkF("cb_1_P.5", true);
+    checkF("cb_1_P.5", !d.isAlternate);
+    checkF("cb_2_P.5", !!d.isAlternate);
     const { surname, otherNames } = parseEnglishName(d.nameEnglish);
     setF("fill_3_P.5", d.nameChinese || "");
     setF("fill_4_P.5", surname);
@@ -532,19 +727,14 @@ export async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Ar
   // sheetA/B/C: each person beyond P.3/P.4/P.5 needs 1 page (pre-built P.11/12/13 = 1st extra)
   // sheetD: P.6 holds 1 corp dir, P.14 holds 2 corp dirs → beyond 1st = ceil((n-1)/2)
   // sched1: P.9 holds 2 members, P.10 holds 2 members → ceil(n/2) total pages
-  const contCounts = data.continuationCounts || {
-    sheetA: Math.max(0, natSecs.length - 1),
-    sheetB: Math.max(0, corpSecs.length - 1),
-    sheetC: Math.max(0, natDirs.length - 1),
-    sheetD: corpDirs.length > 1 ? Math.ceil((corpDirs.length - 1) / 2) : 0,
-    sched1: isListedCo ? 0 : (validMembers.length > 0 ? Math.ceil(validMembers.length / 2) : 0),
-  };
-
-  const sheetA = contCounts.sheetA;
-  const sheetB = contCounts.sheetB;
-  const sheetC = contCounts.sheetC;
-  const sheetD = contCounts.sheetD;
-  const sched1Pages = contCounts.sched1;
+  // Always calculate continuation counts from actual data arrays.
+  // Do NOT use data.continuationCounts from frontend — the definitions
+  // differ (frontend sched1 = extra pages, backend sched1 = total pages).
+  const sheetA = Math.max(0, natSecs.length - 1);
+  const sheetB = Math.max(0, corpSecs.length - 1);
+  const sheetC = Math.max(0, natDirs.length - 1);
+  const sheetD = corpDirs.length > 1 ? Math.ceil((corpDirs.length - 1) / 2) : 0;
+  const sched1Pages = isListedCo ? 0 : (validMembers.length > 0 ? Math.ceil(validMembers.length / 2) : 0);
   const sched2Pages = isListedCo ? 1 : 0;
 
   if (sheetA > 0) setF("fill_4_P.8", String(sheetA));
@@ -580,8 +770,8 @@ export async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Ar
     setF("fill_3_P.9", year);
     setF("fill_4_P.9", br8);
     if (shareInfos.length > 0) {
-      setF("fill_5_P.9", shareInfos[0].className);
-      setF("fill_6_P.9", fmtInt(shareInfos[0].shares));
+      setF("fill_5_P.9", allClassNames);
+      setF("fill_6_P.9", fmtInt(totalAllShares));
     }
 
     const slotsP9 = [
@@ -624,8 +814,8 @@ export async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Ar
     setF("fill_3_P.10", year);
     setF("fill_4_P.10", br8);
     if (shareInfos.length > 0) {
-      setF("fill_5_P.10", shareInfos[0].className);
-      setF("fill_6_P.10", fmtInt(shareInfos[0].shares));
+      setF("fill_5_P.10", allClassNames);
+      setF("fill_6_P.10", fmtInt(totalAllShares));
     }
     const slotsP10 = [
       { name: 7, surname: 8, other: 9, shares: 16, flat: 11, building: 12, street: 13, district: 14, country: 15 },
@@ -664,8 +854,8 @@ export async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Ar
     setF("fill_3_P.10", year);
     setF("fill_4_P.10", br8);
     if (shareInfos.length > 0) {
-      setF("fill_5_P.10", shareInfos[0].className);
-      setF("fill_6_P.10", fmtInt(shareInfos[0].shares));
+      setF("fill_5_P.10", allClassNames);
+      setF("fill_6_P.10", fmtInt(totalAllShares));
     }
   }
 
@@ -719,16 +909,17 @@ export async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Ar
     setF("fill_2_P.13", month);
     setF("fill_3_P.13", year);
     setF("fill_4_P.13", br8);
-    checkF("cb_1_P.13", true);
+    checkF("cb_1_P.13", !d.isAlternate);
+    checkF("cb_2_P.13", !!d.isAlternate);
     const { surname, otherNames } = parseEnglishName(d.nameEnglish);
     setF("fill_8_P.13", d.nameChinese || "");
     setF("fill_9_P.13", surname);
     setF("fill_10_P.13", otherNames);
-    setF("fill_15_P.13", office.flat || "");
-    setF("fill_16_P.13", office.building || "");
-    setF("fill_17_P.13", office.street || "");
-    setF("fill_18_P.13", office.district || "");
-    setF("fill_19_P.13", office.region || (office as any).country || "");
+    setF("fill_13_P.13", office.flat || "");
+    setF("fill_14_P.13", office.building || "");
+    setF("fill_15_P.13", office.street || "");
+    setF("fill_16_P.13", office.district || "");
+    setF("fill_17_P.13", office.region || (office as any).country || "");
     setF("fill_20_P.13", d.email || "");
     const hkid = parseHkidPartial(d.idNumber || '');
     if (hkid) setF("fill_21_P.13", hkid);
@@ -797,7 +988,7 @@ export async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Ar
       const addr = parseAddress(s.address || '');
 
       const values: Record<string, string> = {};
-      const setV = (k: string, v: string) => { if (v) values[k] = v; };
+      const setV = (k: string, v: string) => { values[k] = v || ''; };
       setV("fill_1_P11", day);
       setV("fill_2_P11", month);
       setV("fill_3_P11", year);
@@ -810,11 +1001,10 @@ export async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Ar
       setV("fill_14_P11", addr.street);
       setV("fill_15_P11", addr.district);
       setV("fill_16_P11", s.email || "");
-      const hkid = parseHkidPartial(s.idNumber || '');
-      if (hkid) setV("fill_17_P11", hkid);
-      if ((s as any).passportCountry) setV("fill_18_P11", (s as any).passportCountry);
-      if (s.passportNumber) setV("fill_19_P11", parsePassportPartial(s.passportNumber));
-      if (s.tcspNumber) setV("fill_20_P11", s.tcspNumber);
+      setV("fill_17_P11", parseHkidPartial(s.idNumber || ''));
+      setV("fill_18_P11", (s as any).passportCountry || '');
+      setV("fill_19_P11", s.passportNumber ? parsePassportPartial(s.passportNumber) : '');
+      setV("fill_20_P11", s.tcspNumber || '');
 
       const slot: ContinuationSlot = {
         fieldNames: Object.keys(values),
@@ -835,7 +1025,7 @@ export async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Ar
       const addr = parseAddress(s.address || '');
 
       const values: Record<string, string> = {};
-      const setV = (k: string, v: string) => { if (v) values[k] = v; };
+      const setV = (k: string, v: string) => { values[k] = v || ''; };
       setV("fill_1_P12", day);
       setV("fill_2_P12", month);
       setV("fill_3_P12", year);
@@ -848,7 +1038,7 @@ export async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Ar
       setV("fill_10_P12", addr.district);
       setV("fill_11_P12", s.email || "");
       setV("fill_12_P12", s.companyNumberRef || s.brNumber || s.idNumber || "");
-      if (s.tcspNumber) setV("fill_13_P12", s.tcspNumber);
+      setV("fill_13_P12", s.tcspNumber || "");
 
       const slot: ContinuationSlot = {
         fieldNames: Object.keys(values),
@@ -870,30 +1060,29 @@ export async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Ar
       const { surname, otherNames } = parseEnglishName(d.nameEnglish);
 
       const values: Record<string, string> = {};
-      const setV = (k: string, v: string) => { if (v) values[k] = v; };
+      const setV = (k: string, v: string) => { values[k] = v || ''; };
       setV("fill_1_P.13", day);
       setV("fill_2_P.13", month);
       setV("fill_3_P.13", year);
       setV("fill_4_P.13", br8);
-      // checkbox handled separately
       setV("fill_8_P.13", d.nameChinese || "");
       setV("fill_9_P.13", surname);
       setV("fill_10_P.13", otherNames);
-      setV("fill_15_P.13", office.flat || "");
-      setV("fill_16_P.13", office.building || "");
-      setV("fill_17_P.13", office.street || "");
-      setV("fill_18_P.13", office.district || "");
-      setV("fill_19_P.13", office.region || (office as any).country || "");
+      setV("fill_13_P.13", office.flat || "");
+      setV("fill_14_P.13", office.building || "");
+      setV("fill_15_P.13", office.street || "");
+      setV("fill_16_P.13", office.district || "");
+      setV("fill_17_P.13", office.region || (office as any).country || "");
       setV("fill_20_P.13", d.email || "");
-      const hkid = parseHkidPartial(d.idNumber || '');
-      if (hkid) setV("fill_21_P.13", hkid);
-      if ((d as any).passportCountry || d.nationality) setV("fill_22_P.13", (d as any).passportCountry || d.nationality || '');
-      if (d.passportNumber) setV("fill_23_P.13", parsePassportPartial(d.passportNumber));
+      setV("fill_21_P.13", parseHkidPartial(d.idNumber || ''));
+      setV("fill_22_P.13", (d as any).passportCountry || d.nationality || '');
+      setV("fill_23_P.13", d.passportNumber ? parsePassportPartial(d.passportNumber) : '');
 
+      const checkboxes = d.isAlternate ? ['cb_2_P.13'] : ['cb_1_P.13'];
       const slot: ContinuationSlot = {
         fieldNames: Object.keys(values),
         values,
-        checkboxes: ['cb_1_P.13'],
+        checkboxes,
       };
       insertAfter = await addDynamicContinuationSheet(pdfDoc, templateBytes, 12, insertAfter, slot, suffix);
       hasDynamicPages = true;
@@ -911,7 +1100,7 @@ export async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Ar
       const dir2 = corpDirs[di + 1];
 
       const values: Record<string, string> = {};
-      const setV = (k: string, v: string) => { if (v) values[k] = v; };
+      const setV = (k: string, v: string) => { values[k] = v || ''; };
       setV("fill_1_P14", day);
       setV("fill_2_P14", month);
       setV("fill_3_P14", year);
@@ -965,14 +1154,14 @@ export async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Ar
       const sh2 = validMembers[si + 1];
 
       const values: Record<string, string> = {};
-      const setV = (k: string, v: string) => { if (v) values[k] = v; };
+      const setV = (k: string, v: string) => { values[k] = v || ''; };
       setV("fill_1_P.9", day);
       setV("fill_2_P.9", month);
       setV("fill_3_P.9", year);
       setV("fill_4_P.9", br8);
       if (shareInfos.length > 0) {
-        setV("fill_5_P.9", shareInfos[0].className);
-        setV("fill_6_P.9", fmtInt(shareInfos[0].shares));
+        setV("fill_5_P.9", allClassNames);
+        setV("fill_6_P.9", fmtInt(totalAllShares));
       }
 
       const slots = [
@@ -1066,18 +1255,40 @@ export async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Ar
     try { pdfDoc.removePage(idx); } catch { /* */ }
   }
 
-  // ═══ Rebuild AcroForm Fields (needed after dynamic pages) ═══
-  if (hasDynamicPages) {
-    rebuildAcroFormFields(pdfDoc);
-  } else {
-    // Set NeedAppearances for standard flow
-    try {
-      const acroForm = pdfDoc.catalog.lookup(PDFName.of("AcroForm")) as any;
-      if (acroForm && typeof acroForm.set === "function") {
-        acroForm.set(PDFName.of("NeedAppearances"), PDFBool.True);
-      }
-    } catch { /* ignore */ }
-  }
+  // ═══ Always rebuild AcroForm Fields (after page removal) ═══
+  rebuildAcroFormFields(pdfDoc);
+
+  // ═══ Set NeedAppearances for standard flow ═══
+  // Let PDF reader rebuild widget appearance streams from /V values.
+  // This is cheaper than generateAllApStreams() which would exceed CPU limits
+  // on NAR1's 27-page template.
+  try {
+    const acroForm = pdfDoc.catalog.lookup(PDFName.of("AcroForm")) as any;
+    if (acroForm) {
+      acroForm.set(PDFName.of("NeedAppearances"), PDFBool.True);
+    }
+  } catch { /* */ }
+
+  // ═══ Force indirect /Annots (NN1 pattern) ═══
+  // pdf-lib's page ops can inline /Annots, breaking field rendering.
+  // Re-register all page /Annots as indirect objects before save.
+  try {
+    const actx = (pdfDoc as any).context;
+    for (const page of pdfDoc.getPages()) {
+      try {
+        const node = (page as any).node;
+        const annots = node.lookup(PDFName.of("Annots")) as any;
+        if (!annots || typeof annots.size !== "function") continue;
+        const newAnnots = PDFArray.withContext(actx);
+        for (let i = 0; i < annots.size(); i++) {
+          newAnnots.push(annots.get(i));
+        }
+        const ref = actx.register(newAnnots);
+        node.delete(PDFName.of("Annots"));
+        node.set(PDFName.of("Annots"), ref);
+      } catch { /* skip */ }
+    }
+  } catch { /* skip */ }
 
   // ═══ Save ═══
   const pdfBytes = await pdfDoc.save({ updateFieldAppearances: false });

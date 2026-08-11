@@ -16,8 +16,10 @@ import {
 } from '@/hooks/useShareTransactions';
 import { Coins, ArrowRight, Plus, Pencil, Trash2, Save, X, Briefcase, FileText, Download } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { downloadBase64Pdf } from '@/lib/downloadPdf';
+import { downloadBase64File, DOCX_MIME, RTF_MIME } from '@/lib/downloadPdf';
 import { ShareTransactionForm } from '@/components/forms/ShareTransactionForm';
+import { TabChangeEventsFooter } from '@/components/forms/TabChangeEventsFooter';
+import { ShareholderEditForm, shFormFromSh, type ShFormType } from '@/components/dialogs/ShareholderEditForm';
 
 type EditTx = Partial<ShareTransaction>;
 const emptyTx = (companyId: string): EditTx => ({
@@ -31,10 +33,6 @@ const TX_TYPE_LABEL: Record<string, string> = {
 };
 const num = (v: any) => parseFloat(String(v ?? '').replace(/,/g, '')) || 0;
 
-interface ShEdit {
-  shares: number; shareType: string; currency: string;
-  issuePrice: string; paidUp: string; unpaid: string;
-}
 
 export const ShareCapitalTab = ({ company }: { company: Company }) => {
   // 僅統計當前股東（排除已退出者，避免污染當前股本合計）；已退出股東見「股東」標籤的歷史記錄
@@ -45,9 +43,8 @@ export const ShareCapitalTab = ({ company }: { company: Company }) => {
   const upsertTx = useUpsertShareTransaction();
   const delTx = useDeleteShareTransaction();
   const [editingTx, setEditingTx] = useState<EditTx | null>(null);
-
   const [editingShId, setEditingShId] = useState<string | null>(null);
-  const [shEdit, setShEdit] = useState<ShEdit | null>(null);
+
 
   const summary = useMemo(() => {
     const totalShares = shareholders.reduce((s, x) => s + (Number(x.shares) || 0), 0);
@@ -65,32 +62,22 @@ export const ShareCapitalTab = ({ company }: { company: Company }) => {
     };
   }, [shareholders]);
 
-  const startEditSh = (shId: string) => {
-    const sh = shareholders.find(s => s.id === shId);
-    if (!sh) return;
-    setEditingShId(shId);
-    setShEdit({
-      shares: sh.shares || 0, shareType: sh.shareType || '', currency: sh.currency || 'HKD',
-      issuePrice: sh.issuePrice || '', paidUp: sh.paidUp || '', unpaid: sh.unpaid || '',
-    });
-  };
 
-  const saveSh = (shId: string) => {
-    if (!shEdit) return;
+  const saveSh = (shId: string, data: ShFormType) => {
     updateShareholder.mutate(
       {
         id: shId,
         data: {
-          shares: Number(shEdit.shares) || 0,
-          share_type: shEdit.shareType,
-          currency: shEdit.currency,
-          issue_price: shEdit.issuePrice,
-          paid_up: shEdit.paidUp,
-          unpaid: shEdit.unpaid,
+          shares: Number(data.shares) || 0,
+          share_type: data.shareType,
+          currency: data.currency,
+          issue_price: data.issuePrice,
+          paid_up: data.paidUp,
+          unpaid: data.unpaid,
         },
       },
       {
-        onSuccess: () => { toast({ title: '股份資料已更新' }); setEditingShId(null); setShEdit(null); },
+        onSuccess: () => { toast({ title: '股份資料已更新' }); setEditingShId(null); },
         onError: (e: any) => toast({ title: '更新失敗', description: e.message, variant: 'destructive' }),
       },
     );
@@ -105,11 +92,11 @@ export const ShareCapitalTab = ({ company }: { company: Company }) => {
     });
   };
 
-  // ── 凭证 PDF 生成 ──
+  // ── 凭证 RTF 生成 ──
   const genCert = async (tx: ShareTransaction, docType: string) => {
     try {
       const token = localStorage.getItem('secretary_jwt') || '';
-      const resp = await fetch('/api/generate-share-transfer-pdf', {
+      const resp = await fetch('/api/generate-share-transfer-rtf', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ companyId: tx.company_id, transactionId: tx.id, documentType: docType }),
@@ -119,10 +106,33 @@ export const ShareCapitalTab = ({ company }: { company: Company }) => {
         throw new Error(err.error || `HTTP ${resp.status}`);
       }
       const result = await resp.json();
-      if (result.pdf) {
-        const typeLabel = docType === 'bought_sold_note' ? 'BoughtSoldNote' : docType === 'instrument_of_transfer' ? 'InstrumentOfTransfer' : 'ShareCertificate';
-        downloadBase64Pdf(result.pdf, `${typeLabel}_${tx.instrument_number || tx.id}.pdf`);
-        toast({ title: '憑證已生成', description: 'PDF 已下載' });
+      if (result.rtf) {
+        const filename = result.filename || `${docType}_${tx.instrument_number || tx.id}.rtf`;
+        downloadBase64File(result.rtf, filename, RTF_MIME);
+        toast({ title: '憑證已生成', description: 'RTF 已下載' });
+      }
+    } catch (e: any) {
+      toast({ title: '生成失敗', description: e.message, variant: 'destructive' });
+    }
+  };
+
+  // ── 轉讓決議書 DOCX 生成 ──
+  const genTransferResolutions = async (txId?: string) => {
+    try {
+      const token = localStorage.getItem('secretary_jwt') || '';
+      const resp = await fetch('/api/generate-transfer-docx', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ companyId: company.id, transactionId: txId || undefined }),
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({ error: resp.statusText }));
+        throw new Error(err.error || `HTTP ${resp.status}`);
+      }
+      const result = await resp.json();
+      if (result.docx) {
+        downloadBase64File(result.docx, result.filename || `TransferResolutions_${company.company_number}.docx`, DOCX_MIME);
+        toast({ title: '轉讓決議書已生成', description: 'DOCX 已下載' });
       }
     } catch (e: any) {
       toast({ title: '生成失敗', description: e.message, variant: 'destructive' });
@@ -141,7 +151,7 @@ export const ShareCapitalTab = ({ company }: { company: Company }) => {
           <StatCard label="已發行股份總數" value={summary.totalShares.toLocaleString()} />
           <StatCard label="股份類別" value={summary.classesCount || '—'} />
           <StatCard label="計價貨幣" value={summary.currency} />
-          <StatCard label="已繳股本" value={`${summary.currency} ${summary.paidTotal.toLocaleString()}`} valueClassName="text-green-700 text-xl" />
+          <StatCard label="已繳或視作已繳的總款額" value={`${summary.currency} ${summary.paidTotal.toLocaleString()}`} valueClassName="text-green-700 text-xl" />
           <StatCard label="未繳股本" value={`${summary.currency} ${summary.unpaidTotal.toLocaleString()}`} valueClassName={summary.unpaidTotal ? 'text-orange-700 text-xl' : 'text-xl'} />
           <StatCard label="股份類別明細" value={summary.classesLabel} valueClassName="text-sm font-normal" className="col-span-2" />
         </div>
@@ -168,41 +178,17 @@ export const ShareCapitalTab = ({ company }: { company: Company }) => {
                     {sh.identity === 'corporate' && <Badge variant="outline" className="text-xs ml-2">法人</Badge>}
                   </div>
                   {editingShId !== sh.id && (
-                    <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => startEditSh(sh.id)}>
+                    <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => setEditingShId(sh.id)}>
                       <Pencil className="h-3.5 w-3.5 mr-1" /> 編輯股份
                     </Button>
                   )}
                 </div>
 
-                {editingShId === sh.id && shEdit ? (
-                  <div className="mt-2 grid grid-cols-2 md:grid-cols-3 gap-2 rounded-md border border-primary/40 bg-primary/5 p-3">
-                    <div className="space-y-1"><Label className="text-xs">持股數量</Label>
-                      <Input type="number" value={shEdit.shares}
-                        onChange={e => setShEdit({ ...shEdit, shares: Number(e.target.value) || 0 })} /></div>
-                    <div className="space-y-1"><Label className="text-xs">股份類別</Label>
-                      <Input value={shEdit.shareType} placeholder="Ordinary"
-                        onChange={e => setShEdit({ ...shEdit, shareType: e.target.value })} /></div>
-                    <div className="space-y-1"><Label className="text-xs">貨幣</Label>
-                      <Input value={shEdit.currency}
-                        onChange={e => setShEdit({ ...shEdit, currency: e.target.value })} /></div>
-                    <div className="space-y-1"><Label className="text-xs">每股發行價</Label>
-                      <Input value={shEdit.issuePrice}
-                        onChange={e => setShEdit({ ...shEdit, issuePrice: e.target.value })} /></div>
-                    <div className="space-y-1"><Label className="text-xs">已繳股本</Label>
-                      <Input value={shEdit.paidUp}
-                        onChange={e => setShEdit({ ...shEdit, paidUp: e.target.value })} /></div>
-                    <div className="space-y-1"><Label className="text-xs">未繳股本</Label>
-                      <Input value={shEdit.unpaid}
-                        onChange={e => setShEdit({ ...shEdit, unpaid: e.target.value })} /></div>
-                    <div className="col-span-2 md:col-span-3 flex gap-2 justify-end mt-1">
-                      <Button variant="ghost" size="sm" onClick={() => { setEditingShId(null); setShEdit(null); }}>
-                        <X className="h-3.5 w-3.5 mr-1" /> 取消
-                      </Button>
-                      <Button size="sm" onClick={() => saveSh(sh.id)} disabled={updateShareholder.isPending}>
-                        <Save className="h-3.5 w-3.5 mr-1" /> 儲存
-                      </Button>
-                    </div>
-                  </div>
+                {editingShId === sh.id ? (
+                  <ShareholderEditForm mode="financial" initialData={shFormFromSh(sh)} companyId={company.id}
+                    onSave={(data) => { saveSh(sh.id, data); setEditingShId(null); }}
+                    onCancel={() => setEditingShId(null)}
+                    saving={updateShareholder.isPending} />
                 ) : (
                   <div className="flex flex-wrap gap-1.5">
                     <Badge variant="default" className="text-xs">{(sh.shares || 0).toLocaleString()} 股</Badge>
@@ -242,6 +228,8 @@ export const ShareCapitalTab = ({ company }: { company: Company }) => {
               onSave={saveTx}
               onCancel={() => setEditingTx(null)}
               saving={upsertTx.isPending}
+              companyId={company.id}
+              shareholders={shareholders}
             />
           </div>
         )}
@@ -282,7 +270,7 @@ export const ShareCapitalTab = ({ company }: { company: Company }) => {
                       <Pencil className="h-3.5 w-3.5" />
                     </Button>
                     <Button variant="ghost" size="sm" className="h-6 px-1.5 text-destructive"
-                      onClick={() => { if (confirm('確定刪除此交易記錄？')) delTx.mutate(tx.id); }}>
+                      onClick={() => { if (confirm('確定刪除此交易記錄？')) delTx.mutate({ id: tx.id, companyId: company.id }); }}>
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
                   </div>
@@ -347,7 +335,37 @@ export const ShareCapitalTab = ({ company }: { company: Company }) => {
             </div>
           </>
         )}
+
+        {/* ── 轉讓決議書 (CO-10) ── */}
+        <Separator className="mt-4" />
+        <div className="mt-4">
+          <h3 className="font-semibold text-sm flex items-center gap-2 mb-3">
+            <FileText className="h-4 w-4 text-primary" /> 轉讓決議書
+          </h3>
+          <p className="text-xs text-muted-foreground mb-3">
+            生成 Sole Director 書面決議書（轉讓股份），自動填入公司資料及最近一筆交易記錄。
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" onClick={() => genTransferResolutions()}>
+              <Download className="h-3.5 w-3.5 mr-1" /> 生成決議書 (最新交易)
+            </Button>
+            {txs.filter(t => t.transaction_type === 'transfer').map(tx => (
+              <Button key={tx.id} variant="ghost" size="sm"
+                onClick={() => genTransferResolutions(tx.id)}>
+                <FileText className="h-3.5 w-3.5 mr-1" />
+                {tx.transaction_date} — {tx.to_name || '?'} ({tx.shares?.toLocaleString()}股)
+              </Button>
+            ))}
+          </div>
+        </div>
       </div>
+
+      <TabChangeEventsFooter
+        companyId={company.id}
+        company={company}
+        eventTypes={['share_transfer', 'share_allotment']}
+        label="股份交易記錄"
+      />
     </div>
   );
 };

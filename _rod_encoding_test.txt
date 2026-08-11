@@ -1,0 +1,6 @@
+Original: 裕匯物流集團有限公司
+Original hex: e8a395e58cafe789a9e6b581e99b86e59c98e69c89e99990e585ace58fb8
+escXml hex (as latin-1): e8a395e58cafe789a9e6b581e99b86e59c98e69c89e99990e585ace58fb8
+b64 match: True
+Round-trip result: 裕匯物流集團有限公司
+Match: True

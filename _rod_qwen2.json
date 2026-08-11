@@ -1,0 +1,10 @@
+{
+  "error": {
+    "message": "<400> InternalError.Algo.InvalidParameter: The image format is illegal and cannot be opened",
+    "type": "invalid_request_error",
+    "param": null,
+    "code": "invalid_parameter_error"
+  },
+  "id": "chatcmpl-4c4f3433-b616-9dbb-aae7-567c5baa21e4",
+  "request_id": "4c4f3433-b616-9dbb-aae7-567c5baa21e4"
+}

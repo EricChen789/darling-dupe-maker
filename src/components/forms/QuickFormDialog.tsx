@@ -32,9 +32,9 @@ interface QuickFormDialogProps {
 const FORM_CONFIGS: Record<string, { label: string; endpoint: string; icon: string }> = {
   nd2a_appoint: { label: 'ND2A 委任通知書', endpoint: '/api/generate-nd2a-pdf', icon: '📋' },
   nd4_cease: { label: 'ND4 辭任通知書', endpoint: '/api/generate-nd4-pdf', icon: '📋' },
-  bought_sold_note: { label: '買賣票據', endpoint: '/api/generate-share-transfer-pdf', icon: '💰' },
-  instrument_of_transfer: { label: '轉讓文書', endpoint: '/api/generate-share-transfer-pdf', icon: '📄' },
-  share_certificate: { label: '股票證書', endpoint: '/api/generate-share-transfer-pdf', icon: '🏷️' },
+  bought_sold_note: { label: '買賣票據', endpoint: '/api/generate-share-transfer-rtf', icon: '💰' },
+  instrument_of_transfer: { label: '轉讓文書', endpoint: '/api/generate-share-transfer-rtf', icon: '📄' },
+  share_certificate: { label: '股票證書', endpoint: '/api/generate-share-transfer-rtf', icon: '🏷️' },
   nsc1: { label: 'NSC1 配發申報書', endpoint: '/api/generate-nsc1-pdf', icon: '📋' },
 };
 
@@ -432,6 +432,21 @@ async function downloadPdf(base64: string, filename: string) {
   URL.revokeObjectURL(url);
 }
 
+async function downloadRtf(base64: string, filename: string) {
+  const byteChars = atob(base64);
+  const bytes = new Uint8Array(byteChars.length);
+  for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i);
+  const blob = new Blob([bytes], { type: 'application/rtf' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 export function QuickFormDialog({ open, onOpenChange, company, event }: QuickFormDialogProps) {
   const [loading, setLoading] = useState<string | null>(null);
 
@@ -464,8 +479,14 @@ export function QuickFormDialog({ open, onOpenChange, company, event }: QuickFor
         await downloadPdf(result.pdf, filename);
         toast({ title: '✅ PDF 已生成', description: `${config.label} 下載完成` });
         onOpenChange(false);
+      } else if (result.rtf) {
+        const safeName = (company.name || 'company').replace(/[^a-zA-Z0-9一-鿿]/g, '_');
+        const filename = result.filename || `${config.label.replace(/\s/g, '_')}_${safeName}.rtf`;
+        downloadRtf(result.rtf, filename);
+        toast({ title: '✅ RTF 已生成', description: `${config.label} 下載完成` });
+        onOpenChange(false);
       } else {
-        throw new Error('No PDF data in response');
+        throw new Error('No data in response');
       }
     } catch (err: any) {
       console.error('[QuickForm] Generation failed:', err);

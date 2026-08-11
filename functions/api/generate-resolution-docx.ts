@@ -36,11 +36,20 @@ function fillTemplate(entries: Record<string, string>, vars: Record<string, stri
 }
 
 function escXml(s: string): string {
-  return (s ?? '')
+  const escaped = (s ?? '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+  // Encode as UTF-8 bytes represented as Latin1 chars, so btoa() doesn't choke
+  // on non-Latin1 characters (e.g. Chinese names). atob()/btoa() work with byte
+  // strings (chars 0-255); we must keep all characters in that range.
+  const bytes = new TextEncoder().encode(escaped);
+  let result = '';
+  for (let i = 0; i < bytes.length; i++) {
+    result += String.fromCharCode(bytes[i]);
+  }
+  return result;
 }
 
 // ── ZIP builder (store, no compression) ──

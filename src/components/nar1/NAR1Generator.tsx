@@ -712,7 +712,7 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
           {/* ═══ P.1: Company Basic Info ═══ */}
           <div className="border rounded-lg p-4 bg-card">
             <h3 className="font-semibold mb-3">📋 公司基本資料 Company Particulars（P.1）</h3>
-            <div className="grid grid-cols-2 gap-3 mb-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
               <div>
                 <Label className="text-xs">公司名稱 Company Name</Label>
                 <Input className="h-8 text-xs mt-1 bg-muted" disabled value={company.name} />
@@ -742,7 +742,7 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
                 </div>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3 mb-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
               <div>
                 <Label className="text-xs">業務編碼 Business Code</Label>
                 <Input className="h-8 text-xs mt-1" value={businessCode} onChange={e => setBusinessCode(e.target.value)} placeholder="e.g. 46900" />
@@ -771,7 +771,7 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
                 if (d.district) setRegDistrict(d.district);
                 if (d.country || d.region) setRegRegion(d.country || d.region || '');
               }} />
-            <div className="grid grid-cols-2 gap-2 mt-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3">
               <Input className="h-8 text-xs" placeholder="室／樓／座 Flat／Floor／Block" value={regFlat} onChange={e => setRegFlat(e.target.value)} />
               <Input className="h-8 text-xs" placeholder="大廈 Building" value={regBuilding} onChange={e => setRegBuilding(e.target.value)} />
               <Input className="h-8 text-xs col-span-2" placeholder="街道／屋苑／地段／村 Street／Estate／Lot／Village" value={regStreet} onChange={e => setRegStreet(e.target.value)} />
@@ -783,7 +783,7 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
           {/* ═══ P.2: Share Capital & Contact ═══ */}
           <div className="border rounded-lg p-4 bg-card">
             <h3 className="font-semibold mb-3">📞 聯絡資料及股本 Share Capital & Contact（P.2）</h3>
-            <div className="grid grid-cols-2 gap-3 mb-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
               <div>
                 <Label className="text-xs">公司電郵 Email Address</Label>
                 <Input className="h-8 text-xs mt-1" type="email" value={companyEmail} onChange={e => setCompanyEmail(e.target.value)} placeholder="company@example.com" />
@@ -910,12 +910,12 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
                       tcspLicense: p.tcspLicense || '', tcspExempt: !p.tcspLicense,
                     });
                   }} />
-                <div className="grid grid-cols-3 gap-2 mt-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 mt-3">
                   <Input className="h-8 text-xs" placeholder="中文姓名" value={s.nameChinese} onChange={e => updateNatSec(s.id, { nameChinese: e.target.value })} />
                   <Input className="h-8 text-xs" placeholder="英文姓氏 Surname" value={s.surname} onChange={e => updateNatSec(s.id, { surname: e.target.value })} />
                   <Input className="h-8 text-xs" placeholder="英文名字 Other Names" value={s.otherNames} onChange={e => updateNatSec(s.id, { otherNames: e.target.value })} />
                 </div>
-                <div className="grid grid-cols-2 gap-2 mt-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
                   <Input className="h-8 text-xs" placeholder="前用姓名(中) Previous Name (CN)" value={s.prevNameChinese} onChange={e => updateNatSec(s.id, { prevNameChinese: e.target.value })} />
                   <Input className="h-8 text-xs" placeholder="前用姓名(英) Previous Name (EN)" value={s.prevNameEnglish} onChange={e => updateNatSec(s.id, { prevNameEnglish: e.target.value })} />
                   <Input className="h-8 text-xs" placeholder="別名(中) Alias (CN)" value={s.aliasChinese} onChange={e => updateNatSec(s.id, { aliasChinese: e.target.value })} />
@@ -924,14 +924,14 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
                 <p className="text-xs font-medium mt-2">香港通訊地址 Hong Kong Correspondence Address</p>
                 <AddressQuickPick companyId={company.id} includeAllCompanies
                   onPick={d => updateNatSec(s.id, { addrFlat: d.flat || '', addrBuilding: d.building || '', addrStreet: d.street || '', addrDistrict: d.district || '', addrRegion: d.country || d.region || '' })} />
-                <div className="grid grid-cols-5 gap-1 mt-2">
+                <div className="grid grid-cols-3 sm:grid-cols-5 gap-1 mt-2">
                   <Input className="h-8 text-xs" placeholder="室/樓/座" value={s.addrFlat} onChange={e => updateNatSec(s.id, { addrFlat: e.target.value })} />
                   <Input className="h-8 text-xs" placeholder="大廈" value={s.addrBuilding} onChange={e => updateNatSec(s.id, { addrBuilding: e.target.value })} />
                   <Input className="h-8 text-xs" placeholder="街道" value={s.addrStreet} onChange={e => updateNatSec(s.id, { addrStreet: e.target.value })} />
                   <Input className="h-8 text-xs" placeholder="區" value={s.addrDistrict} onChange={e => updateNatSec(s.id, { addrDistrict: e.target.value })} />
                   <Input className="h-8 text-xs" placeholder="地區 (e.g. 香港)" value={s.addrRegion} onChange={e => updateNatSec(s.id, { addrRegion: e.target.value })} />
                 </div>
-                <div className="grid grid-cols-4 gap-2 mt-2">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2">
                   <Input className="h-8 text-xs" placeholder="電郵 Email" value={s.email} onChange={e => updateNatSec(s.id, { email: e.target.value })} />
                   <div className="flex items-center gap-0.5">
                     <Input className="h-8 text-xs flex-1 font-mono" placeholder="HKID" value={s.hkidMain} onChange={e => updateNatSec(s.id, { hkidMain: e.target.value })} maxLength={8} />
@@ -942,7 +942,7 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
                   <Input className="h-8 text-xs" placeholder="護照簽發國" value={s.passportCountry} onChange={e => updateNatSec(s.id, { passportCountry: e.target.value })} />
                   <Input className="h-8 text-xs" placeholder="護照號碼" value={s.passportNumber} onChange={e => updateNatSec(s.id, { passportNumber: e.target.value })} />
                 </div>
-                <div className="grid grid-cols-2 gap-2 mt-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
                   <Input className="h-8 text-xs" placeholder="TCSP 牌照號碼" value={s.tcspLicense} onChange={e => updateNatSec(s.id, { tcspLicense: e.target.value })} />
                   <label className="flex items-center gap-2 text-xs mt-1.5">
                     <Checkbox checked={s.tcspExempt} onCheckedChange={v => updateNatSec(s.id, { tcspExempt: !!v })} />
@@ -978,25 +978,25 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
                     addrStreet: p.addrStreet || '', addrDistrict: p.addrDistrict || '', addrRegion: p.addrRegion || '',
                     brNumber: p.companyNumberRef || '',
                   })} />
-                <div className="grid grid-cols-2 gap-2 mt-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
                   <Input className="h-8 text-xs" placeholder="中文名稱" value={s.nameChinese} onChange={e => updateCorpSec(s.id, { nameChinese: e.target.value })} />
                   <Input className="h-8 text-xs" placeholder="英文名稱" value={s.nameEnglish} onChange={e => updateCorpSec(s.id, { nameEnglish: e.target.value })} />
                 </div>
                 <p className="text-xs font-medium mt-2">香港地址 Hong Kong Address</p>
                 <AddressQuickPick companyId={company.id} includeAllCompanies
                   onPick={d => updateCorpSec(s.id, { addrFlat: d.flat || '', addrBuilding: d.building || '', addrStreet: d.street || '', addrDistrict: d.district || '', addrRegion: d.country || d.region || '' })} />
-                <div className="grid grid-cols-5 gap-1 mt-2">
+                <div className="grid grid-cols-3 sm:grid-cols-5 gap-1 mt-2">
                   <Input className="h-8 text-xs" placeholder="室/樓/座" value={s.addrFlat} onChange={e => updateCorpSec(s.id, { addrFlat: e.target.value })} />
                   <Input className="h-8 text-xs" placeholder="大廈" value={s.addrBuilding} onChange={e => updateCorpSec(s.id, { addrBuilding: e.target.value })} />
                   <Input className="h-8 text-xs" placeholder="街道" value={s.addrStreet} onChange={e => updateCorpSec(s.id, { addrStreet: e.target.value })} />
                   <Input className="h-8 text-xs" placeholder="區" value={s.addrDistrict} onChange={e => updateCorpSec(s.id, { addrDistrict: e.target.value })} />
                   <Input className="h-8 text-xs" placeholder="地區 (e.g. 香港)" value={s.addrRegion} onChange={e => updateCorpSec(s.id, { addrRegion: e.target.value })} />
                 </div>
-                <div className="grid grid-cols-3 gap-2 mt-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 mt-2">
                   <Input className="h-8 text-xs" placeholder="電郵 Email" value={s.email} onChange={e => updateCorpSec(s.id, { email: e.target.value })} />
                   <Input className="h-8 text-xs" placeholder="商業登記號碼 BR Number" value={s.brNumber} onChange={e => updateCorpSec(s.id, { brNumber: e.target.value })} />
                 </div>
-                <div className="grid grid-cols-2 gap-2 mt-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
                   <Input className="h-8 text-xs" placeholder="TCSP 牌照號碼" value={s.tcspLicense} onChange={e => updateCorpSec(s.id, { tcspLicense: e.target.value })} />
                   <label className="flex items-center gap-2 text-xs mt-1.5">
                     <Checkbox checked={s.tcspExempt} onCheckedChange={v => updateCorpSec(s.id, { tcspExempt: !!v })} />
@@ -1046,12 +1046,12 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
                       passportCountry: p.passportCountry || '', passportNumber: p.passportNumber || '',
                     });
                   }} />
-                <div className="grid grid-cols-3 gap-2 mt-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 mt-3">
                   <Input className="h-8 text-xs" placeholder="中文姓名" value={d.nameChinese} onChange={e => updateNatDir(d.id, { nameChinese: e.target.value })} />
                   <Input className="h-8 text-xs" placeholder="英文姓氏 Surname" value={d.surname} onChange={e => updateNatDir(d.id, { surname: e.target.value })} />
                   <Input className="h-8 text-xs" placeholder="英文名字 Other Names" value={d.otherNames} onChange={e => updateNatDir(d.id, { otherNames: e.target.value })} />
                 </div>
-                <div className="grid grid-cols-2 gap-2 mt-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
                   <Input className="h-8 text-xs" placeholder="前用姓名(中) Previous Name (CN)" value={d.prevNameChinese} onChange={e => updateNatDir(d.id, { prevNameChinese: e.target.value })} />
                   <Input className="h-8 text-xs" placeholder="前用姓名(英) Previous Name (EN)" value={d.prevNameEnglish} onChange={e => updateNatDir(d.id, { prevNameEnglish: e.target.value })} />
                   <Input className="h-8 text-xs" placeholder="別名(中) Alias (CN)" value={d.aliasChinese} onChange={e => updateNatDir(d.id, { aliasChinese: e.target.value })} />
@@ -1060,14 +1060,14 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
                 <p className="text-xs font-medium mt-2">通訊地址 Correspondence Address</p>
                 <AddressQuickPick companyId={company.id} includeAllCompanies
                   onPick={ad => updateNatDir(d.id, { addrFlat: ad.flat || '', addrBuilding: ad.building || '', addrStreet: ad.street || '', addrDistrict: ad.district || '', addrRegion: ad.country || ad.region || '' })} />
-                <div className="grid grid-cols-5 gap-1 mt-2">
+                <div className="grid grid-cols-3 sm:grid-cols-5 gap-1 mt-2">
                   <Input className="h-8 text-xs" placeholder="室/樓/座" value={d.addrFlat} onChange={e => updateNatDir(d.id, { addrFlat: e.target.value })} />
                   <Input className="h-8 text-xs" placeholder="大廈" value={d.addrBuilding} onChange={e => updateNatDir(d.id, { addrBuilding: e.target.value })} />
                   <Input className="h-8 text-xs" placeholder="街道" value={d.addrStreet} onChange={e => updateNatDir(d.id, { addrStreet: e.target.value })} />
                   <Input className="h-8 text-xs" placeholder="區/市/省" value={d.addrDistrict} onChange={e => updateNatDir(d.id, { addrDistrict: e.target.value })} />
                   <Input className="h-8 text-xs" placeholder="國家/地區" value={d.addrRegion} onChange={e => updateNatDir(d.id, { addrRegion: e.target.value })} />
                 </div>
-                <div className="grid grid-cols-4 gap-2 mt-2">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2">
                   <Input className="h-8 text-xs" placeholder="電郵 Email" value={d.email} onChange={e => updateNatDir(d.id, { email: e.target.value })} />
                   <div className="flex items-center gap-0.5">
                     <Input className="h-8 text-xs flex-1 font-mono" placeholder="HKID" value={d.hkidMain} onChange={e => updateNatDir(d.id, { hkidMain: e.target.value })} maxLength={8} />
@@ -1114,21 +1114,21 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
                     addrStreet: p.addrStreet || '', addrDistrict: p.addrDistrict || '', addrRegion: p.addrRegion || '',
                     brNumber: p.companyNumberRef || '',
                   })} />
-                <div className="grid grid-cols-2 gap-2 mt-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
                   <Input className="h-8 text-xs" placeholder="中文名稱" value={d.nameChinese} onChange={e => updateCorpDir(d.id, { nameChinese: e.target.value })} />
                   <Input className="h-8 text-xs" placeholder="英文名稱" value={d.nameEnglish} onChange={e => updateCorpDir(d.id, { nameEnglish: e.target.value })} />
                 </div>
                 <p className="text-xs font-medium mt-2">地址 Address</p>
                 <AddressQuickPick companyId={company.id} includeAllCompanies
                   onPick={ad => updateCorpDir(d.id, { addrFlat: ad.flat || '', addrBuilding: ad.building || '', addrStreet: ad.street || '', addrDistrict: ad.district || '', addrRegion: ad.country || ad.region || '' })} />
-                <div className="grid grid-cols-5 gap-1 mt-2">
+                <div className="grid grid-cols-3 sm:grid-cols-5 gap-1 mt-2">
                   <Input className="h-8 text-xs" placeholder="室/樓/座" value={d.addrFlat} onChange={e => updateCorpDir(d.id, { addrFlat: e.target.value })} />
                   <Input className="h-8 text-xs" placeholder="大廈" value={d.addrBuilding} onChange={e => updateCorpDir(d.id, { addrBuilding: e.target.value })} />
                   <Input className="h-8 text-xs" placeholder="街道" value={d.addrStreet} onChange={e => updateCorpDir(d.id, { addrStreet: e.target.value })} />
                   <Input className="h-8 text-xs" placeholder="區/市/省" value={d.addrDistrict} onChange={e => updateCorpDir(d.id, { addrDistrict: e.target.value })} />
                   <Input className="h-8 text-xs" placeholder="國家/地區" value={d.addrRegion} onChange={e => updateCorpDir(d.id, { addrRegion: e.target.value })} />
                 </div>
-                <div className="grid grid-cols-2 gap-2 mt-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
                   <Input className="h-8 text-xs" placeholder="電郵 Email" value={d.email} onChange={e => updateCorpDir(d.id, { email: e.target.value })} />
                   <Input className="h-8 text-xs" placeholder="商業登記號碼 BR Number" value={d.brNumber} onChange={e => updateCorpDir(d.id, { brNumber: e.target.value })} />
                 </div>
@@ -1166,7 +1166,7 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
                       passportCountry: p.passportCountry || '', passportNumber: p.passportNumber || '',
                     });
                   }} />
-                <div className="grid grid-cols-3 gap-2 mt-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 mt-3">
                   <Input className="h-8 text-xs" placeholder="中文姓名" value={reserveDir.nameChinese} onChange={e => setReserveDir({ ...reserveDir, nameChinese: e.target.value })} />
                   <Input className="h-8 text-xs" placeholder="英文姓氏 Surname" value={reserveDir.surname} onChange={e => setReserveDir({ ...reserveDir, surname: e.target.value })} />
                   <Input className="h-8 text-xs" placeholder="英文名字 Other Names" value={reserveDir.otherNames} onChange={e => setReserveDir({ ...reserveDir, otherNames: e.target.value })} />
@@ -1174,14 +1174,14 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
                 <p className="text-xs font-medium mt-2">通訊地址 Correspondence Address</p>
                 <AddressQuickPick companyId={company.id} includeAllCompanies
                   onPick={d => setReserveDir(prev => ({ ...prev, addrFlat: d.flat || '', addrBuilding: d.building || '', addrStreet: d.street || '', addrDistrict: d.district || '', addrRegion: d.country || d.region || '' }))} />
-                <div className="grid grid-cols-5 gap-1 mt-2">
+                <div className="grid grid-cols-3 sm:grid-cols-5 gap-1 mt-2">
                   <Input className="h-8 text-xs" placeholder="室/樓/座" value={reserveDir.addrFlat} onChange={e => setReserveDir({ ...reserveDir, addrFlat: e.target.value })} />
                   <Input className="h-8 text-xs" placeholder="大廈" value={reserveDir.addrBuilding} onChange={e => setReserveDir({ ...reserveDir, addrBuilding: e.target.value })} />
                   <Input className="h-8 text-xs" placeholder="街道" value={reserveDir.addrStreet} onChange={e => setReserveDir({ ...reserveDir, addrStreet: e.target.value })} />
                   <Input className="h-8 text-xs" placeholder="區/市/省" value={reserveDir.addrDistrict} onChange={e => setReserveDir({ ...reserveDir, addrDistrict: e.target.value })} />
                   <Input className="h-8 text-xs" placeholder="國家/地區" value={reserveDir.addrRegion} onChange={e => setReserveDir({ ...reserveDir, addrRegion: e.target.value })} />
                 </div>
-                <div className="grid grid-cols-4 gap-2 mt-2">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2">
                   <Input className="h-8 text-xs" placeholder="電郵 Email" value={reserveDir.email} onChange={e => setReserveDir({ ...reserveDir, email: e.target.value })} />
                   <div className="flex items-center gap-0.5">
                     <Input className="h-8 text-xs flex-1 font-mono" placeholder="HKID" value={reserveDir.hkidMain} onChange={e => setReserveDir({ ...reserveDir, hkidMain: e.target.value })} maxLength={8} />
@@ -1223,7 +1223,7 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
                     paidUp: p.paidUp || sh.paidUp,
                     unpaid: p.unpaid || sh.unpaid,
                   })} />
-                <div className="grid grid-cols-3 gap-2 mt-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 mt-3">
                   <Input className="h-8 text-xs" placeholder="中文姓名／名稱" value={sh.nameChinese} onChange={e => updateShareholder(sh.id, { nameChinese: e.target.value })} />
                   <Input className="h-8 text-xs" placeholder="英文姓名 English Name" value={sh.nameEnglish} onChange={e => updateShareholder(sh.id, { nameEnglish: e.target.value })} />
                   <div>
@@ -1242,12 +1242,12 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
                     </div>
                   </div>
                 </div>
-                <div className="grid grid-cols-3 gap-2 mt-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 mt-2">
                   <Input className="h-8 text-xs" placeholder="股份類別 Share Class" value={sh.shareClass} onChange={e => updateShareholder(sh.id, { shareClass: e.target.value })} />
                   <Input className="h-8 text-xs" placeholder="持有股份數目 No. of Shares" value={sh.shares} onChange={e => updateShareholder(sh.id, { shares: e.target.value.replace(/\D/g, '') })} />
                   <Input className="h-8 text-xs" placeholder="貨幣 Currency" value={sh.currency} onChange={e => updateShareholder(sh.id, { currency: e.target.value })} />
                 </div>
-                <div className="grid grid-cols-3 gap-2 mt-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 mt-2">
                   <Input className="h-8 text-xs" placeholder="每股金額 Issue Price per Share" value={sh.issuePrice} onChange={e => updateShareholder(sh.id, { issuePrice: e.target.value })} />
                   <Input className="h-8 text-xs" placeholder="已繳金額 Paid-up Amount" value={sh.paidUp} onChange={e => updateShareholder(sh.id, { paidUp: e.target.value })} />
                   <Input className="h-8 text-xs" placeholder="未繳金額 Unpaid Amount" value={sh.unpaid} onChange={e => updateShareholder(sh.id, { unpaid: e.target.value })} />
@@ -1262,7 +1262,7 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
                 <p className="text-xs font-medium mt-2">地址 Address</p>
                 <AddressQuickPick companyId={company.id} includeAllCompanies
                   onPick={d => updateShareholder(sh.id, { addrFlat: d.flat || '', addrBuilding: d.building || '', addrStreet: d.street || '', addrDistrict: d.district || '', addrRegion: d.country || d.region || '' })} />
-                <div className="grid grid-cols-5 gap-1 mt-2">
+                <div className="grid grid-cols-3 sm:grid-cols-5 gap-1 mt-2">
                   <Input className="h-8 text-xs" placeholder="室/樓/座" value={sh.addrFlat} onChange={e => updateShareholder(sh.id, { addrFlat: e.target.value })} />
                   <Input className="h-8 text-xs" placeholder="大廈" value={sh.addrBuilding} onChange={e => updateShareholder(sh.id, { addrBuilding: e.target.value })} />
                   <Input className="h-8 text-xs" placeholder="街道" value={sh.addrStreet} onChange={e => updateShareholder(sh.id, { addrStreet: e.target.value })} />
@@ -1327,7 +1327,7 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
                 setPresenterEmail(p.email || '');
                 setPresenterRef(p.reference || '');
               }} />
-            <div className="grid grid-cols-2 gap-3 mt-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
               <div>
                 <Label className="text-xs">中文名稱 Name in Chinese</Label>
                 <Input className="h-8 text-xs mt-1" value={presenterNameCn} onChange={e => setPresenterNameCn(e.target.value)} />
@@ -1382,7 +1382,7 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
                   <span className="text-xs font-medium">紀錄 #{i + 1}</span>
                   <Button variant="ghost" size="sm" onClick={() => removeRecord(r.id)} className="text-red-500"><Trash2 className="h-4 w-4" /></Button>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <Label className="text-xs">公司紀錄 Company Records</Label>
                     <Input className="h-8 text-xs mt-1" placeholder="例如：Register of Members" value={r.records} onChange={e => updateRecord(r.id, { records: e.target.value })} />
@@ -1399,7 +1399,7 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
           {/* ═══ Continuation Counts ═══ */}
           <div className="border rounded-lg p-4 bg-card">
             <h3 className="font-semibold mb-3">📊 續頁計數 Continuation Sheet Counts（自動計算）</h3>
-            <div className="grid grid-cols-3 gap-2 text-sm">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 text-sm">
               <div className="bg-muted/50 rounded p-2 text-center">
                 <div className="text-xs text-muted-foreground">A — 秘書（自然人）</div>
                 <div className="font-mono font-bold text-lg">{continuationCounts.sheetA}</div>

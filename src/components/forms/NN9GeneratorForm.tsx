@@ -190,7 +190,7 @@ export default function NN9GeneratorForm({ onBack, initialCompanyId }: NN9Genera
 
       <div className="bg-card border border-border rounded-lg p-6 space-y-6">
         <div><h3 className="font-semibold mb-3">公司資料</h3>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div><Label>商業登記號碼 *</Label><Input value={formData.brNumber} onChange={e => update('brNumber', e.target.value)} className="mt-1" /></div>
             <div><Label>公司名稱 *</Label><Input value={formData.companyName} onChange={e => update('companyName', e.target.value)} className="mt-1" /></div>
           </div>
@@ -210,7 +210,7 @@ export default function NN9GeneratorForm({ onBack, initialCompanyId }: NN9Genera
               />
             </div>
           )}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div><Label className="text-xs text-muted-foreground">室／樓／座 Flat/Block</Label><Input value={formData.flat} onChange={e => update('flat', e.target.value)} placeholder="Room 1001, 10/F" className="mt-1" /></div>
             <div><Label className="text-xs text-muted-foreground">大廈／屋苑 Building/Estate</Label><Input value={formData.building} onChange={e => update('building', e.target.value)} placeholder="ABC Building" className="mt-1" /></div>
             <div className="col-span-2"><Label className="text-xs text-muted-foreground">街道／地段 Street</Label><Input value={formData.street} onChange={e => update('street', e.target.value)} placeholder="1 Queensway" className="mt-1" /></div>
@@ -229,22 +229,22 @@ export default function NN9GeneratorForm({ onBack, initialCompanyId }: NN9Genera
         </div>
 
         <div><h3 className="font-semibold mb-3">新聯絡資料</h3>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div><Label>新香港電話 New HK Tel</Label><Input value={formData.newPhone} onChange={e => update('newPhone', e.target.value)} placeholder="+852 1234 5678" className="mt-1" /></div>
             <div><Label>新電郵地址 New Email</Label><Input value={formData.newEmail} onChange={e => update('newEmail', e.target.value)} placeholder="info@company.com" className="mt-1" /></div>
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
           <div><h3 className="font-semibold mb-3">更改生效日期</h3>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
               <div><Label className="text-xs">日 DD</Label><Input value={formData.changeDay} onChange={e => update('changeDay', e.target.value)} className="mt-1" /></div>
               <div><Label className="text-xs">月 MM</Label><Input value={formData.changeMonth} onChange={e => update('changeMonth', e.target.value)} className="mt-1" /></div>
               <div><Label className="text-xs">年 YYYY</Label><Input value={formData.changeYear} onChange={e => update('changeYear', e.target.value)} className="mt-1" /></div>
             </div>
           </div>
           <div><h3 className="font-semibold mb-3">決議日期</h3>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
               <div><Label className="text-xs">日 DD</Label><Input value={formData.resolutionDay} onChange={e => update('resolutionDay', e.target.value)} className="mt-1" /></div>
               <div><Label className="text-xs">月 MM</Label><Input value={formData.resolutionMonth} onChange={e => update('resolutionMonth', e.target.value)} className="mt-1" /></div>
               <div><Label className="text-xs">年 YYYY</Label><Input value={formData.resolutionYear} onChange={e => update('resolutionYear', e.target.value)} className="mt-1" /></div>
@@ -253,10 +253,10 @@ export default function NN9GeneratorForm({ onBack, initialCompanyId }: NN9Genera
         </div>
 
         <div><h3 className="font-semibold mb-3">簽署</h3>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             <div><Label>簽署人姓名</Label><Input value={formData.signerName} onChange={e => update('signerName', e.target.value)} className="mt-1" /></div>
             <div><Label>身份</Label><Input value={formData.signerCapacity} onChange={e => update('signerCapacity', e.target.value)} className="mt-1" /></div>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
               <div><Label className="text-xs">日 DD</Label><Input value={formData.signDateDay} onChange={e => update('signDateDay', e.target.value)} className="mt-1" /></div>
               <div><Label className="text-xs">月 MM</Label><Input value={formData.signDateMonth} onChange={e => update('signDateMonth', e.target.value)} className="mt-1" /></div>
               <div><Label className="text-xs">年 YYYY</Label><Input value={formData.signDateYear} onChange={e => update('signDateYear', e.target.value)} className="mt-1" /></div>
@@ -276,7 +276,7 @@ export default function NN9GeneratorForm({ onBack, initialCompanyId }: NN9Genera
               update('presentorReference', p.reference);
             }}
           />
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div><Label>姓名／名稱</Label><Input value={formData.presentorName} onChange={e => update('presentorName', e.target.value)} className="mt-1" /></div>
             <div><Label>地址</Label><Input value={formData.presentorAddress} onChange={e => update('presentorAddress', e.target.value)} className="mt-1" /></div>
             <div><Label>電話 Tel</Label><Input value={formData.presentorPhone} onChange={e => update('presentorPhone', e.target.value)} className="mt-1" /></div>

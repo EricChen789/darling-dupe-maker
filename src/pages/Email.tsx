@@ -204,7 +204,7 @@ const Email = () => {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Left: form */}
             <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <Label className="text-xs">套用模板</Label>
                   <Select value={templateId} onValueChange={applyTemplate}>
@@ -229,7 +229,7 @@ const Email = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1"><Label className="text-xs">收件人 *</Label><Input value={to} onChange={e => setTo(e.target.value)} placeholder="client@example.com" /></div>
                 <div className="space-y-1"><Label className="text-xs">副本 CC</Label><Input value={cc} onChange={e => setCc(e.target.value)} placeholder="可留空" /></div>
               </div>
@@ -253,7 +253,7 @@ const Email = () => {
               {/* 變數值（可調整） */}
               <div className="rounded-md border border-border p-3 space-y-2">
                 <Label className="text-xs font-medium">變數值（可手動調整）</Label>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {EMAIL_VARIABLES.map(v => (
                     <div key={v.key} className="space-y-0.5">
                       <Label className="text-[11px] text-muted-foreground">{v.label} {`{${v.key}}`}</Label>
@@ -464,7 +464,7 @@ const Email = () => {
           </DialogHeader>
           {editing && (
             <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1"><Label className="text-xs">模板名稱 *</Label><Input value={editing.name || ''} onChange={e => setEditing({ ...editing, name: e.target.value })} /></div>
                 <div className="space-y-1">
                   <Label className="text-xs">類型</Label>
@@ -511,7 +511,7 @@ const Email = () => {
             <DialogDescription>設定定時發送郵件的排程任務</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs">套用模板</Label>
                 <Select value={templateId} onValueChange={applyTemplate}>
@@ -535,7 +535,7 @@ const Email = () => {
                 </Select>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1"><Label className="text-xs">收件人 *</Label><Input value={to} onChange={e => setTo(e.target.value)} placeholder="client@example.com" /></div>
               <div className="space-y-1"><Label className="text-xs">副本 CC</Label><Input value={cc} onChange={e => setCc(e.target.value)} placeholder="可留空" /></div>
             </div>
@@ -554,7 +554,7 @@ const Email = () => {
             {/* 變數值 */}
             <div className="rounded-md border border-border p-3 space-y-2">
               <Label className="text-xs font-medium">變數值（可手動調整）</Label>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {EMAIL_VARIABLES.map(v => (
                   <div key={v.key} className="space-y-0.5">
                     <Label className="text-[11px] text-muted-foreground">{v.label} {`{${v.key}}`}</Label>

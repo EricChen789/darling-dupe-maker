@@ -191,14 +191,14 @@ export default function ND4GeneratorForm({ onBack, initialCompanyId }: ND4Genera
 
       <div className="bg-card border border-border rounded-lg p-6 space-y-6">
         <div><h3 className="font-semibold mb-3">公司資料</h3>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div><Label>商業登記號碼 *</Label><Input value={formData.brNumber} onChange={e => update('brNumber', e.target.value)} className="mt-1" /></div>
             <div><Label>公司名稱 *</Label><Input value={formData.companyName} onChange={e => update('companyName', e.target.value)} className="mt-1" /></div>
           </div>
         </div>
 
         <div><h3 className="font-semibold mb-3">辭任人</h3>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div><Label>身份類別</Label>
               <Select value={formData.officerType} onValueChange={v => update('officerType', v)}>
                 <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
@@ -217,7 +217,7 @@ export default function ND4GeneratorForm({ onBack, initialCompanyId }: ND4Genera
             </div>
           </div>
           {selectedCompany && (
-            <div className="mt-3 grid grid-cols-2 gap-4">
+            <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-4">
               {formData.officerType === 'director' && directors.length > 0 && (
                 <div><Label>從公司董事列表選擇</Label>
                   <Select onValueChange={v => handleOfficerSelect('director', parseInt(v))}>
@@ -247,11 +247,11 @@ export default function ND4GeneratorForm({ onBack, initialCompanyId }: ND4Genera
               />
             </div>
           )}
-          <div className="grid grid-cols-2 gap-4 mt-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-3">
             <div><Label>中文名稱</Label><Input value={formData.officerNameChinese} onChange={e => update('officerNameChinese', e.target.value)} className="mt-1" /></div>
             <div><Label>英文名稱 *（姓氏, 名字）</Label><Input value={formData.officerNameEnglish} onChange={e => update('officerNameEnglish', e.target.value)} className="mt-1" placeholder="CHAN, Tai Man" /></div>
           </div>
-          <div className="grid grid-cols-2 gap-4 mt-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-3">
             <div><Label>香港身份證部分號碼</Label><Input value={formData.hkidPartial} onChange={e => update('hkidPartial', e.target.value)} className="mt-1" placeholder="A123" /></div>
             <div><Label>護照簽發國家/地區</Label><Input value={formData.passportCountry} onChange={e => update('passportCountry', e.target.value)} className="mt-1" placeholder="e.g. China" /></div>
             <div><Label>護照部分號碼</Label><Input value={formData.passportPartial} onChange={e => update('passportPartial', e.target.value)} className="mt-1" /></div>
@@ -259,7 +259,7 @@ export default function ND4GeneratorForm({ onBack, initialCompanyId }: ND4Genera
         </div>
 
         <div><h3 className="font-semibold mb-3">辭任生效日期</h3>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             <div><Label>日 (DD)</Label><Input value={formData.resignationDay} onChange={e => update('resignationDay', e.target.value)} className="mt-1" /></div>
             <div><Label>月 (MM)</Label><Input value={formData.resignationMonth} onChange={e => update('resignationMonth', e.target.value)} className="mt-1" /></div>
             <div><Label>年 (YYYY)</Label><Input value={formData.resignationYear} onChange={e => update('resignationYear', e.target.value)} className="mt-1" /></div>
@@ -267,10 +267,10 @@ export default function ND4GeneratorForm({ onBack, initialCompanyId }: ND4Genera
         </div>
 
         <div><h3 className="font-semibold mb-3">簽署</h3>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div><Label>簽署人姓名</Label><Input value={formData.signerName} onChange={e => update('signerName', e.target.value)} className="mt-1" /></div>
             <div><Label>身份</Label><Input value={formData.signerCapacity} onChange={e => update('signerCapacity', e.target.value)} className="mt-1" /></div>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
               <div><Label>日 (DD)</Label><Input value={formData.signDateDay} onChange={e => update('signDateDay', e.target.value)} className="mt-1" /></div>
               <div><Label>月 (MM)</Label><Input value={formData.signDateMonth} onChange={e => update('signDateMonth', e.target.value)} className="mt-1" /></div>
               <div><Label>年 (YYYY)</Label><Input value={formData.signDateYear} onChange={e => update('signDateYear', e.target.value)} className="mt-1" /></div>
@@ -290,7 +290,7 @@ export default function ND4GeneratorForm({ onBack, initialCompanyId }: ND4Genera
               update('presentorReference', p.reference);
             }}
           />
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div><Label>姓名／名稱</Label><Input value={formData.presentorName} onChange={e => update('presentorName', e.target.value)} className="mt-1" /></div>
             <div className="col-span-2">
               {selectedCompanyId && (

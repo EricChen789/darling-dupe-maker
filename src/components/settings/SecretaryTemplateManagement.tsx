@@ -59,7 +59,7 @@ export function SecretaryTemplateManagement() {
 
       {editing && (
         <div className="rounded-md border border-primary/40 bg-primary/5 p-4 space-y-3">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1">
               <Label className="text-xs">範本名稱 *</Label>
               <Input value={editing.label || ''} onChange={e => setEditing({ ...editing, label: e.target.value })} placeholder="例：Twinsail Secretary" />

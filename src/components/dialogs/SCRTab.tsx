@@ -210,7 +210,7 @@ export function SCRTab({ company }: { company: Company }) {
                     <Edit className="h-3 w-3" />
                   </Button>
                 </div>
-                <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted-foreground">
                   <div className="col-span-2">聯絡方式: {s.designatedRepContact || '-'}</div>
                   <div className="col-span-2">關聯重要控制人: {s.nameEnglish || s.nameChinese || '-'}{s.idNumber ? `（${s.idNumber}）` : ''}</div>
                 </div>
@@ -243,7 +243,7 @@ export function SCRTab({ company }: { company: Company }) {
                   </Button>
                 </div>
               </div>
-              <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted-foreground">
+              <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted-foreground">
                 <div>身份證/編號: {s.idNumber || '-'}</div>
                 <div>成為控制人: {s.dateBecame || '-'}</div>
                 <div className="col-span-2">居住/註冊地址: {s.address || '-'}</div>
@@ -275,7 +275,7 @@ function SCREditor({ value, setValue, regAddr, onSave, onCancel, saving }: {
   const set = (k: keyof SignificantController, v: any) => setValue({ ...value, [k]: v });
   return (
     <div className="rounded-md border border-primary/50 bg-primary/5 p-3 mb-3 space-y-3">
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <div className="space-y-1">
           <Label className="text-xs">身份類型</Label>
           <Select value={value.identity || 'natural'} onValueChange={(v) => set('identity', v)}>
@@ -306,7 +306,7 @@ function SCREditor({ value, setValue, regAddr, onSave, onCancel, saving }: {
 
       <div>
         <Label className="text-xs font-medium">控制性質 (可複選)</Label>
-        <div className="grid grid-cols-2 gap-2 mt-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
           <CB id="ns" label="持有 >25% 已發行股份" checked={!!value.natureShares} onChange={(v) => set('natureShares', v)} />
           <CB id="nv" label="持有 >25% 表決權" checked={!!value.natureVoting} onChange={(v) => set('natureVoting', v)} />
           <CB id="na" label="可任命/罷免董事多數" checked={!!value.natureAppoint} onChange={(v) => set('natureAppoint', v)} />
@@ -324,7 +324,7 @@ function SCREditor({ value, setValue, regAddr, onSave, onCancel, saving }: {
       <div className="space-y-2">
         <CB id="dr" label="此人為公司的指定代表 (Designated Representative)" checked={!!value.isDesignatedRep} onChange={(v) => set('isDesignatedRep', v)} />
         {value.isDesignatedRep && (
-          <div className="grid grid-cols-2 gap-2 pl-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pl-6">
             <div className="space-y-1"><Label className="text-xs">指定代表姓名</Label><Input value={value.designatedRepName || ''} onChange={e => set('designatedRepName', e.target.value)} /></div>
             <div className="space-y-1"><Label className="text-xs">聯絡資訊</Label><Input value={value.designatedRepContact || ''} onChange={e => set('designatedRepContact', e.target.value)} placeholder="電話 / 電郵" /></div>
           </div>

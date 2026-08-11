@@ -597,7 +597,7 @@ export function CompanyChronicleTab({ company }: { company: Company }) {
                     {/* 版本：展開詳情 */}
                     {isVersion && isVersionExpanded && !compareMode && (
                       <div className="mt-2 rounded border border-border bg-background p-2">
-                        <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-sm">
                           {Object.entries(event.raw.snapshot as Record<string, string>).map(([k, val]) => (
                             <div key={k}>
                               <span className="text-muted-foreground text-xs">{versionFieldLabel(k)}</span>

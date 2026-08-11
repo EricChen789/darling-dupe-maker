@@ -547,7 +547,7 @@ export function BatchAssignDialog({ open, onOpenChange }: BatchAssignDialogProps
 
                 {showNewCompany && (
                   <div className="rounded-md border border-primary/50 bg-primary/5 p-3 space-y-2">
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       <div className="space-y-1">
                         <Label className="text-xs">公司英文名稱 *</Label>
                         <Input
@@ -616,7 +616,7 @@ export function BatchAssignDialog({ open, onOpenChange }: BatchAssignDialogProps
 
                 {showNewPerson && (
                   <div className="rounded-md border border-primary/50 bg-primary/5 p-3 space-y-2">
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       <div className="space-y-1">
                         <Label className="text-xs">英文姓名 <span className="text-destructive">*</span></Label>
                         <Input
@@ -760,7 +760,7 @@ export function BatchAssignDialog({ open, onOpenChange }: BatchAssignDialogProps
 
                 {showNewPerson && (
                   <div className="rounded-md border border-primary/50 bg-primary/5 p-3 space-y-2">
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       <div className="space-y-1">
                         <Label className="text-xs">英文姓名 <span className="text-destructive">*</span></Label>
                         <Input
@@ -866,7 +866,7 @@ export function BatchAssignDialog({ open, onOpenChange }: BatchAssignDialogProps
 
                 {showNewCompany && (
                   <div className="rounded-md border border-primary/50 bg-primary/5 p-3 space-y-2">
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       <div className="space-y-1">
                         <Label className="text-xs">公司英文名稱 *</Label>
                         <Input

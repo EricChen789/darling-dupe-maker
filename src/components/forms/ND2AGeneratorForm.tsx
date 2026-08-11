@@ -236,7 +236,7 @@ export default function ND2AGeneratorForm({ onBack, initialCompanyId }: ND2AGene
         {/* Company info */}
         <div>
           <h3 className="font-semibold mb-3">公司資料</h3>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div><Label>商業登記號碼 *</Label><Input value={brNumber} onChange={e => setBrNumber(e.target.value)} className="mt-1" /></div>
             <div><Label>公司名稱 *</Label><Input value={companyName} onChange={e => setCompanyName(e.target.value)} className="mt-1" /></div>
           </div>
@@ -256,7 +256,7 @@ export default function ND2AGeneratorForm({ onBack, initialCompanyId }: ND2AGene
                   <Button variant="ghost" size="sm" onClick={() => removeOfficer(idx)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
                 )}
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <Label>變更類型</Label>
                   <Select value={officer.type} onValueChange={v => updateOfficer(idx, 'type', v)}>
@@ -310,7 +310,7 @@ export default function ND2AGeneratorForm({ onBack, initialCompanyId }: ND2AGene
                     <div><Label>中文姓名</Label><Input value={officer.nameChinese} onChange={e => updateOfficer(idx, 'nameChinese', e.target.value)} className="mt-1" /></div>
                     <div>
                       <Label>英文姓名</Label>
-                      <div className="grid grid-cols-2 gap-2 mt-1">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
                         <Input placeholder="姓氏 Surname" value={officer.nameSurname} onChange={e => updateOfficer(idx, 'nameSurname', e.target.value)} />
                         <Input placeholder="名字 Other Names" value={officer.nameOtherNames} onChange={e => updateOfficer(idx, 'nameOtherNames', e.target.value)} />
                       </div>
@@ -334,7 +334,7 @@ export default function ND2AGeneratorForm({ onBack, initialCompanyId }: ND2AGene
                         />
                       )}
                       <Label>住址 Residential Address</Label>
-                      <div className="grid grid-cols-2 gap-3 mt-1">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-1">
                         <div className="space-y-1">
                           <Label className="text-xs" style={{ lineHeight: 1.3 }}>Flat／Floor／Block etc. 室／樓／座等</Label>
                           <Input placeholder="例如 Flat A, 12/F" value={officer.addrFlatBlock} onChange={e => updateOfficer(idx, 'addrFlatBlock', e.target.value)} />
@@ -418,7 +418,7 @@ export default function ND2AGeneratorForm({ onBack, initialCompanyId }: ND2AGene
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <Label>簽署人</Label>
               {selectedCompany && companyOfficers.length > 0 ? (

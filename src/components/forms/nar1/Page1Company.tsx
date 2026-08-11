@@ -60,7 +60,7 @@ export const Page1Company = ({ data, onChange }: Props) => {
     <div className="space-y-6">
       <h2 className="text-lg font-semibold">第 1 頁 — 公司基本資料</h2>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="col-span-2 space-y-2">
           <Label>商業登記號碼 CI No.</Label>
           <Input value={data.brNumber} onChange={e => set('brNumber', e.target.value)} placeholder="例：12345678" />
@@ -92,7 +92,7 @@ export const Page1Company = ({ data, onChange }: Props) => {
 
       <div className="border-t border-border pt-4 space-y-4">
         <h3 className="text-sm font-medium">4. 結算日期 Date of Return</h3>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           <div className="space-y-1">
             <Label className="text-xs">日 DD</Label>
             <Input value={data.returnDateDay} disabled className="bg-muted cursor-not-allowed" />
@@ -114,7 +114,7 @@ export const Page1Company = ({ data, onChange }: Props) => {
 
       <div className="border-t border-border pt-4 space-y-4">
         <h3 className="text-sm font-medium">5. 財務報表期間 Financial Statement Period（公眾公司適用）</h3>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {/* Start date */}
           <div className="space-y-2">
             <Label className="text-xs">開始日期 Start Date</Label>
@@ -172,7 +172,7 @@ export const Page1Company = ({ data, onChange }: Props) => {
 
       <div className="border-t border-border pt-4 space-y-4">
         <h3 className="text-sm font-medium">6. 註冊辦事處地址 Registered Office Address</h3>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="space-y-1">
             <Label className="text-xs">室／樓／座 Flat/Floor/Block</Label>
             <Input value={data.regFlat} onChange={e => set('regFlat', e.target.value)} />
@@ -196,7 +196,7 @@ export const Page1Company = ({ data, onChange }: Props) => {
         </div>
       </div>
 
-      <div className="border-t border-border pt-4 grid grid-cols-2 gap-4">
+      <div className="border-t border-border pt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label>7. 電郵地址 Email</Label>
           <Input value={data.email} onChange={e => set('email', e.target.value)} />

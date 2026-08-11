@@ -221,7 +221,7 @@ export default function ResolutionGeneratorForm({ onBack }: Props) {
 
       <FormHistorySelector formType="RESOLUTION" onSelect={handleLoadHistory} />
 
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         <div className="space-y-1">
           <Label className="text-xs">公司</Label>
           <Select value={companyId} onValueChange={setCompanyId}>
@@ -318,7 +318,7 @@ function TemplateVars({ resolutionType, vars, updateVar }: {
   const fields = fieldsByType[resolutionType] || [];
   if (fields.length === 0) return <p className="text-xs text-muted-foreground">此類型無需額外變數，直接點「套用範本」即可。</p>;
   return (
-    <div className="grid grid-cols-2 gap-2">
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
       {fields.map(([k, label]) => (
         <div key={k} className="space-y-1">
           <Label className="text-xs">{label}</Label>

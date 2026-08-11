@@ -204,7 +204,7 @@ const Invoices = () => {
       )}
 
       {/* Stats */}
-      <div className="grid grid-cols-5 gap-4 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
         <StatCard label="總發票數" value={stats.total} />
         <StatCard label="目前顯示" value={stats.displayed} />
         <StatCard label="待付款" value={stats.pending} valueClassName="text-warning" />

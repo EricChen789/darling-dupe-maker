@@ -76,7 +76,7 @@ export const ChatPanel = ({ open, onClose }: ChatPanelProps) => {
   if (!open) return null;
 
   return (
-    <div className="w-[380px] border-l border-border bg-card flex flex-col h-full">
+    <div className="w-full sm:w-[380px] border-l border-border bg-card flex flex-col h-full">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/30">
         <div className="flex items-center gap-2">

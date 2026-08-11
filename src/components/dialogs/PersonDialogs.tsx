@@ -475,7 +475,7 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave, onGenerateND2
 
             {/* === Tab 1: 基本資料 (NP-02 / NP-03) === */}
             <TabsContent value="basic">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {/* === 姓名 === */}
                 <div className="space-y-2">
                   <Label htmlFor="nameChinese">中文姓名</Label>
@@ -672,7 +672,7 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave, onGenerateND2
                     emptyText="無匹配地址"
                     className="mb-1"
                   />
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="space-y-1"><Label className="text-xs" style={{ lineHeight: 1.3 }}>Flat／Floor／Block etc. 室／樓／座等</Label><Input value={formData.addrFlat} onChange={(e) => setAddrPart('addrFlat', e.target.value)} placeholder="例如 Flat A, 12/F" /></div>
                     <div className="space-y-1"><Label className="text-xs" style={{ lineHeight: 1.3 }}>Building 大廈</Label><Input value={formData.addrBuilding} onChange={(e) => setAddrPart('addrBuilding', e.target.value)} placeholder="大廈名稱" /></div>
                     <div className="col-span-2 space-y-1"><Label className="text-xs" style={{ lineHeight: 1.3 }}>Street／Estate／Lot／Village etc. 街道／屋苑／地段／村等</Label><Input value={formData.addrStreet} onChange={(e) => setAddrPart('addrStreet', e.target.value)} placeholder="街道及門牌號" /></div>
@@ -724,7 +724,7 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave, onGenerateND2
                     emptyText="無匹配地址"
                     className="mb-1"
                   />
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="space-y-1"><Label className="text-xs" style={{ lineHeight: 1.3 }}>Flat／Floor／Block etc. 室／樓／座等</Label><Input value={formData.svcAddrFlat} onChange={(e) => setSvcAddrPart('svcAddrFlat', e.target.value)} placeholder="例如 Flat A, 12/F" /></div>
                     <div className="space-y-1"><Label className="text-xs" style={{ lineHeight: 1.3 }}>Building 大廈</Label><Input value={formData.svcAddrBuilding} onChange={(e) => setSvcAddrPart('svcAddrBuilding', e.target.value)} placeholder="大廈名稱" /></div>
                     <div className="col-span-2 space-y-1"><Label className="text-xs" style={{ lineHeight: 1.3 }}>Street／Estate／Lot／Village etc. 街道／屋苑／地段／村等</Label><Input value={formData.svcAddrStreet} onChange={(e) => setSvcAddrPart('svcAddrStreet', e.target.value)} placeholder="街道及門牌號" /></div>
@@ -770,7 +770,7 @@ export const PersonDialog = ({ open, onOpenChange, person, onSave, onGenerateND2
 
             {/* === Tab 3: 附件 (NP-06 身份證明 / NP-07 上載) === */}
             <TabsContent value="attachments">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <FileUploadSlot
                   label="護照副本"
                   filePath={formData.passportFilePath}

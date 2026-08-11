@@ -813,7 +813,7 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
             <h4 className="text-sm font-medium mb-2">在香港主要營業地點的地址 Address of Principal Place of Business in HK</h4>
             <AddressQuickPick companyId={selectedCompanyId} includeAllCompanies
               onPick={(d) => { if (d.flat) setAddrFlat(d.flat); if (d.building) setAddrBuilding(d.building); if (d.street) setAddrStreet(d.street); if (d.district) setAddrDistrict(d.district); }} />
-            <div className="grid grid-cols-2 gap-3 mt-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
               <div><Label>室／樓／座 Flat／Floor／Block</Label><Input value={addrFlat} onChange={e => setAddrFlat(e.target.value)} className="mt-1" /></div>
               <div><Label>大廈 Building</Label><Input value={addrBuilding} onChange={e => setAddrBuilding(e.target.value)} className="mt-1" /></div>
               <div><Label>街道／屋苑 Street／Estate</Label><Input value={addrStreet} onChange={e => setAddrStreet(e.target.value)} className="mt-1" /></div>
@@ -832,7 +832,7 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
         {/* ═══ P.2: Contact + Overseas Offices ═══ */}
         <div className="border rounded-lg p-4 bg-card">
           <h3 className="font-semibold mb-3">📞 聯絡資料及海外辦事處 Contact & Overseas Offices（P.2）</h3>
-          <div className="grid grid-cols-2 gap-3 mb-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
             <div><Label>Section 3(c) — 電郵地址 Email Address</Label><Input value={companyEmail} onChange={e => setCompanyEmail(e.target.value)} className="mt-1" /></div>
             <div><Label>Section 3(d) — 香港聯絡電話號碼 Contact Tel. No. in HK</Label><Input value={companyPhone} onChange={e => setCompanyPhone(e.target.value)} className="mt-1" placeholder="+852 1234 5678" /></div>
           </div>
@@ -840,7 +840,7 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
           <h4 className="text-sm font-medium mb-2">Section 4(a) — 在成立所在地的註冊辦事處地址 Registered Office in Place of Incorporation</h4>
           <AddressQuickPick includeAllCompanies
             onPick={d => { if (d.flat) setRegOffFlat(d.flat); if (d.building) setRegOffBuilding(d.building); if (d.street) setRegOffStreet(d.street); if (d.district) setRegOffDistrict(d.district); if (d.country || d.region) setRegOffCountry(d.country || d.region || ''); }} />
-          <div className="grid grid-cols-2 gap-2 mt-3 mb-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3 mb-3">
             <Input className="h-8 text-xs" placeholder="室／樓／座 Flat／Floor／Block" value={regOffFlat} onChange={e => setRegOffFlat(e.target.value)} />
             <Input className="h-8 text-xs" placeholder="大廈 Building" value={regOffBuilding} onChange={e => setRegOffBuilding(e.target.value)} />
             <Input className="h-8 text-xs" placeholder="街道／屋苑 Street／Estate" value={regOffStreet} onChange={e => setRegOffStreet(e.target.value)} />
@@ -850,7 +850,7 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
           <h4 className="text-sm font-medium mb-2 mt-4">Section 4(b) — 主要營業地點地址 Principal Place of Business</h4>
           <AddressQuickPick includeAllCompanies
             onPick={d => { if (d.flat) setPpbFlat(d.flat); if (d.building) setPpbBuilding(d.building); if (d.street) setPpbStreet(d.street); if (d.district) setPpbDistrict(d.district); if (d.country || d.region) setPpbCountry(d.country || d.region || ''); }} />
-          <div className="grid grid-cols-2 gap-2 mt-3 mb-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3 mb-3">
             <Input className="h-8 text-xs" placeholder="室／樓／座 Flat／Floor／Block" value={ppbFlat} onChange={e => setPpbFlat(e.target.value)} />
             <Input className="h-8 text-xs" placeholder="大廈 Building" value={ppbBuilding} onChange={e => setPpbBuilding(e.target.value)} />
             <Input className="h-8 text-xs" placeholder="街道／屋苑 Street／Estate" value={ppbStreet} onChange={e => setPpbStreet(e.target.value)} />
@@ -871,7 +871,7 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
               setPresenterAddress(p.address || ''); setPresenterPhone(p.phone || '');
               setPresenterFax(p.fax || ''); setPresenterEmail(p.email || ''); setPresenterRef(p.reference || '');
             }} />
-          <div className="grid grid-cols-2 gap-3 mt-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
             <div><Label>中文名稱 Name in Chinese</Label><Input value={presenterNameCn} onChange={e => setPresenterNameCn(e.target.value)} className="mt-1" />
               <p className="text-xs text-muted-foreground mt-1">⚠️ 留空：如無中文姓名，勿填英文名</p></div>
             <div><Label>英文名稱 Name in English</Label><Input value={presenterNameEn} onChange={e => setPresenterNameEn(e.target.value)} className="mt-1" /></div>
@@ -898,7 +898,7 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
               </div>
               <PersonQuickPick companyId={selectedCompanyId} includeAllPersons
                 onPick={p => { const hkid = splitHkid(p.idNumber || ''); updateAuthRepNat(a.id, { nameChinese: p.nameChinese || '', surname: p.surname || '', otherNames: p.otherNames || '', addrFlat: p.addrFlat || '', addrBuilding: p.addrBuilding || '', addrStreet: p.addrStreet || '', addrDistrict: p.addrDistrict || '', hkidMain: hkid.main, hkidCheck: hkid.check, passportCountry: p.passportCountry || '', passportNumber: p.passportNumber || '' }); }} />
-              <div className="grid grid-cols-3 gap-2 mt-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 mt-3">
                 <Input className="h-8 text-xs" placeholder="中文姓名" value={a.nameChinese} onChange={e => updateAuthRepNat(a.id, { nameChinese: e.target.value })} />
                 <Input className="h-8 text-xs" placeholder="英文姓氏 Surname" value={a.surname} onChange={e => updateAuthRepNat(a.id, { surname: e.target.value })} />
                 <Input className="h-8 text-xs" placeholder="英文名字 Other Names" value={a.otherNames} onChange={e => updateAuthRepNat(a.id, { otherNames: e.target.value })} />
@@ -906,13 +906,13 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
               <p className="text-xs font-medium mt-2">香港地址 Hong Kong Address</p>
               <AddressQuickPick companyId={selectedCompanyId} includeAllCompanies
                 onPick={d => updateAuthRepNat(a.id, { addrFlat: d.flat || '', addrBuilding: d.building || '', addrStreet: d.street || '', addrDistrict: d.district || '' })} />
-              <div className="grid grid-cols-4 gap-1 mt-2">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1 mt-2">
                 <Input className="h-8 text-xs" placeholder="室/樓/座" value={a.addrFlat} onChange={e => updateAuthRepNat(a.id, { addrFlat: e.target.value })} />
                 <Input className="h-8 text-xs" placeholder="大廈" value={a.addrBuilding} onChange={e => updateAuthRepNat(a.id, { addrBuilding: e.target.value })} />
                 <Input className="h-8 text-xs" placeholder="街道" value={a.addrStreet} onChange={e => updateAuthRepNat(a.id, { addrStreet: e.target.value })} />
                 <Input className="h-8 text-xs" placeholder="區" value={a.addrDistrict} onChange={e => updateAuthRepNat(a.id, { addrDistrict: e.target.value })} />
               </div>
-              <div className="grid grid-cols-4 gap-2 mt-2">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2">
                 <Input className="h-8 text-xs" placeholder="電郵 Email" value={a.email} onChange={e => updateAuthRepNat(a.id, { email: e.target.value })} />
                 <div className="flex items-center gap-0.5">
                   <Input className="h-8 text-xs flex-1 font-mono" placeholder="HKID" value={a.hkidMain} onChange={e => updateAuthRepNat(a.id, { hkidMain: e.target.value })} maxLength={8} />
@@ -923,7 +923,7 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
                 <Label className="text-xs">護照簽發國</Label>
                 <CountryInput value={a.passportCountry} onChange={v => updateAuthRepNat(a.id, { passportCountry: v })} />
               </div>
-              <div className="grid grid-cols-2 gap-2 mt-2"><Input className="h-8 text-xs" placeholder="護照號碼" value={a.passportNumber} onChange={e => updateAuthRepNat(a.id, { passportNumber: e.target.value })} /></div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2"><Input className="h-8 text-xs" placeholder="護照號碼" value={a.passportNumber} onChange={e => updateAuthRepNat(a.id, { passportNumber: e.target.value })} /></div>
               <div className="max-w-xs mt-2">
                 <DatePickerInput label="獲授權日期 Date of Authorization"
                   day={a.day} month={a.month} year={a.year}
@@ -952,14 +952,14 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
               </div>
               <PersonQuickPick companyId={selectedCompanyId} includeAllPersons
                 onPick={p => updateAuthRepCorp(c.id, { nameChinese: p.nameChinese || '', nameEnglish: p.nameEnglish || '', addrFlat: p.addrFlat || '', addrBuilding: p.addrBuilding || '', addrStreet: p.addrStreet || '', addrDistrict: p.addrDistrict || '' })} />
-              <div className="grid grid-cols-2 gap-2 mt-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
                 <Input className="h-8 text-xs" placeholder="中文名稱" value={c.nameChinese} onChange={e => updateAuthRepCorp(c.id, { nameChinese: e.target.value })} />
                 <Input className="h-8 text-xs" placeholder="英文名稱" value={c.nameEnglish} onChange={e => updateAuthRepCorp(c.id, { nameEnglish: e.target.value })} />
               </div>
               <p className="text-xs font-medium mt-2">香港地址 Hong Kong Address</p>
               <AddressQuickPick companyId={selectedCompanyId} includeAllCompanies
                 onPick={d => updateAuthRepCorp(c.id, { addrFlat: d.flat || '', addrBuilding: d.building || '', addrStreet: d.street || '', addrDistrict: d.district || '' })} />
-              <div className="grid grid-cols-4 gap-1 mt-2">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1 mt-2">
                 <Input className="h-8 text-xs" placeholder="室/樓/座" value={c.addrFlat} onChange={e => updateAuthRepCorp(c.id, { addrFlat: e.target.value })} />
                 <Input className="h-8 text-xs" placeholder="大廈" value={c.addrBuilding} onChange={e => updateAuthRepCorp(c.id, { addrBuilding: e.target.value })} />
                 <Input className="h-8 text-xs" placeholder="街道" value={c.addrStreet} onChange={e => updateAuthRepCorp(c.id, { addrStreet: e.target.value })} />
@@ -984,12 +984,12 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
           {hasSecNat && (<>
             <PersonQuickPick companyId={selectedCompanyId} includeAllPersons
               onPick={p => { const hkid = splitHkid(p.idNumber || ''); setSecNat(prev => ({ ...prev, nameChinese: p.nameChinese || '', surname: p.surname || '', otherNames: p.otherNames || '', prevNameChinese: p.previousNameChinese || '', prevNameEnglish: p.previousNameEnglish || '', aliasChinese: p.aliasChinese || '', aliasEnglish: p.aliasEnglish || '', addrFlat: p.addrFlat || '', addrBuilding: p.addrBuilding || '', addrStreet: p.addrStreet || '', addrDistrict: p.addrDistrict || '', addrRegion: p.addrRegion || '', hkidMain: hkid.main, hkidCheck: hkid.check, passportCountry: p.passportCountry || '', passportNumber: p.passportNumber || '' })); }} />
-            <div className="grid grid-cols-3 gap-2 mt-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 mt-3">
               <Input className="h-8 text-xs" placeholder="中文姓名" value={secNat.nameChinese} onChange={e => setSecNat({ ...secNat, nameChinese: e.target.value })} />
               <Input className="h-8 text-xs" placeholder="英文姓氏 Surname" value={secNat.surname} onChange={e => setSecNat({ ...secNat, surname: e.target.value })} />
               <Input className="h-8 text-xs" placeholder="英文名字 Other Names" value={secNat.otherNames} onChange={e => setSecNat({ ...secNat, otherNames: e.target.value })} />
             </div>
-            <div className="grid grid-cols-2 gap-2 mt-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
               <Input className="h-8 text-xs" placeholder="前用姓名(中) Previous Name (CN)" value={secNat.prevNameChinese} onChange={e => setSecNat({ ...secNat, prevNameChinese: e.target.value })} />
               <Input className="h-8 text-xs" placeholder="前用姓名(英) Previous Name (EN)" value={secNat.prevNameEnglish} onChange={e => setSecNat({ ...secNat, prevNameEnglish: e.target.value })} />
               <Input className="h-8 text-xs" placeholder="別名(中) Alias (CN)" value={secNat.aliasChinese} onChange={e => setSecNat({ ...secNat, aliasChinese: e.target.value })} />
@@ -998,14 +998,14 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
             <p className="text-xs font-medium mt-2">通訊地址 Correspondence Address</p>
             <AddressQuickPick companyId={selectedCompanyId} includeAllCompanies
               onPick={d => setSecNat(prev => ({ ...prev, addrFlat: d.flat || '', addrBuilding: d.building || '', addrStreet: d.street || '', addrDistrict: d.district || '', addrRegion: d.country || d.region || '' }))} />
-            <div className="grid grid-cols-5 gap-1 mt-2">
+            <div className="grid grid-cols-3 sm:grid-cols-5 gap-1 mt-2">
               <Input className="h-8 text-xs" placeholder="室/樓/座" value={secNat.addrFlat} onChange={e => setSecNat({ ...secNat, addrFlat: e.target.value })} />
               <Input className="h-8 text-xs" placeholder="大廈" value={secNat.addrBuilding} onChange={e => setSecNat({ ...secNat, addrBuilding: e.target.value })} />
               <Input className="h-8 text-xs" placeholder="街道" value={secNat.addrStreet} onChange={e => setSecNat({ ...secNat, addrStreet: e.target.value })} />
               <Input className="h-8 text-xs" placeholder="區/市/省" value={secNat.addrDistrict} onChange={e => setSecNat({ ...secNat, addrDistrict: e.target.value })} />
               <Input className="h-8 text-xs" placeholder="國家/地區" value={secNat.addrRegion} onChange={e => setSecNat({ ...secNat, addrRegion: e.target.value })} />
             </div>
-            <div className="grid grid-cols-4 gap-2 mt-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2">
               <Input className="h-8 text-xs" placeholder="電郵 Email" value={secNat.email} onChange={e => setSecNat({ ...secNat, email: e.target.value })} />
               <div className="flex items-center gap-0.5">
                 <Input className="h-8 text-xs flex-1 font-mono" placeholder="HKID" value={secNat.hkidMain} onChange={e => setSecNat({ ...secNat, hkidMain: e.target.value })} maxLength={8} />
@@ -1016,7 +1016,7 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
               <Label className="text-xs">護照簽發國</Label>
               <CountryInput value={secNat.passportCountry} onChange={v => setSecNat({ ...secNat, passportCountry: v })} />
             </div>
-            <div className="grid grid-cols-2 gap-2 mt-2"><Input className="h-8 text-xs" placeholder="護照號碼" value={secNat.passportNumber} onChange={e => setSecNat({ ...secNat, passportNumber: e.target.value })} /></div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2"><Input className="h-8 text-xs" placeholder="護照號碼" value={secNat.passportNumber} onChange={e => setSecNat({ ...secNat, passportNumber: e.target.value })} /></div>
             <div className="max-w-xs mt-2">
               <DatePickerInput label="獲委任日期 Date of Appointment"
                 day={secNat.day} month={secNat.month} year={secNat.year}
@@ -1040,14 +1040,14 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
               </div>
               <PersonQuickPick companyId={selectedCompanyId} includeAllPersons
                 onPick={p => updateSecCorp(s.id, { nameChinese: p.nameChinese || '', nameEnglish: p.nameEnglish || '', addrFlat: p.addrFlat || '', addrBuilding: p.addrBuilding || '', addrStreet: p.addrStreet || '', addrDistrict: p.addrDistrict || '', addrRegion: p.addrRegion || '', brNumber: p.companyNumberRef || '' })} />
-              <div className="grid grid-cols-2 gap-2 mt-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
                 <Input className="h-8 text-xs" placeholder="中文名稱" value={s.nameChinese} onChange={e => updateSecCorp(s.id, { nameChinese: e.target.value })} />
                 <Input className="h-8 text-xs" placeholder="英文名稱" value={s.nameEnglish} onChange={e => updateSecCorp(s.id, { nameEnglish: e.target.value })} />
               </div>
               <p className="text-xs font-medium mt-2">地址 Address</p>
               <AddressQuickPick companyId={selectedCompanyId} includeAllCompanies
                 onPick={d => updateSecCorp(s.id, { addrFlat: d.flat || '', addrBuilding: d.building || '', addrStreet: d.street || '', addrDistrict: d.district || '', addrRegion: d.country || d.region || '' })} />
-              <div className="grid grid-cols-5 gap-1 mt-2">
+              <div className="grid grid-cols-3 sm:grid-cols-5 gap-1 mt-2">
                 <Input className="h-8 text-xs" placeholder="室/樓/座" value={s.addrFlat} onChange={e => updateSecCorp(s.id, { addrFlat: e.target.value })} />
                 <Input className="h-8 text-xs" placeholder="大廈" value={s.addrBuilding} onChange={e => updateSecCorp(s.id, { addrBuilding: e.target.value })} />
                 <Input className="h-8 text-xs" placeholder="街道" value={s.addrStreet} onChange={e => updateSecCorp(s.id, { addrStreet: e.target.value })} />
@@ -1083,12 +1083,12 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
               </div>
               <PersonQuickPick companyId={selectedCompanyId} includeAllPersons
                 onPick={p => { const hkid = splitHkid(p.idNumber || ''); updateDirNat(d.id, { nameChinese: p.nameChinese || '', surname: p.surname || '', otherNames: p.otherNames || '', prevNameChinese: p.previousNameChinese || '', prevNameEnglish: p.previousNameEnglish || '', aliasChinese: p.aliasChinese || '', aliasEnglish: p.aliasEnglish || '', addrFlat: p.addrFlat || '', addrBuilding: p.addrBuilding || '', addrStreet: p.addrStreet || '', addrDistrict: p.addrDistrict || '', addrRegion: p.addrRegion || '', hkidMain: hkid.main, hkidCheck: hkid.check, passportCountry: p.passportCountry || '', passportNumber: p.passportNumber || '' }); }} />
-              <div className="grid grid-cols-3 gap-2 mt-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 mt-3">
                 <Input className="h-8 text-xs" placeholder="中文姓名" value={d.nameChinese} onChange={e => updateDirNat(d.id, { nameChinese: e.target.value })} />
                 <Input className="h-8 text-xs" placeholder="英文姓氏 Surname" value={d.surname} onChange={e => updateDirNat(d.id, { surname: e.target.value })} />
                 <Input className="h-8 text-xs" placeholder="英文名字 Other Names" value={d.otherNames} onChange={e => updateDirNat(d.id, { otherNames: e.target.value })} />
               </div>
-              <div className="grid grid-cols-2 gap-2 mt-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
                 <Input className="h-8 text-xs" placeholder="前用姓名(中)" value={d.prevNameChinese} onChange={e => updateDirNat(d.id, { prevNameChinese: e.target.value })} />
                 <Input className="h-8 text-xs" placeholder="前用姓名(英)" value={d.prevNameEnglish} onChange={e => updateDirNat(d.id, { prevNameEnglish: e.target.value })} />
                 <Input className="h-8 text-xs" placeholder="別名(中)" value={d.aliasChinese} onChange={e => updateDirNat(d.id, { aliasChinese: e.target.value })} />
@@ -1097,14 +1097,14 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
               <p className="text-xs font-medium mt-2">通訊地址 Correspondence Address</p>
               <AddressQuickPick companyId={selectedCompanyId} includeAllCompanies
                 onPick={ad => updateDirNat(d.id, { addrFlat: ad.flat || '', addrBuilding: ad.building || '', addrStreet: ad.street || '', addrDistrict: ad.district || '', addrRegion: ad.country || ad.region || '' })} />
-              <div className="grid grid-cols-5 gap-1 mt-2">
+              <div className="grid grid-cols-3 sm:grid-cols-5 gap-1 mt-2">
                 <Input className="h-8 text-xs" placeholder="室/樓/座" value={d.addrFlat} onChange={e => updateDirNat(d.id, { addrFlat: e.target.value })} />
                 <Input className="h-8 text-xs" placeholder="大廈" value={d.addrBuilding} onChange={e => updateDirNat(d.id, { addrBuilding: e.target.value })} />
                 <Input className="h-8 text-xs" placeholder="街道" value={d.addrStreet} onChange={e => updateDirNat(d.id, { addrStreet: e.target.value })} />
                 <Input className="h-8 text-xs" placeholder="區/市/省" value={d.addrDistrict} onChange={e => updateDirNat(d.id, { addrDistrict: e.target.value })} />
                 <Input className="h-8 text-xs" placeholder="國家/地區" value={d.addrRegion} onChange={e => updateDirNat(d.id, { addrRegion: e.target.value })} />
               </div>
-              <div className="grid grid-cols-4 gap-2 mt-2">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2">
                 <Input className="h-8 text-xs" placeholder="電郵 Email" value={d.email} onChange={e => updateDirNat(d.id, { email: e.target.value })} />
                 <div className="flex items-center gap-0.5">
                   <Input className="h-8 text-xs flex-1 font-mono" placeholder="HKID" value={d.hkidMain} onChange={e => updateDirNat(d.id, { hkidMain: e.target.value })} maxLength={8} />
@@ -1115,7 +1115,7 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
                 <Label className="text-xs">護照簽發國</Label>
                 <CountryInput value={d.passportCountry} onChange={v => updateDirNat(d.id, { passportCountry: v })} />
               </div>
-              <div className="grid grid-cols-2 gap-2 mt-2"><Input className="h-8 text-xs" placeholder="護照號碼" value={d.passportNumber} onChange={e => updateDirNat(d.id, { passportNumber: e.target.value })} /></div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2"><Input className="h-8 text-xs" placeholder="護照號碼" value={d.passportNumber} onChange={e => updateDirNat(d.id, { passportNumber: e.target.value })} /></div>
               <div className="max-w-xs mt-2">
                 <DatePickerInput label="獲委任日期 Date of Appointment"
                   day={d.day} month={d.month} year={d.year}
@@ -1143,14 +1143,14 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
               </div>
               <PersonQuickPick companyId={selectedCompanyId} includeAllPersons
                 onPick={p => updateDirCorp(d.id, { nameChinese: p.nameChinese || '', nameEnglish: p.nameEnglish || '', addrFlat: p.addrFlat || '', addrBuilding: p.addrBuilding || '', addrStreet: p.addrStreet || '', addrDistrict: p.addrDistrict || '', addrRegion: p.addrRegion || '' })} />
-              <div className="grid grid-cols-2 gap-2 mt-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
                 <Input className="h-8 text-xs" placeholder="中文名稱" value={d.nameChinese} onChange={e => updateDirCorp(d.id, { nameChinese: e.target.value })} />
                 <Input className="h-8 text-xs" placeholder="英文名稱" value={d.nameEnglish} onChange={e => updateDirCorp(d.id, { nameEnglish: e.target.value })} />
               </div>
               <p className="text-xs font-medium mt-2">地址 Address</p>
               <AddressQuickPick companyId={selectedCompanyId} includeAllCompanies
                 onPick={ad => updateDirCorp(d.id, { addrFlat: ad.flat || '', addrBuilding: ad.building || '', addrStreet: ad.street || '', addrDistrict: ad.district || '', addrRegion: ad.country || ad.region || '' })} />
-              <div className="grid grid-cols-5 gap-1 mt-2">
+              <div className="grid grid-cols-3 sm:grid-cols-5 gap-1 mt-2">
                 <Input className="h-8 text-xs" placeholder="室/樓/座" value={d.addrFlat} onChange={e => updateDirCorp(d.id, { addrFlat: e.target.value })} />
                 <Input className="h-8 text-xs" placeholder="大廈" value={d.addrBuilding} onChange={e => updateDirCorp(d.id, { addrBuilding: e.target.value })} />
                 <Input className="h-8 text-xs" placeholder="街道" value={d.addrStreet} onChange={e => updateDirCorp(d.id, { addrStreet: e.target.value })} />
@@ -1176,7 +1176,7 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
           </div>
           <Separator className="my-4" />
           <h4 className="text-sm font-medium mb-2">Section 10A — 會計年度 Accounts Period</h4>
-          <div className="grid grid-cols-2 gap-4 mb-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
             <DatePickerInput label="由 From"
               day={acctFromDay} month={acctFromMonth} year={acctFromYear}
               onChange={({ day, month, year }) => { setAcctFromDay(day); setAcctFromMonth(month); setAcctFromYear(year); }} />
@@ -1191,7 +1191,7 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
           </div>
           <Separator className="my-4" />
           <h4 className="text-sm font-medium mb-2">續頁頁數 Continuation Sheet Page Counts（自動計算）</h4>
-          <div className="grid grid-cols-4 gap-2 mb-4 text-sm">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4 text-sm">
             <div className="bg-muted/50 rounded p-2 text-center"><div className="text-xs text-muted-foreground">A (AR 自然人)</div><div className="font-mono font-bold text-lg">{continuationCounts.sheetA}</div></div>
             <div className="bg-muted/50 rounded p-2 text-center"><div className="text-xs text-muted-foreground">B (AR 法人)</div><div className="font-mono font-bold text-lg">{continuationCounts.sheetB}</div></div>
             <div className="bg-muted/50 rounded p-2 text-center"><div className="text-xs text-muted-foreground">C (Sec 自然人)</div><div className="font-mono font-bold text-lg">{continuationCounts.sheetC}</div></div>
@@ -1203,7 +1203,7 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
           <p className="text-xs text-muted-foreground -mt-2 mb-2">以上頁數根據您填寫的人員數量自動計算，無需手動輸入。</p>
           <Separator className="my-4" />
           <h4 className="text-sm font-medium mb-2">簽署 Signature</h4>
-          <div className="grid grid-cols-2 gap-3 max-w-md items-end">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-md items-end">
             <div><Label>簽署人姓名 Name of Signatory</Label><Input value={signatoryName} onChange={e => setSignatoryName(e.target.value)} className="mt-1" /></div>
             <DatePickerInput label="簽署日期 Date"
               day={signDateDay} month={signDateMonth} year={signDateYear}

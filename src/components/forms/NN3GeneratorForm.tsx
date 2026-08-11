@@ -215,7 +215,7 @@ export default function NN3GeneratorForm({ onBack, initialCompanyId }: NN3Genera
 
         {/* Section 1: Company Name */}
         <div><h3 className="font-semibold mb-3">1. 公司名稱 Company Name</h3>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div><Label>英文名稱 *</Label><Input value={formData.companyNameEnglish} onChange={e => update('companyNameEnglish', e.target.value)} placeholder="e.g. ABC Limited" className="mt-1" /></div>
             <div><Label>中文名稱</Label><Input value={formData.companyNameChinese} onChange={e => update('companyNameChinese', e.target.value)} placeholder="e.g. 甲乙丙有限公司" className="mt-1" /></div>
           </div>
@@ -275,7 +275,7 @@ export default function NN3GeneratorForm({ onBack, initialCompanyId }: NN3Genera
               />
             </div>
           )}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div><Label>室／樓／座 Flat／Floor／Block</Label><Input value={formData.flat} onChange={e => update('flat', e.target.value)} className="mt-1" /></div>
             <div><Label>大廈 Building</Label><Input value={formData.building} onChange={e => update('building', e.target.value)} className="mt-1" /></div>
             <div><Label>街道／屋苑／地段 Street／Estate／Lot</Label><Input value={formData.street} onChange={e => update('street', e.target.value)} className="mt-1" /></div>
@@ -288,7 +288,7 @@ export default function NN3GeneratorForm({ onBack, initialCompanyId }: NN3Genera
 
         {/* Section 5(b)(c): Email & Phone */}
         <div><h3 className="font-semibold mb-3">5(b)(c). 聯絡資料</h3>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div><Label>電郵地址 Email Address</Label><Input value={formData.email} onChange={e => update('email', e.target.value)} placeholder="e.g. info@company.com" className="mt-1" /></div>
             <div><Label>香港聯絡電話號碼 +852</Label><Input value={formData.phone} onChange={e => update('phone', e.target.value)} placeholder="e.g. 12345678" className="mt-1" /></div>
           </div>
@@ -297,7 +297,7 @@ export default function NN3GeneratorForm({ onBack, initialCompanyId }: NN3Genera
         {/* Directors & Secretary & Shareholders */}
         <div><h3 className="font-semibold mb-3">董事、公司秘書及股東</h3>
           <p className="text-xs text-muted-foreground mb-3">填入 P.2-P.3 續頁（如需詳細逐人填報，可後續擴充）</p>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="col-span-2"><Label>董事 Directors（以逗號分隔）</Label><Input value={formData.directors} onChange={e => update('directors', e.target.value)} placeholder="e.g. CHAN Tai Man, LEE Siu Wa" className="mt-1" /></div>
             <div className="col-span-2"><Label>公司秘書 Company Secretary（以逗號分隔）</Label><Input value={formData.secretary} onChange={e => update('secretary', e.target.value)} placeholder="e.g. WONG Mei Ling" className="mt-1" /></div>
             <div className="col-span-2"><Label>股東／創辦成員 Shareholders（以逗號分隔）</Label><Input value={formData.shareholders} onChange={e => update('shareholders', e.target.value)} placeholder="e.g. ABC Holdings Ltd (100股)" className="mt-1" /></div>
@@ -318,7 +318,7 @@ export default function NN3GeneratorForm({ onBack, initialCompanyId }: NN3Genera
               update('presentorReference', p.reference);
             }}
           />
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div><Label>姓名／名稱 Name</Label><Input value={formData.presentorName} onChange={e => update('presentorName', e.target.value)} className="mt-1" /></div>
             <div><Label>地址 Address</Label><Input value={formData.presentorAddress} onChange={e => update('presentorAddress', e.target.value)} className="mt-1" /></div>
             <div><Label>電話 Tel</Label><Input value={formData.presentorPhone} onChange={e => update('presentorPhone', e.target.value)} className="mt-1" /></div>

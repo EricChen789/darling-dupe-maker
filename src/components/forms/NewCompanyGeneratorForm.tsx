@@ -809,7 +809,7 @@ export default function NewCompanyGeneratorForm({ onBack, initialCompanyId }: Pr
           <CapitalFields capital={shareCapital} setCapital={setShareCapital} totalShares={totalShares} setTotalShares={setTotalShares} />
         </TabsContent>
         <TabsContent value="BVI" className="space-y-4 pt-4">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1">
               <Label className="text-xs">Authorised number of shares</Label>
               <Input value={authorisedShares} onChange={e => setAuthorisedShares(e.target.value)} />
@@ -825,7 +825,7 @@ export default function NewCompanyGeneratorForm({ onBack, initialCompanyId }: Pr
       <Separator />
 
       <h3 className="font-semibold text-sm">A. 公司資料</h3>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="space-y-1"><Label className="text-xs">英文公司名稱 *</Label><Input value={companyName} onChange={e => setCompanyName(e.target.value)} placeholder="e.g. ABC Limited" /></div>
         <div className="space-y-1"><Label className="text-xs">中文公司名稱</Label><Input value={companyChinese} onChange={e => setCompanyChinese(e.target.value)} placeholder="如 ABC 有限公司" /></div>
         <div className="space-y-1">
@@ -868,7 +868,7 @@ export default function NewCompanyGeneratorForm({ onBack, initialCompanyId }: Pr
       </div>
 
       {/* 註冊辦事處地址 — 5 欄拆分 */}
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
         <div className="space-y-1"><Label className="text-xs">室／樓／座 Flat/Floor</Label><Input className="h-8 text-xs" value={addrFlat} onChange={e => setAddrFlat(e.target.value)} placeholder="Flat/Room" /></div>
         <div className="space-y-1"><Label className="text-xs">大廈 Building</Label><Input className="h-8 text-xs" value={addrBuilding} onChange={e => setAddrBuilding(e.target.value)} placeholder="Building" /></div>
         <div className="space-y-1"><Label className="text-xs">街道／屋苑 Street/Estate</Label><Input className="h-8 text-xs" value={addrStreet} onChange={e => setAddrStreet(e.target.value)} placeholder="Street" /></div>
@@ -887,7 +887,7 @@ export default function NewCompanyGeneratorForm({ onBack, initialCompanyId }: Pr
         </div>
       </div>
       {/* 公司聯絡 */}
-      <div className="grid grid-cols-2 gap-3 mt-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
         <div className="space-y-1"><Label className="text-xs">公司電郵 Email</Label><Input className="h-8 text-xs" value={companyEmail} onChange={e => setCompanyEmail(e.target.value)} placeholder="info@company.com" /></div>
         <div className="space-y-1"><Label className="text-xs">公司電話 Phone (+852)</Label><Input className="h-8 text-xs" value={companyPhone} onChange={e => setCompanyPhone(e.target.value)} placeholder="1234 5678" /></div>
       </div>
@@ -907,7 +907,7 @@ export default function NewCompanyGeneratorForm({ onBack, initialCompanyId }: Pr
       />
 
       <h3 className="font-semibold text-sm">提交人資料 Presentor</h3>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="space-y-1"><Label className="text-xs">中文姓名／名稱</Label><Input className="h-8 text-xs" value={submitterNameCn} onChange={e => setSubmitterNameCn(e.target.value)} /></div>
         <div className="space-y-1"><Label className="text-xs">英文姓名／名稱</Label><Input className="h-8 text-xs" value={submitterNameEn} onChange={e => setSubmitterNameEn(e.target.value)} /></div>
         <div className="col-span-2 space-y-1"><Label className="text-xs">地址 Address</Label><Input className="h-8 text-xs" value={submitterAddress} onChange={e => setSubmitterAddress(e.target.value)} /></div>
@@ -983,7 +983,7 @@ export default function NewCompanyGeneratorForm({ onBack, initialCompanyId }: Pr
               updateOfficer(i, { address: [flat, building, street, district, region].join(', ') });
             }}
           />
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <Input className="h-8 text-xs" placeholder="英文姓名" value={o.nameEnglish} onChange={e => updateOfficer(i, { nameEnglish: e.target.value })} />
             <Input className="h-8 text-xs" placeholder="中文姓名" value={o.nameChinese} onChange={e => updateOfficer(i, { nameChinese: e.target.value })} />
             <Input className="h-8 text-xs" placeholder="身份證/編號" value={o.idNumber} onChange={e => updateOfficer(i, { idNumber: e.target.value })} />
@@ -1022,7 +1022,7 @@ export default function NewCompanyGeneratorForm({ onBack, initialCompanyId }: Pr
                     ? '▾ 更多資料（已填）'
                     : '▸ 更多資料（前用姓名、別名、護照...）'}
                 </summary>
-                <div className="grid grid-cols-2 gap-2 mt-2 pl-2 border-l-2 border-muted">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2 pl-2 border-l-2 border-muted">
                   <Input className="h-8 text-xs" placeholder="前用姓名(中) Previous Name" value={o.previousNameChinese || ''} onChange={e => updateOfficer(i, { previousNameChinese: e.target.value })} />
                   <Input className="h-8 text-xs" placeholder="前用姓名(英) Previous Name EN" value={o.previousNameEnglish || ''} onChange={e => updateOfficer(i, { previousNameEnglish: e.target.value })} />
                   <Input className="h-8 text-xs" placeholder="別名(中) Alias" value={o.aliasChinese || ''} onChange={e => updateOfficer(i, { aliasChinese: e.target.value })} />
@@ -1034,7 +1034,7 @@ export default function NewCompanyGeneratorForm({ onBack, initialCompanyId }: Pr
             )}
             {o.role === 'secretary' && (
               <div className="mt-2 pl-2 border-l-2 border-amber-200">
-                <Input className="h-8 text-xs w-48" placeholder="TCSP 牌照號碼（可選）" value={o.tcspLicense || ''} onChange={e => updateOfficer(i, { tcspLicense: e.target.value })} />
+                <Input className="h-8 text-xs w-full sm:w-48" placeholder="TCSP 牌照號碼（可選）" value={o.tcspLicense || ''} onChange={e => updateOfficer(i, { tcspLicense: e.target.value })} />
               </div>
             )}
           </div>
@@ -1054,7 +1054,7 @@ export default function NewCompanyGeneratorForm({ onBack, initialCompanyId }: Pr
             value={String(signerShareholderIndex)}
             onValueChange={(v) => setSignerShareholderIndex(Number(v))}
           >
-            <SelectTrigger className="h-8 text-xs w-72">
+            <SelectTrigger className="h-8 text-xs w-full sm:w-72">
               <SelectValue placeholder="選擇股東" />
             </SelectTrigger>
             <SelectContent>
@@ -1076,7 +1076,7 @@ export default function NewCompanyGeneratorForm({ onBack, initialCompanyId }: Pr
         )}
         <div className="space-y-1 pt-2">
           <Label className="text-xs">簽署日期 Date</Label>
-          <Input type="date" className="h-8 text-xs w-48" value={signerDate} onChange={e => setSignerDate(e.target.value)} />
+          <Input type="date" className="h-8 text-xs w-full sm:w-48" value={signerDate} onChange={e => setSignerDate(e.target.value)} />
         </div>
       </div>
 
@@ -1125,7 +1125,7 @@ export default function NewCompanyGeneratorForm({ onBack, initialCompanyId }: Pr
               updateShare(i, { address: [flat, building, street, district, region].join(', ') });
               }}
             />
-          <div className="grid grid-cols-3 gap-2 items-end">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 items-end">
             <Input className="h-8 text-xs" placeholder="中文姓名" value={s.name} onChange={e => updateShare(i, { name: e.target.value })} />
             <Input className="h-8 text-xs" placeholder="英文姓氏 Surname" value={s.surname} onChange={e => updateShare(i, { surname: e.target.value })} />
             <Input className="h-8 text-xs" placeholder="英文名字 Other Names" value={s.otherNames} onChange={e => updateShare(i, { otherNames: e.target.value })} />
@@ -1142,7 +1142,7 @@ export default function NewCompanyGeneratorForm({ onBack, initialCompanyId }: Pr
               updateShare(i, { address: joinAddr(arr[0], arr[1], arr[2], arr[3], arr[4]) });
             };
             return (
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                 <Input className="h-8 text-xs" placeholder="室/樓/座 Flat/Floor" value={flat} onChange={e => setPart(0, e.target.value)} />
                 <Input className="h-8 text-xs" placeholder="大廈 Building" value={building} onChange={e => setPart(1, e.target.value)} />
                 <Input className="h-8 text-xs" placeholder="街道 Street" value={street} onChange={e => setPart(2, e.target.value)} />
@@ -1151,7 +1151,7 @@ export default function NewCompanyGeneratorForm({ onBack, initialCompanyId }: Pr
               </div>
             );
           })()}
-          <div className="grid grid-cols-3 gap-2 items-end">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 items-end">
             <Input className="h-8 text-xs" type="number" placeholder="股數 Shares" value={s.shares || ''} onChange={e => updateShare(i, { shares: Number(e.target.value) || 0 })} />
             <Input className="h-8 text-xs" placeholder="股份類別 Share Type" value={s.shareType} onChange={e => updateShare(i, { shareType: e.target.value })} />
             <Input className="h-8 text-xs" placeholder="實繳金額 HKD" value={s.amountPaid} onChange={e => updateShare(i, { amountPaid: e.target.value })} />
@@ -1201,7 +1201,7 @@ function CapitalFields({ capital, setCapital, totalShares, setTotalShares }: {
   totalShares: string; setTotalShares: (v: string) => void;
 }) {
   return (
-    <div className="grid grid-cols-2 gap-3">
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
       <div className="space-y-1"><Label className="text-xs">已發行股本 Issued capital</Label><Input value={capital} onChange={e => setCapital(e.target.value)} /></div>
       <div className="space-y-1"><Label className="text-xs">股份總數 Total shares</Label><Input value={totalShares} onChange={e => setTotalShares(e.target.value)} /></div>
     </div>

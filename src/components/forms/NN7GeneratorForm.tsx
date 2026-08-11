@@ -46,7 +46,7 @@ function AddressFields({
   return (
     <div>
       <Label className="font-medium mb-2 block">{label}</Label>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <Label className="text-xs text-muted-foreground">室／樓層 Flat／Room</Label>
           <Input
@@ -285,7 +285,7 @@ export default function NN7GeneratorForm({ onBack, prefillPerson, initialCompany
         {/* Company info */}
         <div>
           <h3 className="font-semibold mb-3">公司資料</h3>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div><Label>商業登記號碼 *</Label><Input value={formData.brNumber} onChange={e => update('brNumber', e.target.value)} className="mt-1" /></div>
             <div><Label>公司名稱 *</Label><Input value={formData.companyName} onChange={e => update('companyName', e.target.value)} className="mt-1" /></div>
           </div>
@@ -294,7 +294,7 @@ export default function NN7GeneratorForm({ onBack, prefillPerson, initialCompany
         {/* Person current info */}
         <div>
           <h3 className="font-semibold mb-3">董事/秘書現有資料</h3>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <Label>職位</Label>
               <Select value={formData.role} onValueChange={v => update('role', v)}>
@@ -363,7 +363,7 @@ export default function NN7GeneratorForm({ onBack, prefillPerson, initialCompany
                     />
                   </div>
                 )}
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {/* P.2: fill_19=Flat+Block合并, fill_20=Building, fill_21=Street, fill_22=District, fill_23=Region */}
                   <div>
                     <Label className="text-xs text-muted-foreground">① 室／樓層／座 Flat／Room／Block</Label>
@@ -409,7 +409,7 @@ export default function NN7GeneratorForm({ onBack, prefillPerson, initialCompany
                     />
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-3 mt-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
                   <div>
                     <Label className="text-xs text-muted-foreground">電郵地址 Email</Label>
                     <Input
@@ -447,7 +447,7 @@ export default function NN7GeneratorForm({ onBack, prefillPerson, initialCompany
             )}
 
             {formData.changeType === 'name' && (
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div><Label>新英文姓名 *</Label><Input value={formData.newNameEnglish} onChange={e => update('newNameEnglish', e.target.value)} className="mt-1" placeholder="更改後的英文姓名" /></div>
                 <div><Label>新中文姓名</Label><Input value={formData.newNameChinese} onChange={e => update('newNameChinese', e.target.value)} className="mt-1" placeholder="更改後的中文姓名" /></div>
               </div>
@@ -479,7 +479,7 @@ export default function NN7GeneratorForm({ onBack, prefillPerson, initialCompany
               update('presentorReference', p.reference);
             }}
           />
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div><Label>簽署人姓名</Label><Input value={formData.signerName} onChange={e => update('signerName', e.target.value)} className="mt-1" /></div>
             <div><Label>簽署日期</Label><Input type="date" value={formData.signDate} onChange={e => update('signDate', e.target.value)} className="mt-1" /></div>
             <div><Label>提交人名稱</Label><Input value={formData.presentorName} onChange={e => update('presentorName', e.target.value)} className="mt-1" /></div>

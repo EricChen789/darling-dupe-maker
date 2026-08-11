@@ -163,7 +163,7 @@ export default function IRC3111AGeneratorForm({ onBack, initialCompanyId }: IRC3
         {/* Company info */}
         <div>
           <h3 className="font-semibold mb-3">公司資料</h3>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div><Label>商業登記號碼 *</Label><Input value={formData.brNumber} onChange={e => update('brNumber', e.target.value)} className="mt-1" /></div>
             <div><Label>公司名稱 *</Label><Input value={formData.companyName} onChange={e => update('companyName', e.target.value)} className="mt-1" /></div>
           </div>
@@ -173,7 +173,7 @@ export default function IRC3111AGeneratorForm({ onBack, initialCompanyId }: IRC3
         <div>
           <h3 className="font-semibold mb-3">現有業務地址（舊地址）</h3>
           <p className="text-xs text-muted-foreground mb-2">從公司資料自動填入，可手動修改</p>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div><Label>室／樓／座</Label><Input value={formData.oldFlat} onChange={e => update('oldFlat', e.target.value)} placeholder="e.g. Room 1001, 10/F" className="mt-1" /></div>
             <div><Label>大廈</Label><Input value={formData.oldBuilding} onChange={e => update('oldBuilding', e.target.value)} placeholder="e.g. ABC Building" className="mt-1" /></div>
             <div><Label>街道／屋苑／地段</Label><Input value={formData.oldStreet} onChange={e => update('oldStreet', e.target.value)} className="mt-1" /></div>
@@ -198,13 +198,13 @@ export default function IRC3111AGeneratorForm({ onBack, initialCompanyId }: IRC3
               />
             </div>
           )}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div><Label>室／樓／座</Label><Input value={formData.newFlat} onChange={e => update('newFlat', e.target.value)} placeholder="e.g. Room 2001, 20/F" className="mt-1" /></div>
             <div><Label>大廈</Label><Input value={formData.newBuilding} onChange={e => update('newBuilding', e.target.value)} placeholder="e.g. XYZ Tower" className="mt-1" /></div>
             <div><Label>街道／屋苑／地段</Label><Input value={formData.newStreet} onChange={e => update('newStreet', e.target.value)} className="mt-1" /></div>
             <div><Label>區</Label><Input value={formData.newDistrict} onChange={e => update('newDistrict', e.target.value)} placeholder="e.g. Central" className="mt-1" /></div>
             <div><Label>國家／地區</Label><Input value={formData.newRegion} onChange={e => update('newRegion', e.target.value)} placeholder="e.g. 香港" className="mt-1" /></div>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
               <div><Label>生效日 (DD)</Label><Input value={formData.effectiveDay} onChange={e => update('effectiveDay', e.target.value)} className="mt-1" /></div>
               <div><Label>月 (MM)</Label><Input value={formData.effectiveMonth} onChange={e => update('effectiveMonth', e.target.value)} className="mt-1" /></div>
               <div><Label>年 (YYYY)</Label><Input value={formData.effectiveYear} onChange={e => update('effectiveYear', e.target.value)} className="mt-1" /></div>
@@ -215,9 +215,9 @@ export default function IRC3111AGeneratorForm({ onBack, initialCompanyId }: IRC3
         {/* Signature */}
         <div>
           <h3 className="font-semibold mb-3">簽署</h3>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div><Label>簽署人姓名</Label><Input value={formData.signerName} onChange={e => update('signerName', e.target.value)} className="mt-1" /></div>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
               <div><Label>日期 (DD)</Label><Input value={formData.signDateDay} onChange={e => update('signDateDay', e.target.value)} className="mt-1" /></div>
               <div><Label>月 (MM)</Label><Input value={formData.signDateMonth} onChange={e => update('signDateMonth', e.target.value)} className="mt-1" /></div>
               <div><Label>年 (YYYY)</Label><Input value={formData.signDateYear} onChange={e => update('signDateYear', e.target.value)} className="mt-1" /></div>
@@ -236,7 +236,7 @@ export default function IRC3111AGeneratorForm({ onBack, initialCompanyId }: IRC3
               update('presentorContact', [p.phone, p.fax, p.email].filter(Boolean).join(' / '));
             }}
           />
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div><Label>姓名／名稱</Label><Input value={formData.presentorName} onChange={e => update('presentorName', e.target.value)} className="mt-1" /></div>
             <div><Label>地址</Label><Input value={formData.presentorAddress} onChange={e => update('presentorAddress', e.target.value)} className="mt-1" /></div>
             <div className="col-span-2"><Label>電話 / 傳真 / 電郵</Label><Input value={formData.presentorContact} onChange={e => update('presentorContact', e.target.value)} className="mt-1" /></div>

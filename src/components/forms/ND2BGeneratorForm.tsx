@@ -79,7 +79,7 @@ const AddressFields = memo(function AddressFields({
   return (
     <div>
       <Label className="font-medium mb-2 block">{label}</Label>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <Label className="text-xs text-muted-foreground">室／樓層 Flat／Room</Label>
           <Input
@@ -468,7 +468,7 @@ export default function ND2BGeneratorForm({ onBack, prefillPerson, prefillNewAdd
         {/* Company info */}
         <div>
           <h3 className="font-semibold mb-3">公司資料</h3>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div><Label>商業登記號碼 *</Label><Input value={formData.brNumber} onChange={e => update('brNumber', e.target.value)} className="mt-1" /></div>
             <div><Label>公司名稱 *</Label><Input value={formData.companyName} onChange={e => update('companyName', e.target.value)} className="mt-1" /></div>
           </div>
@@ -477,7 +477,7 @@ export default function ND2BGeneratorForm({ onBack, prefillPerson, prefillNewAdd
         {/* Officer current info */}
         <div>
           <h3 className="font-semibold mb-3">董事/秘書現有資料</h3>
-          <div className="grid grid-cols-2 gap-4 mb-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
             <div>
               <Label>職位</Label>
               <Select value={formData.role} onValueChange={v => update('role', v)}>
@@ -504,11 +504,11 @@ export default function ND2BGeneratorForm({ onBack, prefillPerson, prefillNewAdd
             <Label>中文姓名</Label>
             <Input value={formData.nameChinese} onChange={e => update('nameChinese', e.target.value)} className="mt-1" />
           </div>
-          <div className="grid grid-cols-2 gap-4 mb-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
             <div><Label>英文姓氏 Surname *</Label><Input value={formData.nameSurname} onChange={e => update('nameSurname', e.target.value)} className="mt-1" placeholder="e.g. Zhao" /></div>
             <div><Label>英文名字 Other Names</Label><Input value={formData.nameOtherNames} onChange={e => update('nameOtherNames', e.target.value)} className="mt-1" placeholder="e.g. Tong" /></div>
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div><Label>身份證號碼</Label><Input value={formData.idNumber} onChange={e => update('idNumber', e.target.value)} className="mt-1" placeholder="e.g. F3689283" /></div>
             <div><Label>護照號碼</Label><Input value={formData.passportNumber} onChange={e => update('passportNumber', e.target.value)} className="mt-1" placeholder="e.g. EL1234567" /></div>
           </div>
@@ -570,11 +570,11 @@ export default function ND2BGeneratorForm({ onBack, prefillPerson, prefillNewAdd
               <div className="border border-border rounded-lg p-4">
                 <h4 className="font-medium text-sm mb-3 text-primary">姓名更改</h4>
                 <div><Label>新中文姓名</Label><Input value={formData.newNameChinese} onChange={e => update('newNameChinese', e.target.value)} className="mt-1" placeholder="更改後的中文姓名" /></div>
-                <div className="grid grid-cols-2 gap-4 mt-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
                   <div><Label>新英文姓氏 Surname</Label><Input value={formData.newNameSurname} onChange={e => update('newNameSurname', e.target.value)} className="mt-1" placeholder="e.g. CHAN" /></div>
                   <div><Label>新英文名字 Other Names</Label><Input value={formData.newNameOtherNames} onChange={e => update('newNameOtherNames', e.target.value)} className="mt-1" placeholder="e.g. Tai Man" /></div>
                 </div>
-                <div className="grid grid-cols-2 gap-4 mt-4 pt-4 border-t border-border">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4 pt-4 border-t border-border">
                   <div><Label>英文別名（Also Known As）</Label><Input value={formData.newAliasEnglish} onChange={e => update('newAliasEnglish', e.target.value)} className="mt-1" placeholder="別名／前用名（英文）" /></div>
                   <div><Label>中文別名</Label><Input value={formData.newAliasChinese} onChange={e => update('newAliasChinese', e.target.value)} className="mt-1" placeholder="別名／前用名（中文）" /></div>
                 </div>
@@ -587,7 +587,7 @@ export default function ND2BGeneratorForm({ onBack, prefillPerson, prefillNewAdd
                 <div className="mb-4"><Label>新證件號碼</Label><Input value={formData.newIdNumber} onChange={e => update('newIdNumber', e.target.value)} className="mt-1" placeholder="填入新證件號碼" /></div>
                 <div className="border-t border-border pt-4 mt-4">
                   <h4 className="font-medium text-sm mb-3 text-muted-foreground">護照更改</h4>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div><Label>護照簽發地區</Label><Input value={formData.passportPlaceOfIssue} onChange={e => update('passportPlaceOfIssue', e.target.value)} className="mt-1" placeholder="e.g. HKSAR / BNO" /></div>
                     <div><Label>護照號碼</Label><Input value={formData.passportNumber} onChange={e => update('passportNumber', e.target.value)} className="mt-1" placeholder="e.g. EL1234567" /></div>
                   </div>
@@ -620,7 +620,7 @@ export default function ND2BGeneratorForm({ onBack, prefillPerson, prefillNewAdd
               update('presentorReference', p.reference);
             }}
           />
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div><Label>簽署人姓名</Label><Input value={formData.signerName} onChange={e => update('signerName', e.target.value)} className="mt-1" /></div>
             <div><Label>簽署日期</Label><Input type="date" value={formData.signDate} onChange={e => update('signDate', e.target.value)} className="mt-1" /></div>
             <div><Label>提交人名稱</Label><Input value={formData.presentorName} onChange={e => update('presentorName', e.target.value)} className="mt-1" /></div>

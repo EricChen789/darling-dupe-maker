@@ -768,8 +768,8 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="!flex !flex-col w-[98vw] max-w-[98vw] h-[98vh] max-h-[98vh] overflow-hidden p-0">
-        <DialogHeader className="px-6 pt-6 pb-2 shrink-0">
+      <DialogContent className="!flex !flex-col w-full sm:w-[95vw] sm:max-w-[95vw] max-w-full h-[100dvh] sm:h-[95vh] sm:max-h-[95vh] overflow-hidden p-0 sm:rounded-lg">
+        <DialogHeader className="px-4 sm:px-6 pt-4 sm:pt-6 pb-2 shrink-0">
           <DialogTitle className="flex items-center gap-2 text-xl">
             <Building2 className="h-5 w-5 text-primary" />
             {company.name}
@@ -841,7 +841,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
 
         <div className="flex-1 overflow-hidden flex">
           {/* Left: Tabbed content */}
-          <div className={`overflow-y-auto p-6 pt-2 transition-all ${(selectedPerson || selectedSh) ? 'w-1/2 border-r border-border' : 'w-full'}`}>
+          <div className={`overflow-y-auto p-4 sm:p-6 pt-2 transition-all ${(selectedPerson || selectedSh) ? 'hidden sm:block sm:w-1/2 sm:border-r border-border' : 'w-full'}`}>
 
             <Tabs defaultValue="info" className="w-full">
               <TabsList className="mb-4">
@@ -898,7 +898,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                 <h3 className="font-semibold text-sm flex items-center gap-2 mb-4">
                   <Paperclip className="h-4 w-4 text-primary" /> 公司附件
                 </h3>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <DocSlot label="公司註冊證書 (CI)" path={company.ciFilePath} uploading={uploadingCi} deleting={deletingCi}
                     onUpload={(f) => uploadDoc(f, 'ci')} onView={() => downloadDoc(company.ciFilePath || '')}
                     onDownload={() => downloadDocAsFile(company.ciFilePath || '')} onDelete={() => deleteDoc('ci')} />
@@ -907,7 +907,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                     onDownload={() => downloadDocAsFile(company.brFilePath || '')} onDelete={() => deleteDoc('br')} />
                 </div>
                 {(company.ciFilePath || company.brFilePath) ? (
-                  <div className="grid grid-cols-2 gap-4 mt-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
                     {company.ciFilePath && <DocPreview path={company.ciFilePath} label="公司註冊證書 (CI)" />}
                     {company.brFilePath && <DocPreview path={company.brFilePath} label="商業登記證 (BR)" />}
                   </div>
@@ -933,7 +933,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                 </div>
 
                 {!editingCompany ? (
-                  <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
                     <InfoItem label="英文名稱" value={company.name} />
                     <InfoItem label="中文名稱" value={company.chineseName} />
                     <InfoItem label="商業登記號碼" value={company.brNumber} />
@@ -978,7 +978,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                     <InfoItem label="最後更新" value={company.updatedAt} />
                   </div>
                 ) : (
-                  <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                     <div className="space-y-1"><Label className="text-xs">公司英文名稱</Label><Input value={companyForm.name} onChange={e => setCompanyForm({ ...companyForm, name: e.target.value })} /></div>
                     <div className="space-y-1"><Label className="text-xs">公司中文名稱</Label><Input value={companyForm.chineseName} onChange={e => setCompanyForm({ ...companyForm, chineseName: e.target.value })} /></div>
                     <div className="space-y-1"><Label className="text-xs">商業登記號碼</Label><Input value={companyForm.brNumber} onChange={e => setCompanyForm({ ...companyForm, brNumber: e.target.value })} /></div>
@@ -1036,7 +1036,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                     </div>
                     <div className="col-span-2 border-t border-border pt-3 mt-2">
                       <Label className="text-xs font-medium">註冊辦事處地址</Label>
-                      <div className="grid grid-cols-2 gap-2 mt-2">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
                         <div className="space-y-1"><Label className="text-xs">室／樓／座</Label><Input value={companyForm.regFlat} onChange={e => setCompanyForm({ ...companyForm, regFlat: e.target.value })} /></div>
                         <div className="space-y-1"><Label className="text-xs">大廈</Label><Input value={companyForm.regBuilding} onChange={e => setCompanyForm({ ...companyForm, regBuilding: e.target.value })} /></div>
                         <div className="col-span-2 space-y-1"><Label className="text-xs">街道</Label><Input value={companyForm.regStreet} onChange={e => setCompanyForm({ ...companyForm, regStreet: e.target.value })} /></div>
@@ -1498,7 +1498,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
 
           {/* Right: Person detail panel */}
           {selectedPerson && (
-            <div className="w-1/2 overflow-y-auto p-6 pt-2 bg-muted/10">
+            <div className="w-full sm:w-1/2 overflow-y-auto p-4 sm:p-6 pt-2 bg-muted/10">
               <div className="flex items-center justify-between mb-4">
                 <Button variant="ghost" size="sm" className="-ml-2" onClick={() => { setSelectedPerson(null); setEditingPerson(false); }}>
                   <ArrowLeft className="h-4 w-4 mr-1" /> 返回
@@ -1528,7 +1528,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
               </div>
 
               {!editingPerson ? (
-                <div className="grid grid-cols-2 gap-4 text-sm">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
                   <InfoItem label="角色" value={selectedPerson.roleLabel} />
                   <InfoItem label="身份類型" value={selectedPerson.identity === 'natural' ? '自然人' : '法人'} />
                   <InfoItem label="英文名稱" value={selectedPerson.nameEnglish} />
@@ -1552,7 +1552,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                   <InfoItem label="電郵" value={selectedPerson.email} />
                 </div>
               ) : (
-                <div className="grid grid-cols-2 gap-3 text-sm">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                   <div className="space-y-1"><Label className="text-xs">英文名稱</Label><Input value={personForm.nameEnglish} onChange={e => setPersonForm({ ...personForm, nameEnglish: e.target.value })} /></div>
                   <div className="space-y-1"><Label className="text-xs">中文名稱</Label><Input value={personForm.nameChinese} onChange={e => setPersonForm({ ...personForm, nameChinese: e.target.value })} /></div>
                   <div className="space-y-1">
@@ -1585,7 +1585,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                       <Label className="text-xs font-semibold">通訊地址（住址）<span className="text-destructive">*</span></Label>
                     </div>
                     <SearchableSelect options={addressSourceOptions} selected={addrCopyId} onSelect={id => fillAddrFromSource(id, 'person', 'residential')} placeholder="從系統複製地址..." searchPlaceholder="搜尋公司或人員..." emptyText="無匹配地址" className="mb-1" />
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       <div className="space-y-1"><Label className="text-xs" style={{ lineHeight: 1.3 }}>Flat／Floor／Block etc. 室／樓／座等</Label><Input value={personForm.addrFlat} onChange={e => setPersonForm({ ...personForm, addrFlat: e.target.value, address: composeAddr5(e.target.value, personForm.addrBuilding, personForm.addrStreet, personForm.addrDistrict, personForm.addrRegion) })} placeholder="例如 Flat A, 12/F" /></div>
                       <div className="space-y-1"><Label className="text-xs" style={{ lineHeight: 1.3 }}>Building 大廈</Label><Input value={personForm.addrBuilding} onChange={e => setPersonForm({ ...personForm, addrBuilding: e.target.value, address: composeAddr5(personForm.addrFlat, e.target.value, personForm.addrStreet, personForm.addrDistrict, personForm.addrRegion) })} placeholder="大廈名稱" /></div>
                       <div className="col-span-2 space-y-1"><Label className="text-xs" style={{ lineHeight: 1.3 }}>Street／Estate／Lot／Village etc. 街道／屋苑／地段／村等</Label><Input value={personForm.addrStreet} onChange={e => setPersonForm({ ...personForm, addrStreet: e.target.value, address: composeAddr5(personForm.addrFlat, personForm.addrBuilding, e.target.value, personForm.addrDistrict, personForm.addrRegion) })} placeholder="街道及門牌號" /></div>
@@ -1607,7 +1607,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                         onClick={() => setPersonForm({ ...personForm, svcAddrFlat: personForm.addrFlat, svcAddrBuilding: personForm.addrBuilding, svcAddrStreet: personForm.addrStreet, svcAddrDistrict: personForm.addrDistrict, svcAddrRegion: personForm.addrRegion, serviceAddress: personForm.address })}>同通訊地址</Button>
                     </div>
                     <SearchableSelect options={addressSourceOptions} selected={svcAddrCopyId} onSelect={id => fillAddrFromSource(id, 'person', 'service')} placeholder="從系統複製地址..." searchPlaceholder="搜尋公司或人員..." emptyText="無匹配地址" className="mb-1" />
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       <div className="space-y-1"><Label className="text-xs" style={{ lineHeight: 1.3 }}>Flat／Floor／Block etc. 室／樓／座等</Label><Input value={personForm.svcAddrFlat} onChange={e => setPersonForm({ ...personForm, svcAddrFlat: e.target.value, serviceAddress: composeAddr5(e.target.value, personForm.svcAddrBuilding, personForm.svcAddrStreet, personForm.svcAddrDistrict, personForm.svcAddrRegion) })} placeholder="例如 Flat A, 12/F" /></div>
                       <div className="space-y-1"><Label className="text-xs" style={{ lineHeight: 1.3 }}>Building 大廈</Label><Input value={personForm.svcAddrBuilding} onChange={e => setPersonForm({ ...personForm, svcAddrBuilding: e.target.value, serviceAddress: composeAddr5(personForm.svcAddrFlat, e.target.value, personForm.svcAddrStreet, personForm.svcAddrDistrict, personForm.svcAddrRegion) })} placeholder="大廈名稱" /></div>
                       <div className="col-span-2 space-y-1"><Label className="text-xs" style={{ lineHeight: 1.3 }}>Street／Estate／Lot／Village etc. 街道／屋苑／地段／村等</Label><Input value={personForm.svcAddrStreet} onChange={e => setPersonForm({ ...personForm, svcAddrStreet: e.target.value, serviceAddress: composeAddr5(personForm.svcAddrFlat, personForm.svcAddrBuilding, e.target.value, personForm.svcAddrDistrict, personForm.svcAddrRegion) })} placeholder="街道及門牌號" /></div>
@@ -1635,7 +1635,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
 
           {/* Right: Shareholder detail panel */}
           {selectedSh && (
-            <div className="w-1/2 overflow-y-auto p-6 pt-2 bg-muted/10">
+            <div className="w-full sm:w-1/2 overflow-y-auto p-4 sm:p-6 pt-2 bg-muted/10">
               <div className="flex items-center justify-between mb-4">
                 <Button variant="ghost" size="sm" className="-ml-2" onClick={() => { setSelectedSh(null); setEditingShDetail(false); }}>
                   <ArrowLeft className="h-4 w-4 mr-1" /> 返回
@@ -1662,7 +1662,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
               </div>
 
               {!editingShDetail ? (
-                <div className="grid grid-cols-2 gap-4 text-sm">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
                   <InfoItem label="英文名稱" value={selectedSh.nameEnglish} />
                   <InfoItem label="中文名稱" value={selectedSh.nameChinese} />
                   <InfoItem label="身份類型" value={selectedSh.identity === 'natural' ? '自然人' : '法人'} />
@@ -1854,7 +1854,7 @@ function NewOfficerForm({ form, setForm, onSave, onCancel, isSecretary, template
           </Select>
         </div>
       )}
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <div className="space-y-1"><Label className="text-xs">英文名稱 *</Label><Input value={form.nameEnglish} onChange={e => setForm({ ...form, nameEnglish: e.target.value })} placeholder="English name" /></div>
         <div className="space-y-1"><Label className="text-xs">中文名稱</Label><Input value={form.nameChinese} onChange={e => setForm({ ...form, nameChinese: e.target.value })} placeholder="中文名稱" /></div>
         <div className="space-y-1">
@@ -1888,7 +1888,7 @@ function NewOfficerForm({ form, setForm, onSave, onCancel, isSecretary, template
         <div className="col-span-2 border-t pt-2 mt-1">
           <Label className="text-xs font-semibold mb-1">通訊地址（住址）<span className="text-destructive">*</span></Label>
           <SearchableSelect options={addressSourceOptions} selected={addrCopyId2} onSelect={id => { setAddrCopyId2(''); fillAddrFromSource(id, 'newOfficer', 'residential'); }} placeholder="從系統複製地址..." searchPlaceholder="搜尋公司或人員..." emptyText="無匹配地址" className="mb-1" />
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <div className="space-y-1"><Label className="text-xs" style={{ lineHeight: 1.3 }}>Flat／Floor／Block etc. 室／樓／座等</Label><Input value={form.addrFlat} onChange={e => setForm({ ...form, addrFlat: e.target.value, address: composeAddr5(e.target.value, form.addrBuilding, form.addrStreet, form.addrDistrict, form.addrRegion) })} placeholder="例如 Flat A, 12/F" /></div>
             <div className="space-y-1"><Label className="text-xs" style={{ lineHeight: 1.3 }}>Building 大廈</Label><Input value={form.addrBuilding} onChange={e => setForm({ ...form, addrBuilding: e.target.value, address: composeAddr5(form.addrFlat, e.target.value, form.addrStreet, form.addrDistrict, form.addrRegion) })} placeholder="大廈名稱" /></div>
             <div className="col-span-2 space-y-1"><Label className="text-xs" style={{ lineHeight: 1.3 }}>Street／Estate／Lot／Village etc. 街道／屋苑／地段／村等</Label><Input value={form.addrStreet} onChange={e => setForm({ ...form, addrStreet: e.target.value, address: composeAddr5(form.addrFlat, form.addrBuilding, e.target.value, form.addrDistrict, form.addrRegion) })} placeholder="街道及門牌號" /></div>
@@ -1907,7 +1907,7 @@ function NewOfficerForm({ form, setForm, onSave, onCancel, isSecretary, template
               onClick={() => setForm({ ...form, svcAddrFlat: form.addrFlat, svcAddrBuilding: form.addrBuilding, svcAddrStreet: form.addrStreet, svcAddrDistrict: form.addrDistrict, svcAddrRegion: form.addrRegion, serviceAddress: form.address })}>同通訊地址</Button>
           </div>
           <SearchableSelect options={addressSourceOptions} selected={svcAddrCopyId2} onSelect={id => { setSvcAddrCopyId2(''); fillAddrFromSource(id, 'newOfficer', 'service'); }} placeholder="從系統複製地址..." searchPlaceholder="搜尋公司或人員..." emptyText="無匹配地址" className="mb-1" />
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <div className="space-y-1"><Label className="text-xs" style={{ lineHeight: 1.3 }}>Flat／Floor／Block etc. 室／樓／座等</Label><Input value={form.svcAddrFlat} onChange={e => setForm({ ...form, svcAddrFlat: e.target.value, serviceAddress: composeAddr5(e.target.value, form.svcAddrBuilding, form.svcAddrStreet, form.svcAddrDistrict, form.svcAddrRegion) })} placeholder="例如 Flat A, 12/F" /></div>
             <div className="space-y-1"><Label className="text-xs" style={{ lineHeight: 1.3 }}>Building 大廈</Label><Input value={form.svcAddrBuilding} onChange={e => setForm({ ...form, svcAddrBuilding: e.target.value, serviceAddress: composeAddr5(form.svcAddrFlat, e.target.value, form.svcAddrStreet, form.svcAddrDistrict, form.svcAddrRegion) })} placeholder="大廈名稱" /></div>
             <div className="col-span-2 space-y-1"><Label className="text-xs" style={{ lineHeight: 1.3 }}>Street／Estate／Lot／Village etc. 街道／屋苑／地段／村等</Label><Input value={form.svcAddrStreet} onChange={e => setForm({ ...form, svcAddrStreet: e.target.value, serviceAddress: composeAddr5(form.svcAddrFlat, form.svcAddrBuilding, e.target.value, form.svcAddrDistrict, form.svcAddrRegion) })} placeholder="街道及門牌號" /></div>

@@ -980,7 +980,7 @@ export const CompanyDialog = ({ open, onOpenChange, mode, company, onSave }: Com
   // ── Shared inline create company form ──
   const renderInlineCompanyForm = (onSubmit: () => void, createLabel: string) => (
     <div className="rounded-md border border-primary/50 bg-primary/5 p-3 space-y-2">
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <div className="space-y-1"><Label className="text-xs">公司英文名稱 *</Label><Input value={newCompany.name} onChange={e => updateNewCompany({ name: e.target.value })} placeholder="例如 PAUL TANG AND CO LTD" /></div>
         <div className="space-y-1"><Label className="text-xs">中文名稱</Label><Input value={newCompany.nameZh} onChange={e => updateNewCompany({ nameZh: e.target.value })} placeholder="例如 彭鄧會計師事務所" /></div>
         <div className="space-y-1"><Label className="text-xs">商業登記號碼 *</Label><Input value={newCompany.brNumber} onChange={e => updateNewCompany({ brNumber: e.target.value })} placeholder="例如 07281051" /></div>
@@ -999,7 +999,7 @@ export const CompanyDialog = ({ open, onOpenChange, mode, company, onSave }: Com
         emptyText="無匹配公司"
         className="mb-1"
       />
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <div className="space-y-1"><Label className="text-xs">室/樓</Label><Input value={newCompany.regFlat} onChange={e => updateNewCompany({ regFlat: e.target.value })} placeholder="Flat A, 12/F" /></div>
         <div className="space-y-1"><Label className="text-xs">大廈</Label><Input value={newCompany.regBuilding} onChange={e => updateNewCompany({ regBuilding: e.target.value })} placeholder="大廈名稱" /></div>
         <div className="space-y-1"><Label className="text-xs">街道</Label><Input value={newCompany.regStreet} onChange={e => updateNewCompany({ regStreet: e.target.value })} placeholder="街道及門牌" /></div>
@@ -1018,7 +1018,7 @@ export const CompanyDialog = ({ open, onOpenChange, mode, company, onSave }: Com
   // ── Shared inline create person form ──
   const renderInlinePersonForm = (onSubmit: () => void, createLabel: string) => (
     <div className="rounded-md border border-primary/50 bg-primary/5 p-3 space-y-2">
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <div className="space-y-1"><Label className="text-xs">英文姓名 *</Label><Input value={newPerson.nameEn} onChange={e => updateNewPerson({ nameEn: e.target.value })} placeholder="例如 CHAN TAI MAN" /></div>
         <div className="space-y-1"><Label className="text-xs">中文姓名</Label><Input value={newPerson.nameZh} onChange={e => updateNewPerson({ nameZh: e.target.value })} placeholder="例如 陳大文" /></div>
         <div className="space-y-1"><Label className="text-xs">身份類型</Label><Select value={newPerson.identity} onValueChange={v => updateNewPerson({ identity: v as 'natural' | 'corporate' })}><SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="natural">自然人</SelectItem><SelectItem value="corporate">法人</SelectItem></SelectContent></Select></div>
@@ -1089,7 +1089,7 @@ export const CompanyDialog = ({ open, onOpenChange, mode, company, onSave }: Com
   if (isAssignMode) {
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-[95vw] sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <ArrowRightLeft className="h-5 w-5 text-primary" /> 批量關聯
@@ -1101,7 +1101,7 @@ export const CompanyDialog = ({ open, onOpenChange, mode, company, onSave }: Com
             <div className="space-y-2">
               <Label>關聯模式</Label>
               <Tabs value={assignSubMode} onValueChange={v => setAssignSubMode(v as AssignSubMode)} className="w-full">
-                <TabsList className="grid w-full grid-cols-2">
+                <TabsList className="grid w-full grid-cols-2 sm:grid-cols-2">
                   <TabsTrigger value="many-to-one" className="gap-2">
                     <Users className="h-4 w-4" />
                     <div className="text-left"><div className="text-sm font-medium">多人一公司</div><div className="text-xs text-muted-foreground">選/建多人 → 加到一間公司</div></div>
@@ -1364,13 +1364,13 @@ export const CompanyDialog = ({ open, onOpenChange, mode, company, onSave }: Com
   if (isEditMode) {
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-[95vw] sm:max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>編輯公司</DialogTitle>
             <DialogDescription>修改公司資料</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmit}>
-            <div className="grid grid-cols-2 gap-4 py-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 py-2">
               <div className="space-y-2"><Label htmlFor="name">公司名稱 <span className="text-destructive">*</span></Label><Input id="name" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} placeholder="輸入公司名稱" /></div>
               <div className="space-y-2"><Label htmlFor="chineseName">中文名稱</Label><Input id="chineseName" value={formData.chineseName} onChange={e => setFormData({ ...formData, chineseName: e.target.value })} placeholder="輸入中文名稱" /></div>
               <div className="space-y-2"><Label htmlFor="brNumber">商業登記號碼 <span className="text-destructive">*</span></Label><Input id="brNumber" value={formData.brNumber} onChange={e => setFormData({ ...formData, brNumber: e.target.value })} placeholder="輸入商業登記號碼" /></div>
@@ -1439,7 +1439,7 @@ export const CompanyDialog = ({ open, onOpenChange, mode, company, onSave }: Com
   // ── Create mode with sub-mode toggle ──
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-[95vw] sm:max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>新增公司</DialogTitle>
           <DialogDescription>上傳 BR / CI / 會議紀錄等文件，AI 自動辨識並填入</DialogDescription>
@@ -1473,7 +1473,7 @@ export const CompanyDialog = ({ open, onOpenChange, mode, company, onSave }: Com
               {renderUploadCard('other1', '其他文件 1', '會議紀錄/決議等')}
               {renderUploadCard('other2', '其他文件 2', '會議紀錄/決議等')}
             </div>
-            <div className="grid grid-cols-2 gap-4 py-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 py-2">
               <div className="space-y-2"><Label htmlFor="name">公司名稱 <span className="text-destructive">*</span></Label><Input id="name" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} placeholder="輸入公司名稱" /></div>
               <div className="space-y-2"><Label htmlFor="chineseName">中文名稱</Label><Input id="chineseName" value={formData.chineseName} onChange={e => setFormData({ ...formData, chineseName: e.target.value })} placeholder="輸入中文名稱" /></div>
               <div className="space-y-2"><Label htmlFor="brNumber">商業登記號碼 <span className="text-destructive">*</span></Label><Input id="brNumber" value={formData.brNumber} onChange={e => setFormData({ ...formData, brNumber: e.target.value })} placeholder="輸入商業登記號碼" /></div>
@@ -1599,7 +1599,7 @@ export const CompanyDialog = ({ open, onOpenChange, mode, company, onSave }: Com
 
                     {/* Expandable detail form */}
                     {row.expanded && (
-                      <div className="pl-9 grid grid-cols-2 gap-2 pt-1 border-t border-border/50">
+                      <div className="pl-9 grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 border-t border-border/50">
                         <div className="space-y-1">
                           <Label className="text-xs">英文姓名 {!row.personId && <span className="text-destructive">*</span>}</Label>
                           <Input value={row.nameEnglish} onChange={e => updatePersonRow(row.key, { nameEnglish: e.target.value })} placeholder="English name" className="h-8 text-xs" />
@@ -1686,7 +1686,7 @@ export const CompanyDialog = ({ open, onOpenChange, mode, company, onSave }: Com
             {/* Person Info — one-person-many-companies */}
             <div className="space-y-3">
               <div className="text-sm font-medium flex items-center gap-2"><Users className="h-4 w-4 text-primary" />人員資訊</div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <Label className="text-xs">英文姓名 <span className="text-destructive">*</span></Label>
                   <Input value={onePersonNameEn} onChange={e => setOnePersonNameEn(e.target.value)} placeholder="例如 CHAN TAI MAN" />

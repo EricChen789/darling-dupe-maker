@@ -31,7 +31,7 @@ export const Page2ShareCapital = ({ data, onChange }: Props) => {
     <div className="space-y-6">
       <h2 className="text-lg font-semibold">第 2 頁 — 股本資料</h2>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label>9. 按揭及押記負債總額 Mortgages & Charges</Label>
           <Input value={data.mortgageAmount} onChange={e => onChange({ ...data, mortgageAmount: e.target.value })} placeholder="HKD" />

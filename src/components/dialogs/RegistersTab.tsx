@@ -114,7 +114,7 @@ function PersonCard({ person, showRole }: { person: Person; showRole?: boolean }
           {person.identity === 'corporate' && <Badge variant="outline" className="text-xs">法人</Badge>}
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted-foreground">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted-foreground">
         {person.idNumber && <div><Hash className="h-3 w-3 inline mr-1" />{person.idNumber}</div>}
         {person.passportNumber && <div>護照: {person.passportNumber}</div>}
         {person.dateAppointed && <div><Clock className="h-3 w-3 inline mr-1" />委任: {person.dateAppointed}</div>}
@@ -254,7 +254,7 @@ export function RegistersTab({ company }: { company: Company }) {
                         <Badge variant="default" className="text-xs">{sh.shares || 0} 股</Badge>
                       </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted-foreground">
                       {sh.idNumber && <div><Hash className="h-3 w-3 inline mr-1" />{sh.idNumber}</div>}
                       <div>類別: {sh.shareType || '-'}</div>
                       <div>幣別: {sh.currency || 'HKD'}</div>
@@ -340,7 +340,7 @@ export function RegistersTab({ company }: { company: Company }) {
                         </Button>
                       </div>
                     </div>
-                    <div className="mt-2 grid grid-cols-3 gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                    <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-1 text-xs text-muted-foreground">
                       <div>股數: {t.shares}</div>
                       <div>類別: {t.share_type || '-'}</div>
                       <div>每股: {t.currency} {t.price_per_share || '-'}</div>
@@ -364,7 +364,7 @@ export function RegistersTab({ company }: { company: Company }) {
         <h3 className="font-semibold text-sm mb-3 flex items-center gap-2">
           <FileText className="h-4 w-4 text-primary" /> 匯出法定登記冊
         </h3>
-        <div className="grid grid-cols-4 gap-2 mb-2">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-2">
           <Button variant="outline" size="sm"
             onClick={() => handleDownload('generate-directors-register-pdf', 'DirectorsRegister')}
             disabled={downloading !== null}>
@@ -398,7 +398,7 @@ export function RegistersTab({ company }: { company: Company }) {
             重要控制人 SCR (Word)
           </Button>
         </div>
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
           <Button variant="outline" size="sm"
             onClick={() => handleDownload('generate-rod-docx', 'DirectorsRegister')}
             disabled={downloading !== null}>
@@ -433,7 +433,7 @@ export function RegistersTab({ company }: { company: Company }) {
         <h3 className="font-semibold text-sm mb-3 flex items-center gap-2">
           <Stamp className="h-4 w-4 text-primary" /> 匯出股權轉讓文件 (RTF)
         </h3>
-        <div className="grid grid-cols-3 gap-2 mb-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 mb-2">
           <Button variant="outline" size="sm"
             onClick={() => handleDownload('generate-share-transfer-rtf', 'InstrumentOfTransfer', { documentType: 'instrument_of_transfer' })}
             disabled={downloading !== null}>

@@ -201,7 +201,7 @@ export function CompanyVersionsTab({ company }: { company: Company }) {
                   <span>資料快照</span>
                   <span className="text-muted-foreground font-normal text-xs ml-auto">{fmtTime(selected.created_at)}</span>
                 </div>
-                <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-sm">
                   {Object.entries(selected.snapshot).map(([k, val]) => (
                     <div key={k}>
                       <span className="text-muted-foreground text-xs">{versionFieldLabel(k)}</span>

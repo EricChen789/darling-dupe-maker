@@ -3,11 +3,15 @@ import { cn } from '@/lib/utils';
 import { Download, Wrench, UserCheck, AlertTriangle, FileDown, Bell, FolderOpen, Mail, FileType, Search, MessageCircle } from 'lucide-react';
 import { Building2, Users, FileText, Receipt, ClipboardList, Settings, LogOut, Table, PanelLeftClose, PanelLeft, LayoutDashboard, UserCog } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { useAuth } from '@/hooks/useAuth';
 
 interface SidebarProps {
   collapsed: boolean;
   onToggle: () => void;
+  isMobile?: boolean;
+  mobileOpen?: boolean;
+  onMobileClose?: () => void;
 }
 
 const navItems: { path: string; label: string; icon: any; external?: boolean }[] = [
@@ -42,7 +46,7 @@ const ADMIN_ONLY_PATHS = new Set([
   '/nar1_field_diagnostic.pdf', '/import-data-skill-guide.md',
 ]);
 
-const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {
+const Sidebar = ({ collapsed, onToggle, isMobile, mobileOpen, onMobileClose }: SidebarProps) => {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
@@ -51,33 +55,37 @@ const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {
   const visibleNavItems = navItems.filter(item => !ADMIN_ONLY_PATHS.has(item.path) || isAdmin);
   const visibleBottomItems = bottomNavItems.filter(item => !ADMIN_ONLY_PATHS.has(item.path) || isAdmin);
 
-  return (
+  const handleNavClick = (path: string) => {
+    navigate(path);
+    if (isMobile && onMobileClose) onMobileClose();
+  };
+
+  const sidebarContent = (
     <TooltipProvider delayDuration={0}>
-      <aside className={cn(
-        "flex flex-col bg-sidebar border-r border-sidebar-border transition-all duration-300 relative",
-        collapsed ? "w-16" : "w-56"
-      )}>
+      <div className="flex flex-col h-full bg-sidebar">
         {/* Logo */}
         <div className={cn(
           "relative border-b border-sidebar-border p-3",
-          collapsed ? "flex items-center justify-center" : "flex flex-col gap-1"
+          collapsed && !isMobile ? "flex items-center justify-center" : "flex flex-col gap-1"
         )}>
-          {!collapsed ? (
+          {!collapsed || isMobile ? (
             <>
-              <div className="flex justify-end">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      onClick={onToggle}
-                      className="p-1.5 hover:bg-muted rounded-md transition-colors"
-                      aria-label="收起側邊欄"
-                    >
-                      <PanelLeftClose className="h-5 w-5 text-muted-foreground" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="right">收起側邊欄</TooltipContent>
-                </Tooltip>
-              </div>
+              {!isMobile && (
+                <div className="flex justify-end">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        onClick={onToggle}
+                        className="p-1.5 hover:bg-muted rounded-md transition-colors"
+                        aria-label="收起側邊欄"
+                      >
+                        <PanelLeftClose className="h-5 w-5 text-muted-foreground" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="right">收起側邊欄</TooltipContent>
+                  </Tooltip>
+                </div>
+              )}
               <img src="/logo.png" alt="Logo" className="w-full max-w-[96px] h-auto object-contain mx-auto" />
             </>
           ) : (
@@ -115,23 +123,23 @@ const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {
                 </a>
               ) : (
                 <span
-                  onClick={() => navigate(item.path)}
+                  onClick={() => isMobile && !item.external ? handleNavClick(item.path) : navigate(item.path)}
                   className={cn(
                     "flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors cursor-pointer",
                     isActive
                       ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
                       : "text-sidebar-foreground hover:bg-muted",
-                    collapsed && "justify-center"
+                    collapsed && !isMobile && "justify-center"
                   )}
                 >
                   <item.icon className="h-4 w-4 shrink-0" />
-                  {!collapsed && <span>{item.label}</span>}
+                  {(!!collapsed && !isMobile) ? null : <span>{item.label}</span>}
                 </span>
               );
-              
+
               return (
                 <li key={item.path}>
-                  {collapsed ? (
+                  {collapsed && !isMobile ? (
                     <Tooltip>
                       <TooltipTrigger asChild>{linkContent}</TooltipTrigger>
                       <TooltipContent side="right">{item.label}</TooltipContent>
@@ -150,23 +158,23 @@ const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {
               const isActive = location.pathname === item.path;
               const linkContent = (
                 <span
-                  onClick={() => navigate(item.path)}
+                  onClick={() => isMobile ? handleNavClick(item.path) : navigate(item.path)}
                   className={cn(
                     "flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors cursor-pointer",
                     isActive
                       ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
                       : "text-sidebar-foreground hover:bg-muted",
-                    collapsed && "justify-center"
+                    collapsed && !isMobile && "justify-center"
                   )}
                 >
                   <item.icon className="h-4 w-4 shrink-0" />
-                  {!collapsed && <span>{item.label}</span>}
+                  {(!!collapsed && !isMobile) ? null : <span>{item.label}</span>}
                 </span>
               );
-              
+
               return (
                 <li key={item.path}>
-                  {collapsed ? (
+                  {collapsed && !isMobile ? (
                     <Tooltip>
                       <TooltipTrigger asChild>{linkContent}</TooltipTrigger>
                       <TooltipContent side="right">{item.label}</TooltipContent>
@@ -177,7 +185,7 @@ const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {
             })}
             {/* Logout button */}
             <li>
-              {collapsed ? (
+              {collapsed && !isMobile ? (
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <button
@@ -201,8 +209,28 @@ const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {
             </li>
           </ul>
         </div>
-      </aside>
+      </div>
     </TooltipProvider>
+  );
+
+  // Mobile: Sheet overlay | Desktop: fixed aside
+  if (isMobile) {
+    return (
+      <Sheet open={mobileOpen} onOpenChange={onMobileClose}>
+        <SheetContent side="left" className="w-64 p-0 bg-sidebar">
+          {sidebarContent}
+        </SheetContent>
+      </Sheet>
+    );
+  }
+
+  return (
+    <aside className={cn(
+      "flex flex-col bg-sidebar border-r border-sidebar-border transition-all duration-300 relative",
+      collapsed ? "w-16" : "w-56"
+    )}>
+      {sidebarContent}
+    </aside>
   );
 };
 

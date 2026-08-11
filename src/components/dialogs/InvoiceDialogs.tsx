@@ -109,7 +109,7 @@ export const InvoiceDialog = ({ open, onOpenChange, invoice, onSave }: InvoiceDi
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit}>
-          <div className="grid grid-cols-2 gap-4 py-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 py-4">
             <div className="space-y-2">
               <Label htmlFor="invoiceNumber">發票號碼</Label>
               <Input
@@ -266,7 +266,7 @@ export const InvoiceViewDialog = ({ open, onOpenChange, invoice }: InvoiceViewDi
           <DialogDescription>{invoice.invoiceNumber}</DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <Label className="text-muted-foreground text-sm">公司</Label>
               <p className="font-medium">{invoice.companyName}</p>

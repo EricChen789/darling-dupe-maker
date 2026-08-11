@@ -114,7 +114,7 @@ export default function IRBR1GeneratorForm({ onBack, initialCompanyId }: IRBR1Ge
         {/* Company info */}
         <div>
           <h3 className="font-semibold mb-3">公司資料</h3>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div><Label>商業登記號碼 *</Label><Input value={formData.brNumber} onChange={e => setFormData(prev => ({ ...prev, brNumber: e.target.value }))} className="mt-1" /></div>
             <div><Label>公司名稱</Label><Input value={formData.companyName} onChange={e => setFormData(prev => ({ ...prev, companyName: e.target.value }))} className="mt-1" /></div>
           </div>

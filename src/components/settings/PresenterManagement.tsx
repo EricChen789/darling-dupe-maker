@@ -128,7 +128,7 @@ function PresenterForm({ form, setForm, onSave, onCancel }: {
 }) {
   return (
     <div className="border border-primary/40 bg-primary/5 rounded-lg p-3 space-y-3">
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="space-y-1">
           <Label className="text-xs">名稱 *</Label>
           <Input value={form.name || ''} onChange={e => setForm({ ...form, name: e.target.value })} />

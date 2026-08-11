@@ -273,7 +273,7 @@ export default function PersonPicker({
       {!dropdownOnly && (
         <div className="space-y-3">
           {showFields.includes('nameChinese') && (
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs">{fieldLabels?.nameChinese || DEFAULT_LABELS.nameChinese}</Label>
                 <Input
@@ -330,7 +330,7 @@ export default function PersonPicker({
                 </div>
               )}
               {(showFields.includes('phone') || showFields.includes('fax')) && (
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {showFields.includes('phone') && (
                     <div>
                       <Label className="text-xs">{fieldLabels?.phone || DEFAULT_LABELS.phone}</Label>
@@ -346,7 +346,7 @@ export default function PersonPicker({
                 </div>
               )}
               {(showFields.includes('email') || showFields.includes('reference')) && (
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {showFields.includes('email') && (
                     <div>
                       <Label className="text-xs">{fieldLabels?.email || DEFAULT_LABELS.email}</Label>

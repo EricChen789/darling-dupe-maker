@@ -159,7 +159,7 @@ export default function IRBR2GeneratorForm({ onBack, initialCompanyId }: IRBR2Ge
         {/* Company info */}
         <div>
           <h3 className="font-semibold mb-3">公司資料</h3>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div><Label>商業登記號碼 *</Label><Input value={formData.brNumber} onChange={e => update('brNumber', e.target.value)} className="mt-1" /></div>
             <div><Label>公司名稱</Label><Input value={formData.companyName} onChange={e => update('companyName', e.target.value)} className="mt-1" /></div>
           </div>
@@ -168,7 +168,7 @@ export default function IRBR2GeneratorForm({ onBack, initialCompanyId }: IRBR2Ge
         {/* Business details */}
         <div>
           <h3 className="font-semibold mb-3">業務詳情</h3>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div><Label>業務名稱（中文）</Label><Input value={formData.businessNameChinese} onChange={e => update('businessNameChinese', e.target.value)} className="mt-1" /></div>
             <div><Label>業務名稱（英文）</Label><Input value={formData.businessNameEnglish} onChange={e => update('businessNameEnglish', e.target.value)} className="mt-1" /></div>
             <div className="col-span-2"><Label>業務性質描述</Label><Textarea rows={3} value={formData.businessNature} onChange={e => update('businessNature', e.target.value)} className="mt-1" /></div>
@@ -178,7 +178,7 @@ export default function IRBR2GeneratorForm({ onBack, initialCompanyId }: IRBR2Ge
         {/* Commencement date */}
         <div>
           <h3 className="font-semibold mb-3">開業日期</h3>
-          <div className="grid grid-cols-3 gap-4 max-w-md">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 max-w-md">
             <div><Label>日 (DD)</Label><Input value={formData.commencementDay} onChange={e => update('commencementDay', e.target.value)} className="mt-1" /></div>
             <div><Label>月 (MM)</Label><Input value={formData.commencementMonth} onChange={e => update('commencementMonth', e.target.value)} className="mt-1" /></div>
             <div><Label>年 (YYYY)</Label><Input value={formData.commencementYear} onChange={e => update('commencementYear', e.target.value)} className="mt-1" /></div>
@@ -238,7 +238,7 @@ export default function IRBR2GeneratorForm({ onBack, initialCompanyId }: IRBR2Ge
               update('presentorContact', [p.phone, p.fax, p.email].filter(Boolean).join(' / '));
             }}
           />
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div><Label>姓名／名稱</Label><Input value={formData.presentorName} onChange={e => update('presentorName', e.target.value)} className="mt-1" /></div>
             <div><Label>地址</Label><Input value={formData.presentorAddress} onChange={e => update('presentorAddress', e.target.value)} className="mt-1" /></div>
             <div className="col-span-2"><Label>電話 / 傳真 / 電郵</Label><Input value={formData.presentorContact} onChange={e => update('presentorContact', e.target.value)} className="mt-1" /></div>

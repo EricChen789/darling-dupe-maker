@@ -137,7 +137,7 @@ const WordDocs = () => {
             <DialogDescription>輸入必要資訊後生成文件</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs">
                   {contentDialog?.docType === 'meeting_minutes' ? '會議日期' : '決議日期'}

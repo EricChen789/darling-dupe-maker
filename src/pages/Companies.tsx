@@ -226,14 +226,14 @@ const Companies = () => {
 
       {showSearch && (
         <div className="bg-card border border-border rounded-lg p-4 mb-6 space-y-3">
-          <div className="flex items-center gap-4">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
             <div className="flex-1">
               <Input placeholder="搜尋公司名稱、商業登記號碼或商業名稱..." value={searchTerm}
                 onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }} />
             </div>
-            <Button variant="outline" size="sm" onClick={resetFilters}>重置全部</Button>
+            <Button variant="outline" size="sm" onClick={resetFilters} className="self-end sm:self-auto">重置全部</Button>
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             <div>
               <label className="text-xs text-muted-foreground mb-1 block">司法管轄區</label>
               <Select value={jurisdictionFilter} onValueChange={(v) => { setJurisdictionFilter(v); setCurrentPage(1); }}>
@@ -289,7 +289,7 @@ const Companies = () => {
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-4 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
         <StatCard label="總公司數" value={companies.length} />
         <StatCard label="目前顯示" value={filteredCompanies.length} valueClassName="text-primary" />
       </div>
@@ -383,7 +383,7 @@ const Companies = () => {
                           ))}
                         </div>
                       </HoverCardTrigger>
-                      <HoverCardContent side="left" align="start" className="w-96 max-h-[60vh] overflow-auto p-3">
+                      <HoverCardContent side="left" align="start" className="w-[calc(100vw-2rem)] sm:w-96 max-h-[60vh] overflow-auto p-3">
                         <div className="text-sm font-semibold mb-2 pb-2 border-b">
                           {company.name} — 股東持股明細
                         </div>
@@ -462,8 +462,8 @@ const Companies = () => {
           </TableBody>
         </Table>
 
-        <div className="flex items-center justify-between px-4 py-3 border-t border-border">
-          <div className="flex items-center gap-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-4 py-3 border-t border-border">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm text-muted-foreground">每頁顯示</span>
             <Select value={String(pageSize)} onValueChange={(v) => { setPageSize(Number(v)); setCurrentPage(1); }}>
               <SelectTrigger className="w-[80px] h-8">

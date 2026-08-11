@@ -168,7 +168,7 @@ export default function NR1GeneratorForm({ onBack, initialCompanyId }: NR1Genera
         {/* Company info */}
         <div>
           <h3 className="font-semibold mb-3">公司資料</h3>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div><Label>商業登記號碼 *</Label><Input value={formData.brNumber} onChange={e => update('brNumber', e.target.value)} className="mt-1" /></div>
             <div><Label>公司名稱 *</Label><Input value={formData.companyName} onChange={e => update('companyName', e.target.value)} className="mt-1" /></div>
           </div>
@@ -190,7 +190,7 @@ export default function NR1GeneratorForm({ onBack, initialCompanyId }: NR1Genera
               />
             </div>
           )}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div><Label>室／樓／座</Label><Input value={formData.flat} onChange={e => update('flat', e.target.value)} placeholder="e.g. Room 1001, 10/F" className="mt-1" /></div>
             <div><Label>大廈</Label><Input value={formData.building} onChange={e => update('building', e.target.value)} placeholder="e.g. ABC Building" className="mt-1" /></div>
             <div><Label>街道／屋苑／地段</Label><Input value={formData.street} onChange={e => update('street', e.target.value)} placeholder="e.g. 1 Queensway" className="mt-1" /></div>
@@ -199,7 +199,7 @@ export default function NR1GeneratorForm({ onBack, initialCompanyId }: NR1Genera
               <Label>國家／地區 Country／Region</Label>
               <Input value={formData.region} onChange={e => update('region', e.target.value)} placeholder="e.g. 香港" className="mt-1" />
             </div>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
               <div><Label>生效日 (DD)</Label><Input value={formData.addressEffectiveDay} onChange={e => update('addressEffectiveDay', e.target.value)} className="mt-1" /></div>
               <div><Label>月 (MM)</Label><Input value={formData.addressEffectiveMonth} onChange={e => update('addressEffectiveMonth', e.target.value)} className="mt-1" /></div>
               <div><Label>年 (YYYY)</Label><Input value={formData.addressEffectiveYear} onChange={e => update('addressEffectiveYear', e.target.value)} className="mt-1" /></div>
@@ -210,10 +210,10 @@ export default function NR1GeneratorForm({ onBack, initialCompanyId }: NR1Genera
         {/* Email */}
         <div>
           <h3 className="font-semibold mb-3">2(b) 新電郵地址（如適用）</h3>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div><Label>電郵地址</Label><Input value={formData.email} onChange={e => update('email', e.target.value)} placeholder="如無變更可留空" className="mt-1" /></div>
             {formData.email.trim() && (
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
               <div><Label>生效日 (DD)</Label><Input value={formData.emailEffectiveDay} onChange={e => update('emailEffectiveDay', e.target.value)} className="mt-1" /></div>
               <div><Label>月 (MM)</Label><Input value={formData.emailEffectiveMonth} onChange={e => update('emailEffectiveMonth', e.target.value)} className="mt-1" /></div>
               <div><Label>年 (YYYY)</Label><Input value={formData.emailEffectiveYear} onChange={e => update('emailEffectiveYear', e.target.value)} className="mt-1" /></div>
@@ -225,10 +225,10 @@ export default function NR1GeneratorForm({ onBack, initialCompanyId }: NR1Genera
         {/* Phone */}
         <div>
           <h3 className="font-semibold mb-3">2(c) 新聯絡電話號碼（如適用）</h3>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div><Label>電話號碼</Label><Input value={formData.phone} onChange={e => update('phone', e.target.value)} placeholder="如無變更可留空" className="mt-1" /></div>
             {formData.phone.trim() && (
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
               <div><Label>生效日 (DD)</Label><Input value={formData.phoneEffectiveDay} onChange={e => update('phoneEffectiveDay', e.target.value)} className="mt-1" /></div>
               <div><Label>月 (MM)</Label><Input value={formData.phoneEffectiveMonth} onChange={e => update('phoneEffectiveMonth', e.target.value)} className="mt-1" /></div>
               <div><Label>年 (YYYY)</Label><Input value={formData.phoneEffectiveYear} onChange={e => update('phoneEffectiveYear', e.target.value)} className="mt-1" /></div>
@@ -266,9 +266,9 @@ export default function NR1GeneratorForm({ onBack, initialCompanyId }: NR1Genera
               </Select>
             </div>
           )}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div><Label>簽署人姓名</Label><Input value={formData.signerName} onChange={e => update('signerName', e.target.value)} className="mt-1" /></div>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
               <div><Label>日期 (DD)</Label><Input value={formData.signDateDay} onChange={e => update('signDateDay', e.target.value)} className="mt-1" /></div>
               <div><Label>月 (MM)</Label><Input value={formData.signDateMonth} onChange={e => update('signDateMonth', e.target.value)} className="mt-1" /></div>
               <div><Label>年 (YYYY)</Label><Input value={formData.signDateYear} onChange={e => update('signDateYear', e.target.value)} className="mt-1" /></div>
@@ -306,7 +306,7 @@ export default function NR1GeneratorForm({ onBack, initialCompanyId }: NR1Genera
               update('presentorContact', [p.phone, p.fax, p.email].filter(Boolean).join(' / '));
             }}
           />
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div><Label>姓名／名稱</Label><Input value={formData.presentorName} onChange={e => update('presentorName', e.target.value)} className="mt-1" /></div>
             <div><Label>地址</Label><Input value={formData.presentorAddress} onChange={e => update('presentorAddress', e.target.value)} className="mt-1" /></div>
             <div className="col-span-2"><Label>電話 / 傳真 / 電郵</Label><Input value={formData.presentorContact} onChange={e => update('presentorContact', e.target.value)} className="mt-1" /></div>

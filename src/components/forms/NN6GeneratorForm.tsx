@@ -407,7 +407,7 @@ export default function NN6GeneratorForm({ onBack, initialCompanyId }: NN6Genera
         {/* 公司資料 */}
         <div>
           <h3 className="font-semibold mb-3">公司資料</h3>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div><Label>商業登記號碼 *</Label><Input value={brNumber} onChange={e => setBrNumber(e.target.value)} className="mt-1" /></div>
             <div><Label>公司名稱 *</Label><Input value={companyName} onChange={e => setCompanyName(e.target.value)} className="mt-1" /></div>
           </div>
@@ -434,7 +434,7 @@ export default function NN6GeneratorForm({ onBack, initialCompanyId }: NN6Genera
               </div>
 
               {/* 基本選項 */}
-              <div className="grid grid-cols-3 gap-4 mb-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
                 <div>
                   <Label>變更類型</Label>
                   <Select value={officer.type} onValueChange={v => updateOfficer(idx, 'type', v)}>
@@ -503,7 +503,7 @@ export default function NN6GeneratorForm({ onBack, initialCompanyId }: NN6Genera
                     </div>
                   </div>
                   {officer.identity === 'natural' ? (
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
                         <Label>中文姓名</Label>
                         <Input value={officer.nameChinese} onChange={e => updateOfficer(idx, 'nameChinese', e.target.value)} className="mt-1" />
@@ -527,7 +527,7 @@ export default function NN6GeneratorForm({ onBack, initialCompanyId }: NN6Genera
                       </div>
                     </div>
                   ) : (
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
                         <Label>中文名稱</Label>
                         <Input value={officer.nameChinese} onChange={e => updateOfficer(idx, 'nameChinese', e.target.value)} className="mt-1" />
@@ -593,7 +593,7 @@ export default function NN6GeneratorForm({ onBack, initialCompanyId }: NN6Genera
                       )}
 
                       {/* 姓名 */}
-                      <div className="grid grid-cols-3 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                         <div>
                           <Label>中文姓名</Label>
                           <Input value={officer.nameChinese} onChange={e => updateOfficer(idx, 'nameChinese', e.target.value)} className="mt-1" />
@@ -619,7 +619,7 @@ export default function NN6GeneratorForm({ onBack, initialCompanyId }: NN6Genera
                           <Label className="cursor-pointer">有前用姓名 Previous Names</Label>
                         </label>
                         {officer.hasFormerName && (
-                          <div className="grid grid-cols-2 gap-4 ml-6 pl-4 border-l-2 border-border">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 ml-6 pl-4 border-l-2 border-border">
                             <div>
                               <Label className="text-xs text-muted-foreground">前用姓名 中文</Label>
                               <Input value={officer.formerNameChinese} onChange={e => updateOfficer(idx, 'formerNameChinese', e.target.value)} className="mt-1" />
@@ -643,7 +643,7 @@ export default function NN6GeneratorForm({ onBack, initialCompanyId }: NN6Genera
                           <Label className="cursor-pointer">有別名 Alias</Label>
                         </label>
                         {officer.hasAlias && (
-                          <div className="grid grid-cols-2 gap-4 ml-6 pl-4 border-l-2 border-border">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 ml-6 pl-4 border-l-2 border-border">
                             <div>
                               <Label className="text-xs text-muted-foreground">別名 中文</Label>
                               <Input value={officer.aliasChinese} onChange={e => updateOfficer(idx, 'aliasChinese', e.target.value)} className="mt-1" />
@@ -672,7 +672,7 @@ export default function NN6GeneratorForm({ onBack, initialCompanyId }: NN6Genera
                             />
                           </div>
                         )}
-                        <div className="grid grid-cols-2 gap-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           <div>
                             <Label className="text-xs text-muted-foreground">室／樓／座 Flat／Floor／Block</Label>
                             <Input value={officer.addrFlatBlock} onChange={e => updateOfficer(idx, 'addrFlatBlock', e.target.value)} className="mt-1" placeholder="Flat / Floor / Block" />
@@ -710,7 +710,7 @@ export default function NN6GeneratorForm({ onBack, initialCompanyId }: NN6Genera
                       </div>
 
                       {/* 證件 */}
-                      <div className="grid grid-cols-3 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                         <div>
                           <Label>香港身份證 HKID</Label>
                           <Input value={officer.idNumber} onChange={e => updateOfficer(idx, 'idNumber', e.target.value)} className="mt-1" placeholder="A123456" />
@@ -806,7 +806,7 @@ export default function NN6GeneratorForm({ onBack, initialCompanyId }: NN6Genera
                       )}
 
                       {/* 法人名稱 */}
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                           <Label>中文名稱</Label>
                           <Input value={officer.nameChinese} onChange={e => updateOfficer(idx, 'nameChinese', e.target.value)} className="mt-1" />
@@ -833,7 +833,7 @@ export default function NN6GeneratorForm({ onBack, initialCompanyId }: NN6Genera
                             />
                           </div>
                         )}
-                        <div className="grid grid-cols-2 gap-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           <div>
                             <Label className="text-xs text-muted-foreground">室／樓／座 Flat／Floor／Block</Label>
                             <Input value={officer.addrFlatBlock} onChange={e => updateOfficer(idx, 'addrFlatBlock', e.target.value)} className="mt-1" placeholder="Flat / Floor / Block" />
@@ -919,7 +919,7 @@ export default function NN6GeneratorForm({ onBack, initialCompanyId }: NN6Genera
                       </div>
 
                       {/* 法人簽署 */}
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                           <Label>簽署人姓名 Signer Name</Label>
                           <Input value={officer.corpSignerName} onChange={e => updateOfficer(idx, 'corpSignerName', e.target.value)} className="mt-1" placeholder="簽署人姓名" />
@@ -1057,7 +1057,7 @@ export default function NN6GeneratorForm({ onBack, initialCompanyId }: NN6Genera
                             {/* 自然人停任字段 */}
                             {officer.cessationIdentity === 'natural' ? (
                               <div className="space-y-3">
-                                <div className="grid grid-cols-3 gap-4">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                                   <div>
                                     <Label>中文姓名</Label>
                                     <Input value={officer.cessationNameChinese} onChange={e => updateOfficer(idx, 'cessationNameChinese', e.target.value)} className="mt-1" />
@@ -1071,7 +1071,7 @@ export default function NN6GeneratorForm({ onBack, initialCompanyId }: NN6Genera
                                     <Input value={officer.cessationNameOtherNames} onChange={e => updateOfficer(idx, 'cessationNameOtherNames', e.target.value)} className="mt-1" placeholder="Tai Man" />
                                   </div>
                                 </div>
-                                <div className="grid grid-cols-2 gap-4">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                   <div>
                                     <Label>香港身份證號碼 HKID</Label>
                                     <Input value={officer.cessationIdNumber} onChange={e => updateOfficer(idx, 'cessationIdNumber', e.target.value)} className="mt-1" placeholder="A123456" />
@@ -1084,7 +1084,7 @@ export default function NN6GeneratorForm({ onBack, initialCompanyId }: NN6Genera
                               </div>
                             ) : (
                               /* 法人停任字段 */
-                              <div className="grid grid-cols-2 gap-4">
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <div>
                                   <Label>中文名稱</Label>
                                   <Input value={officer.cessationNameChinese} onChange={e => updateOfficer(idx, 'cessationNameChinese', e.target.value)} className="mt-1" />
@@ -1162,7 +1162,7 @@ export default function NN6GeneratorForm({ onBack, initialCompanyId }: NN6Genera
               setPresentorReference(p.reference);
             }}
           />
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div><Label>簽署人姓名</Label><Input value={signerName} onChange={e => setSignerName(e.target.value)} className="mt-1" /></div>
             <div><Label>簽署日期</Label><Input type="date" value={signDate} onChange={e => setSignDate(e.target.value)} className="mt-1" /></div>
             <div><Label>提交人名稱</Label><Input value={presentorName} onChange={e => setPresentorName(e.target.value)} className="mt-1" /></div>

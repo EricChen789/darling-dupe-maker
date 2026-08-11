@@ -269,7 +269,7 @@ export default function Reminders() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <div className="space-y-1">
                   <Label className="text-xs">類型</Label>
                   <Select value={editing.reminder_type || 'NAR1'} onValueChange={v => setEditing({ ...editing, reminder_type: v })}>

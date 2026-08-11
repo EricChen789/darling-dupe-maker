@@ -272,7 +272,7 @@ export default function NDR1GeneratorForm({ onBack, initialCompanyId }: NDR1Gene
 
         {/* ── 公司資料 ── */}
         <div><h3 className="font-semibold mb-3">公司資料</h3>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div><Label>商業登記號碼 *</Label><Input value={formData.brNumber} onChange={e => update('brNumber', e.target.value)} className="mt-1" /></div>
             <div><Label>公司名稱 *</Label><Input value={formData.companyName} onChange={e => update('companyName', e.target.value)} className="mt-1" /></div>
           </div>
@@ -340,7 +340,7 @@ export default function NDR1GeneratorForm({ onBack, initialCompanyId }: NDR1Gene
               </Select>
             </div>
           )}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div><Label className="text-xs">中文名稱</Label><Input value={formData.presenterNameCN} onChange={e => update('presenterNameCN', e.target.value)} className="mt-1 h-8 text-sm" /></div>
             <div><Label className="text-xs">英文名稱 *</Label><Input value={formData.presenterNameEN} onChange={e => update('presenterNameEN', e.target.value)} className="mt-1 h-8 text-sm" /></div>
           </div>
@@ -349,7 +349,7 @@ export default function NDR1GeneratorForm({ onBack, initialCompanyId }: NDR1Gene
             <div><Label className="text-xs">地址 2</Label><Input value={formData.presenterAddress2} onChange={e => update('presenterAddress2', e.target.value)} className="mt-1 h-8 text-sm" placeholder="Building, Street" /></div>
             <div><Label className="text-xs">地址 3</Label><Input value={formData.presenterAddress3} onChange={e => update('presenterAddress3', e.target.value)} className="mt-1 h-8 text-sm" placeholder="District, Region, Country" /></div>
           </div>
-          <div className="grid grid-cols-4 gap-3 mt-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
             <div><Label className="text-xs">電話</Label><Input value={formData.presenterTel} onChange={e => update('presenterTel', e.target.value)} className="mt-1 h-8 text-sm" /></div>
             <div><Label className="text-xs">傳真</Label><Input value={formData.presenterFax} onChange={e => update('presenterFax', e.target.value)} className="mt-1 h-8 text-sm" /></div>
             <div><Label className="text-xs">電郵</Label><Input value={formData.presenterEmail} onChange={e => update('presenterEmail', e.target.value)} className="mt-1 h-8 text-sm" /></div>
@@ -364,7 +364,7 @@ export default function NDR1GeneratorForm({ onBack, initialCompanyId }: NDR1Gene
           {formData.applicantType === 'natural' ? (
             /* 自然人 */
             <div className="space-y-3">
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 <div><Label className="text-xs">中文姓名</Label><Input value={formData.appChineseName} onChange={e => update('appChineseName', e.target.value)} className="mt-1 h-8 text-sm" /></div>
                 <div><Label className="text-xs">英文姓氏 Surname</Label><Input value={formData.appSurname} onChange={e => update('appSurname', e.target.value)} className="mt-1 h-8 text-sm" /></div>
                 <div><Label className="text-xs">英文名字 Other Names</Label><Input value={formData.appOtherNames} onChange={e => update('appOtherNames', e.target.value)} className="mt-1 h-8 text-sm" /></div>
@@ -439,7 +439,7 @@ export default function NDR1GeneratorForm({ onBack, initialCompanyId }: NDR1Gene
             <div><Label className="text-xs">區／市／省／州等 District / City / Province / State etc.</Label><Input value={formData.appAddrDistrict} onChange={e => update('appAddrDistrict', e.target.value)} className="mt-1 h-8 text-sm" /></div>
             <div><Label className="text-xs">國家／地區 Country / Region</Label><Input value={formData.appAddrCountry} onChange={e => update('appAddrCountry', e.target.value)} className="mt-1 h-8 text-sm" /></div>
           </div>
-          <div className="grid grid-cols-3 gap-3 mt-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-3">
             <div><Label className="text-xs">電郵地址 Email Address</Label><Input value={formData.appEmail} onChange={e => update('appEmail', e.target.value)} className="mt-1 h-8 text-sm" /></div>
             <div><Label className="text-xs">電話 Tel</Label><Input value={formData.appTel} onChange={e => update('appTel', e.target.value)} className="mt-1 h-8 text-sm" /></div>
             <div><Label className="text-xs">圖文傳真號碼 Fax Number</Label><Input value={formData.appFax} onChange={e => update('appFax', e.target.value)} className="mt-1 h-8 text-sm" /></div>
@@ -451,7 +451,7 @@ export default function NDR1GeneratorForm({ onBack, initialCompanyId }: NDR1Gene
           <div className="bg-amber-50/30 border border-amber-200 rounded-lg p-4">
             <h3 className="font-semibold mb-1">C. 獲提名負責接收撤銷註冊通知書的自然人的資料（P.3 Section 2C）</h3>
             <p className="text-xs text-muted-foreground mb-3">Particulars of the Natural Person Nominated to be Given Notice of the Deregistration — 申請人為上述公司時必須填寫</p>
-            <div className="grid grid-cols-3 gap-3 mb-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-3">
               <div><Label className="text-xs">中文姓名</Label><Input value={formData.nomChineseName} onChange={e => update('nomChineseName', e.target.value)} className="mt-1 h-8 text-sm" /></div>
               <div><Label className="text-xs">英文姓氏 Surname</Label><Input value={formData.nomSurname} onChange={e => update('nomSurname', e.target.value)} className="mt-1 h-8 text-sm" /></div>
               <div><Label className="text-xs">英文名字 Other Names</Label><Input value={formData.nomOtherNames} onChange={e => update('nomOtherNames', e.target.value)} className="mt-1 h-8 text-sm" /></div>
@@ -513,7 +513,7 @@ export default function NDR1GeneratorForm({ onBack, initialCompanyId }: NDR1Gene
               <div><Label className="text-xs">區／市／省等</Label><Input value={formData.nomAddrDistrict} onChange={e => update('nomAddrDistrict', e.target.value)} className="mt-1 h-8 text-sm" /></div>
               <div><Label className="text-xs">國家／地區</Label><Input value={formData.nomAddrCountry} onChange={e => update('nomAddrCountry', e.target.value)} className="mt-1 h-8 text-sm" /></div>
             </div>
-            <div className="grid grid-cols-2 gap-3 mt-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
               <div><Label className="text-xs">電郵地址</Label><Input value={formData.nomEmail} onChange={e => update('nomEmail', e.target.value)} className="mt-1 h-8 text-sm" /></div>
               <div><Label className="text-xs">圖文傳真號碼</Label><Input value={formData.nomFax} onChange={e => update('nomFax', e.target.value)} className="mt-1 h-8 text-sm" /></div>
             </div>
@@ -523,7 +523,7 @@ export default function NDR1GeneratorForm({ onBack, initialCompanyId }: NDR1Gene
         {/* ── P.4 簽署 ── */}
         <div>
           <h3 className="font-semibold mb-3">簽署（P.4）</h3>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             <div>
               <Label className="text-xs">簽署人姓名 *</Label>
               <Input value={formData.signerName} onChange={e => update('signerName', e.target.value)} className="mt-1 h-8 text-sm" />

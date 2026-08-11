@@ -498,17 +498,17 @@ export default function NSC1GeneratorForm({ onBack, initialCompanyId }: NSC1Gene
         {/* ── Company Info ── */}
         <div>
           <h3 className="font-semibold mb-3">公司資料（P.1）</h3>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div><Label>商業登記號碼 *</Label><Input value={formData.brNumber} onChange={e => update('brNumber', e.target.value)} className="mt-1" /></div>
             <div><Label>公司名稱 *</Label><Input value={formData.companyName} onChange={e => update('companyName', e.target.value)} className="mt-1" /></div>
           </div>
         </div>
 
         {/* ── Allotment Period ── */}
-        <div className="grid grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
           <div>
             <h3 className="font-semibold mb-3">分配期間 — 由 (From)</h3>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               <div><Label>日 (DD)</Label><Input value={formData.allotmentFromDay} onChange={e => update('allotmentFromDay', e.target.value)} className="mt-1" /></div>
               <div><Label>月 (MM)</Label><Input value={formData.allotmentFromMonth} onChange={e => update('allotmentFromMonth', e.target.value)} className="mt-1" /></div>
               <div><Label>年 (YYYY)</Label><Input value={formData.allotmentFromYear} onChange={e => update('allotmentFromYear', e.target.value)} className="mt-1" /></div>
@@ -516,7 +516,7 @@ export default function NSC1GeneratorForm({ onBack, initialCompanyId }: NSC1Gene
           </div>
           <div>
             <h3 className="font-semibold mb-3">分配期間 — 至 (To)</h3>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               <div><Label>日 (DD)</Label><Input value={formData.allotmentToDay} onChange={e => update('allotmentToDay', e.target.value)} className="mt-1" /></div>
               <div><Label>月 (MM)</Label><Input value={formData.allotmentToMonth} onChange={e => update('allotmentToMonth', e.target.value)} className="mt-1" /></div>
               <div><Label>年 (YYYY)</Label><Input value={formData.allotmentToYear} onChange={e => update('allotmentToYear', e.target.value)} className="mt-1" /></div>
@@ -527,7 +527,7 @@ export default function NSC1GeneratorForm({ onBack, initialCompanyId }: NSC1Gene
         {/* ── Totals (auto-calculated) ── */}
         <div>
           <h3 className="font-semibold mb-2">是次分配總額（自動計算）</h3>
-          <div className="grid grid-cols-4 gap-3 p-3 bg-muted/40 rounded-lg text-sm">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3 bg-muted/40 rounded-lg text-sm">
             <div><span className="text-muted-foreground">貨幣：</span><strong>{totals.currency}</strong></div>
             <div><span className="text-muted-foreground">總股數：</span><strong>{totals.totalShares.toLocaleString()}</strong></div>
             <div><span className="text-muted-foreground">已繳總額：</span><strong>${totals.totalPaid.toLocaleString()}</strong></div>
@@ -553,7 +553,7 @@ export default function NSC1GeneratorForm({ onBack, initialCompanyId }: NSC1Gene
                   </Button>
                 )}
               </div>
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 <div><Label>股份類別</Label>
                   <Select value={a.class} onValueChange={v => updateAllotment(i, 'class', v)}>
                     <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
@@ -719,7 +719,7 @@ export default function NSC1GeneratorForm({ onBack, initialCompanyId }: NSC1Gene
         {/* ── Sign Date ── */}
         <div>
           <h3 className="font-semibold mb-3">簽署日期（P.3 + P.7）</h3>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             <div><Label>日 (DD)</Label><Input value={formData.signDay} onChange={e => update('signDay', e.target.value)} className="mt-1" /></div>
             <div><Label>月 (MM)</Label><Input value={formData.signMonth} onChange={e => update('signMonth', e.target.value)} className="mt-1" /></div>
             <div><Label>年 (YYYY)</Label><Input value={formData.signYear} onChange={e => update('signYear', e.target.value)} className="mt-1" /></div>
@@ -740,7 +740,7 @@ export default function NSC1GeneratorForm({ onBack, initialCompanyId }: NSC1Gene
               update('presentorReference', p.reference);
             }}
           />
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div><Label>姓名／名稱 *</Label><Input value={formData.presentorName} onChange={e => update('presentorName', e.target.value)} className="mt-1" /></div>
             <div><Label>參考編號（檔號）</Label><Input value={formData.presentorReference} onChange={e => update('presentorReference', e.target.value)} className="mt-1" /></div>
             <div className="col-span-2"><Label>地址</Label><Input value={formData.presentorAddress} onChange={e => update('presentorAddress', e.target.value)} className="mt-1" /></div>

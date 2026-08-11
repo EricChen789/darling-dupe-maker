@@ -103,7 +103,7 @@ export function ShareTransactionForm({ tx, onChange, onSave, onCancel, saving, c
   return (
     <div className="rounded-md border border-primary/50 bg-primary/5 p-4 space-y-3">
       {/* ── Row 1: Date + Type ── */}
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="space-y-1">
           <Label className="text-xs">交易日期</Label>
           <Input type="date" value={tx.transaction_date || ''}
@@ -216,7 +216,7 @@ export function ShareTransactionForm({ tx, onChange, onSave, onCancel, saving, c
       </div>
 
       {/* ── Row 3: Shares + Type + Currency ── */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         <div className="space-y-1">
           <Label className="text-xs">股數</Label>
           <Input type="number" value={tx.shares ?? 0}
@@ -241,7 +241,7 @@ export function ShareTransactionForm({ tx, onChange, onSave, onCancel, saving, c
       </div>
 
       {/* ── Row 4: Price + Consideration + Instrument ── */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         <div className="space-y-1">
           <Label className="text-xs">每股價格</Label>
           <Input value={tx.price_per_share || ''}

@@ -327,7 +327,7 @@ We, being all the Members of the Company entitled to attend and vote at the Gene
 
       <FormHistorySelector formType="NNC2" onSelect={handleLoadHistory} />
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="space-y-1">
           <Label className="text-xs">選擇公司 *</Label>
           <Select value={companyId} onValueChange={setCompanyId}>
@@ -382,7 +382,7 @@ We, being all the Members of the Company entitled to attend and vote at the Gene
           }}
         />
       )}
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="space-y-1"><Label className="text-xs">中文姓名／名稱</Label><Input className="h-8 text-xs" value={presNameCn} onChange={e => setPresNameCn(e.target.value)} /></div>
         <div className="space-y-1"><Label className="text-xs">英文姓名／名稱</Label><Input className="h-8 text-xs" value={presNameEn} onChange={e => setPresNameEn(e.target.value)} /></div>
         <div className="col-span-2 space-y-1"><Label className="text-xs">地址 Address</Label><Input className="h-8 text-xs" value={presAddress} onChange={e => setPresAddress(e.target.value)} /></div>
@@ -450,7 +450,7 @@ We, being all the Members of the Company entitled to attend and vote at the Gene
 
       <Separator />
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="rounded-md border border-border p-4 space-y-2">
           <h3 className="font-semibold text-sm flex items-center gap-2">
             <FileText className="h-4 w-4" /> 步驟 1：決議書

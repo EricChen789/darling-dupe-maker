@@ -454,7 +454,7 @@ const FormWizard = ({ formId, onBack }: FormWizardProps) => {
               <NAR1ChangesSummary companyId={selectedCompanyId} />
             )}
             <div className="bg-muted/50 rounded-lg p-4 space-y-3 text-sm">
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <div><span className="text-muted-foreground">公司名稱：</span>{formData.companyName}</div>
                 <div><span className="text-muted-foreground">編號：</span>{formData.brNumber}</div>
                 <div><span className="text-muted-foreground">結算日期：</span>{formData.returnDateDay}/{formData.returnDateMonth}/{formData.returnDateYear}</div>
@@ -512,7 +512,7 @@ const FormWizard = ({ formId, onBack }: FormWizardProps) => {
             {/* Presenter section */}
             <div className="space-y-3 border border-border rounded-lg p-4">
               <h3 className="text-sm font-semibold">提交人 Presenter</h3>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <Label className="text-xs">選擇預設提交人</Label>
                   <Select value={formData.presenterId || ''} onValueChange={handlePickPresenter}>
@@ -574,7 +574,7 @@ const FormWizard = ({ formId, onBack }: FormWizardProps) => {
                     P.8 簽署欄位需劃掉不適用的職位。點擊下方角色選擇簽署人，另一角色將自動以橫線劃掉。
                   </p>
 
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     {/* 董事 Director 欄 */}
                     <div
                       className={cn(
@@ -756,7 +756,7 @@ const FormWizard = ({ formId, onBack }: FormWizardProps) => {
               );
             })()}
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Button
                 onClick={() => handleGenerate(true)}
                 disabled={isDebugging || isGenerating}

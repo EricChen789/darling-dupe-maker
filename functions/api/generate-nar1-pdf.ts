@@ -920,6 +920,7 @@ export async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Ar
     setF("fill_15_P.13", office.street || "");
     setF("fill_16_P.13", office.district || "");
     setF("fill_17_P.13", office.region || (office as any).country || "");
+    setF("fill_18_P.13", d.email || "");
     const hkid = parseHkidPartial(d.idNumber || '');
     if (hkid) setF("fill_19_P.13", hkid);
     if ((d as any).passportCountry || d.nationality) setF("fill_20_P.13", (d as any).passportCountry || d.nationality || '');
@@ -1072,6 +1073,7 @@ export async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Ar
       setV("fill_15_P.13", office.street || "");
       setV("fill_16_P.13", office.district || "");
       setV("fill_17_P.13", office.region || (office as any).country || "");
+      setV("fill_18_P.13", d.email || "");
       setV("fill_19_P.13", parseHkidPartial(d.idNumber || ''));
       setV("fill_20_P.13", (d as any).passportCountry || d.nationality || '');
       setV("fill_21_P.13", d.passportNumber ? parsePassportPartial(d.passportNumber) : '');

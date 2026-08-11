@@ -104,7 +104,7 @@ export async function onRequest(context: { request: Request; env: Env }) {
 
   try {
     const body = await request.json() as any;
-    const { companyId, transactionId, documentType } = body;
+    const { companyId, transactionId, documentType, transaction: txData } = body;
 
     if (!companyId) {
       return new Response(JSON.stringify({ error: "companyId required" }), {
@@ -118,10 +118,14 @@ export async function onRequest(context: { request: Request; env: Env }) {
     if (!company) throw new Error("Company not found");
 
     // ── Fetch transaction ──
+    // Priority: 1) txData from frontend (Supabase)  2) transactionId from D1  3) D1 query / auto-build
     let transaction: any = null;
     let allTransactions: any[] = [];
 
-    if (transactionId) {
+    if (txData && typeof txData === "object" && Object.keys(txData).length > 0) {
+      // Use transaction data passed directly from frontend (Supabase-sourced)
+      transaction = txData;
+    } else if (transactionId) {
       transaction = await env.DB.prepare(
         "SELECT * FROM share_transactions WHERE id = ? AND company_id = ?"
       ).bind(transactionId, companyId).first();

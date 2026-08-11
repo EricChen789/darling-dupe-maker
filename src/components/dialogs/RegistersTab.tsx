@@ -189,7 +189,7 @@ export function RegistersTab({ company }: { company: Company }) {
       const resp = await fetch('/api/generate-share-transfer-rtf', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ companyId: tx.company_id, transactionId: tx.id, documentType: docType }),
+        body: JSON.stringify({ companyId: tx.company_id, transaction: tx, documentType: docType }),
       });
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({ error: resp.statusText }));

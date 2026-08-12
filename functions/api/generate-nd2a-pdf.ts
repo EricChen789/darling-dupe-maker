@@ -259,8 +259,8 @@ function fillND2A(pdfDoc: PDFDocument, data: ND2AData) {
     if (page === null) continue; // beyond template capacity
     const p = page;
 
-    if (isNatural) {
-      // Parse English name
+    if (isNatural || isCessation) {
+      // Parse English name (自然人需要；法人停任解析结果无副作用——法人分支用 officer.nameChinese/companyName)
       const eng = officer.nameEnglish || '';
       let surname = officer.nameSurname || '';
       let other = officer.nameOtherNames || '';

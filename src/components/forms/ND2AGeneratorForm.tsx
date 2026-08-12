@@ -39,6 +39,9 @@ interface OfficerEntry {
   addrRegion: string;
   dateAppointed: string;
   dateCeased: string;
+  // B. 停任詳情
+  cessationReason: string; // 'resignation' (辭職／其他) | 'deceased' (去世)
+  stillHoldsOffice: 'yes' | 'no' | ''; // 停任後是否仍然擔任（公司秘書免填）
   companyName: string;
   companyNumber: string;
   placeIncorporated: string;
@@ -67,6 +70,8 @@ const emptyOfficer = (): OfficerEntry => ({
   addrRegion: '',
   dateAppointed: '',
   dateCeased: '',
+  cessationReason: 'resignation',
+  stillHoldsOffice: 'no',
   companyName: '',
   companyNumber: '',
   placeIncorporated: '',
@@ -381,6 +386,33 @@ export default function ND2AGeneratorForm({ onBack, initialCompanyId }: ND2AGene
                   </>
                 )}
                 <div><Label>{officer.type === 'appointment' ? '委任日期' : '停任日期'}</Label><Input type="date" value={officer.type === 'appointment' ? officer.dateAppointed : officer.dateCeased} onChange={e => updateOfficer(idx, officer.type === 'appointment' ? 'dateAppointed' : 'dateCeased', e.target.value)} className="mt-1" /></div>
+                {officer.type === 'cessation' && (
+                  <div className="col-span-2">
+                    <Label>停任原因 Reason for Cessation</Label>
+                    <div className="flex gap-4 mt-1">
+                      <label className="flex items-center gap-1.5 cursor-pointer">
+                        <input type="radio" name={`cessationReason-${idx}`} checked={officer.cessationReason !== 'deceased'} onChange={() => updateOfficer(idx, 'cessationReason', 'resignation')} /> 辭職／其他 Resignation／Others
+                      </label>
+                      <label className="flex items-center gap-1.5 cursor-pointer">
+                        <input type="radio" name={`cessationReason-${idx}`} checked={officer.cessationReason === 'deceased'} onChange={() => updateOfficer(idx, 'cessationReason', 'deceased')} /> 去世 Deceased
+                      </label>
+                    </div>
+                  </div>
+                )}
+                {officer.type === 'cessation' && officer.role !== 'secretary' && (
+                  <div className="col-span-2">
+                    <Label>上述董事或候補董事在停任日期後，是否仍然擔任這公司的候補董事或董事職位？</Label>
+                    <p className="text-xs text-muted-foreground mb-1">Will this director or alternate director continue to hold office as alternate director or director in this company after the date of cessation?</p>
+                    <div className="flex gap-4 mt-1">
+                      <label className="flex items-center gap-1.5 cursor-pointer">
+                        <input type="radio" name={`stillHoldsOffice-${idx}`} checked={officer.stillHoldsOffice === 'yes'} onChange={() => updateOfficer(idx, 'stillHoldsOffice', 'yes')} /> 是 Yes
+                      </label>
+                      <label className="flex items-center gap-1.5 cursor-pointer">
+                        <input type="radio" name={`stillHoldsOffice-${idx}`} checked={officer.stillHoldsOffice !== 'yes'} onChange={() => updateOfficer(idx, 'stillHoldsOffice', 'no')} /> 否 No
+                      </label>
+                    </div>
+                  </div>
+                )}
                 {officer.type === 'appointment' && officer.identity === 'natural' && (
                   <div className="col-span-2">
                     <Label>上述董事或候補董事在獲得這次委任時，是否已經是這公司的現任候補董事或董事？</Label>

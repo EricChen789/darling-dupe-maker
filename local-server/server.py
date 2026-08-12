@@ -2261,7 +2261,13 @@ def generate_directors_register_pdf():
 
     directors = roles
 
-    # ── Try DOCX → Word COM → PDF first ──
+    # ── Try RTF → Word COM → PDF first (Paul Tang template) ──
+    if _HAS_WORD_COM and os.path.exists(_RTF_ROD):
+        pdf_bytes = _rtf_rod_to_pdf(db, company_id)
+        if pdf_bytes:
+            return jsonify({'pdf': base64.b64encode(pdf_bytes).decode('ascii')})
+
+    # ── Try DOCX → Word COM → PDF ──
     if _HAS_WORD_COM and _HAS_DOCX:
         docx_path = _build_rod_register_docx(db, company_id)
         if docx_path:
@@ -3182,6 +3188,283 @@ def _rtf_to_pdf_via_word(rtf_path, replacements, address_replacements=None,
             if tmp_pdf and os.path.exists(tmp_pdf):
                 try:
                     os.unlink(tmp_pdf)
+                except:
+                    pass
+            pythoncom.CoUninitialize()
+
+
+def _rtf_find_replace_all(sel, find_text, replace_text):
+    """Replace ALL occurrences of find_text with replace_text (global search).
+
+    Safe to call even if find_text doesn't exist — silently does nothing.
+    """
+    if not find_text:
+        return
+    replace_text = str(replace_text or '')
+    sel.HomeKey(Unit=6)  # wdStory
+    while sel.Find.Execute(
+        FindText=find_text, MatchCase=True,
+        Forward=True, Wrap=0,  # wdFindStop
+    ):
+        sel.Text = replace_text
+        sel.Collapse(Direction=0)  # wdCollapseEnd
+
+
+def _rtf_rod_to_pdf(db, company_id):
+    """Generate ROD (Register of Officers) PDF by filling Paul Tang RTF template directly.
+
+    Uses Word COM Find & Replace to replace sample data in Testing ROD.rtf with
+    real company/officer data, then saves as PDF.
+
+    The RTF template uses free-form shapes (rectangles) for layout — this approach
+    preserves the original Paul Tang formatting perfectly.
+
+    Template has 3 rows:
+      Row 1 (y=2340): ABC TESTING (Director) — full data
+      Row 2 (y=3525): Secretary slot — position+date only, NO name shape
+      Row 3 (y=3990): BCD TESTING (Director) — full data
+
+    Strategy: use each row's unique template name as positional anchor.
+    Replace all other fields BEFORE replacing the name, so the name stays
+    as a stable anchor throughout. Then replace the name last.
+
+    Uses chained intermediate anchors (e.g. template DOB for POB) to avoid
+    "HONG KONG" in address lines being confused with the birthplace field.
+    """
+    if not _HAS_WORD_COM:
+        return None
+    if not os.path.exists(_RTF_ROD):
+        return None
+
+    # ── Load data ──
+    company = db.execute("SELECT * FROM companies WHERE id = ?", (company_id,)).fetchone()
+    if not company:
+        return None
+
+    # Get ALL officers (directors + secretaries)
+    roles = db.execute(
+        "SELECT pcr.*, p.name_english, p.name_chinese, p.id_number, p.passport_number, "
+        "p.date_of_birth, p.identity, p.passport_country, "
+        "p.company_number_ref, p.place_incorporated, p.address "
+        "FROM person_company_roles pcr "
+        "JOIN persons p ON p.id = pcr.person_id "
+        "WHERE pcr.company_id = ? AND pcr.role IN ('director', 'secretary') "
+        "ORDER BY CASE pcr.role WHEN 'director' THEN 1 WHEN 'secretary' THEN 2 END, "
+        "pcr.date_appointed",
+        (company_id,)).fetchall()
+
+    if not roles:
+        return None
+
+    officers = []
+    for r in roles:
+        is_nat = rget(r, 'identity') != 'corporate'
+        name_en = rget(r, 'name_english') or rget(r, 'name_chinese') or '(unnamed)'
+
+        # Address
+        addr = rget(r, 'address') or ''
+
+        # DOB/Birthplace/Nationality (or Place Incorporated for corporates)
+        if is_nat:
+            dob = rget(r, 'date_of_birth') or '-'
+            pob = rget(r, 'passport_country') or '-'
+            nat = '-'
+        else:
+            dob = rget(r, 'place_incorporated') or '-'
+            pob = '-'
+            nat = '-'
+
+        # ID
+        if is_nat:
+            id_info = rget(r, 'id_number') or rget(r, 'passport_number') or '-'
+        else:
+            id_info = rget(r, 'id_number') or rget(r, 'company_number_ref') or '-'
+
+        # Position
+        role_name = rget(r, 'role') or ''
+        if role_name == 'director':
+            position = 'Reserve Director' if rget(r, 'is_reserve') else 'Director'
+        else:
+            position = 'Secretary'
+
+        # Dates
+        date_app = rget(r, 'date_appointed') or '-'
+        date_cea = rget(r, 'date_ceased')
+        if date_cea:
+            reason = 'Resigned'
+            ceased_date = date_cea
+        else:
+            reason = 'Current'
+            ceased_date = '现任'
+
+        officers.append({
+            'name': name_en,
+            'addr': addr,
+            'dob': dob,
+            'pob': pob,
+            'nat': nat,
+            'id_info': id_info,
+            'position': position,
+            'date_app': date_app,
+            'reason': reason,
+            'ceased_date': ceased_date,
+        })
+
+    co_name = rget(company, 'name') or ''
+    co_br = rget(company, 'company_number') or ''
+    today = datetime.now()
+    report_date = today.strftime('%d %B %Y').upper()
+    quorum = len(officers)
+
+    # ── Copy RTF to temp file ──
+    import shutil as _shutil
+    tmp_rtf = tempfile.mktemp(suffix='.rtf')
+    _shutil.copy2(_RTF_ROD, tmp_rtf)
+
+    # ── Word COM: open → Find & Replace → save as PDF ──
+    with _word_lock:
+        pythoncom.CoInitialize()
+        word = None
+        tmp_pdf = None
+        try:
+            word = win32com.client.Dispatch('Word.Application')
+            word.Visible = False
+            word.DisplayAlerts = 0
+
+            doc = word.Documents.Open(tmp_rtf)
+            sel = word.Selection
+
+            # ═══════════════════════════════════════════════════════════════
+            # Phase 1: Global replacements — TRULY unique header values
+            # ═══════════════════════════════════════════════════════════════
+            global_reps = {
+                'Testing Company Limited': co_name,
+                '0101234': co_br,
+                '05 APRIL 2024': report_date,
+                'Quorum:  2': f'Quorum:  {quorum}',
+            }
+            sorted_reps = sorted(global_reps.items(), key=lambda kv: len(kv[0]), reverse=True)
+            for find_text, replace_text in sorted_reps:
+                if not find_text:
+                    continue
+                replace_text = str(replace_text or '')
+                sel.HomeKey(Unit=6)
+                while sel.Find.Execute(
+                    FindText=find_text, MatchCase=True,
+                    Forward=True, Wrap=0,
+                ):
+                    sel.Text = replace_text
+                    sel.Collapse(Direction=0)
+
+            # ═══════════════════════════════════════════════════════════════
+            # Phase 2: Per-officer row filling
+            #
+            # Template rows map: Row 1→ABC TESTING, Row 3→BCD TESTING
+            # Field replacement ORDER is critical:
+            #   1. Address → 2. POB → 3. Nat → 4. DOB → 5. ID
+            #   6. Position → 7. Appointed → 8. Reason/Ceased
+            #   9. Replace name LAST (was anchor for all above)
+            # ═══════════════════════════════════════════════════════════════
+            template_rows = [
+                {'name': 'ABC TESTING', 'dob': '01/01/1990', 'id': 'Y000000(1)'},
+                {'name': 'BCD TESTING', 'dob': '01/01/2000', 'id': 'Y231456(1)'},
+            ]
+
+            addr_tmpl = [
+                'ROOM 405 TUNG NING BUILDING, 249-253 ',
+                'DES VOEUX ROAD CENTRAL, SHEUNG ',
+                'WAN, HONG KONG',
+            ]
+
+            num_rows = min(len(officers), len(template_rows))
+            for i in range(num_rows):
+                o = officers[i]
+                t = template_rows[i]
+
+                # ── 2a. Address block ──
+                addr_new = (o['addr'] or '').replace('\r', '').split('\n')
+                while len(addr_new) < 3:
+                    addr_new.append('')
+                _rtf_replace_address_block(doc, sel, addr_tmpl, addr_new[:3], occurrence=1)
+
+                # ── 2b. POB "HONG KONG" → use template DOB as anchor ──
+                _rtf_replace_after_anchor(sel, t['dob'], 'HONG KONG', o['pob'])
+
+                # ── 2c. Nationality "CHINESE" → use template DOB as anchor ──
+                _rtf_replace_after_anchor(sel, t['dob'], 'CHINESE', o['nat'])
+
+                # ── 2d. Replace DOB (unique — now safe to replace globally) ──
+                _rtf_find_replace_all(sel, t['dob'], o['dob'])
+
+                # ── 2e. Replace ID (unique — global) ──
+                _rtf_find_replace_all(sel, t['id'], o['id_info'])
+
+                # ── 2f. Position "Director " → use template name as anchor ──
+                _rtf_replace_after_anchor(sel, t['name'], 'Director ', o['position'])
+
+                # ── 2g. Appointed date → use template name as anchor ──
+                _rtf_replace_after_anchor(sel, t['name'], '05/04/2024', o['date_app'])
+
+                # ── 2h. Row 1 only: Reason "Resigned" + Ceased date ──
+                if t['name'] == 'ABC TESTING':
+                    _rtf_replace_after_anchor(sel, t['name'], 'Resigned', o['reason'])
+                    _rtf_replace_after_anchor(sel, t['name'], '05/04/2024', o['ceased_date'])
+
+            # ═══════════════════════════════════════════════════════════════
+            # Phase 3: Replace template names with real officer names
+            # ═══════════════════════════════════════════════════════════════
+            for i in range(num_rows):
+                _rtf_find_replace_all(sel, template_rows[i]['name'], officers[i]['name'])
+
+            # ═══════════════════════════════════════════════════════════════
+            # Phase 4: Clean up unused rows and remaining template text
+            # ═══════════════════════════════════════════════════════════════
+            cleanup_reps = [
+                ('Secretary ', '-'),
+                ('05/04/2024', '-'),
+                ('Resigned', '-'),
+                ('HONG KONG', '-'),
+                ('CHINESE', '-'),
+                ('Director ', '-'),
+            ]
+            for find_text, replace_text in cleanup_reps:
+                _rtf_find_replace_all(sel, find_text, replace_text)
+
+            # Clear unprocessed template names, DOBs, IDs
+            for i in range(num_rows, len(template_rows)):
+                _rtf_find_replace_all(sel, template_rows[i]['name'], '-')
+                _rtf_find_replace_all(sel, template_rows[i]['dob'], '-')
+                _rtf_find_replace_all(sel, template_rows[i]['id'], '-')
+                _rtf_replace_address_block(doc, sel, addr_tmpl, ['-', '-', '-'], occurrence=1)
+
+            # ── Save as PDF ──
+            tmp_pdf = tempfile.mktemp(suffix='.pdf')
+            doc.SaveAs2(tmp_pdf, FileFormat=17)
+            doc.Close(False)
+
+            with open(tmp_pdf, 'rb') as f:
+                pdf_bytes = f.read()
+            return pdf_bytes
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            print(f"[RTF ROD→PDF] Word COM error: {e}")
+            return None
+        finally:
+            if word:
+                try:
+                    word.Quit()
+                except:
+                    pass
+            if tmp_pdf and os.path.exists(tmp_pdf):
+                try:
+                    os.unlink(tmp_pdf)
+                except:
+                    pass
+            if os.path.exists(tmp_rtf):
+                try:
+                    os.unlink(tmp_rtf)
                 except:
                     pass
             pythoncom.CoUninitialize()
@@ -8927,30 +9210,36 @@ def _fill_nd2a_pdf(data, template='ND2A-template.pdf'):
         _set(f'fill_1_P.{pi}', br8)
 
     officers = data.get('officers') or []
-    nat_appt_idx = 0   # 自然人委任計數
-    nat_cess_idx = 0   # 自然人停任計數
-    corp_idx = 0       # 法人計數
-    for i, officer in enumerate(officers[:3]):
+    # 頁面分配（模板實際結構，2026-08-13 千问 VL 確認）：
+    #   P.1 = 第2項 停任（首名停任人，自然人+法人 + B.停任詳情）
+    #   P.2 = 第3項 委任自然人（首名）
+    #   P.3 = 第4項 委任法人（首名）
+    #   P.4 = 續頁A 停任（第2名停任人）
+    #   P.5 = 續頁B 委任自然人（第2名）
+    #   P.6 = 續頁C 委任法人（第2名）
+    #   P.7 = PI-ND2A 受保護資料（僅自然人委任時填，見下方獨立區塊）
+    cess_idx = 0      # 停任：P.1 → P.4
+    nat_appt_idx = 0  # 自然人委任：P.2 → P.5
+    corp_appt_idx = 0 # 法人委任：P.3 → P.6
+    for officer in officers:
         is_natural = officer.get('identity') == 'natural'
         is_cessation = officer.get('type') == 'cessation'
 
-        if is_natural:
-            if is_cessation:
-                # 自然人停任 → P.4（續頁A）
-                page = 4
-                nat_cess_idx += 1
-            else:
-                # 自然人委任：P.2（第1個詳細）→ P.6（PI-ND2A 續頁C，第2個）→ P.7（PI-ND2A 續頁，第3個）
-                page = [2, 6, 7][nat_appt_idx] if nat_appt_idx < 3 else 7
-                nat_appt_idx += 1
+        if is_cessation:
+            page = [1, 4][cess_idx] if cess_idx < 2 else None
+            cess_idx += 1
+        elif is_natural:
+            page = [2, 5][nat_appt_idx] if nat_appt_idx < 2 else None
+            nat_appt_idx += 1
         else:
-            # 法人：依序 P.3, P.5, P.7
-            page = (corp_idx * 2) + 3
-            corp_idx += 1
+            page = [3, 6][corp_appt_idx] if corp_appt_idx < 2 else None
+            corp_appt_idx += 1
+        if page is None:
+            continue  # 超出模板頁面容量的多餘人員，跳過
         p = page
 
+        # Split English name for natural persons (used by all page blocks)
         if is_natural:
-            # Split English name: prefer explicit surname/otherNames, fallback to parse
             eng = officer.get('nameEnglish', '') or ''
             surname = officer.get('nameSurname', '') or ''
             other = officer.get('nameOtherNames', '') or officer.get('nameOther', '') or ''
@@ -8960,16 +9249,111 @@ def _fill_nd2a_pdf(data, template='ND2A-template.pdf'):
                 other = ' '.join(parts[:-1]) if len(parts) > 1 else ''
             chinese = officer.get('nameChinese', '')
 
-            # ── Page-specific field mapping (each ND2A page has different widget layout) ──
-            if p == 2:
-                # P.2: Natural person appointment — detailed info
+        if is_cessation:
+            # ── 停任（自然人/法人共用區塊）：首名 → P.1 第2項，第2名 → P.4 續頁A ──
+            if p == 1:
+                # ── P.1 第2項 停任（首名停任人，自然人/法人）──
+                # A. 現時在公司註冊處登記的詳情：
+                #   自然人: fill_3=代替, fill_4=中文姓名, fill_5=姓氏, fill_6=名字,
+                #           fill_7=香港身分證部分號碼(maxlen 5), fill_8=護照部分號碼
+                #   法人:   fill_9=中文名稱, fill_10=英文名稱
+                # B. 停任詳情：cb_4=辭職／其他, cb_5=去世, fill_11/12/13=停任日期 D/M/Y,
+                #    cb_6=是 / cb_7=否（是否仍然擔任——董事/候補董事填，公司秘書免填）
+                if is_natural:
+                    if officer.get('role') == 'alternate':
+                        _set('fill_3_P.1', officer.get('alternateTo', ''))
+                    _set('fill_4_P.1', chinese)
+                    _set('fill_5_P.1', surname)
+                    _set('fill_6_P.1', other)
+                    hkid_clean = (officer.get('idNumber', '') or '').replace('(', '').replace(')', '').replace('-', '').replace(' ', '').upper()
+                    _set('fill_7_P.1', hkid_clean[:5], align='right')
+                    if officer.get('passportNumber'):
+                        _set('fill_8_P.1', _parse_passport_partial(officer['passportNumber']))
+                else:
+                    _set('fill_9_P.1', officer.get('nameChinese', ''))
+                    _set('fill_10_P.1', officer.get('companyName', officer.get('nameEnglish', '')))
+                role = officer.get('role', 'director')
+                if role == 'secretary':
+                    _check('cb_1_P.1')
+                elif role == 'alternate':
+                    _check('cb_3_P.1')
+                else:
+                    _check('cb_2_P.1')
+                # B. 停任詳情
+                reason = officer.get('cessationReason', '') or 'resignation'
+                if reason == 'deceased':
+                    _check('cb_5_P.1')
+                else:
+                    _check('cb_4_P.1')
+                date_str = officer.get('dateCeased') or officer.get('dateAppointed') or ''
+                if date_str:
+                    parts = date_str.split('-') if '-' in date_str else date_str.split('/')
+                    if len(parts) >= 3:
+                        d, m, y = (parts[2], parts[1], parts[0]) if '-' in date_str else (parts[0], parts[1], parts[2])
+                        _set('fill_11_P.1', d)
+                        _set('fill_12_P.1', m)
+                        _set('fill_13_P.1', y)
+                # 是否仍然擔任（公司秘書免填，模板註13）
+                if role in ('director', 'alternate'):
+                    if officer.get('stillHoldsOffice') == 'yes':
+                        _check('cb_6_P.1')
+                    else:
+                        _check('cb_7_P.1')
+            elif p == 4:
+                # ── P.4 續頁A 停任（第2名停任人）──
+                #   自然人: fill_2=代替, fill_3=中文姓名, fill_4=姓氏, fill_5=名字,
+                #           fill_6=香港身分證部分號碼(maxlen 5), fill_7=護照部分號碼
+                #   法人:   fill_8=中文名稱, fill_9=英文名稱
+                #   B.停任詳情：cb_4/cb_5, fill_10/11/12=停任日期 D/M/Y, cb_6/cb_7=是否仍然擔任
+                if is_natural:
+                    if officer.get('role') == 'alternate':
+                        _set('fill_2_P.4', officer.get('alternateTo', ''))
+                    _set('fill_3_P.4', chinese)
+                    _set('fill_4_P.4', surname)
+                    _set('fill_5_P.4', other)
+                    hkid_clean = (officer.get('idNumber', '') or '').replace('(', '').replace(')', '').replace('-', '').replace(' ', '').upper()
+                    _set('fill_6_P.4', hkid_clean[:5], align='right')
+                    if officer.get('passportNumber'):
+                        _set('fill_7_P.4', _parse_passport_partial(officer['passportNumber']))
+                else:
+                    _set('fill_8_P.4', officer.get('nameChinese', ''))
+                    _set('fill_9_P.4', officer.get('companyName', officer.get('nameEnglish', '')))
+                role = officer.get('role', 'director')
+                if role == 'secretary':
+                    _check('cb_1_P.4')
+                elif role == 'alternate':
+                    _check('cb_3_P.4')
+                else:
+                    _check('cb_2_P.4')
+                reason = officer.get('cessationReason', '') or 'resignation'
+                if reason == 'deceased':
+                    _check('cb_5_P.4')
+                else:
+                    _check('cb_4_P.4')
+                date_str = officer.get('dateCeased') or officer.get('dateAppointed') or ''
+                if date_str:
+                    parts = date_str.split('-') if '-' in date_str else date_str.split('/')
+                    if len(parts) >= 3:
+                        d, m, y = (parts[2], parts[1], parts[0]) if '-' in date_str else (parts[0], parts[1], parts[2])
+                        _set('fill_10_P.4', d)
+                        _set('fill_11_P.4', m)
+                        _set('fill_12_P.4', y)
+                if role in ('director', 'alternate'):
+                    if officer.get('stillHoldsOffice') == 'yes':
+                        _check('cb_6_P.4')
+                    else:
+                        _check('cb_7_P.4')
+        elif is_natural:
+            # ── 自然人委任：首名 → P.2 第3項，第2名 → P.5 續頁B ──
+            if p in (2, 5):
+                # P.2 第3項 委任自然人（首名）/ P.5 續頁B（第2名，欄位名稱與 P.2 相同）
                 # fill_2 = 代替 Alternate to (only for alternate director)
                 if officer.get('role') == 'alternate':
-                    _set(f'fill_2_P.2', officer.get('alternateTo', ''))
+                    _set(f'fill_2_P.{p}', officer.get('alternateTo', ''))
                 # Names
-                _set('fill_3_P.2', chinese)
-                _set('fill_4_P.2', surname)
-                _set('fill_5_P.2', other)
+                _set(f'fill_3_P.{p}', chinese)
+                _set(f'fill_4_P.{p}', surname)
+                _set(f'fill_5_P.{p}', other)
                 # Structured address: fill_10~14
                 addr_fb = officer.get('addrFlatBlock', '')
                 addr_bld = officer.get('addrBuilding', '')
@@ -8977,46 +9361,46 @@ def _fill_nd2a_pdf(data, template='ND2A-template.pdf'):
                 addr_dist = officer.get('addrDistrict', '')
                 addr_reg = officer.get('addrRegion', '')
                 if any([addr_fb, addr_bld, addr_se, addr_dist, addr_reg]):
-                    _set('fill_10_P.2', addr_fb)
-                    _set('fill_11_P.2', addr_bld)
-                    _set('fill_12_P.2', addr_se)
-                    _set('fill_13_P.2', addr_dist)
-                    _set('fill_14_P.2', addr_reg)
+                    _set(f'fill_10_P.{p}', addr_fb)
+                    _set(f'fill_11_P.{p}', addr_bld)
+                    _set(f'fill_12_P.{p}', addr_se)
+                    _set(f'fill_13_P.{p}', addr_dist)
+                    _set(f'fill_14_P.{p}', addr_reg)
                 else:
                     # Fallback: flat address → fill_10
-                    _set('fill_10_P.2', officer.get('address', ''))
+                    _set(f'fill_10_P.{p}', officer.get('address', ''))
                 # HKID + Passport
-                _set('fill_16_P.2', (officer.get('idNumber', '') or '')[:4], align='right')
+                _set(f'fill_16_P.{p}', (officer.get('idNumber', '') or '')[:4], align='right')
                 if officer.get('passportCountry'):
-                    _set('fill_17_P.2', officer.get('passportCountry', ''))
+                    _set(f'fill_17_P.{p}', officer.get('passportCountry', ''))
                 if officer.get('passportNumber'):
-                    _set('fill_18_P.2', _parse_passport_partial(officer['passportNumber']))
+                    _set(f'fill_18_P.{p}', _parse_passport_partial(officer['passportNumber']))
                 # Date: fill_21/22/23 = D/M/Y（底部三窄栏）
                 date_str = officer.get('dateAppointed') if officer.get('type') == 'appointment' else officer.get('dateCeased')
                 if date_str:
                     parts = date_str.split('-')
                     if len(parts) >= 3:
-                        _set('fill_21_P.2', parts[2])
-                        _set('fill_22_P.2', parts[1])
-                        _set('fill_23_P.2', parts[0])
-                # Role checkboxes on P.2: cb_1=秘書, cb_2=董事, cb_3=候補
+                        _set(f'fill_21_P.{p}', parts[2])
+                        _set(f'fill_22_P.{p}', parts[1])
+                        _set(f'fill_23_P.{p}', parts[0])
+                # Role checkboxes: cb_1=秘書, cb_2=董事, cb_3=候補
                 # 每個角色只勾一個 checkbox（互斥）
                 role = officer.get('role', 'director')
                 if role == 'secretary':
-                    _check('cb_1_P.2')
+                    _check(f'cb_1_P.{p}')
                 elif role == 'alternate':
-                    _check('cb_3_P.2')
+                    _check(f'cb_3_P.{p}')
                 else:
-                    _check('cb_2_P.2')
+                    _check(f'cb_2_P.{p}')
 
-                # P.2 底部聲明：cross out "董事" or "候補董事" in consent statement
-                # Dropdown_1_P.2 → "董事" (director), Dropdown_2_P.2 → "候補董事*" (alternate director)
+                # 底部聲明：cross out "董事" or "候補董事" in consent statement
+                # Dropdown_1 → "董事" (director), Dropdown_2 → "候補董事*" (alternate director)
                 # role='director'  → cross out "候補董事" (Dropdown_2)
                 # role='alternate' → cross out "董事" (Dropdown_1)
                 # NOTE: ND2A has duplicate widget instances (Chinese + English rows), so no break
                 if role in ('director', 'alternate'):
-                    cross_widget = f'Dropdown_{2 if role == "director" else 1}_P.2'
-                    for wn in (f'Dropdown_1_P.2', f'Dropdown_2_P.2'):
+                    cross_widget = f'Dropdown_{2 if role == "director" else 1}_P.{p}'
+                    for wn in (f'Dropdown_1_P.{p}', f'Dropdown_2_P.{p}'):
                         if wn not in fmap:
                             continue
                         pi = fmap[wn]
@@ -9040,214 +9424,12 @@ def _fill_nd2a_pdf(data, template='ND2A-template.pdf'):
 
                 # Already director? cb_5=是, cb_6=否
                 if officer.get('alreadyDirector') == 'yes':
-                    _check('cb_5_P.2')
+                    _check(f'cb_5_P.{p}')
                 elif officer.get('alreadyDirector') == 'no':
-                    _check('cb_6_P.2')
-            elif p == 4:
-                # P.4: Natural person cessation continuation (續頁A 停任)
-                _set('fill_3_P.4', chinese)
-                _set('fill_4_P.4', surname)
-                _set('fill_5_P.4', other)
-                _set('fill_6_P.4', officer.get('idNumber', ''), align='right')
-                _set('fill_7_P.4', officer.get('passportNumber', ''))
-                # Address: two tall fields
-                addr_parts = [officer.get('addrFlatBlock', ''), officer.get('addrBuilding', ''),
-                              officer.get('addrStreetEstate', ''), officer.get('addrDistrict', ''),
-                              officer.get('addrRegion', '')]
-                addr_has = [x for x in addr_parts if x]
-                if addr_has:
-                    _set('fill_8_P.4', ', '.join(addr_has[:3]))
-                    _set('fill_9_P.4', ', '.join(addr_has[3:]))
-                else:
-                    _set('fill_8_P.4', officer.get('address', ''))
-                # Cessation date: fill_10/11/12 = D/M/Y
-                date_str = officer.get('dateCeased') or officer.get('dateAppointed')
-                if date_str:
-                    parts = date_str.split('-')
-                    if len(parts) >= 3:
-                        _set('fill_10_P.4', parts[2])
-                        _set('fill_11_P.4', parts[1])
-                        _set('fill_12_P.4', parts[0])
-                # Role
-                role = officer.get('role', 'director')
-                if role == 'secretary':
-                    _check('cb_1_P.4')
-                elif role == 'alternate':
-                    _check('cb_3_P.4')
-                else:
-                    _check('cb_2_P.4')
-                _check('cb_4_P.4')  # cessation
-            elif p == 6:
-                # P.6 (PI-ND2A 續頁C) — different layout from P.2
-                # fill_2 = 代替 Alternate to (僅候補董事填)
-                if officer.get('role') == 'alternate':
-                    _set(f'fill_2_P.{p}', officer.get('alternateTo', ''))
-                # fill_3 = 中文姓名, fill_4 = 姓氏, fill_5 = 名字
-                _set(f'fill_3_P.{p}', chinese)
-                _set(f'fill_4_P.{p}', surname)
-                _set(f'fill_5_P.{p}', other)
-                # fill_8 = 住址（五欄地址組合）, fill_9 = 國家／地區 (護照簽發國), fill_10 = 通訊地址
-                addr_p6 = [officer.get('addrFlatBlock', ''), officer.get('addrBuilding', ''),
-                           officer.get('addrStreetEstate', ''), officer.get('addrDistrict', ''),
-                           officer.get('addrRegion', '')]
-                addr_p6_has = [x for x in addr_p6 if x]
-                _set(f'fill_8_P.{p}', ', '.join(addr_p6_has) if addr_p6_has else officer.get('address', ''))
-                if officer.get('passportCountry'):
-                    _set(f'fill_9_P.{p}', officer.get('passportCountry', ''))
-                # fill_11 = 身份證號碼（完整號碼，不截斷）
-                if officer.get('idNumber'):
-                    _set(f'fill_11_P.{p}', officer['idNumber'], align='right')
-                # 護照號碼：P.6 無獨立欄位，與身份證號碼共用 fill_11
-                if officer.get('passportNumber'):
-                    existing = officer.get('idNumber', '')
-                    if existing:
-                        _set(f'fill_11_P.{p}', f'{existing} / {officer["passportNumber"]}')
-                    else:
-                        _set(f'fill_11_P.{p}', officer['passportNumber'])
-                # Dates: fill_14/15/16 = D/M/Y
-                date_str = officer.get('dateAppointed') if officer.get('type') == 'appointment' else officer.get('dateCeased')
-                if date_str:
-                    parts = date_str.split('-')
-                    if len(parts) >= 3:
-                        _set(f'fill_14_P.{p}', parts[2])
-                        _set(f'fill_15_P.{p}', parts[1])
-                        _set(f'fill_16_P.{p}', parts[0])
-                role = officer.get('role', 'director')
-                if role == 'secretary':
-                    _check(f'cb_1_P.{p}')
-                elif role == 'alternate':
-                    _check(f'cb_3_P.{p}')
-                else:
-                    _check(f'cb_2_P.{p}')
-                if officer.get('type') == 'cessation':
-                    _check(f'cb_4_P.{p}')
-
-                # P.6 底部聲明：cross out "董事" or "候補董事" in consent statement
-                # (same pattern as P.2 — only pages that have the dropdowns)
-                if f'Dropdown_1_P.{p}' in fmap:
-                    if role in ('director', 'alternate'):
-                        cross_widget = f'Dropdown_{2 if role == "director" else 1}_P.{p}'
-                        for wn in (f'Dropdown_1_P.{p}', f'Dropdown_2_P.{p}'):
-                            if wn not in fmap:
-                                continue
-                            pi2 = fmap[wn]
-                            for w in doc[pi2].widgets():
-                                if w.field_name == wn:
-                                    try:
-                                        use_dashes = (wn == cross_widget)
-                                        opt_idx = 1 if use_dashes else 0
-                                        doc.xref_set_key(w._annot.xref, 'I', f'[{opt_idx}]')
-                                        val = w.choice_values[opt_idx]
-                                        doc.xref_set_key(w._annot.xref, 'V', fitz.get_pdf_str(val))
-                                        doc.xref_set_key(w._annot.xref, 'F', '4')
-                                        if use_dashes:
-                                            doc[pi2].draw_line(
-                                                fitz.Point(w.rect.x0 + 2, w.rect.y0 + w.rect.height / 2),
-                                                fitz.Point(w.rect.x1 - 2, w.rect.y0 + w.rect.height / 2),
-                                                color=(0, 0, 0), width=1.0
-                                            )
-                                    except Exception:
-                                        pass
-            elif p == 7:
-                # ── P.7 (PI-ND2A) 受保護資料頁 ──
-                # 公眾紀錄不會顯示此頁。完整 HKID 及護照號碼在此頁全部顯示。
-                # 欄位佈局（由上至下）：
-                #   fill_2 = 中文姓名, fill_3 = 英文姓氏, fill_4 = 英文名字
-                #   fill_5 = 香港身份證(完整號碼), fill_6 = 括號校驗位 e.g. "(1)"
-                #   fill_7 = 護照簽發國家/地區, fill_8 = 護照完整號碼
-                #   fill_9 = 室/樓/座, fill_10 = 大廈, fill_11 = 街道/屋苑
-                #   fill_12 = 區/市/省, fill_13 = 國家/地區
-                _set(f'fill_2_P.{p}', chinese)
-                _set(f'fill_3_P.{p}', surname)
-                _set(f'fill_4_P.{p}', other)
-                # HKID 完整號碼 + 括號校驗位
-                id_full = officer.get('idNumber', '') or ''
-                if id_full:
-                    # 解析 HKID：主體部分 vs 括號校驗位
-                    # 格式如 "Y231456(1)" → main="Y231456", check="(1)"
-                    import re as _re
-                    hkid_match = _re.match(r'^([A-Za-z]?\d+)\s*(\([^)]*\))?$', id_full.strip())
-                    if hkid_match:
-                        hkid_main = hkid_match.group(1)
-                        hkid_check = hkid_match.group(2) or ''
-                        _set(f'fill_5_P.{p}', hkid_main, align='right')
-                        if hkid_check:
-                            _set(f'fill_6_P.{p}', hkid_check)
-                    else:
-                        _set(f'fill_5_P.{p}', id_full, align='right')
-                # 護照簽發國家 + 護照完整號碼
-                if officer.get('passportCountry'):
-                    _set(f'fill_7_P.{p}', officer.get('passportCountry', ''))
-                if officer.get('passportNumber'):
-                    _set(f'fill_8_P.{p}', officer['passportNumber'])
-                # 通常住址（董事／候補董事）
-                addr_fb = officer.get('addrFlatBlock', '')
-                addr_bld = officer.get('addrBuilding', '')
-                addr_se = officer.get('addrStreetEstate', '')
-                addr_dist = officer.get('addrDistrict', '')
-                addr_reg = officer.get('addrRegion', '')
-                if any([addr_fb, addr_bld, addr_se, addr_dist, addr_reg]):
-                    _set(f'fill_9_P.{p}', addr_fb)
-                    _set(f'fill_10_P.{p}', addr_bld)
-                    _set(f'fill_11_P.{p}', addr_se)
-                    _set(f'fill_12_P.{p}', addr_dist)
-                    _set(f'fill_13_P.{p}', addr_reg)
-                else:
-                    _set(f'fill_9_P.{p}', officer.get('address', ''))
-                # Role checkboxes: cb_1=秘書, cb_2=董事, cb_3=候補
-                role = officer.get('role', 'director')
-                if role == 'secretary':
-                    _check(f'cb_1_P.{p}')
-                elif role == 'alternate':
-                    _check(f'cb_3_P.{p}')
-                else:
-                    _check(f'cb_2_P.{p}')
-                # Note: P.7 (PI-ND2A) has no D/M/Y date fields, no cessation checkbox,
-                # no Dropdown cross-out fields, no "already director" checkboxes
-            else:
-                # Should not reach here for natural persons; fallback to P.6-style
-                pass
+                    _check(f'cb_6_P.{p}')
         else:
-            # ── 法人團體 (Body Corporate) ──
-            # P.7 (PI-ND2A) layout is COMPLETELY different from P.3/P.5
-            if p == 7:
-                # ── P.7 (PI-ND2A) 法人團體 ──
-                # PI-ND2A 是為自然人設計的頁面。法人團體無 HKID / 護照，
-                # 只填姓名 + 地址 + 角色，fill_5/6/7/8（HKID/護照）留空。
-                _set(f'fill_2_P.7', officer.get('nameChinese', ''))
-                # English name: company name split into surname+otherNames for P.7
-                eng_full = officer.get('companyName', officer.get('nameEnglish', ''))
-                eng_parts = eng_full.strip().split()
-                if len(eng_parts) > 1:
-                    _set(f'fill_3_P.7', eng_parts[0])  # 首詞→姓氏位
-                    _set(f'fill_4_P.7', ' '.join(eng_parts[1:]))  # 餘詞→名字位
-                else:
-                    _set(f'fill_3_P.7', eng_full)
-                # 法人無 HKID / 護照 → fill_5/6/7/8 全部留空
-                # 五欄地址
-                addr_flat = officer.get('addrFlatBlock', '')
-                addr_bld = officer.get('addrBuilding', '')
-                addr_se = officer.get('addrStreetEstate', '')
-                addr_dist = officer.get('addrDistrict', '')
-                addr_reg = officer.get('addrRegion', '')
-                if any([addr_flat, addr_bld, addr_se, addr_dist, addr_reg]):
-                    _set(f'fill_9_P.7', addr_flat)
-                    _set(f'fill_10_P.7', addr_bld)
-                    _set(f'fill_11_P.7', addr_se)
-                    _set(f'fill_12_P.7', addr_dist)
-                    _set(f'fill_13_P.7', addr_reg)
-                else:
-                    _set(f'fill_9_P.7', officer.get('address', ''))
-                # Role
-                role = officer.get('role', 'director')
-                if role == 'secretary':
-                    _check(f'cb_1_P.7')
-                elif role == 'alternate':
-                    _check(f'cb_3_P.7')
-                else:
-                    _check(f'cb_2_P.7')
-            else:
-                # ── P.3/P.5 法人團體 (Body Corporate) ──
+            # ── 法人團體 (Body Corporate)：P.3 第4項（首名）/ P.6 續頁C（第2名）──
+                # ── P.3/P.6 法人團體 (Body Corporate) ──
                 # Field mapping verified by 千问 VL (2026-08-01):
                 #   fill_3 = 中文名稱, fill_4 = 英文名稱
                 #   fill_5 = Flat/Floor/Block, fill_6 = Building
@@ -9304,18 +9486,16 @@ def _fill_nd2a_pdf(data, template='ND2A-template.pdf'):
                     _check(f'cb_3_P.{p}')
                 else:
                     _check(f'cb_2_P.{p}')
-                # Type: only cessation needs checkbox (appointment is implicit)
-                if officer.get('type') == 'cessation':
-                    _check(f'cb_4_P.{p}')
+                # NOTE: cb_4_P.x 在法人頁是「無須領有牌照」選項，不是停任標記——停任已由路由送至 P.1/P.4
 
-                # ── P.3/P.5 法人團體簽署橫線（千问 VL 驗證 2026-08-02）──
+                # ── P.3/P.6 法人團體簽署橫線（千问 VL 驗證 2026-08-02）──
                 # 第一簽署：董事(法人團體)的 董事／公司秘書／獲授權人士*
                 #   Dropdown_3=董事, Dropdown_4=公司秘書, Dropdown_5=獲授權人士
                 #   默認由法人團體的董事簽署 → KEEP 董事, CROSS OUT 公司秘書+獲授權人士
                 # 第二簽署：董事Director／公司秘書Company Secretary*
                 #   Dropdown_6=董事, Dropdown_7=公司秘書
                 #   默認董事簽署 → KEEP 董事, CROSS OUT 公司秘書
-                if p in (3, 5):
+                if p in (3, 5, 6):
                     # First signature: Dropdown_3/4/5 (中英文雙行，不 break)
                     # KEEP Dropdown_3 (董事), CROSS OUT Dropdown_4+5
                     for dn in ('Dropdown_3', 'Dropdown_4', 'Dropdown_5'):
@@ -9365,116 +9545,63 @@ def _fill_nd2a_pdf(data, template='ND2A-template.pdf'):
                                 except Exception:
                                     pass
 
-    # ── PI-ND2A 受保護資料頁（P.7）：始終填入第一個人的完整資料 ──
+    # ── PI-ND2A 受保護資料頁（P.7）：僅自然人委任時填寫 ──
     # P.7 是獨立於主表格的受保護資料頁，公眾紀錄不會顯示。
-    # 優先取第一個自然人（完整 HKID + 護照），若無自然人則取第一個法人團體（BR + 成立地）。
-    first_nat = next((o for o in officers if o.get('identity') == 'natural'), None)
-    first_corp = next((o for o in officers if o.get('identity') == 'corporate'), None)
-    pi_subject = first_nat or first_corp  # 優先自然人，fallback 法人
+    # 只有「自然人委任」才需要完整 HKID + 護照；純停任／法人委任無此頁 → 刪除 P.7。
+    pi_subject = next((o for o in officers
+                       if o.get('identity') == 'natural' and o.get('type') != 'cessation'), None)
     if pi_subject and fmap.get('fill_1_P.7') is not None:
         p = 7
-        is_nat = pi_subject.get('identity') == 'natural'
-        if is_nat:
-            # ── 自然人 PI-ND2A：完整 HKID + 護照 ──
-            eng = pi_subject.get('nameEnglish', '') or ''
-            surname = pi_subject.get('nameSurname', '') or ''
-            other = pi_subject.get('nameOtherNames', '') or pi_subject.get('nameOther', '') or ''
-            if not surname and eng:
-                parts = eng.strip().split()
-                surname = parts[-1] if len(parts) > 1 else (parts[0] if parts else '')
-                other = ' '.join(parts[:-1]) if len(parts) > 1 else ''
-            chinese = pi_subject.get('nameChinese', '')
-            _set(f'fill_2_P.{p}', chinese)
-            _set(f'fill_3_P.{p}', surname)
-            _set(f'fill_4_P.{p}', other)
-            # HKID 完整號碼 + 括號校驗位
-            id_full = pi_subject.get('idNumber', '') or ''
-            if id_full:
-                import re as _re
-                hkid_match = _re.match(r'^([A-Za-z]?\d+)\s*(\([^)]*\))?$', id_full.strip())
-                if hkid_match:
-                    _set(f'fill_5_P.{p}', hkid_match.group(1), align='right')
-                    if hkid_match.group(2):
-                        _set(f'fill_6_P.{p}', hkid_match.group(2))
-                else:
-                    _set(f'fill_5_P.{p}', id_full, align='right')
-            # 護照：簽發國家 + 完整號碼（不截斷）
-            if pi_subject.get('passportCountry'):
-                _set(f'fill_7_P.{p}', pi_subject.get('passportCountry', ''))
-            if pi_subject.get('passportNumber'):
-                _set(f'fill_8_P.{p}', pi_subject['passportNumber'])
-            # 通常住址
-            addr_fb = pi_subject.get('addrFlatBlock', '')
-            addr_bld = pi_subject.get('addrBuilding', '')
-            addr_se = pi_subject.get('addrStreetEstate', '')
-            addr_dist = pi_subject.get('addrDistrict', '')
-            addr_reg = pi_subject.get('addrRegion', '')
-            if any([addr_fb, addr_bld, addr_se, addr_dist, addr_reg]):
-                _set(f'fill_9_P.{p}', addr_fb)
-                _set(f'fill_10_P.{p}', addr_bld)
-                _set(f'fill_11_P.{p}', addr_se)
-                _set(f'fill_12_P.{p}', addr_dist)
-                _set(f'fill_13_P.{p}', addr_reg)
+        # ── 自然人 PI-ND2A：完整 HKID + 護照 ──
+        eng = pi_subject.get('nameEnglish', '') or ''
+        surname = pi_subject.get('nameSurname', '') or ''
+        other = pi_subject.get('nameOtherNames', '') or pi_subject.get('nameOther', '') or ''
+        if not surname and eng:
+            parts = eng.strip().split()
+            surname = parts[-1] if len(parts) > 1 else (parts[0] if parts else '')
+            other = ' '.join(parts[:-1]) if len(parts) > 1 else ''
+        chinese = pi_subject.get('nameChinese', '')
+        _set(f'fill_2_P.{p}', chinese)
+        _set(f'fill_3_P.{p}', surname)
+        _set(f'fill_4_P.{p}', other)
+        # HKID 完整號碼 + 括號校驗位
+        id_full = pi_subject.get('idNumber', '') or ''
+        if id_full:
+            import re as _re
+            hkid_match = _re.match(r'^([A-Za-z]?\d+)\s*(\([^)]*\))?$', id_full.strip())
+            if hkid_match:
+                _set(f'fill_5_P.{p}', hkid_match.group(1), align='right')
+                if hkid_match.group(2):
+                    _set(f'fill_6_P.{p}', hkid_match.group(2))
             else:
-                _set(f'fill_9_P.{p}', pi_subject.get('address', ''))
-            # Role checkbox
-            role = pi_subject.get('role', 'director')
-            if role == 'secretary':
-                _check(f'cb_1_P.{p}')
-            elif role == 'alternate':
-                _check(f'cb_3_P.{p}')
-            else:
-                _check(f'cb_2_P.{p}')
+                _set(f'fill_5_P.{p}', id_full, align='right')
+        # 護照：簽發國家 + 完整號碼（不截斷）
+        if pi_subject.get('passportCountry'):
+            _set(f'fill_7_P.{p}', pi_subject.get('passportCountry', ''))
+        if pi_subject.get('passportNumber'):
+            _set(f'fill_8_P.{p}', pi_subject['passportNumber'])
+        # 通常住址
+        addr_fb = pi_subject.get('addrFlatBlock', '')
+        addr_bld = pi_subject.get('addrBuilding', '')
+        addr_se = pi_subject.get('addrStreetEstate', '')
+        addr_dist = pi_subject.get('addrDistrict', '')
+        addr_reg = pi_subject.get('addrRegion', '')
+        if any([addr_fb, addr_bld, addr_se, addr_dist, addr_reg]):
+            _set(f'fill_9_P.{p}', addr_fb)
+            _set(f'fill_10_P.{p}', addr_bld)
+            _set(f'fill_11_P.{p}', addr_se)
+            _set(f'fill_12_P.{p}', addr_dist)
+            _set(f'fill_13_P.{p}', addr_reg)
         else:
-            # ── 法人團體 PI-ND2A：只填姓名+地址+角色，不填HKID/護照（公司沒有）──
-            _set(f'fill_2_P.7', pi_subject.get('nameChinese', ''))
-            eng_full = pi_subject.get('companyName', pi_subject.get('nameEnglish', ''))
-            eng_parts = eng_full.strip().split()
-            if len(eng_parts) > 1:
-                _set(f'fill_3_P.7', eng_parts[0])
-                _set(f'fill_4_P.7', ' '.join(eng_parts[1:]))
-            else:
-                _set(f'fill_3_P.7', eng_full)
-            # 法人團體無 HKID / 護照 → fill_5/6/7/8 留空
-            # Address
-            addr_fb = pi_subject.get('addrFlatBlock', '')
-            addr_bld = pi_subject.get('addrBuilding', '')
-            addr_se = pi_subject.get('addrStreetEstate', '')
-            addr_dist = pi_subject.get('addrDistrict', '')
-            addr_reg = pi_subject.get('addrRegion', '')
-            if any([addr_fb, addr_bld, addr_se, addr_dist, addr_reg]):
-                _set(f'fill_9_P.7', addr_fb)
-                _set(f'fill_10_P.7', addr_bld)
-                _set(f'fill_11_P.7', addr_se)
-                _set(f'fill_12_P.7', addr_dist)
-                _set(f'fill_13_P.7', addr_reg)
-            else:
-                _set(f'fill_9_P.7', pi_subject.get('address', ''))
-            role = pi_subject.get('role', 'director')
-            if role == 'secretary':
-                _check(f'cb_1_P.7')
-            elif role == 'alternate':
-                _check(f'cb_3_P.7')
-            else:
-                _check(f'cb_2_P.7')
-
-    # ── P.1 日期（僅停任，取自第一個 officer） ──
-    # fill_11/12/13 = D/M/Y（三個並排窄框），委任不填 P.1 日期
-    if officers and officers[0].get('type') == 'cessation':
-        date_str = officers[0].get('dateCeased')
-        if date_str:
-            if '-' in date_str:
-                parts = date_str.split('-')
-                if len(parts) >= 3:
-                    _set('fill_11_P.1', parts[2])  # day
-                    _set('fill_12_P.1', parts[1])  # month
-                    _set('fill_13_P.1', parts[0])  # year
-            elif '/' in date_str:
-                parts = date_str.split('/')
-                if len(parts) >= 3:
-                    _set('fill_11_P.1', parts[0])  # day
-                    _set('fill_12_P.1', parts[1])  # month
-                    _set('fill_13_P.1', parts[2])  # year
+            _set(f'fill_9_P.{p}', pi_subject.get('address', ''))
+        # Role checkbox
+        role = pi_subject.get('role', 'director')
+        if role == 'secretary':
+            _check(f'cb_1_P.{p}')
+        elif role == 'alternate':
+            _check(f'cb_3_P.{p}')
+        else:
+            _check(f'cb_2_P.{p}')
 
     # ── P.1 提交人信息 ──
 
@@ -9508,6 +9635,10 @@ def _fill_nd2a_pdf(data, template='ND2A-template.pdf'):
     # Delete blank pages after P.7 (keep P.1~P.7, P.8+ are blank instruction pages)
     for pno in range(doc.page_count - 1, 6, -1):
         doc.delete_page(pno)
+
+    # 無自然人委任 → 刪除 P.7（PI 受保護資料頁僅伴隨自然人委任）
+    if not pi_subject:
+        doc.delete_page(6)
 
     pdf_bytes = doc.write(deflate=True)
     doc.close()
@@ -9673,6 +9804,11 @@ def _fill_nd2b_pdf(data, template='ND2B-template.pdf'):
             _set('fill_7c_P.1', _parse_passport_partial(data['passportNumber']))
 
         # ── P.2: Change details (multi-type support) ──
+        # Current name (item 14) — ALWAYS filled to identify the person
+        current_name_en = data.get('nameEnglish', '') or f"{surname} {other}".strip()
+        current_name_display = f"{data.get('nameChinese', '')} {current_name_en}".strip()
+        _set('fill_2_P.2', current_name_display or current_name_en)
+
         # Effective date fills (shared across all change rows)
         if eff_day:
             _set('fill_5_P.2', eff_day)
@@ -9681,9 +9817,7 @@ def _fill_nd2b_pdf(data, template='ND2B-template.pdf'):
 
         # (a) 姓名更改 Name Change
         if 'name' in change_types:
-            # Old name (current) — fill_2 is description row for item 14
-            current_name = data.get('nameEnglish', '') or f"{surname} {other}".strip()
-            _set('fill_2_P.2', current_name)
+            # fill_2 already filled above with current name
             # New Chinese name
             if new_chinese:
                 _set('fill_6_P.2', new_chinese)
@@ -9797,7 +9931,102 @@ def _fill_nd2b_pdf(data, template='ND2B-template.pdf'):
     for pi in range(2, doc.page_count + 1):
         _set(f'fill_1_P.{pi}', br8)
 
-    # ⚠️ 不删页：保留模板全部页面（仅 NAR1 可以删空页）
+    # ── 填 P.4 續頁A ──
+    # Section A: 現有登記詳情
+    # Section B: 更改詳情（從 P.2 延續）
+    if is_natural:
+        # ═══ Section A: 現有登記詳情 ═══
+        if role == 'secretary':
+            _check('cb_1_P.4')
+        elif role == 'alternate':
+            _check('cb_3_P.4')
+        else:
+            _check('cb_2_P.4')
+        _set('fill_2_P.4', data.get('nameChinese', ''))
+        _set('fill_5_P.4', surname)
+        _set('fill_6_P.4', other)
+        _set('fill_7_P.4', data.get('idNumber', ''), align='right')
+
+        # ═══ Section B: 更改詳情 ═══
+        # (a) 姓名更改
+        if 'name' in change_types:
+            _set('fill_16_P.4', data.get('nameChinese', ''))
+            cur_name_en = data.get('nameEnglish', '') or f"{surname} {other}".strip()
+            _set('fill_17_P.4', cur_name_en)
+            if eff_day:
+                _set('fill_20_P.4', eff_day)
+                _set('fill_19_P.4', eff_month)
+                _set('fill_18_P.4', eff_year)
+
+        # (d) 地址更改
+        if 'address' in change_types:
+            new_addr = data.get('newAddress', '') or data.get('new_address', '')
+            if data.get('newFlat'):
+                _set('fill_24_P.4', data.get('newFlat', ''))
+            elif new_addr:
+                _set('fill_24_P.4', new_addr)
+            if data.get('newBuilding'):
+                _set('fill_25_P.4', data.get('newBuilding', ''))
+            if data.get('newStreet'):
+                _set('fill_26_P.4', data.get('newStreet', ''))
+            if data.get('newDistrict'):
+                _set('fill_27_P.4', data.get('newDistrict', ''))
+            if data.get('newRegion'):
+                _set('fill_28_P.4', data.get('newRegion', ''))
+            if eff_day:
+                _set('fill_31_P.4', eff_day)
+                _set('fill_30_P.4', eff_month)
+                _set('fill_29_P.4', eff_year)
+
+        # (g) 證件號碼更改
+        if 'id' in change_types:
+            if data.get('newIdNumber'):
+                _set('fill_32_P.4', data.get('newIdNumber', ''), align='right')
+            new_passport = data.get('passportNumber', '') or data.get('newPassportNumber', '')
+            if new_passport:
+                _set('fill_36_P.4', _parse_passport_partial(new_passport))
+            new_passport_country = data.get('passportPlaceOfIssue', '') or data.get('passportCountry', '')
+            if new_passport_country:
+                _set('fill_37_P.4', new_passport_country)
+            if eff_day:
+                _set('fill_35_P.4', eff_day)
+                _set('fill_34_P.4', eff_month)
+                _set('fill_33_P.4', eff_year)
+
+        # (f) 聯絡資料更改
+        if 'contact' in change_types and data.get('newEmail'):
+            _set('fill_40_P.4', data.get('newEmail', ''))
+            if eff_day:
+                _set('fill_44_P.4', eff_day)
+                _set('fill_43_P.4', eff_month)
+                _set('fill_42_P.4', eff_year)
+
+    # ── 刪除不適用的空白續頁 ──
+    total_pages = doc.page_count
+    pages_to_remove = []
+    if is_natural:
+        # 保留: P.1(公司+提交人), P.2(更改詳情), P.3(簽署),
+        #       P.4(續頁A-自然人現有資料), P.6(PI-ND2B)
+        # 刪除: P.5(續頁B-法人), P.7-P.14(空白)
+        if total_pages >= 5:
+            pages_to_remove.append(4)  # P.5 (0-indexed)
+        pages_to_remove.extend(range(6, total_pages))  # P.7-P.14
+    else:
+        # 法人團體:
+        # 保留: P.1(公司+提交人), P.3(法人+簽署), P.5(續頁B)
+        # 刪除: P.2(自然人), P.4(續頁A), P.6(PI), P.7-P.14
+        if total_pages >= 2:
+            pages_to_remove.append(1)  # P.2
+        if total_pages >= 4:
+            pages_to_remove.append(3)  # P.4
+        if total_pages >= 6:
+            pages_to_remove.append(5)  # P.6
+        pages_to_remove.extend(range(6, total_pages))  # P.7-P.14
+    # 倒序刪除避免索引偏移
+    for pi in reversed(pages_to_remove):
+        if pi < doc.page_count:
+            doc.delete_page(pi)
+
     pdf_bytes = doc.write(deflate=True)
     doc.close()
     return pdf_bytes

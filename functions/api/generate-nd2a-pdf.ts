@@ -56,6 +56,7 @@ interface ND2AData {
   officers: OfficerChange[];
   signerName: string;
   signDate: string;
+  signerCapacity?: string; // 'director' | 'secretary' | 'authorizedRep'
   presentorName: string;
   presentorAddress: string;
   presentorPhone?: string;
@@ -109,6 +110,8 @@ function createFormHelpers(pdfDoc: PDFDocument) {
         target.widget.set(PDFName.of("Q"), pdfDoc.context.obj(2));
       } else if (align === 'center') {
         target.widget.set(PDFName.of("Q"), pdfDoc.context.obj(1));
+      } else if (align === 'left') {
+        target.widget.set(PDFName.of("Q"), pdfDoc.context.obj(0));
       }
       target.widget.delete(PDFName.of("AP"));
       return true;
@@ -372,7 +375,7 @@ function fillND2A(pdfDoc: PDFDocument, data: ND2AData) {
           setText('fill_5_P.1', surname);
           setText('fill_6_P.1', other);
           const hkidClean = (officer.idNumber || '').replace(/[()\-\s]/g, '').toUpperCase();
-          if (hkidClean) setText('fill_7_P.1', hkidClean.slice(0, 5), 'right');
+          if (hkidClean) setText('fill_7_P.1', hkidClean.slice(0, 5), 'left');
           if (officer.passportNumber) setText('fill_8_P.1', parsePassportPartial(officer.passportNumber));
         } else {
           setText('fill_9_P.1', officer.nameChinese || '');
@@ -419,7 +422,7 @@ function fillND2A(pdfDoc: PDFDocument, data: ND2AData) {
           setText('fill_4_P.4', surname);
           setText('fill_5_P.4', other);
           const hkidClean = (officer.idNumber || '').replace(/[()\-\s]/g, '').toUpperCase();
-          if (hkidClean) setText('fill_6_P.4', hkidClean.slice(0, 5), 'right');
+          if (hkidClean) setText('fill_6_P.4', hkidClean.slice(0, 5), 'left');
           if (officer.passportNumber) setText('fill_7_P.4', parsePassportPartial(officer.passportNumber));
         } else {
           setText('fill_8_P.4', officer.nameChinese || '');
@@ -504,65 +507,76 @@ function fillND2A(pdfDoc: PDFDocument, data: ND2AData) {
       check(`cb_2_P.${p}`, true);
       }
 
-      // ── P.3/P.5 法人團體簽署橫線 ──
-      // 第一簽署：董事(法人團體)的 董事／公司秘書／獲授權人士*
-      //   Dropdown_3=董事(KEEP), Dropdown_4=公司秘書(CROSS), Dropdown_5=獲授權人士(CROSS)
-      // 第二簽署：董事Director／公司秘書Company Secretary*
-      //   Dropdown_6=董事(KEEP), Dropdown_7=公司秘書(CROSS)
+      // ── P.3/P.6 法人團體簽署（由前端 簽署人/身份/日期 驅動，2026-08-13）──
+      // 第一簽署：董事(法人團體)的 董事(Dropdown_3)／公司秘書(Dropdown_4)／獲授權人士(Dropdown_5)*
+      //   姓名 = fill_17（P.3 與 P.6 都有此欄位）
+      // 第二簽署（僅 P.3）：董事(Dropdown_6)／公司秘書(Dropdown_7)，姓名=fill_22，日期=fill_23（DD/MM/YYYY）
+      const capacity = data.signerCapacity || 'director';
+      const signerName = data.signerName || '';
       const pageObj2 = pages[p - 1];
-      // First signature: Dropdown_3/4/5
+      const keepMap1: Record<string, string> = { director: 'Dropdown_3', secretary: 'Dropdown_4', authorizedRep: 'Dropdown_5' };
+      const keep1 = keepMap1[capacity] || 'Dropdown_3';
+      if (signerName) setText(`fill_17_P.${p}`, signerName);
+      // First signature: Dropdown_3/4/5 (keep one per capacity, cross out the rest)
       for (const dn of ['Dropdown_3', 'Dropdown_4', 'Dropdown_5']) {
-      const key = `${dn}_P.${p}`;
-      const crossOut = dn === 'Dropdown_4' || dn === 'Dropdown_5';
-      if (crossOut) {
-        selectDropdown(key, '—');
-      } else {
-        selectDropdown(key, ' ');
-      }
-      if (crossOut && pageObj2) {
-        const rect = getWidgetRect(key);
-        if (rect) {
-          const midY = (rect.y0 + rect.y1) / 2;
-          pageObj2.drawLine({
-            start: { x: rect.x0 + 2, y: midY },
-            end: { x: rect.x1 - 2, y: midY },
-            color: { r: 0, g: 0, b: 0 },
-            thickness: 1,
-          });
+        const key = `${dn}_P.${p}`;
+        const crossOut = dn !== keep1;
+        if (crossOut) {
+          selectDropdown(key, '—');
+        } else {
+          selectDropdown(key, ' ');
+        }
+        if (crossOut && pageObj2) {
+          const rect = getWidgetRect(key);
+          if (rect) {
+            const midY = (rect.y0 + rect.y1) / 2;
+            pageObj2.drawLine({
+              start: { x: rect.x0 + 2, y: midY },
+              end: { x: rect.x1 - 2, y: midY },
+              color: { r: 0, g: 0, b: 0 },
+              thickness: 1,
+            });
+          }
         }
       }
-      }
-      // Second signature: Dropdown_6/7
-      for (const dn of ['Dropdown_6', 'Dropdown_7']) {
-      const key = `${dn}_P.${p}`;
-      const crossOut = dn === 'Dropdown_7';
-      if (crossOut) {
-        selectDropdown(key, '—');
-      } else {
-        selectDropdown(key, ' ');
-      }
-      if (crossOut && pageObj2) {
-        const rect = getWidgetRect(key);
-        if (rect) {
-          const midY = (rect.y0 + rect.y1) / 2;
-          pageObj2.drawLine({
-            start: { x: rect.x0 + 2, y: midY },
-            end: { x: rect.x1 - 2, y: midY },
-            color: { r: 0, g: 0, b: 0 },
-            thickness: 1,
-          });
+      if (p === 3) {
+        // Second signature (P.3 only): name + date + 董事/公司秘書（獲授權人士按董事處理）
+        const keepMap2: Record<string, string> = { director: 'Dropdown_6', secretary: 'Dropdown_7', authorizedRep: 'Dropdown_6' };
+        const keep2 = keepMap2[capacity] || 'Dropdown_6';
+        if (signerName) setText('fill_22_P.3', signerName);
+        if (data.signDate) {
+          const sp = data.signDate.replace(/\//g, '-').split('-');
+          if (sp.length >= 3) setText('fill_23_P.3', `${sp[2]}/${sp[1]}/${sp[0]}`);
         }
-      }
+        for (const dn of ['Dropdown_6', 'Dropdown_7']) {
+          const key = `${dn}_P.3`;
+          const crossOut = dn !== keep2;
+          if (crossOut) {
+            selectDropdown(key, '—');
+          } else {
+            selectDropdown(key, ' ');
+          }
+          if (crossOut && pageObj2) {
+            const rect = getWidgetRect(key);
+            if (rect) {
+              const midY = (rect.y0 + rect.y1) / 2;
+              pageObj2.drawLine({
+                start: { x: rect.x0 + 2, y: midY },
+                end: { x: rect.x1 - 2, y: midY },
+                color: { r: 0, g: 0, b: 0 },
+                thickness: 1,
+              });
+            }
+          }
+        }
       }
     }  // end P.3/P.6 block
     }
   }
 
-  // ── PI-ND2A 受保護資料頁（P.7）：僅自然人委任時填寫 ──
-  // 只有「自然人委任」才需要完整 HKID + 護照；純停任／法人委任無此頁 → 由 handler 刪除 P.7。
-  const piSubject = officers.find(
-    (o) => o.identity === 'natural' && o.type === 'appointment'
-  );
+  // ── PI-ND2A 受保護資料頁（P.7）：有自然人時填寫，頁面永不刪除 ──
+  // 取第一個自然人（委任或停任皆可）；純法人表格時 P.7 留空但仍保留（2026-08-13）。
+  const piSubject = officers.find((o) => o.identity === 'natural');
   if (piSubject) {
     const p = 7;
     const eng = piSubject.nameEnglish || '';
@@ -609,6 +623,16 @@ function fillND2A(pdfDoc: PDFDocument, data: ND2AData) {
     else if (role7 === 'alternate') check(`cb_3_P.${p}`, true);
     else check(`cb_2_P.${p}`, true);
   }
+
+  // P.3 底部續頁計數器（fill_18=續頁A停任, fill_19=續頁B自然人, fill_20=續頁C法人, fill_21=PI頁數）
+  // 續頁被刪除時計數器留空；PI 頁永不刪除 → 固定 '1'
+  const nCessC = officers.filter((o) => o.type === 'cessation').length;
+  const nNatC = officers.filter((o) => o.identity === 'natural' && o.type !== 'cessation').length;
+  const nCorpC = officers.filter((o) => o.identity === 'corporate' && o.type !== 'cessation').length;
+  if (nCessC >= 2) setText('fill_18_P.3', '1');
+  if (nNatC >= 2) setText('fill_19_P.3', '1');
+  if (nCorpC >= 2) setText('fill_20_P.3', '1');
+  setText('fill_21_P.3', '1');
 
   // ===== P.1: Signer & presenter info =====
   // Note: P.1 fill_9 is NOT used for signer name in ND2A template
@@ -725,11 +749,15 @@ export async function onRequest(context: { request: Request; env: Env }) {
         pdfDoc.removePage(i);
       }
     }
-    // 無自然人委任 → 刪除 P.7（PI 受保護資料頁僅伴隨自然人委任）
-    const hasNatAppt = (data.officers || []).some(
-      (o) => o.identity === 'natural' && o.type === 'appointment'
-    );
-    if (!hasNatAppt) pdfDoc.removePage(6);
+    // 續頁無內容則刪除（降序）：P.6 續頁C=法人委任#2, P.5 續頁B=自然人委任#2, P.4 續頁A=停任#2
+    // PI 受保護資料頁（P.7）永不刪除（2026-08-13）
+    const officersH = data.officers || [];
+    const nCess = officersH.filter((o) => o.type === 'cessation').length;
+    const nNat = officersH.filter((o) => o.identity === 'natural' && o.type !== 'cessation').length;
+    const nCorp = officersH.filter((o) => o.identity === 'corporate' && o.type !== 'cessation').length;
+    if (nCorp < 2) pdfDoc.removePage(5);
+    if (nNat < 2) pdfDoc.removePage(4);
+    if (nCess < 2) pdfDoc.removePage(3);
 
     const pdfBytes = await pdfDoc.save({ updateFieldAppearances: false });
     const base64 = uint8ToBase64(new Uint8Array(pdfBytes));

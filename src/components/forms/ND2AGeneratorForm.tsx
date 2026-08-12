@@ -93,6 +93,7 @@ export default function ND2AGeneratorForm({ onBack, initialCompanyId }: ND2AGene
   const [signerId, setSignerId] = useState('');  // '' = 自动（首个秘书→首个董事）, officer id, '__manual__' = 手动输入
   const [signerName, setSignerName] = useState('');
   const [signDate, setSignDate] = useState('');
+  const [signerCapacity, setSignerCapacity] = useState<'director' | 'secretary' | 'authorizedRep' | ''>('director');
   const [presentorName, setPresentorName] = useState('');
   const [presentorAddress, setPresentorAddress] = useState('');
   const [presentorPhone, setPresentorPhone] = useState('');
@@ -153,6 +154,7 @@ export default function ND2AGeneratorForm({ onBack, initialCompanyId }: ND2AGene
     if (data.signerName !== undefined) setSignerName(data.signerName);
     if (data.signerId !== undefined) setSignerId(data.signerId);
     if (data.signDate !== undefined) setSignDate(data.signDate);
+    if (data.signerCapacity !== undefined) setSignerCapacity(data.signerCapacity);
     if (data.presentorName !== undefined) setPresentorName(data.presentorName);
     if (data.presentorAddress !== undefined) setPresentorAddress(data.presentorAddress);
     if (data.presentorPhone !== undefined) setPresentorPhone(data.presentorPhone);
@@ -179,13 +181,13 @@ export default function ND2AGeneratorForm({ onBack, initialCompanyId }: ND2AGene
       const resp = await fetch(`/api/generate-nd2a-pdf`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ brNumber, companyName, officers, signerName, signDate, presentorName, presentorAddress, presentorPhone, presentorFax, presentorEmail, presentorReference, debug }),
+        body: JSON.stringify({ brNumber, companyName, officers, signerName, signerCapacity, signDate, presentorName, presentorAddress, presentorPhone, presentorFax, presentorEmail, presentorReference, debug }),
       });
       const result = await resp.json();
       if (!resp.ok) throw new Error(result.error);
 
       downloadBase64Pdf(result.pdf, `ND2A_${brNumber}_${companyName.replace(/\s+/g, '_')}.pdf`);
-      saveFormHistory({ formType: 'ND2A', formData: { brNumber, companyName, selectedCompanyId, officers, signerId, signerName, signDate, presentorName, presentorAddress, presentorPhone, presentorFax, presentorEmail, presentorReference } });
+      saveFormHistory({ formType: 'ND2A', formData: { brNumber, companyName, selectedCompanyId, officers, signerId, signerName, signerCapacity, signDate, presentorName, presentorAddress, presentorPhone, presentorFax, presentorEmail, presentorReference } });
       toast({ title: '生成成功', description: 'ND2A 表格已下載' });
 
       // Phase 5: Check for related forms (ND2A→ND4 conditional: only if cessation exists)
@@ -491,6 +493,31 @@ export default function ND2AGeneratorForm({ onBack, initialCompanyId }: ND2AGene
               )}
             </div>
             <div><Label>簽署日期</Label><Input type="date" value={signDate} onChange={e => setSignDate(e.target.value)} className="mt-1" /></div>
+            <div className="col-span-2">
+              <Label className="text-xs font-medium mb-1 block">簽署人身份 Capacity of Signatory <span className="text-muted-foreground">（點擊選擇一個身份，其他畫橫線刪去）</span></Label>
+              <div className="flex flex-wrap gap-2">
+                {([
+                  { key: 'director', label: '董事 Director' },
+                  { key: 'secretary', label: '公司秘書 Company Secretary' },
+                  { key: 'authorizedRep', label: '獲授權人士 Authorized Person' },
+                ] as const).map(cap => {
+                  const isSelected = signerCapacity === cap.key;
+                  const isStrikethrough = signerCapacity && signerCapacity !== cap.key;
+                  return (
+                    <button key={cap.key} type="button"
+                      className={`px-3 py-1.5 rounded-md text-xs border transition-all ${
+                        isSelected ? 'bg-blue-600 text-white border-blue-600 font-semibold' :
+                        isStrikethrough ? 'bg-muted text-muted-foreground border-border line-through' :
+                        'bg-background border-border hover:bg-accent'
+                      }`}
+                      onClick={() => setSignerCapacity(isSelected ? '' : cap.key)}
+                    >
+                      {cap.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
             <div><Label>提交人名稱</Label><Input value={presentorName} onChange={e => setPresentorName(e.target.value)} className="mt-1" /></div>
             <div><Label>提交人地址</Label><Input value={presentorAddress} onChange={e => setPresentorAddress(e.target.value)} className="mt-1" /></div>
             <div><Label>提交人電話</Label><Input value={presentorPhone} onChange={e => setPresentorPhone(e.target.value)} className="mt-1" /></div>
@@ -514,7 +541,7 @@ export default function ND2AGeneratorForm({ onBack, initialCompanyId }: ND2AGene
         onOpenChange={setShowRelatedPrompt}
         primaryFormCode="ND2A"
         primaryFormName="ND2A — 更改公司秘書及董事通知書"
-        primaryFormData={{ brNumber, companyName, officers, signerName, signDate, presentorName, presentorAddress, presentorPhone, presentorFax, presentorEmail, presentorReference, company_id: selectedCompanyId }}
+        primaryFormData={{ brNumber, companyName, officers, signerName, signerCapacity, signDate, presentorName, presentorAddress, presentorPhone, presentorFax, presentorEmail, presentorReference, company_id: selectedCompanyId }}
         companyId={selectedCompanyId}
         companyName={companyName}
         linkages={relatedLinkages}

@@ -9178,6 +9178,8 @@ def _fill_nd2a_pdf(data, template='ND2A-template.pdf'):
                         doc.xref_set_key(w._annot.xref, 'Q', '2')
                     elif align == 'center':
                         doc.xref_set_key(w._annot.xref, 'Q', '1')
+                    elif align == 'left':
+                        doc.xref_set_key(w._annot.xref, 'Q', '0')
                     w.update()
                 except Exception:
                     pass
@@ -9266,7 +9268,7 @@ def _fill_nd2a_pdf(data, template='ND2A-template.pdf'):
                     _set('fill_5_P.1', surname)
                     _set('fill_6_P.1', other)
                     hkid_clean = (officer.get('idNumber', '') or '').replace('(', '').replace(')', '').replace('-', '').replace(' ', '').upper()
-                    _set('fill_7_P.1', hkid_clean[:5], align='right')
+                    _set('fill_7_P.1', hkid_clean[:5], align='left')
                     if officer.get('passportNumber'):
                         _set('fill_8_P.1', _parse_passport_partial(officer['passportNumber']))
                 else:
@@ -9312,7 +9314,7 @@ def _fill_nd2a_pdf(data, template='ND2A-template.pdf'):
                     _set('fill_4_P.4', surname)
                     _set('fill_5_P.4', other)
                     hkid_clean = (officer.get('idNumber', '') or '').replace('(', '').replace(')', '').replace('-', '').replace(' ', '').upper()
-                    _set('fill_6_P.4', hkid_clean[:5], align='right')
+                    _set('fill_6_P.4', hkid_clean[:5], align='left')
                     if officer.get('passportNumber'):
                         _set('fill_7_P.4', _parse_passport_partial(officer['passportNumber']))
                 else:
@@ -9488,22 +9490,23 @@ def _fill_nd2a_pdf(data, template='ND2A-template.pdf'):
                     _check(f'cb_2_P.{p}')
                 # NOTE: cb_4_P.x 在法人頁是「無須領有牌照」選項，不是停任標記——停任已由路由送至 P.1/P.4
 
-                # ── P.3/P.6 法人團體簽署橫線（千问 VL 驗證 2026-08-02）──
-                # 第一簽署：董事(法人團體)的 董事／公司秘書／獲授權人士*
-                #   Dropdown_3=董事, Dropdown_4=公司秘書, Dropdown_5=獲授權人士
-                #   默認由法人團體的董事簽署 → KEEP 董事, CROSS OUT 公司秘書+獲授權人士
-                # 第二簽署：董事Director／公司秘書Company Secretary*
-                #   Dropdown_6=董事, Dropdown_7=公司秘書
-                #   默認董事簽署 → KEEP 董事, CROSS OUT 公司秘書
-                if p in (3, 5, 6):
-                    # First signature: Dropdown_3/4/5 (中英文雙行，不 break)
-                    # KEEP Dropdown_3 (董事), CROSS OUT Dropdown_4+5
+                # ── P.3/P.6 法人團體簽署（由前端 簽署人/身份/日期 驅動，2026-08-13）──
+                # 第一簽署：董事(法人團體)的 董事(Dropdown_3)／公司秘書(Dropdown_4)／獲授權人士(Dropdown_5)*
+                #   姓名 = fill_17（P.3 與 P.6 都有此欄位）
+                # 第二簽署（僅 P.3 有欄位）：董事(Dropdown_6)／公司秘書(Dropdown_7)
+                #   姓名 = fill_22，日期 = fill_23（DD/MM/YYYY）
+                capacity = data.get('signerCapacity', 'director')
+                if p in (3, 6):
+                    sign_name = data.get('signerName', '')
+                    if sign_name:
+                        _set(f'fill_17_P.{p}', sign_name)
+                    keep1 = {'director': 'Dropdown_3', 'secretary': 'Dropdown_4', 'authorizedRep': 'Dropdown_5'}.get(capacity, 'Dropdown_3')
                     for dn in ('Dropdown_3', 'Dropdown_4', 'Dropdown_5'):
                         key = f'{dn}_P.{p}'
                         if key not in fmap:
                             continue
                         pi = fmap[key]
-                        cross_out = dn in ('Dropdown_4', 'Dropdown_5')
+                        cross_out = (dn != keep1)
                         for w in doc[pi].widgets():
                             if w.field_name == key:
                                 try:
@@ -9520,14 +9523,23 @@ def _fill_nd2a_pdf(data, template='ND2A-template.pdf'):
                                         )
                                 except Exception:
                                     pass
-                    # Second signature: Dropdown_6/7 (中英文雙行，不 break)
-                    # KEEP Dropdown_6 (董事), CROSS OUT Dropdown_7 (公司秘書)
+                if p == 3:
+                    # 第二簽署：姓名 + 日期 + 董事/公司秘書（獲授權人士按董事處理）
+                    sign_name = data.get('signerName', '')
+                    if sign_name:
+                        _set('fill_22_P.3', sign_name)
+                    sign_date = data.get('signDate', '')
+                    if sign_date:
+                        sp = sign_date.replace('/', '-').split('-')
+                        if len(sp) >= 3:
+                            _set('fill_23_P.3', f'{sp[2]}/{sp[1]}/{sp[0]}')
+                    keep2 = {'director': 'Dropdown_6', 'secretary': 'Dropdown_7', 'authorizedRep': 'Dropdown_6'}.get(capacity, 'Dropdown_6')
                     for dn in ('Dropdown_6', 'Dropdown_7'):
-                        key = f'{dn}_P.{p}'
+                        key = f'{dn}_P.3'
                         if key not in fmap:
                             continue
                         pi = fmap[key]
-                        cross_out = (dn == 'Dropdown_7')
+                        cross_out = (dn != keep2)
                         for w in doc[pi].widgets():
                             if w.field_name == key:
                                 try:
@@ -9545,11 +9557,11 @@ def _fill_nd2a_pdf(data, template='ND2A-template.pdf'):
                                 except Exception:
                                     pass
 
-    # ── PI-ND2A 受保護資料頁（P.7）：僅自然人委任時填寫 ──
+    # ── PI-ND2A 受保護資料頁（P.7）：有自然人時填寫，頁面永不刪除 ──
     # P.7 是獨立於主表格的受保護資料頁，公眾紀錄不會顯示。
-    # 只有「自然人委任」才需要完整 HKID + 護照；純停任／法人委任無此頁 → 刪除 P.7。
+    # 取第一個自然人（委任或停任皆可）；純法人表格時 P.7 留空但仍保留（2026-08-13）。
     pi_subject = next((o for o in officers
-                       if o.get('identity') == 'natural' and o.get('type') != 'cessation'), None)
+                       if o.get('identity') == 'natural'), None)
     if pi_subject and fmap.get('fill_1_P.7') is not None:
         p = 7
         # ── 自然人 PI-ND2A：完整 HKID + 護照 ──
@@ -9636,9 +9648,23 @@ def _fill_nd2a_pdf(data, template='ND2A-template.pdf'):
     for pno in range(doc.page_count - 1, 6, -1):
         doc.delete_page(pno)
 
-    # 無自然人委任 → 刪除 P.7（PI 受保護資料頁僅伴隨自然人委任）
-    if not pi_subject:
-        doc.delete_page(6)
+    # 續頁無內容則刪除（降序）：P.6 續頁C=法人委任#2, P.5 續頁B=自然人委任#2, P.4 續頁A=停任#2
+    # PI 受保護資料頁（P.7）永不刪除（2026-08-13）
+    n_cess = sum(1 for o in officers if o.get('type') == 'cessation')
+    n_nat = sum(1 for o in officers if o.get('identity') == 'natural' and o.get('type') != 'cessation')
+    n_corp = sum(1 for o in officers if o.get('identity') == 'corporate' and o.get('type') != 'cessation')
+    if n_corp < 2:
+        doc.delete_page(5)
+    if n_nat < 2:
+        doc.delete_page(4)
+    if n_cess < 2:
+        doc.delete_page(3)
+
+    # P.3 底部續頁計數器（fill_18=續頁A停任, fill_19=續頁B自然人, fill_20=續頁C法人, fill_21=PI頁數）
+    _set('fill_18_P.3', '1' if n_cess >= 2 else '')
+    _set('fill_19_P.3', '1' if n_nat >= 2 else '')
+    _set('fill_20_P.3', '1' if n_corp >= 2 else '')
+    _set('fill_21_P.3', '1')
 
     pdf_bytes = doc.write(deflate=True)
     doc.close()
@@ -9702,6 +9728,8 @@ def _fill_nd2b_pdf(data, template='ND2B-template.pdf'):
                         doc.xref_set_key(w._annot.xref, 'Q', '2')
                     elif align == 'center':
                         doc.xref_set_key(w._annot.xref, 'Q', '1')
+                    elif align == 'left':
+                        doc.xref_set_key(w._annot.xref, 'Q', '0')
                     w.update()
                 except Exception:
                     pass

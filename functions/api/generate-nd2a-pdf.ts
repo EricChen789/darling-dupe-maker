@@ -453,6 +453,7 @@ function fillND2A(pdfDoc: PDFDocument, data: ND2AData) {
         if (officer.role !== 'secretary') {
           check(officer.stillHoldsOffice === 'yes' ? 'cb_6_P.4' : 'cb_7_P.4', true);
         }
+      }
     } else {
       // ── 法人團體 (Body Corporate)：P.3 第4項（首名）/ P.6 續頁C（第2名）──
       // ── P.3/P.5 法人團體 ──
@@ -571,7 +572,6 @@ function fillND2A(pdfDoc: PDFDocument, data: ND2AData) {
         }
       }
     }  // end P.3/P.6 block
-    }
   }
 
   // ── PI-ND2A 受保護資料頁（P.7）：有自然人時填寫，頁面永不刪除 ──

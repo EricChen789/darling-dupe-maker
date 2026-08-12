@@ -99,7 +99,25 @@ export const ShareCapitalTab = ({ company }: { company: Company }) => {
       const resp = await fetch('/api/generate-share-transfer-rtf', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ companyId: tx.company_id, transactionId: tx.id, documentType: docType }),
+        body: JSON.stringify({
+          companyId: tx.company_id,
+          documentType: docType,
+          from_person_id: tx.from_person_id || '',
+          to_person_id: tx.to_person_id || '',
+          transaction: {
+            from_person_id: tx.from_person_id || '',
+            from_name: tx.from_name,
+            to_person_id: tx.to_person_id || '',
+            to_name: tx.to_name,
+            shares: tx.shares,
+            share_type: tx.share_type,
+            price_per_share: tx.price_per_share,
+            total_consideration: tx.total_consideration,
+            transaction_date: tx.transaction_date,
+            instrument_number: tx.instrument_number,
+            currency: tx.currency,
+          },
+        }),
       });
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({ error: resp.statusText }));

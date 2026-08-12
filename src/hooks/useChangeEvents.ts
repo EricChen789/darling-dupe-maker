@@ -69,4 +69,8 @@ export const EVENT_TYPE_LABELS: Record<string, string> = {
   company_phone_change: '電話變更',
   reserve_director_appoint: '委任候補董事',
   reserve_director_cease: '候補董事辭任',
+  person_address_change: '董事/秘書地址變更',
+  person_name_change: '董事/秘書姓名變更',
+  person_id_change: '董事/秘書證件變更',
+  person_contact_change: '董事/秘書聯絡變更',
 };

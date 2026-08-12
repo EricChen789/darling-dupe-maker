@@ -1265,7 +1265,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                 <TabChangeEventsFooter
                   companyId={company.id}
                   company={company}
-                  eventTypes={['director_appoint', 'director_cease']}
+                  eventTypes={['director_appoint', 'director_cease', 'person_address_change', 'person_name_change', 'person_id_change', 'person_contact_change']}
                   label="董事變更記錄"
                 />
               </TabsContent>
@@ -1297,7 +1297,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                 <TabChangeEventsFooter
                   companyId={company.id}
                   company={company}
-                  eventTypes={['secretary_appoint', 'secretary_cease']}
+                  eventTypes={['secretary_appoint', 'secretary_cease', 'person_address_change', 'person_name_change', 'person_id_change', 'person_contact_change']}
                   label="秘書變更記錄"
                 />
               </TabsContent>
@@ -1358,7 +1358,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                 <TabChangeEventsFooter
                   companyId={company.id}
                   company={company}
-                  eventTypes={['reserve_director_appoint', 'reserve_director_cease']}
+                  eventTypes={['reserve_director_appoint', 'reserve_director_cease', 'person_address_change', 'person_name_change', 'person_id_change', 'person_contact_change']}
                   label="備選董事變更記錄"
                 />
               </TabsContent>
@@ -1437,7 +1437,7 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                 <TabChangeEventsFooter
                   companyId={company.id}
                   company={company}
-                  eventTypes={['shareholder_add', 'shareholder_remove']}
+                  eventTypes={['shareholder_add', 'shareholder_remove', 'share_transfer', 'share_allotment']}
                   label="股東變更記錄"
                 />
               </TabsContent>

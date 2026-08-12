@@ -21,6 +21,11 @@ const EVENT_TYPE_TO_QF_TYPE: Record<string, string> = {
   shareholder_remove: 'shareholder_remove',
   share_transfer: 'transfer',
   share_allotment: 'allotment',
+  // ND2B person-level changes
+  person_address_change: 'nd2b_change',
+  person_name_change: 'nd2b_change',
+  person_id_change: 'nd2b_change',
+  person_contact_change: 'nd2b_change',
 };
 
 // ── Map event_type to role for QuickFormDialog ──
@@ -62,6 +67,12 @@ function changeEventToQfEvent(ev: ChangeEvent) {
   }
 
   const title = buildEventTitle(ev, raw);
+
+  // For ND2B changes, pass the original event_type so payload builder
+  // can determine which change type (address/name/id/contact) to use.
+  if (qfType === 'nd2b_change') {
+    raw._event_type = ev.event_type;
+  }
 
   return {
     type: qfType,

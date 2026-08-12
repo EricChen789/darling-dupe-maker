@@ -306,18 +306,24 @@ export function fmtDate(s: string | null | undefined): string {
 }
 
 // ═══ Name Parsing ═══
-// Consistent strategy: last word is surname (matches local Flask _parse_english_name)
+// HK convention: first word = surname (matches QuickFormDialog + NAR1 local parseEnglishName).
+// Comma-separated: "SMITH, John" → surname = "SMITH".
 export function parseEnglishName(fullName: string): {
   surname: string;
   otherNames: string;
 } {
-  const parts = (fullName || "").trim().split(/\s+/);
-  if (parts.length === 0) return { surname: "", otherNames: "" };
-  if (parts.length === 1) return { surname: parts[0], otherNames: "" };
-  // Last word = surname (matches server.py _parse_english_name)
-  const surname = parts[parts.length - 1];
-  const otherNames = parts.slice(0, -1).join(" ");
-  return { surname, otherNames };
+  if (!fullName) return { surname: "", otherNames: "" };
+  const cleaned = fullName.trim();
+  // Comma-separated: "SMITH, John" or "CHAN, Tai Man"
+  if (cleaned.includes(",")) {
+    const segs = cleaned.split(",").map(s => s.trim()).filter(Boolean);
+    if (segs.length >= 2) return { surname: segs[0], otherNames: segs.slice(1).join(" ") };
+    return { surname: segs[0] || "", otherNames: "" };
+  }
+  // Chinese/HK convention: first word = surname
+  const parts = cleaned.split(/\s+/);
+  if (parts.length <= 1) return { surname: parts[0] || "", otherNames: "" };
+  return { surname: parts[0], otherNames: parts.slice(1).join(" ") };
 }
 
 // ═══ Address Parsing ═══

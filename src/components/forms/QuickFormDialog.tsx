@@ -36,6 +36,7 @@ const FORM_CONFIGS: Record<string, { label: string; endpoint: string; icon: stri
   instrument_of_transfer: { label: '轉讓文書', endpoint: '/api/generate-share-transfer-rtf', icon: '📄' },
   share_certificate: { label: '股票證書', endpoint: '/api/generate-share-transfer-rtf', icon: '🏷️' },
   nsc1: { label: 'NSC1 配發申報書', endpoint: '/api/generate-nsc1-pdf', icon: '📋' },
+  nd2b_change: { label: 'ND2B 更改詳情通知書', endpoint: '/api/generate-nd2b-pdf', icon: '📋' },
 };
 
 function getFormOptions(eventType: string, raw: any): { key: string; config: typeof FORM_CONFIGS[string] }[] {
@@ -57,6 +58,8 @@ function getFormOptions(eventType: string, raw: any): { key: string; config: typ
   } else if (eventType === 'repurchase') {
     opts.push({ key: 'bought_sold_note', config: FORM_CONFIGS.bought_sold_note });
     opts.push({ key: 'share_certificate', config: FORM_CONFIGS.share_certificate });
+  } else if (eventType === 'nd2b_change') {
+    opts.push({ key: 'nd2b_change', config: FORM_CONFIGS.nd2b_change });
   }
 
   // Also allow for personnel roles
@@ -303,7 +306,9 @@ function buildFormPayload(
         ...base,
         companyId: company.id,
         documentType: 'bought_sold_note',
+        from_person_id: raw?.from_person_id || raw?.fromPersonId || '',
         from_name: fromName,
+        to_person_id: raw?.to_person_id || raw?.toPersonId || '',
         to_name: toName,
         shares: raw?.shares || 0,
         price_per_share: raw?.price_per_share || raw?.pricePerShare || '',
@@ -319,7 +324,9 @@ function buildFormPayload(
         ...base,
         companyId: company.id,
         documentType: 'instrument_of_transfer',
+        from_person_id: raw?.from_person_id || raw?.fromPersonId || '',
         from_name: fromName,
+        to_person_id: raw?.to_person_id || raw?.toPersonId || '',
         to_name: toName,
         shares: raw?.shares || 0,
         price_per_share: raw?.price_per_share || raw?.pricePerShare || '',
@@ -395,13 +402,67 @@ function buildFormPayload(
         checkboxes: ['cb_1_P.1'],
       };
     }
+    case 'nd2b_change': {
+      // Determine change type from original event type (stored in raw._event_type)
+      const origEventType: string = raw?._event_type || event.type;
+      const changeTypes: string[] = [];
+      const nd2bPayload: any = {
+        ...base,
+        companyId: company.id,
+        role,
+        identity: raw?.identity || 'natural',
+        nameSurname: surname,
+        nameOtherNames: otherNames,
+        nameEnglish: engFull,
+        nameChinese,
+        idNumber,
+        passportNumber: passportNumber,
+        effectiveDate: today.split('/').reverse().join('-'),
+        signerName: engFull,
+        signDate: today.split('/').reverse().join('-'),
+        presentorName: raw?.presentorName || DEFAULT_PRESENTER.name,
+        presentorAddress: raw?.presentorAddress || DEFAULT_PRESENTER.address,
+        presentorPhone: raw?.presentorPhone || DEFAULT_PRESENTER.phone,
+        presentorFax: raw?.presentorFax || DEFAULT_PRESENTER.fax,
+        presentorEmail: raw?.presentorEmail || DEFAULT_PRESENTER.email,
+        presentorReference: raw?.presentorReference || DEFAULT_PRESENTER.reference,
+      };
+      // Map snake_case change values to ND2B new* fields
+      if (origEventType === 'person_address_change') {
+        changeTypes.push('address');
+        if (raw?.addr_flat) nd2bPayload.newFlat = raw.addr_flat;
+        if (raw?.addr_building) nd2bPayload.newBuilding = raw.addr_building;
+        if (raw?.addr_street) nd2bPayload.newStreet = raw.addr_street;
+        if (raw?.addr_district) nd2bPayload.newDistrict = raw.addr_district;
+        if (raw?.addr_region) nd2bPayload.newRegion = raw.addr_region;
+        if (raw?.address) nd2bPayload.newAddress = raw.address;
+      } else if (origEventType === 'person_name_change') {
+        changeTypes.push('name');
+        const newEng = raw?.name_english || '';
+        const { surname: ns, otherNames: no } = parseEnglishName(newEng);
+        nd2bPayload.newNameSurname = ns;
+        nd2bPayload.newNameOtherNames = no;
+        if (raw?.name_chinese) nd2bPayload.newNameChinese = raw.name_chinese;
+      } else if (origEventType === 'person_id_change') {
+        changeTypes.push('id');
+        if (raw?.id_number) nd2bPayload.newIdNumber = raw.id_number;
+        if (raw?.passport_number) nd2bPayload.passportNumber = raw.passport_number;
+      } else if (origEventType === 'person_contact_change') {
+        changeTypes.push('contact');
+        if (raw?.email) nd2bPayload.newEmail = raw.email;
+      }
+      nd2bPayload.changeTypes = changeTypes;
+      return nd2bPayload;
+    }
     case 'share_certificate': {
       const txDate = raw?.transaction_date || raw?.transactionDate || today;
       return {
         ...base,
         companyId: company.id,
         documentType: 'share_certificate',
+        from_person_id: raw?.from_person_id || raw?.fromPersonId || '',
         from_name: raw?.from_name || raw?.fromName || '',
+        to_person_id: raw?.to_person_id || raw?.toPersonId || '',
         to_name: raw?.to_name || raw?.toName || '',
         shares: raw?.shares || 0,
         share_type: raw?.share_type || raw?.shareType || 'Ordinary',

@@ -186,16 +186,19 @@ export async function onRequest(context: { request: Request; env: Env }) {
       } catch { /* non-critical */ }
     }
 
-    // ── Fetch persons for address data ──
+    // ── Fetch persons for address + HKID data ──
+    // Support both: top-level from_person_id/to_person_id (QuickFormDialog) AND transaction object
     let sellerPerson: any = null;
     let buyerPerson: any = null;
-    if (transaction?.from_person_id) {
+    const sellerId = body.from_person_id || transaction?.from_person_id;
+    const buyerId = body.to_person_id || transaction?.to_person_id;
+    if (sellerId) {
       sellerPerson = await env.DB.prepare("SELECT * FROM persons WHERE id = ?")
-        .bind(transaction.from_person_id).first();
+        .bind(sellerId).first();
     }
-    if (transaction?.to_person_id) {
+    if (buyerId) {
       buyerPerson = await env.DB.prepare("SELECT * FROM persons WHERE id = ?")
-        .bind(transaction.to_person_id).first();
+        .bind(buyerId).first();
     }
 
     // ── Read RTF template from R2 ──
@@ -237,12 +240,14 @@ export async function onRequest(context: { request: Request; env: Env }) {
     const sellerLines = splitAddressLines(sellerAddr, 2);
     vars["{{SELLER_ADDR_L1}}"] = sellerLines[0] || "";
     vars["{{SELLER_ADDR_L2}}"] = sellerLines[1] || "";
+    vars["{{SELLER_HKID}}"] = sellerPerson?.id_number || sellerPerson?.passport_number || "";
 
     // Buyer address
     const buyerAddr = buyerPerson ? buildPersonAddress(buyerPerson) : "";
     const buyerLines = splitAddressLines(buyerAddr, 2);
     vars["{{BUYER_ADDR_L1}}"] = buyerLines[0] || "";
     vars["{{BUYER_ADDR_L2}}"] = buyerLines[1] || "";
+    vars["{{BUYER_HKID}}"] = buyerPerson?.id_number || buyerPerson?.passport_number || "";
 
     // Share Certificate specific
     vars["{{COMPANY_NUMBER}}"] = (company as any).company_number || "";

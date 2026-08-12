@@ -738,11 +738,28 @@ export function useAddOfficer() {
       else if (role === 'secretary') eventType = 'secretary_appoint';
       else if (role === 'reserve_director') eventType = 'reserve_director_appoint';
       if (eventType) {
+        // Build full person data for QuickFormDialog form generation
+        const personData: Record<string, any> = {
+          name_english: variables.name_english,
+          name_chinese: variables.name_chinese || '',
+          date_appointed: variables.date_appointed || '',
+          identity: variables.identity || 'natural',
+          role: variables.role,
+        };
+        if (variables.id_number) personData.id_number = variables.id_number;
+        if ((variables as any).passport_number) personData.passport_number = (variables as any).passport_number;
+        if (variables.email) personData.email = variables.email;
+        if (variables.addr_flat) personData.addr_flat = variables.addr_flat;
+        if (variables.addr_building) personData.addr_building = variables.addr_building;
+        if (variables.addr_street) personData.addr_street = variables.addr_street;
+        if (variables.addr_district) personData.addr_district = variables.addr_district;
+        if (variables.addr_region) personData.addr_region = variables.addr_region;
+        if (variables.address) personData.address = variables.address;
         recordChangeEvent({
           company_id: variables.company_id,
           event_type: eventType,
           role: variables.role,
-          new_value: { name_english: variables.name_english, name_chinese: variables.name_chinese, date_appointed: variables.date_appointed },
+          new_value: personData,
           related_form_type: EVENT_FORM_MAP[eventType] || '',
         });
       }
@@ -761,6 +778,30 @@ export function useUpdateOfficer() {
       const personId = roleRow.person_id;
       const companyId = roleRow.company_id;
       const officerRole = roleRow.role;
+
+      // Fetch current person data BEFORE update — needed for cessation old_value
+      let personData: Record<string, any> = {};
+      try {
+        const { data: personRow } = await supabase
+          .from('persons').select('*').eq('id', personId).single();
+        if (personRow) {
+          personData = {
+            name_english: personRow.name_english || '',
+            name_chinese: personRow.name_chinese || '',
+            identity: personRow.identity || 'natural',
+            id_number: personRow.id_number || '',
+            passport_number: personRow.passport_number || '',
+            passport_country: personRow.passport_country || '',
+            email: personRow.email || '',
+            address: personRow.address || '',
+            addr_flat: personRow.addr_flat || '',
+            addr_building: personRow.addr_building || '',
+            addr_street: personRow.addr_street || '',
+            addr_district: personRow.addr_district || '',
+            addr_region: personRow.addr_region || '',
+          };
+        }
+      } catch { /* non-critical, don't block update */ }
 
       // Update central person
       const personUpdate: Record<string, any> = {};
@@ -801,9 +842,9 @@ export function useUpdateOfficer() {
         if (error) throw error;
       }
 
-      return { personId, companyId, officerRole, hasDateCeased: !!data.date_ceased };
+      return { personId, companyId, officerRole, hasDateCeased: !!data.date_ceased, updatedFields: data, personData };
     },
-    onSuccess: (result) => {
+    onSuccess: (result, variables) => {
       queryClient.refetchQueries({ queryKey: ['companies'] });
       queryClient.invalidateQueries({ queryKey: ['persons-list'] });
       // If date_ceased is being set, record a cessation event
@@ -819,9 +860,70 @@ export function useUpdateOfficer() {
             event_type: eventType,
             person_id: result.personId,
             role: result.officerRole,
+            old_value: result.personData,
             related_form_type: EVENT_FORM_MAP[eventType] || '',
           });
         }
+      }
+      // Record person-level detail changes (address/name/ID/contact) for ND2B
+      const d = result.updatedFields || {};
+      const hasAddressChange = d.addr_flat !== undefined || d.addr_building !== undefined ||
+        d.addr_street !== undefined || d.addr_district !== undefined || d.addr_region !== undefined || d.address !== undefined;
+      const hasNameChange = d.name_english !== undefined || d.name_chinese !== undefined;
+      const hasIdChange = d.id_number !== undefined || d.passport_number !== undefined;
+      const hasContactChange = d.email !== undefined;
+      if (hasAddressChange) {
+        const addrValue: Record<string, any> = {};
+        if (d.addr_flat !== undefined) addrValue.addr_flat = d.addr_flat;
+        if (d.addr_building !== undefined) addrValue.addr_building = d.addr_building;
+        if (d.addr_street !== undefined) addrValue.addr_street = d.addr_street;
+        if (d.addr_district !== undefined) addrValue.addr_district = d.addr_district;
+        if (d.addr_region !== undefined) addrValue.addr_region = d.addr_region;
+        if (d.address !== undefined) addrValue.address = d.address;
+        recordChangeEvent({
+          company_id: result.companyId,
+          person_id: result.personId,
+          event_type: 'person_address_change',
+          role: result.officerRole,
+          new_value: addrValue,
+          related_form_type: 'ND2B',
+        });
+      }
+      if (hasNameChange) {
+        const nameValue: Record<string, any> = {};
+        if (d.name_english !== undefined) nameValue.name_english = d.name_english;
+        if (d.name_chinese !== undefined) nameValue.name_chinese = d.name_chinese;
+        recordChangeEvent({
+          company_id: result.companyId,
+          person_id: result.personId,
+          event_type: 'person_name_change',
+          role: result.officerRole,
+          new_value: nameValue,
+          related_form_type: 'ND2B',
+        });
+      }
+      if (hasIdChange) {
+        const idValue: Record<string, any> = {};
+        if (d.id_number !== undefined) idValue.id_number = d.id_number;
+        if (d.passport_number !== undefined) idValue.passport_number = d.passport_number;
+        recordChangeEvent({
+          company_id: result.companyId,
+          person_id: result.personId,
+          event_type: 'person_id_change',
+          role: result.officerRole,
+          new_value: idValue,
+          related_form_type: 'ND2B',
+        });
+      }
+      if (hasContactChange) {
+        recordChangeEvent({
+          company_id: result.companyId,
+          person_id: result.personId,
+          event_type: 'person_contact_change',
+          role: result.officerRole,
+          new_value: { email: d.email },
+          related_form_type: 'ND2B',
+        });
       }
     },
   });
@@ -836,10 +938,34 @@ export function useDeleteOfficer() {
         .from('person_company_roles').select('person_id, company_id, role').eq('id', id).single();
       if (fetchErr) throw fetchErr;
 
+      // Fetch full person data BEFORE deletion — needed for ND4 old_value
+      let personData: Record<string, any> = {};
+      try {
+        const { data: personRow } = await supabase
+          .from('persons').select('*').eq('id', roleRow.person_id).single();
+        if (personRow) {
+          personData = {
+            name_english: personRow.name_english || '',
+            name_chinese: personRow.name_chinese || '',
+            identity: personRow.identity || 'natural',
+            id_number: personRow.id_number || '',
+            passport_number: personRow.passport_number || '',
+            passport_country: personRow.passport_country || '',
+            email: personRow.email || '',
+            address: personRow.address || '',
+            addr_flat: personRow.addr_flat || '',
+            addr_building: personRow.addr_building || '',
+            addr_street: personRow.addr_street || '',
+            addr_district: personRow.addr_district || '',
+            addr_region: personRow.addr_region || '',
+          };
+        }
+      } catch { /* old_value is non-critical, don't block deletion */ }
+
       const { data, error } = await supabase.from('person_company_roles').delete().eq('id', id);
       if (error) throw error;
 
-      return { person_id: roleRow.person_id, company_id: roleRow.company_id, role: roleRow.role };
+      return { person_id: roleRow.person_id, company_id: roleRow.company_id, role: roleRow.role, personData };
     },
     onSuccess: (result) => {
       queryClient.refetchQueries({ queryKey: ['companies'] });
@@ -856,6 +982,7 @@ export function useDeleteOfficer() {
           event_type: eventType,
           person_id: result.person_id,
           role: result.role,
+          old_value: result.personData,
           related_form_type: EVENT_FORM_MAP[eventType] || '',
         });
       }

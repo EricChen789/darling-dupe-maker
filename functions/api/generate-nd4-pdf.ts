@@ -12,7 +12,7 @@ import {
   corsHeaders, jsonResp, uint8ToBase64, rget,
   fetchAndEmbedFont, DEFAULT_PRESENTER,
 } from './_pdf-utils';
-import { enableNeedAppearances } from './_acroform';
+import { createFormHelpers, enableNeedAppearances, rebuildAcroFormFields } from './_acroform';
 import { verifyAuthRequest, type Env } from './_auth';
 
 const TEMPLATE = "ND4-template.pdf";
@@ -35,28 +35,28 @@ export async function onRequest(context: { request: Request; env: Env }) {
     const templateBytes = new Uint8Array(await templateObj.arrayBuffer());
     const pdfDoc = await PDFDocument.load(templateBytes);
     const { cjk } = await fetchAndEmbedFont(pdfDoc, env as any);
-    const helv = (await pdfDoc.embedFont(StandardFonts.Helvetica));
-    const form = pdfDoc.getForm();
+    const helv = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    enableNeedAppearances(pdfDoc);
+    const { setText: _cjkSetText, check: _cjkCheck } = createFormHelpers(pdfDoc);
+    const form = pdfDoc.getForm();  // kept for dropdown operations
+
+    // CJK-aware set text field using createFormHelpers
+    // Falls back to raw widget manipulation for fields not in the helpers map
+    const setF = (name: string, value?: string) => {
+      if (value == null || value === "") return;
+      if (_cjkSetText(name, String(value)) === true) return;
+      // Field not found in helpers map — skip silently
+      console.warn(`⚠ ND4: field not found: ${name}`);
+    };
+
+    const checkF = (name: string, shouldCheck?: boolean) => {
+      if (!shouldCheck) return;
+      _cjkCheck(name, true);
+    };
 
     const brNumber = String(rget(data, 'brNumber') || rget(data, 'br_number') || '').replace(/[^0-9A-Za-z]/g, '').slice(0, 8);
     const officerType = rget(data, 'officerType') || rget(data, 'officer_type') || 'director';
     const identity = rget(data, 'identity') || 'natural';
-
-    // Helper: set text field
-    const setF = (name: string, value?: string) => {
-      if (value == null || value === "") return;
-      try {
-        const tf = form.getTextField(name);
-        tf.setText(String(value));
-        // Skip updateAppearances — saves CPU, reader rebuilds via NeedAppearances
-      } catch { /* skip */ }
-    };
-
-    // Helper: check checkbox
-    const checkF = (name: string, shouldCheck?: boolean) => {
-      if (!shouldCheck) return;
-      try { form.getCheckBox(name).check(); } catch { /* skip */ }
-    };
 
     // ═══ P.1: Company Info ═══
     setF('fill_1_P.1', brNumber);
@@ -101,6 +101,7 @@ export async function onRequest(context: { request: Request; env: Env }) {
       setF('fill_6_P.1', rget(data, 'otherNames'));
       setF('fill_7_P.1', rget(data, 'hkidPartial'));
       setF('fill_8_P.1', rget(data, 'passportCountry'));
+      setF('fill_8b_P.1', rget(data, 'passportPartial'));
     } else {
       // Corporate body fields
       setF('fill_9_P.1', rget(data, 'corporateName') || rget(data, 'officerNameEnglish'));
@@ -235,9 +236,10 @@ export async function onRequest(context: { request: Request; env: Env }) {
       pdfDoc.removePage(i);
     }
 
-    // Skip flatten — saves CPU; NeedAppearances lets PDF reader rebuild appearances
-    enableNeedAppearances(pdfDoc);
-    const pdfBytes = new Uint8Array(await pdfDoc.save());
+    // Rebuild AcroForm /Fields array with detached widget refs
+    rebuildAcroFormFields(pdfDoc);
+
+    const pdfBytes = new Uint8Array(await pdfDoc.save({ updateFieldAppearances: false }));
     const filename = `ND4_${brNumber || 'form'}.pdf`;
 
     return jsonResp({ pdf: uint8ToBase64(pdfBytes), filename });

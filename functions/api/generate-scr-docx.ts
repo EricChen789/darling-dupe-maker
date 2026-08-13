@@ -313,6 +313,32 @@ function buildScrRepRows(docXml: string, reps: ScrRep[]): string {
   return docXml;
 }
 
+// ── 第2页移除 ──
+// 模板第2页 = 硬分页段 + Table[3](SCR续页) + Table[4](Additional Matters 2)
+//             + "Designated Representative"标题段 + Table[5](Rep 2)。
+// 无溢出内容（重要控制人≤2 全部在第1页；指定代表≤1 在第1页）时整页删除。
+// 第1页自己的 "Designated Representative" 标题在 Table[2] 之前，不受影响。
+
+function removeScrPage2(docXml: string): string {
+  const pbIdx = docXml.indexOf('<w:br w:type="page"/>');
+  if (pbIdx < 0) return docXml;  // 没有硬分页 → 不需要处理
+  const pStart = Math.max(docXml.lastIndexOf('<w:p ', pbIdx), docXml.lastIndexOf('<w:p>', pbIdx));
+  const pEnd = docXml.indexOf('</w:p>', pbIdx);
+  if (pStart < 0 || pEnd < 0) return docXml;
+  const pbEnd = pEnd + '</w:p>'.length;
+
+  // 从分页段之后连续删除 3 个表格（含表格间空白段/标题段）
+  let cutEnd = pbEnd;
+  for (let i = 0; i < 3; i++) {
+    const tblStart = docXml.indexOf('<w:tbl>', cutEnd);
+    if (tblStart < 0) return docXml;
+    const tblEnd = docXml.indexOf('</w:tbl>', tblStart);
+    if (tblEnd < 0) return docXml;
+    cutEnd = tblEnd + '</w:tbl>'.length;
+  }
+  return docXml.slice(0, pStart) + docXml.slice(cutEnd);
+}
+
 // ══════════════════════════════════════════════════════════════
 // Main handler
 // ══════════════════════════════════════════════════════════════
@@ -456,6 +482,11 @@ export async function onRequest(context: { request: Request; env: Env }) {
 
     // Replace designated rep rows (Table[2] Row 1 = 1st rep; Table[5] = 2nd+)
     docXml = buildScrRepRows(docXml, reps);
+
+    // 无溢出内容时删除第2页（重要控制人≤2 全部在第1页；指定代表≤1 在第1页）
+    if (controllers.length <= 2 && reps.length <= 1) {
+      docXml = removeScrPage2(docXml);
+    }
 
     entries["word/document.xml"] = btoa(docXml);
 

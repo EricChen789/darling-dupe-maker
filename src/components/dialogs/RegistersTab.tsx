@@ -405,7 +405,7 @@ export function RegistersTab({ company }: { company: Company }) {
         <h3 className="font-semibold text-sm mb-3 flex items-center gap-2">
           <FileText className="h-4 w-4 text-primary" /> 匯出法定登記冊
         </h3>
-        <div className="grid grid-cols-2 gap-2 mb-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 mb-2">
           <Button variant="outline" size="sm"
             onClick={() => handleDownload('generate-directors-register-pdf', 'DirectorsRegister')}
             disabled={downloading !== null}>
@@ -421,6 +421,14 @@ export function RegistersTab({ company }: { company: Company }) {
               ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
               : <Download className="h-3.5 w-3.5 mr-1" />}
             股東登記冊 (PDF)
+          </Button>
+          <Button variant="outline" size="sm"
+            onClick={() => handleDownload('generate-scr-pdf', 'SCR')}
+            disabled={downloading !== null}>
+            {downloading === 'generate-scr-pdf'
+              ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+              : <Shield className="h-3.5 w-3.5 mr-1" />}
+            重要控制人 SCR (PDF)
           </Button>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">

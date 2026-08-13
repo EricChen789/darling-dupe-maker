@@ -34,8 +34,10 @@ export function jsonResp(data: unknown, status = 200): Response {
 
 // ═══ Base64 ═══
 export function uint8ToBase64(bytes: Uint8Array): string {
+  // Buffer latin1 转换是原生 C++ 路径，比 JS 循环 String.fromCharCode 快 20-30ms CPU（大文件 503 关键）
+  if (typeof Buffer !== "undefined") return btoa(Buffer.from(bytes).toString("latin1"));
   let binary = "";
-  const chunkSize = 0x8000;
+  const chunkSize = 0x1000;
   for (let i = 0; i < bytes.length; i += chunkSize) {
     binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
   }

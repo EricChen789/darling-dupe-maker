@@ -1,11 +1,12 @@
 // POST /api/generate-shareholders-register-pdf
-// Register of Members (ROM) — uses Paul Tang RTF template as background PDF
-// Overlays real data on top via pdf-lib (same pattern as SCR)
-import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+// Register of Members (ROM) — Paul Tang「Lung Shun - ROM」模板（2026-08-13 重写）
+// R2 背景模板 = Lung Shun ROM 样本第 1 页（黑色表格、15 列交易表、每股东 5 行交易）
+// 叠加真实数据（白块覆盖样本值 + 重绘）→ 与 Paul Tang 样本排版一致
+import { PDFDocument, rgb } from "pdf-lib";
 import { verifyAuthRequest, type Env as AuthEnv } from './_auth';
 import {
   uint8ToBase64, fetchAndEmbedFont, rget,
-  segmentText, drawMixed, drawMixedRight, widthOfText,
+  drawMixed, widthOfText,
 } from './_pdf-utils';
 
 type Env = AuthEnv & {
@@ -21,97 +22,123 @@ const corsHeaders = {
 // Landscape A4
 const PW = 842, PH = 595;
 
-const BLUE = rgb(0, 51 / 255, 153 / 255);
-const WHITE = rgb(1, 1, 1);
 const BLACK = rgb(0, 0, 0);
+const WHITE = rgb(1, 1, 1);
 
-// ── Marker positions (from PyMuPDF analysis of RTF→PDF, origin top-left) ──
-// pdf-lib uses bottom-left origin, so: pdfY = PH - pymupdf_y1
-// Font sizes matching RTF template
-const FS = { header: 12, title: 13, label: 9, body: 9, table: 7 };
+// ══════════════════════════════════════════════════════════════
+// 几何数据来自 Lung Shun - ROM 样本 PDF（PyMuPDF 提取，pdf-lib 坐标）
+// 表格：15 列；信息块 2 行（FullName / Address）；交易表 5 行
+// 对齐：Date 左对齐；其余列全部居中对齐；字号 9（表头 11）
+// ══════════════════════════════════════════════════════════════
 
-interface Pos {
-  x: number;
-  y: number;   // pdf-lib y (already converted from PyMuPDF)
-  size: number; // font size
-  bold?: boolean;
-  color?: any;
-  align?: "L" | "R" | "C";
-  w?: number;   // available width hint for truncation
-  coverX?: number; // separate x for white cover (when text align differs from marker x)
-  coverW?: number; // override cover width
+const MAX_TX_ROWS = 5;
+
+// ── 页眉（公司名 EN/ZH 两行 + Company Number，黑色）──
+const HEADER = {
+  nameEn: { x: 134.7, y: 511.1, size: 11 },
+  nameZh: { x: 134.7, y: 498.5, size: 11 },
+  br:     { x: 133.9, y: 478.9, size: 11, bold: true },
+  // 白块覆盖样本值（精确 bbox ±1pt，避开下划线 496.9）
+  covers: {
+    en: { x: 133.7, y: 510,   w: 177, h: 14.6 },
+    zh: { x: 133.7, y: 497.4, w: 91,  h: 13.3 },
+    br: { x: 132.9, y: 477.4, w: 55,  h: 14.9 },
+  },
+  // BR 覆盖块压住了下划线 478.9 → 重绘
+  brUnderline: { x0: 134.7, x1: 340, y: 478.9 },
+};
+
+interface Block {
+  name:    { x: number; y: number };
+  occ:     { x: number; y: number };
+  entered: { x: number; y: number };
+  addr:    { x: number; y: number };
+  cease:   { x: number; y: number };
+  covers: {
+    name:    { x: number; y: number; w: number; h: number };
+    occ:     { x: number; y: number; w: number; h: number };
+    entered: { x: number; y: number; w: number; h: number };
+    addr:    { x: number; y: number; w: number; h: number };
+  };
+  rowsTop: number[];     // 5 行交易表每行上边框
+  rowsBottom: number[];
 }
 
-const POSITIONS: Record<string, Pos> = {
-  // ── Company header ──
-  co_name:       { x: 71,  y: 535, size: FS.header, bold: true, color: BLUE },
-  co_br:         { x: 153, y: 518, size: FS.body,   bold: true, color: BLUE },
-  // Title date: marker at x≈203 (left), but date is right-aligned in the RTF
-  report_date:   { x: 800, y: 503, size: FS.title,  bold: true, color: BLUE, align: "R", coverX: 203, coverW: 140 },
+// 每页 2 个股东区块（SH1 上、SH2 下），结构相同
+const BLOCKS: Block[] = [
+  {
+    name: { x: 136.3, y: 460.3 }, occ: { x: 420, y: 459.8 },
+    entered: { x: 738.5, y: 459.8 }, addr: { x: 116.8, y: 447.3 },
+    cease: { x: 712, y: 447.3 },
+    covers: {
+      name:    { x: 135.3, y: 459.5, w: 98,   h: 11.5 },
+      occ:     { x: 419,   y: 459.5, w: 42,   h: 11 },
+      entered: { x: 737.5, y: 459.5, w: 49.5, h: 11 },
+      addr:    { x: 115.8, y: 447.6, w: 402,  h: 10.3 },
+    },
+    rowsTop:    [399.3, 375.0, 350.8, 326.7, 302.4],
+    rowsBottom: [375.0, 350.8, 326.7, 302.4, 278.2],
+  },
+  {
+    name: { x: 136.3, y: 259.9 }, occ: { x: 420, y: 259.4 },
+    entered: { x: 738.5, y: 259.4 }, addr: { x: 116.8, y: 245.2 },
+    cease: { x: 712, y: 245.2 },
+    covers: {
+      name:    { x: 135.3, y: 258.9, w: 98,   h: 11.5 },
+      occ:     { x: 419,   y: 258.9, w: 42,   h: 11 },
+      entered: { x: 737.5, y: 258.9, w: 49.5, h: 11 },
+      addr:    { x: 115.8, y: 245.6, w: 402,  h: 10.3 },
+    },
+    rowsTop:    [195.5, 171.2, 147.0, 122.9, 98.6],
+    rowsBottom: [171.2, 147.0, 122.9, 98.6, 74.4],
+  },
+];
 
-  // ── SH1 info ──
-  sh1_name:      { x: 98,  y: 483, size: FS.label, bold: true, color: BLUE, w: 500 },
-  sh1_addr:      { x: 105, y: 471, size: FS.label, color: BLUE, w: 500 },
-  sh1_security:  { x: 113, y: 455, size: FS.label, bold: true, color: BLUE, w: 500 },
-
-  // ── SH2 info ──
-  sh2_name:      { x: 98,  y: 363, size: FS.label, bold: true, color: BLUE, w: 500 },
-  sh2_addr:      { x: 105, y: 351, size: FS.label, color: BLUE, w: 500 },
-  sh2_security:  { x: 113, y: 335, size: FS.label, bold: true, color: BLUE, w: 500 },
+// 15 列中心 x（Date 列左对齐特殊处理）
+const COLS = {
+  date:    { cx: 38.6,  align: "L" as const },
+  cert:    { cx: 118.1 },
+  from:    { cx: 163.85 },
+  to:      { cx: 206.35 },
+  shares:  { cx: 251.95 },
+  consid:  { cx: 309.3 },
+  deed:    { cx: 369.25 },
+  cert2:   { cx: 420.35 },
+  from2:   { cx: 465.75 },
+  to2:     { cx: 511.7 },
+  shares2: { cx: 560.8 },
+  consid2: { cx: 618.2 },
+  total:   { cx: 679.1 },
+  remarks: { cx: 740.2 },
+  entry:   { cx: 794.65 },
 };
 
-// Transaction table data row y positions (baseline, pdf-lib coords)
-const SH1_DATA_Y = [410, 395];  // row 0, row 1 (distinctive)
-const SH2_DATA_Y = [289, 274, 259];  // row 0, row 1, row 2
-const SH_DATA_Y_OFFSET = 289 - 410;  // offset between SH1 and SH2 data rows
+const ROW_BASE = -18;  // 数据基线 = 行上边框 - 18
 
-// Column x positions (left edge of each column cell, from rom-positions.json _table.columns)
-const TX_COL_X = {
-  date: 35,
-  type: 95,
-  units: 212,
-  par: 270,
-  paidup: 329,
-  cert: 392,
-  balance: 775,
-  transfer: 563,
-  distinct: 440,
-};
+// ── 小工具 ──
 
-// ── Helpers (shared helpers from _pdf-utils) ──
+function fmtDate(v: string): string {
+  if (!v) return '';
+  const m = String(v).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return `${m[3]}/${m[2]}/${m[1]}`;
+  return String(v).slice(0, 10);
+}
 
-// Draw white rectangle to cover marker, then overlay real text
-function drawOverlay(page: any, pos: Pos, text: string, fo: { cjk: any; ascii: any }) {
+function fmtMoney(cur: string, amt: number): string {
+  if (!isFinite(amt) || amt <= 0) return '';
+  return `${cur} ${amt.toFixed(2)}`;
+}
+
+function cover(page: any, c: { x: number; y: number; w: number; h: number }) {
+  page.drawRectangle({ x: c.x, y: c.y, width: c.w, height: c.h, color: WHITE });
+}
+
+// 居中画文字（混合中英文字体）
+function drawCenter(page: any, text: string, cx: number, y: number, size: number, fo: { cjk: any; ascii: any }) {
   if (!text) return;
   const str = String(text);
-  // Cover the marker area with white
-  const cx = pos.coverX !== undefined ? pos.coverX : pos.x;
-  const coverW = pos.coverW || pos.w || 500;
-  const coverH = pos.size + 4;
-  page.drawRectangle({
-    x: cx - 2,
-    y: pos.y - pos.size - 2,
-    width: coverW + 4,
-    height: coverH,
-    color: WHITE,
-  });
-  // Draw real text at pos.x
-  if (pos.align === "R") {
-    drawMixedRight(page, str, { x: pos.x, y: pos.y, size: pos.size, cjk: fo.cjk, ascii: fo.ascii, bold: pos.bold, color: pos.color });
-  } else {
-    drawMixed(page, str, { x: pos.x, y: pos.y, size: pos.size, cjk: fo.cjk, ascii: fo.ascii, bold: pos.bold, color: pos.color });
-  }
-}
-
-// Draw text in a table cell
-function drawCell(page: any, text: string, x: number, y: number, size: number, fo: { cjk: any; ascii: any }, align = "L") {
-  if (!text) return;
-  const str = String(text).slice(0, 50);
-  if (align === "R") {
-    drawMixedRight(page, str, { x, y, size, cjk: fo.cjk, ascii: fo.ascii });
-  } else {
-    drawMixed(page, str, { x: x + 1, y, size, cjk: fo.cjk, ascii: fo.ascii });
-  }
+  const w = widthOfText(str, fo.cjk, fo.ascii, size);
+  drawMixed(page, str, { x: cx - w / 2, y, size, cjk: fo.cjk, ascii: fo.ascii, color: BLACK });
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -119,7 +146,6 @@ export async function onRequest(context: { request: Request; env: Env }) {
   const { request, env } = context;
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
-  // Auth
   const { errorResponse } = await verifyAuthRequest(request, env);
   if (errorResponse) return errorResponse;
 
@@ -131,7 +157,6 @@ export async function onRequest(context: { request: Request; env: Env }) {
       });
     }
 
-    // ── Fetch data + template in parallel ──
     const [company, rolesResult, txResult, templateObj] = await Promise.all([
       env.DB.prepare("SELECT * FROM companies WHERE id = ?").bind(companyId).first(),
       env.DB.prepare("SELECT * FROM person_company_roles WHERE company_id = ? AND role = 'shareholder'")
@@ -147,7 +172,6 @@ export async function onRequest(context: { request: Request; env: Env }) {
     const roles = (rolesResult.results || []) as any[];
     const transactions = (txResult.results || []) as any[];
 
-    // Map persons
     const personIds = roles.map((r: any) => r.person_id).filter(Boolean);
     const personMap = new Map<string, any>();
     if (personIds.length > 0) {
@@ -158,7 +182,6 @@ export async function onRequest(context: { request: Request; env: Env }) {
       (result.results || []).forEach((p: any) => personMap.set(p.id, p));
     }
 
-    // Map transactions by person name
     const txByName = new Map<string, any[]>();
     for (const t of transactions) {
       const key = (rget(t, 'from_name') || rget(t, 'to_name') || "").trim().toUpperCase();
@@ -168,217 +191,184 @@ export async function onRequest(context: { request: Request; env: Env }) {
       }
     }
 
-    // Fonts — use R2-first shared helper (avoids CDN fetch CPU timeout)
     const templateBytes = new Uint8Array(await templateObj.arrayBuffer());
-
     const pdf = await PDFDocument.create();
     const { cjk: cjkFont, ascii: asciiFont } = await fetchAndEmbedFont(pdf, env as any);
     const fo = { cjk: cjkFont, ascii: asciiFont };
 
-    // Load template PDF
     const templateDoc = await PDFDocument.load(templateBytes);
-    const [templatePage] = await pdf.embedPages(templateDoc.getPages().map(p => p));
+    // 只用第 1 页（模板第 2 页为空白页）
+    const [templatePage] = await pdf.embedPages([templateDoc.getPage(0)]);
 
-    // ── Company data ──
-    const coName = rget(company, 'name') || '';
-    const br = rget(company, 'company_number') || '';
-    const months = ['JANUARY','FEBRUARY','MARCH','APRIL','MAY','JUNE',
-      'JULY','AUGUST','SEPTEMBER','OCTOBER','NOVEMBER','DECEMBER'];
-    const today = new Date();
-    const reportDate = `${today.getDate()} ${months[today.getMonth()]} ${today.getFullYear()}`;
+    const coNameEn = (rget(company, 'name') || '').slice(0, 40);
+    const coNameZh = (rget(company, 'name_chinese') || '').slice(0, 18);
+    const br = (rget(company, 'company_number') || '').slice(0, 15);
 
-    // ── Build shareholder data ──
+    // ── 股东数据（样本格式：Full Name "EN ZH" / Occupation / Date Entered / Address / Date Ceasing）──
+    interface TxRow {
+      side: 'acquired' | 'transferred';
+      date: string; cert: string; shares: string;
+      money: string; deed: string;
+      total: number; remarks: string;
+    }
     interface ShData {
-      nameEn: string; nameZh: string; idStr: string; fullName: string;
-      addr: string; shareClass: string;
+      fullName: string; occ: string; addr: string;
       dateApp: string; dateCea: string;
-      sharesHeld: number; certNo: string;
-      currency: string; issuePrice: string;
-      personNameKey: string; txs: any[];
+      rows: TxRow[];
     }
     const shareholders: ShData[] = [];
     for (const r of roles) {
       const p = personMap.get(r.person_id) || {};
-      const nameEn = (rget(p, 'name_english') || rget(p, 'name_chinese') || '(unnamed)').slice(0, 80);
-      const nameZh = (rget(p, 'name_chinese') || '').slice(0, 40);
-      const idType = rget(p, 'id_type') || 'HKID';
-      const idNo = rget(p, 'id_number') || '';
-      const idStr = idNo ? `(${idType} No: ${idNo})` : '';
-      const fullName = [nameEn, nameZh, idStr].filter(Boolean).join(' ').trim();
+      const nameEn = (rget(p, 'name_english') || '(unnamed)').slice(0, 30);
+      const nameZh = (rget(p, 'name_chinese') || '').slice(0, 12);
+      const fullName = [nameEn, nameZh].filter(Boolean).join(' ').slice(0, 45);
 
       let addr = [
         rget(p, 'addr_flat'), rget(p, 'addr_building'),
         rget(p, 'addr_street'), rget(p, 'addr_district'),
       ].filter(Boolean).join(', ');
       const region = rget(p, 'addr_region') || '';
-      if (!addr) addr = (rget(p, 'address') || '').slice(0, 100);
+      if (!addr) addr = rget(p, 'address') || '';
       if (region && !addr.includes(region)) addr = addr ? `${addr}, ${region}` : region;
       addr = addr.slice(0, 100);
 
+      const occ = (rget(p, 'occupation') || '').slice(0, 30);
+      const dateApp = fmtDate(rget(r, 'date_appointed'));
+      const dateCea = fmtDate(rget(r, 'date_ceased'));
+      const shares0 = Number(rget(r, 'shares') || 0);
+      const certNo = (rget(r, 'certificate_number') || '-').slice(0, 20);
       const currency = rget(r, 'currency') || 'HKD';
-      const issuePrice = rget(r, 'issue_price') || '1.00';
-      const shareClass = `ORD - ${currency}$${issuePrice} ORDINARY FULLY PAID (${currency})`;
+      const issuePrice = Number(rget(r, 'issue_price') || 0);
       const personNameKey = nameEn.trim().toUpperCase();
 
-      shareholders.push({
-        nameEn, nameZh, idStr, fullName,
-        addr, shareClass,
-        dateApp: rget(r, 'date_appointed') || '-',
-        dateCea: rget(r, 'date_ceased') || '',
-        sharesHeld: Number(rget(r, 'shares') || 0),
-        certNo: rget(r, 'certificate_number') || '-',
-        currency, issuePrice,
-        personNameKey,
-        txs: txByName.get(personNameKey) || [],
+      // ── 交易行（样本语义）──
+      // 行0 = 初始 Subscription（date=入册日、cert/from/to=证书号、shares、HKD 代价、total、Remarks=Subscription）
+      // 后续 = 交易：Allotment/Transfer In → 购入半边；Transfer Out → 转让半边
+      // Total Shares Held = 累计结余（居中）；Entry Made By 留空
+      const rows: TxRow[] = [];
+      let balance = shares0;
+      if (shares0 > 0) {
+        rows.push({
+          side: 'acquired',
+          date: dateApp, cert: certNo, shares: String(shares0),
+          money: issuePrice > 0 ? fmtMoney(currency, shares0 * issuePrice) : '',
+          deed: '',
+          total: balance, remarks: 'Subscription',
+        });
+      }
+      for (const tx of (txByName.get(personNameKey) || [])) {
+        if (rows.length >= MAX_TX_ROWS) break;
+        const txShares = Number(rget(tx, 'shares') || 0);
+        if (!txShares) continue;
+        const cur = rget(tx, 'currency') || currency;
+        const totalConsid = Number(rget(tx, 'total_consideration') || 0);
+        const priceEach = Number(rget(tx, 'price_per_share') || 0);
+        const money = totalConsid > 0 ? fmtMoney(cur, totalConsid)
+          : priceEach > 0 ? fmtMoney(cur, txShares * priceEach) : '';
+        const date = fmtDate(rget(tx, 'transaction_date'));
+        const deed = (rget(tx, 'instrument_number') || '').slice(0, 20);
+
+        const isAllot = (rget(tx, 'transaction_type') || '').toLowerCase().includes('allot');
+        const isIn = !isAllot && (rget(tx, 'to_name') || '').trim().toUpperCase() === personNameKey;
+        const isOut = !isAllot && (rget(tx, 'from_name') || '').trim().toUpperCase() === personNameKey;
+        if (isOut) {
+          balance -= txShares;
+          rows.push({
+            side: 'transferred', date, cert: certNo, shares: String(txShares),
+            money, deed,
+            total: balance, remarks: 'Transfer Out',
+          });
+        } else {
+          balance += txShares;
+          rows.push({
+            side: 'acquired', date, cert: certNo, shares: String(txShares),
+            money, deed: '',
+            total: balance, remarks: isAllot ? 'Allotment' : 'Transfer In',
+          });
+        }
+      }
+
+      shareholders.push({ fullName, occ, addr, dateApp, dateCea, rows });
+    }
+
+    // ── 渲染 ──
+    const drawHeader = (page: any) => {
+      for (const k of ['en', 'zh', 'br'] as const) cover(page, HEADER.covers[k]);
+      drawMixed(page, coNameEn, { x: HEADER.nameEn.x, y: HEADER.nameEn.y, size: HEADER.nameEn.size, cjk: fo.cjk, ascii: fo.ascii, color: BLACK });
+      if (coNameZh) drawMixed(page, coNameZh, { x: HEADER.nameZh.x, y: HEADER.nameZh.y, size: HEADER.nameZh.size, cjk: fo.cjk, ascii: fo.ascii, color: BLACK });
+      if (br) drawMixed(page, br, { x: HEADER.br.x, y: HEADER.br.y, size: HEADER.br.size, cjk: fo.cjk, ascii: fo.ascii, bold: true, color: BLACK });
+      // BR 下划线被覆盖块压住 → 重绘
+      page.drawLine({
+        start: { x: HEADER.brUnderline.x0, y: HEADER.brUnderline.y },
+        end: { x: HEADER.brUnderline.x1, y: HEADER.brUnderline.y },
+        thickness: 0.5, color: BLACK,
       });
-    }
+    };
 
-    // ── Render page ──
+    // 覆盖一个股东区块的全部样本值（信息块 + 5 行交易带，边框线保留）
+    const coverBlock = (page: any, b: Block) => {
+      for (const k of ['name', 'occ', 'entered', 'addr'] as const) cover(page, b.covers[k]);
+      for (let i = 0; i < MAX_TX_ROWS; i++) {
+        const top = b.rowsTop[i], bottom = b.rowsBottom[i];
+        page.drawRectangle({
+          x: 29, y: bottom + 1.2, width: 816 - 29, height: (top - bottom) - 2.4, color: WHITE,
+        });
+      }
+    };
+
+    const drawShareholder = (page: any, sh: ShData, b: Block) => {
+      drawMixed(page, sh.fullName, { x: b.name.x, y: b.name.y, size: 9, cjk: fo.cjk, ascii: fo.ascii, color: BLACK });
+      if (sh.occ) drawMixed(page, sh.occ, { x: b.occ.x, y: b.occ.y, size: 9, cjk: fo.cjk, ascii: fo.ascii, color: BLACK });
+      if (sh.dateApp) drawMixed(page, sh.dateApp, { x: b.entered.x, y: b.entered.y, size: 9, cjk: fo.cjk, ascii: fo.ascii, color: BLACK });
+      if (sh.addr) drawMixed(page, sh.addr, { x: b.addr.x, y: b.addr.y, size: 9, cjk: fo.cjk, ascii: fo.ascii, color: BLACK });
+      if (sh.dateCea) drawMixed(page, sh.dateCea, { x: b.cease.x, y: b.cease.y, size: 9, cjk: fo.cjk, ascii: fo.ascii, color: BLACK });
+
+      sh.rows.forEach((row, i) => {
+        if (i >= MAX_TX_ROWS) return;
+        const y = b.rowsTop[i] + ROW_BASE;
+        if (row.side === 'acquired') {
+          drawMixed(page, row.date, { x: COLS.date.cx, y, size: 9, cjk: fo.cjk, ascii: fo.ascii, color: BLACK });
+          drawCenter(page, row.cert, COLS.cert.cx, y, 9, fo);
+          drawCenter(page, row.cert, COLS.from.cx, y, 9, fo);
+          drawCenter(page, row.cert, COLS.to.cx, y, 9, fo);
+          drawCenter(page, row.shares, COLS.shares.cx, y, 9, fo);
+          drawCenter(page, row.money, COLS.consid.cx, y, 9, fo);
+        } else {
+          drawCenter(page, row.deed, COLS.deed.cx, y, 9, fo);
+          drawCenter(page, row.cert, COLS.cert2.cx, y, 9, fo);
+          drawCenter(page, row.cert, COLS.from2.cx, y, 9, fo);
+          drawCenter(page, row.cert, COLS.to2.cx, y, 9, fo);
+          drawCenter(page, row.shares, COLS.shares2.cx, y, 9, fo);
+          drawCenter(page, row.money, COLS.consid2.cx, y, 9, fo);
+        }
+        drawCenter(page, String(row.total), COLS.total.cx, y, 9, fo);
+        drawCenter(page, row.remarks, COLS.remarks.cx, y, 9, fo);
+        // Entry Made By 按样本留空
+      });
+    };
+
     let page = pdf.addPage([PW, PH]);
-    page.drawPage(templatePage);  // background
-    let pageNum = 1;
+    page.drawPage(templatePage);
+    drawHeader(page);
+
     let shIdx = 0;
-    const allPages = [page];  // track all pages for footer numbering
-
-    function newPage() {
-      page = pdf.addPage([PW, PH]);
-      page.drawPage(templatePage);
-      pageNum++;
-      allPages.push(page);
-    }
-
-    // Cover markers & draw company info
-    drawOverlay(page, POSITIONS.co_name, coName, fo);
-    drawOverlay(page, POSITIONS.co_br, br, fo);
-    drawOverlay(page, POSITIONS.report_date, reportDate, fo);
-
-    // ── Render shareholders (up to 2 per page from template) ──
     while (shIdx < shareholders.length) {
       const sh = shareholders[shIdx];
-      const posOnPage = shIdx % 2;  // 0 = SH1 positions, 1 = SH2 positions
-      const prefix = posOnPage === 0 ? "sh1" : "sh2";
-
-      // Cover & draw name/addr/security
-      drawOverlay(page, POSITIONS[`${prefix}_name`], sh.fullName, fo);
-      drawOverlay(page, POSITIONS[`${prefix}_addr`], sh.addr, fo);
-      drawOverlay(page, POSITIONS[`${prefix}_security`], sh.shareClass, fo);
-
-      // Cover transaction data markers + Date/Ceased area with white
-      const dataYs = posOnPage === 0 ? SH1_DATA_Y : SH2_DATA_Y;
-      const coverX0 = 25;
-      const coverX1 = 820;
-      for (const dy of dataYs) {
-        page.drawRectangle({
-          x: coverX0, y: dy - 11, width: coverX1 - coverX0, height: 14, color: WHITE,
-        });
-      }
-
-      // Draw transaction data
-      // Row layout: [0]=Subscription, [1..N-1]=Transaction rows, [N]=Distinctive (LAST)
-      const initBalance = sh.sharesHeld;
-      const lastRowIdx = dataYs.length - 1;  // distinctive goes on last row
-
-      // Row 0: Subscription / initial holding
-      const row0y = dataYs[0];
-      drawCell(page, sh.dateApp, TX_COL_X.date, row0y, FS.table, fo);
-      drawCell(page, initBalance > 0 ? 'Subscription' : '-', TX_COL_X.type, row0y, FS.table, fo);
-      drawCell(page, initBalance > 0 ? String(initBalance) : '-', TX_COL_X.units, row0y, FS.table, fo, "R");
-      drawCell(page, initBalance > 0 ? `${sh.currency}$${sh.issuePrice}` : '-', TX_COL_X.par, row0y, FS.table, fo);
-      drawCell(page, initBalance > 0 ? `${sh.currency}$${sh.issuePrice}` : '-', TX_COL_X.paidup, row0y, FS.table, fo);
-      drawCell(page, String(sh.certNo), TX_COL_X.cert, row0y, FS.table, fo);
-      drawCell(page, String(initBalance), TX_COL_X.balance, row0y, FS.table, fo, "R");
-
-      // Transaction rows (use rows 1 to lastRowIdx-1, leave last row for distinctive)
-      let balance = initBalance;
-      for (let ti = 0; ti < sh.txs.length; ti++) {
-        const txRowIdx = ti + 1;  // row 1, 2, ...
-        if (txRowIdx >= lastRowIdx) break;  // stop before distinctive row
-        const rowY = dataYs[txRowIdx];
-        if (rowY === undefined) break;
-
-        const tx = sh.txs[ti];
-        const txShares = Number(rget(tx, 'shares') || 0);
-        const txDate = rget(tx, 'transaction_date') || '-';
-        const txInst = rget(tx, 'instrument_number') || '-';
-        const txCert = rget(tx, 'certificate_number') || sh.certNo;
-        const txPrice = rget(tx, 'price_per_share') || sh.issuePrice;
-        const txCurrency = rget(tx, 'currency') || sh.currency;
-
-        const isIn = (rget(tx, 'to_name') || '').trim().toUpperCase() === sh.personNameKey;
-        const isOut = (rget(tx, 'from_name') || '').trim().toUpperCase() === sh.personNameKey;
-
-        let txType: string, counterparty: string;
-        if (isIn) { balance += txShares; txType = 'Transfer In'; counterparty = rget(tx, 'from_name') || ''; }
-        else if (isOut) { balance -= txShares; txType = 'Transfer Out'; counterparty = rget(tx, 'to_name') || ''; }
-        else { balance += txShares; txType = 'Allotment'; counterparty = ''; }
-
-        drawCell(page, txDate, TX_COL_X.date, rowY, FS.table, fo);
-        drawCell(page, txType, TX_COL_X.type, rowY, FS.table, fo);
-        drawCell(page, String(txShares), TX_COL_X.units, rowY, FS.table, fo, "R");
-        drawCell(page, `${txCurrency}$${txPrice}`, TX_COL_X.par, rowY, FS.table, fo);
-        drawCell(page, `${txCurrency}$${txPrice}`, TX_COL_X.paidup, rowY, FS.table, fo);
-        drawCell(page, String(txCert), TX_COL_X.cert, rowY, FS.table, fo);
-        drawCell(page, String(balance), TX_COL_X.balance, rowY, FS.table, fo, "R");
-        drawCell(page, counterparty, TX_COL_X.transfer, rowY, FS.table, fo);
-        drawCell(page, txInst, TX_COL_X.distinct, rowY, FS.table, fo);
-      }
-
-      // Distinctive numbers — ALWAYS on the LAST data row
-      if (dataYs.length > 1) {
-        const distY = dataYs[lastRowIdx];
-        page.drawRectangle({
-          x: TX_COL_X.distinct - 5, y: distY - 11, width: 130, height: 14, color: WHITE,
-        });
-        drawCell(page, `(${balance})`, TX_COL_X.distinct, distY, FS.table, fo);
-      }
-
+      const block = BLOCKS[shIdx % 2];
+      coverBlock(page, block);
+      drawShareholder(page, sh, block);
       shIdx++;
-      // If more shareholders and current page is full (2 per page), add new page
+      // 每页 2 个股东，翻页时重贴背景 + 页眉
       if (shIdx < shareholders.length && shIdx % 2 === 0) {
-        newPage();
-        // Redraw company overlay on new page
-        drawOverlay(page, POSITIONS.co_name, coName, fo);
-        drawOverlay(page, POSITIONS.co_br, br, fo);
-        drawOverlay(page, POSITIONS.report_date, reportDate, fo);
+        page = pdf.addPage([PW, PH]);
+        page.drawPage(templatePage);
+        drawHeader(page);
       }
     }
 
-    // ── Cover unused SH2 on last page if odd number of shareholders ──
+    // 奇数股东时覆盖本页未使用的 SH2 区块样本值（保留空白表格结构）
     if (shareholders.length % 2 === 1) {
-      // Cover SH2 name/addr/security markers
-      const sh2CoverW = 500, sh2CoverH = 16;
-      page.drawRectangle({
-        x: 90, y: POSITIONS.sh2_name.y - 14, width: sh2CoverW, height: sh2CoverH, color: WHITE,
-      });
-      page.drawRectangle({
-        x: 90, y: POSITIONS.sh2_addr.y - 14, width: sh2CoverW, height: sh2CoverH, color: WHITE,
-      });
-      page.drawRectangle({
-        x: 90, y: POSITIONS.sh2_security.y - 14, width: sh2CoverW, height: sh2CoverH, color: WHITE,
-      });
-      // Cover SH2 transaction data area
-      for (const dy of SH2_DATA_Y) {
-        page.drawRectangle({
-          x: 25, y: dy - 12, width: 795, height: 15, color: WHITE,
-        });
-      }
-    }
-
-    // ── Footer page numbers ──
-    // Template has "- 1 -" at bottom center (~y=25 in pdf-lib coords).
-    // Cover and redraw for ALL pages.
-    const FOOTER_Y = 23;  // pdf-lib y (baseline)
-    const FOOTER_SIZE = 8;
-    for (let pi = 0; pi < allPages.length; pi++) {
-      const pg = allPages[pi];
-      // Cover template "- 1 -" (centered, ~100pt wide, near bottom)
-      pg.drawRectangle({
-        x: 360, y: FOOTER_Y - FOOTER_SIZE, width: 120, height: FOOTER_SIZE + 4, color: WHITE,
-      });
-      drawMixed(pg, `- ${pi + 1} -`, {
-        x: 400, y: FOOTER_Y, size: FOOTER_SIZE,
-        cjk: fo.cjk, ascii: fo.ascii,
-      });
+      coverBlock(page, BLOCKS[1]);
     }
 
     const bytes = await pdf.save();

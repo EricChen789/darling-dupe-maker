@@ -9488,6 +9488,11 @@ def _fill_nd2a_pdf(data, template='ND2A-template.pdf'):
                     _check(f'cb_3_P.{p}')
                 else:
                     _check(f'cb_2_P.{p}')
+                # 上述董事或候補董事在獲得這次委任時，是否已經是這公司的現任候補董事或董事? cb_5=是, cb_6=否
+                if officer.get('alreadyDirector') == 'yes':
+                    _check(f'cb_5_P.{p}')
+                elif officer.get('alreadyDirector') == 'no':
+                    _check(f'cb_6_P.{p}')
                 # NOTE: cb_4_P.x 在法人頁是「無須領有牌照」選項，不是停任標記——停任已由路由送至 P.1/P.4
 
                 # ── P.3/P.6 法人團體簽署（由前端 簽署人/身份/日期 驅動，2026-08-13）──

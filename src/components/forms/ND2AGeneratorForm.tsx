@@ -415,7 +415,7 @@ export default function ND2AGeneratorForm({ onBack, initialCompanyId }: ND2AGene
                     </div>
                   </div>
                 )}
-                {officer.type === 'appointment' && officer.identity === 'natural' && (
+                {officer.type === 'appointment' && (
                   <div className="col-span-2">
                     <Label>上述董事或候補董事在獲得這次委任時，是否已經是這公司的現任候補董事或董事？</Label>
                     <p className="text-xs text-muted-foreground mb-1">Is this director or alternate director already an existing alternate director or director in this company at the time of this appointment?</p>

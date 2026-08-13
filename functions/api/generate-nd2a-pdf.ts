@@ -147,33 +147,121 @@ function createFormHelpers(pdfDoc: PDFDocument) {
     }
   };
 
+  // 按字段名枚举全部 widget 实例（模板下拉框中/英文两行 = 同名字双实例）
+  const allWidgetsFor = (fieldName: string): Array<{ widget: any; field: any; grandField: any; page: any }> => {
+    const out: Array<{ widget: any; field: any; grandField: any; page: any }> = [];
+    for (const page of pdfDoc.getPages()) {
+      const annots = page.node.lookup(PDFName.of("Annots")) as any;
+      if (!annots || typeof annots.size !== "function") continue;
+      for (let i = 0; i < annots.size(); i++) {
+        try {
+          const widget = pdfDoc.context.lookup(annots.get(i)) as any;
+          if (!widget || typeof widget.get !== "function") continue;
+          if (String(widget.get(PDFName.of("Subtype"))) !== "/Widget") continue;
+          const parentRef = widget.get(PDFName.of("Parent"));
+          const field = parentRef ? (pdfDoc.context.lookup(parentRef) as any) : widget;
+          const parentName = field ? decodePdfText(field.get(PDFName.of("T"))) : "";
+          const widgetName = decodePdfText(widget.get(PDFName.of("T")));
+          let grandField: any = null;
+          let resolvedName = parentName;
+          const grandParentRef = field?.get?.(PDFName.of("Parent"));
+          if (grandParentRef) {
+            try {
+              grandField = pdfDoc.context.lookup(grandParentRef) as any;
+              const gpName = decodePdfText(grandField.get(PDFName.of("T")));
+              if (gpName) resolvedName = gpName;
+            } catch { /* skip */ }
+          }
+          // 全名 = resolvedName + '.' + suffix；suffix = widget 自有 T 或（3 级层级时的）child T
+          // 例：gp='Dropdown_3_P' + child T='3' → 'Dropdown_3_P.3'（widget 无自有 T）
+          const suffix = widgetName && widgetName !== resolvedName ? widgetName
+            : parentName && parentName !== resolvedName ? parentName : "";
+          const fullName = suffix ? `${resolvedName}.${suffix}` : resolvedName;
+          if (resolvedName === fieldName || widgetName === fieldName || fullName === fieldName) {
+            out.push({ widget, field, grandField, page });
+          }
+        } catch { /* skip */ }
+      }
+    }
+    return out;
+  };
+
   const selectDropdown = (fieldName: string, targetValue: string): boolean => {
-    const target = fields.get(fieldName);
-    if (!target) return false;
-    try {
-      detachWidget(target.widget, target.field);
-      const opt = target.field.get(PDFName.of("Opt"));
-      if (opt) {
-        const opts: string[] = Array.isArray(opt)
-          ? opt.map((o: any) => decodePdfText(o))
-          : [];
-        const match = opts.find((o: string) =>
+    // Flask 同款语义：/I 索引 + /V 选项值，写到同名字全部实例（中/英文行）。
+    // 模板层级 widget→child(T=页码,FT/Opt)→grandparent(T=Dropdown_x_P)：
+    // 正确脱离为独立具名字段（复制 FT/Opt/DA/DV + 全名 T + 删 Parent），
+    // 这样 rebuildAcroFormFields 会收录它们 → 阅读器里倒三角可点击、选项可见。
+    // 不删 /AP：Chrome/PDFium 不重新生成外观，删了整条线会消失；划线交叉由 drawLine 静态完成。
+    const targets = allWidgetsFor(fieldName);
+    if (!targets.length) return false;
+    let ok = false;
+    for (const { widget, field, grandField, page } of targets) {
+      try {
+        // 1) 正确脱离：全名 + 继承键
+        const parentName = field && field !== widget ? decodePdfText(field.get(PDFName.of("T"))) : "";
+        const widgetName = decodePdfText(widget.get(PDFName.of("T")));
+        const gpName = grandField ? decodePdfText(grandField.get(PDFName.of("T"))) : "";
+        let fullName = parentName || widgetName;
+        if (gpName) fullName = widgetName ? `${gpName}.${widgetName}` : `${gpName}.${parentName}`;
+        else if (parentName && widgetName) fullName = `${parentName}.${widgetName}`;
+        for (const k of ["FT", "DA", "Ff", "Q", "DV", "Opt", "MaxLen"]) {
+          const key = PDFName.of(k);
+          if (!widget.get(key)) {
+            const v = field && field !== widget ? field.get(key) : undefined;
+            if (v !== undefined && v !== null) widget.set(key, v);
+          }
+        }
+        if (fullName) widget.set(PDFName.of("T"), PDFString.of(fullName));
+        widget.delete(PDFName.of("Parent"));
+        // 2) 读取 Opt（widget 自带或已从 field 复制）
+        let optVals: string[] = [];
+        try {
+          // Opt 常为间接引用（如 /Opt 330 0 R）→ get 返回 PDFRef，需 context.lookup 解引用
+          let opt: any = widget.get(PDFName.of("Opt"));
+          if (opt && typeof opt.size !== "function" && !Array.isArray(opt)) {
+            try { opt = pdfDoc.context.lookup(opt); } catch { opt = null; }
+          }
+          if (opt && typeof opt.size === "function") {
+            for (let i = 0; i < opt.size(); i++) optVals.push(decodePdfText(opt.get(i)));
+          } else if (Array.isArray(opt)) {
+            optVals = opt.map((o: any) => decodePdfText(o));
+          }
+        } catch { /* keep empty */ }
+        // 3) 匹配选项索引：'—' → 划线选项（非空最后项），' ' → 空白保留项
+        let idx = optVals.findIndex((o: string) =>
           targetValue.includes(o) || o.includes(targetValue) || o.toLowerCase() === targetValue.toLowerCase()
         );
-        if (match) {
-          target.widget.set(PDFName.of("V"), PDFString.of(match));
-          target.widget.delete(PDFName.of("AP"));
-          return true;
+        if (idx < 0) idx = targetValue.trim() ? Math.max(0, optVals.length - 1) : 0;
+        // 4) /I + /V（/F=4 模板已有）
+        widget.set(PDFName.of("I"), pdfDoc.context.obj([idx]));
+        if (idx >= 0 && idx < optVals.length) {
+          widget.set(PDFName.of("V"), PDFString.of(optVals[idx]));
+        } else {
+          widget.set(PDFName.of("V"), PDFString.of(targetValue));
         }
+        // 5) 划掉：每个实例画一条贯穿横线（静态页面内容，任何阅读器可见）
+        // 注意：pdf-lib PDFArray 不是真 Array（无 .length、无 [i]），PDFNumber 相加是字符串拼接
+        if (idx > 0 && page) {
+          const rect = widget.lookup(PDFName.of("Rect")) as any;
+          if (rect && typeof rect.size === "function" && rect.size() >= 4) {
+            const x0 = Number(rect.get(0)), y0 = Number(rect.get(1));
+            const x1 = Number(rect.get(2)), y1 = Number(rect.get(3));
+            if ([x0, y0, x1, y1].every((v) => Number.isFinite(v))) {
+              const midY = (y0 + y1) / 2;
+              page.drawLine({
+                start: { x: x0 + 2, y: midY },
+                end: { x: x1 - 2, y: midY },
+                thickness: 1, // 颜色省略 = 默认黑色；传 {r,g,b} 会抛 InvalidColorError
+              });
+            }
+          }
+        }
+        ok = true;
+      } catch (e) {
+        console.warn(`selectDropdown failed for ${fieldName}:`, e);
       }
-      // Fallback: set value directly
-      target.widget.set(PDFName.of("V"), PDFString.of(targetValue));
-      target.widget.delete(PDFName.of("AP"));
-      return true;
-    } catch (e) {
-      console.warn(`selectDropdown failed for ${fieldName}:`, e);
-      return false;
     }
+    return ok;
   };
 
   const getWidgetRect = (fieldName: string): { x0: number; y0: number; x1: number; y1: number } | null => {
@@ -181,8 +269,12 @@ function createFormHelpers(pdfDoc: PDFDocument) {
     if (!target) return null;
     try {
       const rectObj = target.widget.lookup(PDFName.of("Rect")) as any;
-      if (rectObj && rectObj.length >= 4) {
-        return { x0: rectObj[0], y0: rectObj[1], x1: rectObj[2], y1: rectObj[3] };
+      if (rectObj && typeof rectObj.size === "function" && rectObj.size() >= 4) {
+        const x0 = Number(rectObj.get(0)), y0 = Number(rectObj.get(1));
+        const x1 = Number(rectObj.get(2)), y1 = Number(rectObj.get(3));
+        if ([x0, y0, x1, y1].every((v) => Number.isFinite(v))) {
+          return { x0, y0, x1, y1 };
+        }
       }
     } catch (_) { /* ignore */ }
     return null;
@@ -335,27 +427,14 @@ function fillND2A(pdfDoc: PDFDocument, data: ND2AData) {
         // NOTE: ND2A template has duplicate widget instances (Chinese + English rows), so no break
         if (officer.role === 'director' || officer.role === 'alternate') {
           const crossField = officer.role === 'director' ? `Dropdown_2_P.${p}` : `Dropdown_1_P.${p}`;
-          const pageObj = pages[p - 1];
           for (const dn of [`Dropdown_1_P.${p}`, `Dropdown_2_P.${p}`]) {
             const useDashes = dn === crossField;
             // Select the dropdown option: blank (keep visible) or dashes (crossed out)
+            // selectDropdown 内部已对每个实例画贯穿横线
             if (useDashes) {
               selectDropdown(dn, '—');
             } else {
               selectDropdown(dn, ' ');
-            }
-            // Draw a black line through the crossed-out widget for visual certainty
-            if (useDashes && pageObj) {
-              const rect = getWidgetRect(dn);
-              if (rect) {
-                const midY = (rect.y0 + rect.y1) / 2;
-                pageObj.drawLine({
-                  start: { x: rect.x0 + 2, y: midY },
-                  end: { x: rect.x1 - 2, y: midY },
-                  color: { r: 0, g: 0, b: 0 },
-                  thickness: 1,
-                });
-              }
             }
           }
         }
@@ -507,37 +586,38 @@ function fillND2A(pdfDoc: PDFDocument, data: ND2AData) {
       } else {
       check(`cb_2_P.${p}`, true);
       }
+      // 上述董事或候補董事在獲得這次委任時，是否已經是這公司的現任候補董事或董事? cb_5=是, cb_6=否
+      if (officer.alreadyDirector === 'yes') {
+        check(`cb_5_P.${p}`, true);
+      } else if (officer.alreadyDirector === 'no') {
+        check(`cb_6_P.${p}`, true);
+      }
+      // P.3/P.6 底部聲明（同意書）：cross out "董事" or "候補董事*"（同 Flask，2026-08-13）
+      // Dropdown_1 → "董事", Dropdown_2 → "候補董事*"
+      if (officer.role === 'director' || officer.role === 'alternate') {
+        const crossFieldC = officer.role === 'director' ? `Dropdown_2_P.${p}` : `Dropdown_1_P.${p}`;
+        for (const dn of [`Dropdown_1_P.${p}`, `Dropdown_2_P.${p}`]) {
+          selectDropdown(dn, dn === crossFieldC ? '—' : ' ');
+        }
+      }
 
       // ── P.3/P.6 法人團體簽署（由前端 簽署人/身份/日期 驅動，2026-08-13）──
       // 第一簽署：董事(法人團體)的 董事(Dropdown_3)／公司秘書(Dropdown_4)／獲授權人士(Dropdown_5)*
       //   姓名 = fill_17（P.3 與 P.6 都有此欄位）
       // 第二簽署（僅 P.3）：董事(Dropdown_6)／公司秘書(Dropdown_7)，姓名=fill_22，日期=fill_23（DD/MM/YYYY）
+      // selectDropdown 内部已设置 /I+/V 并对每个实例画贯穿横线
       const capacity = data.signerCapacity || 'director';
       const signerName = data.signerName || '';
-      const pageObj2 = pages[p - 1];
       const keepMap1: Record<string, string> = { director: 'Dropdown_3', secretary: 'Dropdown_4', authorizedRep: 'Dropdown_5' };
       const keep1 = keepMap1[capacity] || 'Dropdown_3';
       if (signerName) setText(`fill_17_P.${p}`, signerName);
       // First signature: Dropdown_3/4/5 (keep one per capacity, cross out the rest)
       for (const dn of ['Dropdown_3', 'Dropdown_4', 'Dropdown_5']) {
         const key = `${dn}_P.${p}`;
-        const crossOut = dn !== keep1;
-        if (crossOut) {
+        if (dn !== keep1) {
           selectDropdown(key, '—');
         } else {
           selectDropdown(key, ' ');
-        }
-        if (crossOut && pageObj2) {
-          const rect = getWidgetRect(key);
-          if (rect) {
-            const midY = (rect.y0 + rect.y1) / 2;
-            pageObj2.drawLine({
-              start: { x: rect.x0 + 2, y: midY },
-              end: { x: rect.x1 - 2, y: midY },
-              color: { r: 0, g: 0, b: 0 },
-              thickness: 1,
-            });
-          }
         }
       }
       if (p === 3) {
@@ -551,23 +631,10 @@ function fillND2A(pdfDoc: PDFDocument, data: ND2AData) {
         }
         for (const dn of ['Dropdown_6', 'Dropdown_7']) {
           const key = `${dn}_P.3`;
-          const crossOut = dn !== keep2;
-          if (crossOut) {
+          if (dn !== keep2) {
             selectDropdown(key, '—');
           } else {
             selectDropdown(key, ' ');
-          }
-          if (crossOut && pageObj2) {
-            const rect = getWidgetRect(key);
-            if (rect) {
-              const midY = (rect.y0 + rect.y1) / 2;
-              pageObj2.drawLine({
-                start: { x: rect.x0 + 2, y: midY },
-                end: { x: rect.x1 - 2, y: midY },
-                color: { r: 0, g: 0, b: 0 },
-                thickness: 1,
-              });
-            }
           }
         }
       }

@@ -11425,7 +11425,7 @@ def _build_rod_register_docx(db, company_id):
         return None
 
     roles = db.execute(
-        "SELECT * FROM person_company_roles WHERE company_id = ? AND role IN ('director', 'secretary')",
+        "SELECT * FROM person_company_roles WHERE company_id = ? AND role = 'director'",
         (company_id,)).fetchall()
     person_ids = [r['person_id'] for r in roles]
     person_map = {}
@@ -11436,7 +11436,7 @@ def _build_rod_register_docx(db, company_id):
         person_map = {p['id']: p for p in persons}
 
     directors = [r for r in roles if r['role'] == 'director']
-    secretaries = [r for r in roles if r['role'] == 'secretary']
+    secretaries = []  # 董事登記冊先不出秘书（走独立 SEC 端点）
 
     co_name = rget(company, 'name') or ''
     co_br = rget(company, 'company_number') or ''

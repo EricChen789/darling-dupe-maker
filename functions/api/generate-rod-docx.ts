@@ -199,8 +199,9 @@ export async function onRequest(context: { request: Request; env: Env }) {
     // ── Fetch data ──
     const [company, rolesResult] = await Promise.all([
       env.DB.prepare("SELECT * FROM companies WHERE id = ?").bind(companyId).first(),
+      // 董事登記冊先只出董事（秘书走独立 SEC 端点；DIR2 克隆代码保留以便将来恢复）
       env.DB.prepare(
-        "SELECT * FROM person_company_roles WHERE company_id = ? AND (role = 'director' OR role = 'secretary')"
+        "SELECT * FROM person_company_roles WHERE company_id = ? AND role = 'director'"
       ).bind(companyId).all(),
     ]);
 
@@ -218,7 +219,6 @@ export async function onRequest(context: { request: Request; env: Env }) {
     }
 
     const directors = roles.filter((r: any) => r.role === "director");
-    const secretaries = roles.filter((r: any) => r.role === "secretary");
     const quorum = directors.length || 0;
 
     // Company data
@@ -279,9 +279,6 @@ export async function onRequest(context: { request: Request; env: Env }) {
     for (const d of directors) {
       const pos = rget(d, 'is_reserve') === '1' ? 'Reserve Director' : 'Director';
       addOfficer(d, pos);
-    }
-    for (const s of secretaries) {
-      addOfficer(s, 'Secretary');
     }
 
     // ── Get template ──

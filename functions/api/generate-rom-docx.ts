@@ -1,10 +1,16 @@
 // POST /api/generate-rom-docx
-// Generate ROM (Register of Members) DOCX from original Register of members.doc template.
-// Uses pre-extracted DOCX ZIP entries from _template_rom_register_template.ts.
-// Replaces {{PLACEHOLDER}} markers with actual company/shareholder data.
-// Handles 5-row block cloning per shareholder (row 9-13: data + address + spacer + separator).
+// Generate ROM (Register of Members) DOCX from Lung Shun - ROM.doc template (2026-08-13 rewrite).
+// Uses pre-extracted DOCX ZIP entries from _template_rom_lungshun_template.ts.
+// Cell semantics taken from the Lung Shun sample data (per-block):
+//   R0: Name of Company (EN line + ZH line) | R1: Company Number
+//   Info row: Full Name | Occupation | Date Entered as a Member
+//   Addr row: Address | Date of Ceasing to be Member
+//   5 tx rows × 15 cols: Date | Cert | From | To | Shares | Consideration | Deed |
+//     Cert2 | From2 | To2 | Shares2 | Consid2 | Total | Remarks | Entry By
+//   Row 0 = Subscription; subsequent = Allotment/Transfer In (acq half) / Transfer Out (xfer half)
+// Block B (rows 14-23) is cloned for 3+ shareholders.
 import { verifyAuthRequest, type Env } from './_auth';
-import ROM_TEMPLATE from './_template_rom_register_template';
+import ROM_TEMPLATE from './_template_rom_lungshun_template';
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -178,96 +184,70 @@ function uint8ToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-// ── ROM-specific: 5-row block cloning ──
-// Template from Register of members.doc has 5-row blocks per shareholder:
-//   Row 9:  Name + share data (19 cols with {{SH_*}} placeholders)
-//   Row 10: Address (merged, with {{SH_ADDR}})
-//   Row 11-12: Empty supplementary rows
-//   Row 13: Separator (gridSpan=19 full-width row)
-// We extract rows 9-13 as a template block, clone for each shareholder.
+// ── ROM-specific: per-shareholder block filling ──
+// Lung Shun template structure (24 rows): rows 0-2 = header, rows 3-12 = block A
+// (info row + addr row + tx headers + 5 tx rows), row 13 = separator, rows 14-23 = block B.
+// Both blocks carry the same generic {{SH_*}}/{{T*_*}} placeholders; each block region is
+// filled separately per shareholder. Block B is cloned for 3+ shareholders.
 
-function buildRomRows(docXml: string, shareholders: RomShareholder[]): string {
-  const marker = "{{SH_NAME}}";
-  const markerIdx = docXml.indexOf(marker);
-  if (markerIdx < 0) {
-    // No template row found — leave as-is
-    return docXml;
-  }
+const MAX_TX_ROWS = 5;
+const TX_ACQ_FIELDS = ["DATE", "CERT", "FROM", "TO", "SHARES", "MONEY"];
+const TX_XFER_FIELDS = ["DEED", "CERT2", "FROM2", "TO2", "SHARES2", "MONEY2"];
 
-  // Find Row 9 (contains SH_NAME)
-  const row9Start = docXml.lastIndexOf("<w:tr ", markerIdx);
-  const row9End = docXml.indexOf("</w:tr>", markerIdx);
-  if (row9Start < 0 || row9End < 0) return docXml;
-
-  // Find Rows 10-13: next 4 </w:tr> after row9End
-  let searchFrom = row9End + "</w:tr>".length;
-  let blockEnd = searchFrom;
-  for (let i = 0; i < 4; i++) {
-    const trEnd = docXml.indexOf("</w:tr>", searchFrom);
-    if (trEnd < 0) break;
-    blockEnd = trEnd + "</w:tr>".length;
-    searchFrom = blockEnd;
-  }
-
-  const blockXml = docXml.substring(row9Start, blockEnd);
-
-  // Build 5-row blocks for each shareholder
-  const blocks: string[] = [];
-  for (const sh of shareholders) {
-    let b = blockXml;
-    // Row 9: data row
-    b = b.replaceAll("{{SH_NAME}}", escXml(sh.fullName));
-    b = b.replaceAll("{{SH_CERT_ACQ}}", escXml(sh.certAcq));
-    b = b.replaceAll("{{SH_DIST_FM}}", escXml(sh.distFm));
-    b = b.replaceAll("{{SH_DIST_TO}}", escXml(sh.distTo));
-    b = b.replaceAll("{{SH_SHARES_ACQ}}", escXml(String(sh.sharesAcq)));
-    b = b.replaceAll("{{SH_OCCUPATION}}", escXml(sh.occupation));
-    b = b.replaceAll("{{SH_CONS_ACQ}}", escXml(sh.consAcq));
-    b = b.replaceAll("{{SH_DATE_APP}}", escXml(sh.dateApp));
-    b = b.replaceAll("{{SH_DATE_CEA}}", escXml(sh.dateCea));
-    b = b.replaceAll("{{SH_CERT_XFER}}", escXml(sh.certXfer));
-    b = b.replaceAll("{{SH_TOTAL}}", escXml(String(sh.totalShares)));
-    b = b.replaceAll("{{SH_REMARKS}}", escXml(sh.remarks || ""));
-    b = b.replaceAll("{{SH_ENTRY_BY}}", escXml(sh.entryBy));
-    // Row 10: address row
-    b = b.replaceAll("{{SH_ADDR}}", escXml(sh.addr));
-    blocks.push(b);
-  }
-
-  if (blocks.length === 0) {
-    let b = blockXml;
-    b = b.replaceAll("{{SH_NAME}}", escXml("(No shareholders / 尚無股東記錄)"));
-    const phs = ["SH_CERT_ACQ","SH_DIST_FM","SH_DIST_TO","SH_SHARES_ACQ","SH_OCCUPATION",
-      "SH_CONS_ACQ","SH_DATE_APP","SH_DATE_CEA","SH_CERT_XFER","SH_TOTAL",
-      "SH_REMARKS","SH_ENTRY_BY","SH_ADDR"];
-    for (const ph of phs) b = b.replaceAll(`{{${ph}}}`, "");
-    blocks.push(b);
-  }
-
-  const before = docXml.substring(0, row9Start);
-  const after = docXml.substring(blockEnd);
-  return before + blocks.join("") + after;
+interface RomTxRow {
+  side: 'acquired' | 'transferred';
+  date: string; cert: string; shares: string; money: string; deed: string;
+  total: number; remarks: string;
 }
 
 interface RomShareholder {
   fullName: string;
-  addr: string;
   occupation: string;
   dateApp: string;
+  addr: string;
   dateCea: string;
-  certAcq: string;
-  distFm: string;
-  distTo: string;
-  sharesAcq: number;
-  consAcq: string;
-  certXfer: string;
-  totalShares: number;
-  remarks: string;
-  entryBy: string;
+  rows: RomTxRow[];
+}
+
+function fillBlock(blockXml: string, sh: RomShareholder): string {
+  const v: Record<string, string> = {
+    SH_NAME: sh.fullName,
+    SH_OCC: sh.occupation,
+    SH_ENTRY: sh.dateApp,
+    SH_ADDR: sh.addr,
+    SH_CEASE: sh.dateCea,
+  };
+  for (let i = 0; i < MAX_TX_ROWS; i++) {
+    const r = sh.rows[i];
+    const p = (f: string) => `T${i + 1}_${f}`;
+    const set = (f: string, val: string) => { v[p(f)] = val; };
+    if (r && r.side === "acquired") {
+      // 购入半边：Date/Cert/From/To（=证书号）/Shares/Consideration；转让半边留空
+      set("DATE", r.date); set("CERT", r.cert); set("FROM", r.cert); set("TO", r.cert);
+      set("SHARES", r.shares); set("MONEY", r.money);
+      for (const f of TX_XFER_FIELDS) set(f, "");
+    } else if (r && r.side === "transferred") {
+      // 转让半边：Deed/Cert2/From2/To2/Shares2/Consid2；购入半边与 Date 留空（与 PDF 端点一致）
+      set("DATE", "");
+      for (const f of TX_ACQ_FIELDS) set(f, "");
+      set("DEED", r.deed); set("CERT2", r.cert); set("FROM2", r.cert); set("TO2", r.cert);
+      set("SHARES2", r.shares); set("MONEY2", r.money);
+    } else {
+      for (const f of [...TX_ACQ_FIELDS, ...TX_XFER_FIELDS]) set(f, "");
+    }
+    set("TOTAL", r ? String(r.total) : "");
+    set("REMARKS", r ? r.remarks : "");
+    set("ENTRYBY", "");
+  }
+  let out = blockXml;
+  for (const [k, val] of Object.entries(v)) {
+    out = out.replaceAll(`{{${k}}}`, escXml(val));
+  }
+  return out;
 }
 
 function fmtDateRom(d: string): string {
-  if (!d || d === '-') return '-';
+  if (!d || d === '-') return d === '-' ? '-' : '';
   const s = String(d);
   // Format: YYYY-MM-DD → DD/MM/YYYY
   const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
@@ -278,9 +258,14 @@ function fmtDateRom(d: string): string {
   return s.slice(0, 10);
 }
 
-// ══════════════════════════════════════════════════════════════
+function fmtMoney(cur: string, amt: number): string {
+  if (!isFinite(amt) || amt <= 0) return '';
+  return `${cur} ${amt.toFixed(2)}`;
+}
+
+// ══════════════════════════════════════════════════════════
 // Main handler
-// ══════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════
 export async function onRequest(context: { request: Request; env: Env }) {
   const { request, env } = context;
   if (request.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
@@ -321,7 +306,7 @@ export async function onRequest(context: { request: Request; env: Env }) {
       (result.results || []).forEach((p: any) => personMap.set(p.id, p));
     }
 
-    // Build tx_by_name map
+    // Build tx_by_name map (key = from_name || to_name, matched against person English name)
     const txByName = new Map<string, any[]>();
     for (const t of transactions) {
       const key = (rget(t, 'from_name') || rget(t, 'to_name') || '').trim().toUpperCase();
@@ -332,65 +317,85 @@ export async function onRequest(context: { request: Request; env: Env }) {
     }
 
     // ── Company data ──
-    const coName = rget(company, 'name') || '';
-    const coBr = rget(company, 'company_number') || '';
-    const months = ['JANUARY','FEBRUARY','MARCH','APRIL','MAY','JUNE',
-      'JULY','AUGUST','SEPTEMBER','OCTOBER','NOVEMBER','DECEMBER'];
-    const today = new Date();
-    const reportDate = `${today.getDate()} ${months[today.getMonth()]} ${today.getFullYear()}`;
+    const coNameEn = rget(company, 'name').slice(0, 40);
+    const coNameZh = (rget(company, 'chinese_name') || rget(company, 'name_chinese') || '').slice(0, 18);
+    const coBr = rget(company, 'company_number').slice(0, 15);
 
-    // ── Build shareholder list ──
+    // ── Build shareholder list（样本语义与 PDF 端点一致）──
+    // 行0 = 初始 Subscription（date=入册日、cert/from/to=证书号、shares、HKD 代价、total、Remarks=Subscription）
+    // 后续 = 交易：Allotment/Transfer In → 购入半边；Transfer Out → 转让半边
+    // Total Shares Held = 累计结余；Entry Made By 留空
     const shareholders: RomShareholder[] = [];
     for (const role of roles) {
       const p = personMap.get(role.person_id) || {};
-      const nameEn = (rget(p, 'name_english') || rget(p, 'name_chinese') || '(unnamed)').slice(0, 80);
+      const nameEn = (rget(p, 'name_english') || rget(p, 'name_chinese') || '(unnamed)').slice(0, 40);
+      const nameZh = rget(p, 'name_chinese').slice(0, 12);
+      const fullName = [nameEn, nameZh].filter(Boolean).join(' ').slice(0, 45);
 
-      // Build address from structured fields or raw
       let addr = [
         rget(p, 'addr_flat'), rget(p, 'addr_building'),
         rget(p, 'addr_street'), rget(p, 'addr_district'),
       ].filter(Boolean).join(', ');
       const region = rget(p, 'addr_region') || '';
-      if (!addr) addr = (rget(p, 'address') || '').slice(0, 120);
+      if (!addr) addr = rget(p, 'address');
       if (region && !addr.includes(region)) addr = addr ? `${addr}, ${region}` : region;
-      addr = addr.slice(0, 120);
+      addr = addr.slice(0, 100);
 
-      const occupation = rget(p, 'occupation') || '';
-      const dateApp = fmtDateRom(rget(role, 'date_appointed') || '-');
-      const dateCea = rget(role, 'date_ceased') ? fmtDateRom(rget(role, 'date_ceased')) : '-';
-      const sharesHeld = parseInt(rget(role, 'shares') || '0', 10) || 0;
-      const certNo = rget(role, 'certificate_number') || '-';
+      const occupation = rget(p, 'occupation').slice(0, 30);
+      const dateAppRaw = rget(role, 'date_appointed');
+      const dateApp = dateAppRaw ? fmtDateRom(dateAppRaw) : '-';
+      const dateCeaRaw = rget(role, 'date_ceased');
+      const dateCea = dateCeaRaw ? fmtDateRom(dateCeaRaw) : '';
+      const shares0 = parseInt(rget(role, 'shares') || '0', 10) || 0;
+      const certNo = (rget(role, 'certificate_number') || '-').slice(0, 20);
       const currency = rget(role, 'currency') || 'HKD';
-      const issuePrice = rget(role, 'issue_price') || '1.00';
-
-      // Calculate total shares including transactions
+      const issuePrice = Number(rget(role, 'issue_price') || 0);
       const personNameKey = nameEn.trim().toUpperCase();
-      const personTxs = txByName.get(personNameKey) || [];
-      let totalShares = sharesHeld;
-      for (const tx of personTxs) {
+
+      const rows: RomTxRow[] = [];
+      let balance = shares0;
+      if (shares0 > 0) {
+        rows.push({
+          side: 'acquired',
+          date: dateApp, cert: certNo, shares: String(shares0),
+          money: issuePrice > 0 ? fmtMoney(currency, shares0 * issuePrice) : '',
+          deed: '',
+          total: balance, remarks: 'Subscription',
+        });
+      }
+      for (const tx of (txByName.get(personNameKey) || [])) {
+        if (rows.length >= MAX_TX_ROWS) break;
         const txShares = parseInt(rget(tx, 'shares') || '0', 10) || 0;
-        const isIn = (rget(tx, 'to_name') || '').trim().toUpperCase() === personNameKey;
-        const isOut = (rget(tx, 'from_name') || '').trim().toUpperCase() === personNameKey;
-        if (isIn) totalShares += txShares;
-        else if (isOut) totalShares -= txShares;
+        if (!txShares) continue;
+        const cur = rget(tx, 'currency') || currency;
+        const totalConsid = Number(rget(tx, 'total_consideration') || 0);
+        const priceEach = Number(rget(tx, 'price_per_share') || 0);
+        const money = totalConsid > 0 ? fmtMoney(cur, totalConsid)
+          : priceEach > 0 ? fmtMoney(cur, txShares * priceEach) : '';
+        const date = fmtDateRom(rget(tx, 'transaction_date'));
+        const deed = rget(tx, 'instrument_number').slice(0, 20);
+
+        const isAllot = rget(tx, 'transaction_type').toLowerCase().includes('allot');
+        const isIn = !isAllot && rget(tx, 'to_name').trim().toUpperCase() === personNameKey;
+        const isOut = !isAllot && rget(tx, 'from_name').trim().toUpperCase() === personNameKey;
+        if (isOut) {
+          balance -= txShares;
+          rows.push({
+            side: 'transferred', date, cert: certNo, shares: String(txShares),
+            money, deed,
+            total: balance, remarks: 'Transfer Out',
+          });
+        } else {
+          balance += txShares;
+          rows.push({
+            side: 'acquired', date, cert: certNo, shares: String(txShares),
+            money, deed: '',
+            total: balance, remarks: isAllot ? 'Allotment' : 'Transfer In',
+          });
+        }
       }
 
-      shareholders.push({
-        fullName: nameEn,
-        addr,
-        occupation,
-        dateApp,
-        dateCea,
-        certAcq: certNo,
-        distFm: '-',
-        distTo: '-',
-        sharesAcq: sharesHeld,
-        consAcq: `${currency} $${issuePrice}`,
-        certXfer: '',
-        totalShares: Math.max(0, totalShares),
-        remarks: '',
-        entryBy: '',
-      });
+      shareholders.push({ fullName, occupation, dateApp, addr, dateCea, rows });
     }
 
     // ── Get template ──
@@ -398,15 +403,43 @@ export async function onRequest(context: { request: Request; env: Env }) {
     if (!template) throw new Error("ROM template not found in data");
 
     // ── Fill header placeholders ──
-    let entries = fillTemplate(template, {
-      CO_NAME: coName,
+    const entries = fillTemplate(template, {
+      CO_NAME_EN: coNameEn,
+      CO_NAME_ZH: coNameZh,
       CO_BR: coBr,
-      REPORT_DATE: reportDate,
     });
 
-    // ── Build table rows ──
+    // ── Fill shareholder blocks (region-scoped, block B cloned for 3+) ──
     let docXml = atob(entries["word/document.xml"]);
-    docXml = buildRomRows(docXml, shareholders);
+    const rowRe = /<w:tr\b[\s\S]*?<\/w:tr>/g;
+    const m: RegExpExecArray[] = [];
+    let mm: RegExpExecArray | null;
+    while ((mm = rowRe.exec(docXml))) m.push(mm);
+    if (m.length < 24) throw new Error(`Unexpected template structure: ${m.length} rows`);
+
+    const rowStart = (i: number) => m[i].index;
+    const rowEnd = (i: number) => m[i].index + m[i][0].length;
+    const prefix = docXml.slice(0, rowStart(3));
+    const blockA = docXml.slice(rowStart(3), rowStart(13));
+    const sepXml = m[13][0];
+    const blockB = docXml.slice(rowStart(14), rowEnd(23));
+    const suffix = docXml.slice(rowEnd(23));
+
+    let body: string;
+    if (shareholders.length === 0) {
+      // 无股东：单块占位提示（与旧行为一致）
+      body = fillBlock(blockA, {
+        fullName: '(No shareholders / 尚無股東記錄)',
+        occupation: '', dateApp: '', addr: '', dateCea: '', rows: [],
+      });
+    } else {
+      const blocks: string[] = [fillBlock(blockA, shareholders[0])];
+      for (let i = 1; i < shareholders.length; i++) {
+        blocks.push(sepXml + fillBlock(blockB, shareholders[i]));
+      }
+      body = blocks.join('');
+    }
+    docXml = prefix + body + suffix;
     entries["word/document.xml"] = btoa(docXml);
 
     // ── Build ZIP ──
@@ -420,7 +453,7 @@ export async function onRequest(context: { request: Request; env: Env }) {
     return json({
       success: true,
       docx: docxB64,
-      filename: `RegisterOfMembers_${coBr}_${coName.slice(0, 30)}.docx`,
+      filename: `RegisterOfMembers_${coBr}_${coNameEn.slice(0, 30)}.docx`,
     });
   } catch (e: any) {
     console.error("generate-rom-docx error:", e);

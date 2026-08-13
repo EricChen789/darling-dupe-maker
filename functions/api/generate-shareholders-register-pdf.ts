@@ -38,11 +38,11 @@ const HEADER = {
   nameEn: { x: 134.7, y: 511.1, size: 11 },
   nameZh: { x: 134.7, y: 498.5, size: 11 },
   br:     { x: 133.9, y: 478.9, size: 11, bold: true },
-  // 白块覆盖样本值（精确 bbox ±1pt，避开下划线 496.9）
+  // 白块覆盖样本值（下延至边框线上方 ~0.2pt，盖住样本文字下伸笔画 — 2026-08-13 像素仲裁）
   covers: {
-    en: { x: 133.7, y: 510,   w: 177, h: 14.6 },
-    zh: { x: 133.7, y: 497.4, w: 91,  h: 13.3 },
-    br: { x: 132.9, y: 477.4, w: 55,  h: 14.9 },
+    en: { x: 133.7, y: 508.0, w: 177, h: 16.6 },
+    zh: { x: 133.7, y: 496.7, w: 91,  h: 14.0 },
+    br: { x: 132.9, y: 476.7, w: 55,  h: 15.6 },
   },
   // BR 覆盖块压住了下划线 478.9 → 重绘
   brUnderline: { x0: 134.7, x1: 340, y: 478.9 },
@@ -71,10 +71,10 @@ const BLOCKS: Block[] = [
     entered: { x: 738.5, y: 459.8 }, addr: { x: 116.8, y: 447.3 },
     cease: { x: 712, y: 447.3 },
     covers: {
-      name:    { x: 135.3, y: 459.5, w: 98,   h: 11.5 },
-      occ:     { x: 419,   y: 459.5, w: 42,   h: 11 },
-      entered: { x: 737.5, y: 459.5, w: 49.5, h: 11 },
-      addr:    { x: 115.8, y: 447.6, w: 402,  h: 10.3 },
+      name:    { x: 135.3, y: 458.8, w: 98,   h: 12.2 },
+      occ:     { x: 419,   y: 458.8, w: 42,   h: 11.7 },
+      entered: { x: 737.5, y: 458.8, w: 49.5, h: 11.7 },
+      addr:    { x: 115.8, y: 446.9, w: 402,  h: 11.0 },
     },
     rowsTop:    [399.3, 375.0, 350.8, 326.7, 302.4],
     rowsBottom: [375.0, 350.8, 326.7, 302.4, 278.2],
@@ -84,10 +84,10 @@ const BLOCKS: Block[] = [
     entered: { x: 738.5, y: 259.4 }, addr: { x: 116.8, y: 245.2 },
     cease: { x: 712, y: 245.2 },
     covers: {
-      name:    { x: 135.3, y: 258.9, w: 98,   h: 11.5 },
-      occ:     { x: 419,   y: 258.9, w: 42,   h: 11 },
-      entered: { x: 737.5, y: 258.9, w: 49.5, h: 11 },
-      addr:    { x: 115.8, y: 245.6, w: 402,  h: 10.3 },
+      name:    { x: 135.3, y: 258.2, w: 98,   h: 12.2 },
+      occ:     { x: 419,   y: 258.2, w: 42,   h: 11.7 },
+      entered: { x: 737.5, y: 258.2, w: 49.5, h: 11.7 },
+      addr:    { x: 115.8, y: 244.3, w: 402,  h: 11.6 },
     },
     rowsTop:    [195.5, 171.2, 147.0, 122.9, 98.6],
     rowsBottom: [171.2, 147.0, 122.9, 98.6, 74.4],
@@ -119,9 +119,12 @@ const ROW_BASE = -18;  // 数据基线 = 行上边框 - 18
 
 function fmtDate(v: string): string {
   if (!v) return '';
-  const m = String(v).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  const s = String(v);
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (m) return `${m[3]}/${m[2]}/${m[1]}`;
-  return String(v).slice(0, 10);
+  const m2 = s.match(/^(\d{2})(\d{2})(\d{4})$/);
+  if (m2) return `${m2[1]}/${m2[2]}/${m2[3]}`;
+  return s.slice(0, 10);
 }
 
 function fmtMoney(cur: string, amt: number): string {
@@ -142,6 +145,244 @@ function drawCenter(page: any, text: string, cx: number, y: number, size: number
 }
 
 // ══════════════════════════════════════════════════════════════
+// 快速路径：预烘焙画布 + 运行时增量追加（2026-08-13 CPU 优化）
+// 慢路径每次请求 pdf.save() 16-28ms，CF 30ms CPU 限额边缘 → 间歇 503。
+// 快速路径 = R2 预烘焙画布（模板页+白块覆盖+全字符子集字体已嵌入，离线生成
+// 见 scripts/build_rom_canvas.cjs）+ 运行时纯字符串追加文本流对象（hex Tj，
+// 无字体嵌入/无 save()），CPU ~3-5ms。缺失字符/画布缺失 → 回退慢路径。
+// ══════════════════════════════════════════════════════════════
+
+// Helvetica AFM 宽度表（1/1000 em）— 与 pdf-lib StandardFonts.Helvetica 一致
+const HELV_W: Record<number, number> = {
+  32:278,33:278,34:355,35:556,36:556,37:889,38:667,39:191,40:333,41:333,42:389,43:584,44:278,45:333,46:278,47:278,
+  48:556,49:556,50:556,51:556,52:556,53:556,54:556,55:556,56:556,57:556,58:278,59:278,60:584,61:584,62:584,63:556,
+  64:1015,65:667,66:667,67:722,68:722,69:667,70:611,71:778,72:722,73:278,74:500,75:667,76:556,77:833,78:722,79:778,
+  80:667,81:778,82:722,83:667,84:611,85:722,86:667,87:944,88:667,89:667,90:611,91:278,92:278,93:278,94:469,95:556,
+  96:333,97:556,98:556,99:500,100:556,101:556,102:278,103:556,104:556,105:222,106:222,107:500,108:222,109:833,110:556,
+  111:556,112:556,113:556,114:333,115:500,116:278,117:556,118:500,119:722,120:500,121:500,122:500,123:334,124:260,125:334,126:584,
+};
+
+interface RomCanvasStruct {
+  startxref: number;
+  maxObj: number;
+  pageRef: string;
+  pagesRef: string;
+  rootRef: string;
+  coverStreamRef: string;
+  pageDict: string;
+  pagesDict: string;
+  cjkName: string;
+  helvName: string;
+  chars: Record<string, { c: string; w: number }>;
+}
+
+// 模块级缓存：同 isolate 内跨请求复用（CF 模块作用域持久）
+let romCanvas: { bytes: Uint8Array; struct: RomCanvasStruct } | null = null;
+let romCanvasFailed = false;
+
+async function getRomCanvas(env: Env): Promise<{ bytes: Uint8Array; struct: RomCanvasStruct } | null> {
+  if (romCanvas) return romCanvas;
+  if (romCanvasFailed) return null;
+  try {
+    const [pdfObj, jsonObj] = await Promise.all([
+      env.PDF_TEMPLATES.get("rom-canvas.pdf"),
+      env.PDF_TEMPLATES.get("rom-canvas.json"),
+    ]);
+    if (!pdfObj || !jsonObj) {
+      romCanvasFailed = true;
+      return null;
+    }
+    romCanvas = {
+      bytes: new Uint8Array(await pdfObj.arrayBuffer()),
+      struct: JSON.parse(await jsonObj.text()),
+    };
+    return romCanvas;
+  } catch (e: any) {
+    console.error("ROM canvas load failed:", e?.message || e);
+    romCanvasFailed = true;
+    return null;
+  }
+}
+
+// 快速路径文本宽度（pt）— ASCII 用 AFM 表，CJK 用画布字符表
+function fastTextWidth(S: RomCanvasStruct, text: string, size: number): number {
+  let w = 0;
+  for (const ch of text) {
+    const c = ch.charCodeAt(0);
+    if (c <= 0x7F) w += ((HELV_W[c] || 500) / 1000) * size;
+    else w += ((S.chars[ch] ? S.chars[ch].w : 1000) / 1000) * size;
+  }
+  return w;
+}
+
+const escHex = (s: string) =>
+  s.split("").map((ch) => ch.charCodeAt(0).toString(16).padStart(2, "0")).join("");
+
+// 一行文本 → 内容流操作符（按 ASCII/CJK 分段；bold = 同字体 x+0.5 重绘，与 drawMixed 一致）
+function fastTextOps(S: RomCanvasStruct, x: number, y: number, size: number, text: string, bold: boolean): string {
+  const clean = (text || "").replace(/[\n\r\t]/g, " ");
+  let ops = "";
+  let seg = "", segCjk: boolean | null = null;
+  const flush = () => {
+    if (!seg) return;
+    const fontName = segCjk ? S.cjkName : S.helvName;
+    if (segCjk) {
+      let hex = "";
+      for (const ch of seg) hex += S.chars[ch].c;
+      ops += `BT /${fontName} ${size} Tf 1 0 0 1 ${x} ${y} Tm <${hex}> Tj ET\n`;
+      if (bold) ops += `BT /${fontName} ${size} Tf 1 0 0 1 ${x + 0.5} ${y} Tm <${hex}> Tj ET\n`;
+      x += fastTextWidth(S, seg, size);
+    } else {
+      const hex = escHex(seg);
+      ops += `BT /${fontName} ${size} Tf 1 0 0 1 ${x} ${y} Tm <${hex}> Tj ET\n`;
+      if (bold) ops += `BT /${fontName} ${size} Tf 1 0 0 1 ${x + 0.5} ${y} Tm <${hex}> Tj ET\n`;
+      x += fastTextWidth(S, seg, size);
+    }
+    seg = ""; segCjk = null;
+  };
+  for (const ch of clean) {
+    const ascii = ch.charCodeAt(0) <= 0x7F;
+    if (segCjk === null) segCjk = !ascii;
+    else if (segCjk !== !ascii) { flush(); segCjk = !ascii; }
+    seg += ch;
+  }
+  flush();
+  return ops;
+}
+
+// 居中画（cx = 中心 x）— 与 drawCenter 一致
+function fastCenterOps(S: RomCanvasStruct, cx: number, y: number, size: number, text: string, bold: boolean): string {
+  if (!text) return "";
+  const t = String(text);
+  return fastTextOps(S, cx - fastTextWidth(S, t, size) / 2, y, size, t, bold);
+}
+
+// 预扫描：任一非 ASCII 字符不在画布字符表 → 返回该字符（走慢路径，防字形字节错位）
+function fastPathMissingChar(S: RomCanvasStruct, texts: string[]): string | null {
+  for (const t of texts) {
+    for (const ch of t) {
+      if (ch.charCodeAt(0) > 0x7F && !S.chars[ch]) return ch;
+    }
+  }
+  return null;
+}
+
+// 单页文本流（页眉 + 2 股东区块）— 几何与慢路径 drawHeader/drawShareholder 完全一致
+interface FastSh {
+  fullName: string; occ: string; addr: string;
+  dateApp: string; dateCea: string;
+  rows: { side: string; date: string; cert: string; shares: string; money: string; deed: string; total: number; remarks: string }[];
+}
+function buildFastPageText(S: RomCanvasStruct, co: { en: string; zh: string; br: string }, shs: FastSh[]): string {
+  let ops = "";
+  ops += fastTextOps(S, HEADER.nameEn.x, HEADER.nameEn.y, HEADER.nameEn.size, co.en, false);
+  if (co.zh) ops += fastTextOps(S, HEADER.nameZh.x, HEADER.nameZh.y, HEADER.nameZh.size, co.zh, false);
+  if (co.br) ops += fastTextOps(S, HEADER.br.x, HEADER.br.y, HEADER.br.size, co.br, true);
+  shs.forEach((sh, i) => {
+    const b = BLOCKS[i % 2];
+    ops += fastTextOps(S, b.name.x, b.name.y, 9, sh.fullName, false);
+    if (sh.occ) ops += fastTextOps(S, b.occ.x, b.occ.y, 9, sh.occ, false);
+    if (sh.dateApp) ops += fastTextOps(S, b.entered.x, b.entered.y, 9, sh.dateApp, false);
+    if (sh.addr) ops += fastTextOps(S, b.addr.x, b.addr.y, 9, sh.addr, false);
+    if (sh.dateCea) ops += fastTextOps(S, b.cease.x, b.cease.y, 9, sh.dateCea, false);
+    sh.rows.forEach((row, ri) => {
+      if (ri >= MAX_TX_ROWS) return;
+      const y = b.rowsTop[ri] + ROW_BASE;
+      if (row.side === "acquired") {
+        ops += fastTextOps(S, COLS.date.cx, y, 9, row.date, false);
+        ops += fastCenterOps(S, COLS.cert.cx, y, 9, row.cert, false);
+        ops += fastCenterOps(S, COLS.from.cx, y, 9, row.cert, false);
+        ops += fastCenterOps(S, COLS.to.cx, y, 9, row.cert, false);
+        ops += fastCenterOps(S, COLS.shares.cx, y, 9, row.shares, false);
+        ops += fastCenterOps(S, COLS.consid.cx, y, 9, row.money, false);
+      } else {
+        ops += fastCenterOps(S, COLS.deed.cx, y, 9, row.deed, false);
+        ops += fastCenterOps(S, COLS.cert2.cx, y, 9, row.cert, false);
+        ops += fastCenterOps(S, COLS.from2.cx, y, 9, row.cert, false);
+        ops += fastCenterOps(S, COLS.to2.cx, y, 9, row.cert, false);
+        ops += fastCenterOps(S, COLS.shares2.cx, y, 9, row.shares, false);
+        ops += fastCenterOps(S, COLS.consid2.cx, y, 9, row.money, false);
+      }
+      ops += fastCenterOps(S, COLS.total.cx, y, 9, String(row.total), false);
+      ops += fastCenterOps(S, COLS.remarks.cx, y, 9, row.remarks, false);
+    });
+  });
+  return ops;
+}
+
+// 增量更新组装：文本流+页对象追加 + 新 xref table + /Prev trailer（纯字符串拼接）
+function buildFastPdf(canvas: { bytes: Uint8Array; struct: RomCanvasStruct }, pagesText: string[]): Uint8Array {
+  const S = canvas.struct;
+  const numPages = pagesText.length;
+  const pageRefNum = Number(S.pageRef.split(" ")[0]);
+  const pagesRefNum = Number(S.pagesRef.split(" ")[0]);
+  const rootRefNum = Number(S.rootRef.split(" ")[0]);
+
+  const objMap = new Map<number, string>();
+  let nextObj = S.maxObj + 1;
+  const addObj = (num: number, bytes: string) => { objMap.set(num, bytes); return num; };
+
+  // 文本流 + 页对象（第 1 页重写原页号，后续新建）
+  const textRefs: number[] = [];
+  const pageRefs: number[] = [pageRefNum];
+  for (let p = 0; p < numPages; p++) {
+    const body = pagesText[p];
+    const num = nextObj++;
+    addObj(num, `${num} 0 obj\n<< /Length ${body.length} >>\nstream\n${body}\nendstream\nendobj\n`);
+    textRefs.push(num);
+    if (p > 0) pageRefs.push(nextObj++);
+  }
+  for (let p = 0; p < numPages; p++) {
+    const contents = `[ ${S.coverStreamRef} ${textRefs[p]} 0 R ]`;
+    const pageDict = S.pageDict.replace(/\/Contents\s*\[[^\]]*\]/, "/Contents " + contents);
+    addObj(pageRefs[p], `${pageRefs[p]} 0 obj\n${pageDict}\nendobj\n`);
+  }
+  // Pages 树重写（多页时）
+  if (numPages > 1) {
+    const kids = pageRefs.map((n) => `${n} 0 R`).join(" ");
+    const pagesDict = S.pagesDict
+      .replace(/\/Kids\s*\[[^\]]*\]/, `/Kids [ ${kids} ]`)
+      .replace(/\/Count\s+\d+/, `/Count ${numPages}`);
+    addObj(pagesRefNum, `${pagesRefNum} 0 obj\n${pagesDict}\nendobj\n`);
+  }
+
+  // 组装（对象按 num 升序写；所有字节均为 latin1 → 字符串长度即字节数）
+  const listed = [...objMap.keys()].sort((a, b) => a - b);
+  let objsBytes = "";
+  let cursor = canvas.bytes.length + 1;
+  const byteOffsets: Record<number, number> = {};
+  for (const num of listed) {
+    byteOffsets[num] = cursor;
+    const b = objMap.get(num)!;
+    objsBytes += b;
+    cursor += b.length;
+  }
+  const xrefOffset = canvas.bytes.length + 1 + objsBytes.length;
+
+  // xref 子段（连续对象号合并）
+  const subsections: { start: number; count: number }[] = [];
+  for (const n of listed) {
+    const last = subsections[subsections.length - 1];
+    if (last && last.start + last.count === n) last.count++;
+    else subsections.push({ start: n, count: 1 });
+  }
+  let xrefStr = "xref\n";
+  for (const s of subsections) xrefStr += `${s.start} ${s.count}\n`;
+  for (const n of listed) xrefStr += `${String(byteOffsets[n]).padStart(10, "0")} 00000 n \n`;
+  const trailer = `trailer\n<< /Size ${nextObj} /Root ${rootRefNum} 0 R /Prev ${S.startxref} >>\nstartxref\n${xrefOffset}\n%%EOF`;
+
+  const head = new Uint8Array(canvas.bytes.length + 1 + objsBytes.length + xrefStr.length + trailer.length);
+  head.set(canvas.bytes, 0);
+  let pos = canvas.bytes.length;
+  const appendStr = (s: string) => {
+    for (let i = 0; i < s.length; i++) head[pos++] = s.charCodeAt(i) & 0xFF;
+  };
+  appendStr("\n" + objsBytes);
+  appendStr(xrefStr + trailer);
+  return head;
+}
+
+// ══════════════════════════════════════════════════════════════
 export async function onRequest(context: { request: Request; env: Env }) {
   const { request, env } = context;
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -157,17 +398,15 @@ export async function onRequest(context: { request: Request; env: Env }) {
       });
     }
 
-    const [company, rolesResult, txResult, templateObj] = await Promise.all([
+    const [company, rolesResult, txResult] = await Promise.all([
       env.DB.prepare("SELECT * FROM companies WHERE id = ?").bind(companyId).first(),
       env.DB.prepare("SELECT * FROM person_company_roles WHERE company_id = ? AND role = 'shareholder' ORDER BY date_appointed")
         .bind(companyId).all(),
       env.DB.prepare("SELECT * FROM share_transactions WHERE company_id = ? ORDER BY transaction_date")
         .bind(companyId).all(),
-      env.PDF_TEMPLATES.get("rom-template-bg.pdf"),
     ]);
 
     if (!company) throw new Error("Company not found");
-    if (!templateObj) throw new Error("ROM template not found in R2");
 
     const roles = (rolesResult.results || []) as any[];
     const transactions = (txResult.results || []) as any[];
@@ -191,15 +430,6 @@ export async function onRequest(context: { request: Request; env: Env }) {
       }
     }
 
-    const templateBytes = new Uint8Array(await templateObj.arrayBuffer());
-    const pdf = await PDFDocument.create();
-    const { cjk: cjkFont, ascii: asciiFont } = await fetchAndEmbedFont(pdf, env as any);
-    const fo = { cjk: cjkFont, ascii: asciiFont };
-
-    const templateDoc = await PDFDocument.load(templateBytes);
-    // 只用第 1 页（模板第 2 页为空白页）
-    const [templatePage] = await pdf.embedPages([templateDoc.getPage(0)]);
-
     const coNameEn = (rget(company, 'name') || '').slice(0, 40);
     const coNameZh = (rget(company, 'chinese_name') || rget(company, 'name_chinese') || '').slice(0, 18);
     const br = (rget(company, 'company_number') || '').slice(0, 15);
@@ -219,7 +449,7 @@ export async function onRequest(context: { request: Request; env: Env }) {
     const shareholders: ShData[] = [];
     for (const r of roles) {
       const p = personMap.get(r.person_id) || {};
-      const nameEn = (rget(p, 'name_english') || '(unnamed)').slice(0, 30);
+      const nameEn = (rget(p, 'name_english') || '(unnamed)').slice(0, 40);
       const nameZh = (rget(p, 'name_chinese') || '').slice(0, 12);
       const fullName = [nameEn, nameZh].filter(Boolean).join(' ').slice(0, 45);
 
@@ -291,7 +521,41 @@ export async function onRequest(context: { request: Request; env: Env }) {
       shareholders.push({ fullName, occ, addr, dateApp, dateCea, rows });
     }
 
-    // ── 渲染 ──
+    // ── 渲染：快速路径（画布+增量追加）优先，缺字/无画布 → 回退慢路径 ──
+    const canvas = await getRomCanvas(env);
+    if (canvas && shareholders.length > 0) {
+      const allTexts = [coNameEn, coNameZh, br];
+      for (const sh of shareholders) {
+        allTexts.push(sh.fullName, sh.occ, sh.addr, sh.dateApp, sh.dateCea);
+        for (const r of sh.rows) allTexts.push(r.date, r.cert, r.shares, r.money, r.deed, String(r.total), r.remarks);
+      }
+      if (!fastPathMissingChar(canvas.struct, allTexts)) {
+        try {
+          const pagesText: string[] = [];
+          for (let i = 0; i < shareholders.length; i += 2) {
+            pagesText.push(buildFastPageText(canvas.struct, { en: coNameEn, zh: coNameZh, br }, shareholders.slice(i, i + 2)));
+          }
+          const out = buildFastPdf(canvas, pagesText);
+          return new Response(JSON.stringify({ pdf: uint8ToBase64(out) }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        } catch (e: any) {
+          console.error("ROM fast path failed — falling back to slow path:", e?.message || e);
+        }
+      }
+    }
+
+    // ── 慢路径（原 pdf-lib 渲染逻辑）──
+    const templateObj = await env.PDF_TEMPLATES.get("rom-template-bg.pdf");
+    if (!templateObj) throw new Error("ROM template not found in R2");
+    const templateBytes = new Uint8Array(await templateObj.arrayBuffer());
+    const pdf = await PDFDocument.create();
+    const { cjk: cjkFont, ascii: asciiFont } = await fetchAndEmbedFont(pdf, env as any);
+    const fo = { cjk: cjkFont, ascii: asciiFont };
+    const templateDoc = await PDFDocument.load(templateBytes);
+    // 只用第 1 页（模板第 2 页为空白页）
+    const [templatePage] = await pdf.embedPages([templateDoc.getPage(0)]);
+
     const drawHeader = (page: any) => {
       for (const k of ['en', 'zh', 'br'] as const) cover(page, HEADER.covers[k]);
       drawMixed(page, coNameEn, { x: HEADER.nameEn.x, y: HEADER.nameEn.y, size: HEADER.nameEn.size, cjk: fo.cjk, ascii: fo.ascii, color: BLACK });

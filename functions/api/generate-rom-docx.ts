@@ -266,10 +266,14 @@ interface RomShareholder {
 
 function fmtDateRom(d: string): string {
   if (!d || d === '-') return '-';
+  const s = String(d);
   // Format: YYYY-MM-DD → DD/MM/YYYY
-  const parts = d.split('-');
-  if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
-  return d;
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return `${m[3]}/${m[2]}/${m[1]}`;
+  // Format: 8-digit DDMMYYYY → DD/MM/YYYY
+  const m2 = s.match(/^(\d{2})(\d{2})(\d{4})$/);
+  if (m2) return `${m2[1]}/${m2[2]}/${m2[3]}`;
+  return s.slice(0, 10);
 }
 
 // ══════════════════════════════════════════════════════════════

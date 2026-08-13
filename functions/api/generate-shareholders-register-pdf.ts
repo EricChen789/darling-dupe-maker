@@ -159,7 +159,7 @@ export async function onRequest(context: { request: Request; env: Env }) {
 
     const [company, rolesResult, txResult, templateObj] = await Promise.all([
       env.DB.prepare("SELECT * FROM companies WHERE id = ?").bind(companyId).first(),
-      env.DB.prepare("SELECT * FROM person_company_roles WHERE company_id = ? AND role = 'shareholder'")
+      env.DB.prepare("SELECT * FROM person_company_roles WHERE company_id = ? AND role = 'shareholder' ORDER BY date_appointed")
         .bind(companyId).all(),
       env.DB.prepare("SELECT * FROM share_transactions WHERE company_id = ? ORDER BY transaction_date")
         .bind(companyId).all(),
@@ -201,7 +201,7 @@ export async function onRequest(context: { request: Request; env: Env }) {
     const [templatePage] = await pdf.embedPages([templateDoc.getPage(0)]);
 
     const coNameEn = (rget(company, 'name') || '').slice(0, 40);
-    const coNameZh = (rget(company, 'name_chinese') || '').slice(0, 18);
+    const coNameZh = (rget(company, 'chinese_name') || rget(company, 'name_chinese') || '').slice(0, 18);
     const br = (rget(company, 'company_number') || '').slice(0, 15);
 
     // ── 股东数据（样本格式：Full Name "EN ZH" / Occupation / Date Entered / Address / Date Ceasing）──

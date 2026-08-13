@@ -164,9 +164,11 @@ interface Officer {
   dateCea: string;        // Date ceased (or "")
 }
 
-/** Split a long address into max 3 lines, breaking at comma/space boundaries */
+/** Split a long address into max 3 lines, breaking at comma/space boundaries.
+ *  maxLen 40: the template's own sample line "ROOM 405 TUNG NING BUILDING, 249-253 "
+ *  (40 chars @ 9pt) is the widest that fits the name/address column (916→4846 twips). */
 function splitAddr(addr: string): [string, string, string] {
-  const maxLen = 48;
+  const maxLen = 40;
   const lines: string[] = [];
   let remaining = addr.trim();
   while (remaining && lines.length < 2) {
@@ -183,6 +185,24 @@ function splitAddr(addr: string): [string, string, string] {
   while (lines.length < 3) lines.push('');
   return [lines[0] || '', lines[1] || '', lines[2] || ''];
 }
+
+// ── Absolute-positioned template layout (twips, from Testing ROD.rtf) ──
+// Every paragraph carries w:framePr vAnchor="page", so identical clones stack on
+// top of each other unless their y coordinates are offset per officer.
+// DIR1 block occupies y=2521..3241 (4 lines @240 twips). The next template row
+// (Secretary) starts at y=3706 → per-row step = 1185 twips. Landscape A4 is
+// 11906 twips tall and content must stay above the page-number line (~10801)
+// → 7 officer rows fit per page.
+const ROW_STEP = 1185;
+const ROWS_PER_PAGE = 7;
+
+/** Shift every framePr y coordinate in a block by `offset` twips. */
+function shiftBlockY(blockXml: string, offset: number): string {
+  if (offset <= 0) return blockXml;
+  return blockXml.replace(/w:y="(\d+)"/g, (_m, y: string) => `w:y="${parseInt(y, 10) + offset}"`);
+}
+
+const PAGE_BREAK = '<w:p><w:r><w:br w:type="page"/></w:r></w:p>';
 
 // ══════════════════════════════════════════════════════════════
 export async function onRequest(context: { request: Request; env: Env }) {
@@ -325,7 +345,15 @@ export async function onRequest(context: { request: Request; env: Env }) {
     if (dirBlockStart >= 0 && dataEndIdx >= 0) {
       const generatedParas: string[] = [];
 
-      for (const off of officers) {
+      // Column-header block (P4-P12) — cloned at the top of continuation pages
+      const hdrNameIdx = docXml.indexOf('Name / Service / Residential Address');
+      const hdrCeasedIdx = docXml.indexOf('Ceased');
+      const hdrBlockStart = hdrNameIdx >= 0 ? findParaStart(docXml, hdrNameIdx) : -1;
+      const hdrBlockEnd = hdrCeasedIdx >= 0 ? findParaEnd(docXml, hdrCeasedIdx) : -1;
+      const headerBlockXml = hdrBlockStart >= 0 && hdrBlockEnd > hdrBlockStart
+        ? docXml.substring(hdrBlockStart, hdrBlockEnd) : '';
+
+      for (const [i, off] of officers.entries()) {
         const isDirector = off.position === 'Director' || off.position === 'Reserve Director';
         const block = isDirector && dirBlockXml ? dirBlockXml : (secBlockXml || dirBlockXml);
         const prefix = isDirector && dirBlockXml ? 'DIR1' : (secBlockXml ? 'DIR2' : 'DIR1');
@@ -354,6 +382,17 @@ export async function onRequest(context: { request: Request; env: Env }) {
           : [...commonPHs.map(p => `DIR1_${p}`), ...dir1OnlyPHs.map(p => `DIR1_${p}`)];
         for (const ph of toClean) {
           b = b.replaceAll(`{{${ph}}}`, '');
+        }
+
+        // Reposition: shift the block down one row slot per officer, and start
+        // a new page (with a cloned column-header row) when the page is full.
+        // The first page keeps the original header rows above the data area.
+        const rowOnPage = i % ROWS_PER_PAGE;
+        if (rowOnPage > 0) {
+          b = shiftBlockY(b, rowOnPage * ROW_STEP);
+        }
+        if (i > 0 && rowOnPage === 0) {
+          b = PAGE_BREAK + headerBlockXml + b;
         }
         generatedParas.push(b);
       }

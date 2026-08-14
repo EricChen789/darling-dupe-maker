@@ -339,7 +339,7 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
     sheetB: Math.max(0, corpSecs.length - 1),      // 1st on P.4, rest on cont B (P.12)
     sheetC: Math.max(0, natDirs.length - 1),       // 1st on P.5, rest on cont C (P.13)
     sheetD: Math.max(0, Math.ceil(corpDirs.length / 2) - 1), // 2 per P.6, rest on cont D (P.14)
-    sched1: Math.max(0, Math.ceil(shareholders.length / 2) - 1), // 2 per P.9, rest copy P.9
+    sched1: Math.max(0, Math.ceil(shareholders.length / 2)), // P.8 填附表一总页数（与 generate-nar1-pdf.ts 一致）
   }), [natSecs.length, corpSecs.length, natDirs.length, corpDirs.length, shareholders.length]);
 
   // ── Load company data on open ──
@@ -1206,7 +1206,7 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
             {shareholders.map((sh, i) => (
               <div key={sh.id} className="border border-border rounded-lg p-4 mb-3">
                 <div className="flex items-center justify-between mb-3">
-                  <span className="font-medium text-sm">股東 #{i + 1} — {i < 2 ? `P.9 (位置 ${i + 1})` : `續附表一 #${Math.floor(i / 2) + 1}`}</span>
+                  <span className="font-medium text-sm">股東 #{i + 1} — {i < 2 ? `P.9 (位置 ${i + 1})` : `P.${9 + Math.floor(i / 2)} (位置 ${(i % 2) + 1})`}</span>
                   <Button variant="ghost" size="sm" onClick={() => removeShareholder(sh.id)} className="text-red-500"><Trash2 className="h-4 w-4" /></Button>
                 </div>
                 <PersonQuickPick companyId={company.id} includeAllPersons
@@ -1417,7 +1417,7 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
                 <div className="font-mono font-bold text-lg">{continuationCounts.sheetD}</div>
               </div>
               <div className="bg-muted/50 rounded p-2 text-center">
-                <div className="text-xs text-muted-foreground">附表一 股東續頁</div>
+                <div className="text-xs text-muted-foreground">附表一 頁數（總頁數）</div>
                 <div className="font-mono font-bold text-lg">{continuationCounts.sched1}</div>
               </div>
             </div>

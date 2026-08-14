@@ -262,18 +262,16 @@ export async function onRequest(context: { request: Request; env: Env }) {
     vars["{{SELLER_NAME}}"] = tx.from_name || "";
     vars["{{BUYER_NAME}}"] = tx.to_name || "";
 
-    // Seller address (from person record or transaction)
+    // Seller address — 完整地址合并成一行（分两行会截断后半段，用户要求 2026-08-14）
     const sellerAddr = sellerPerson ? buildPersonAddress(sellerPerson) : "";
-    const sellerLines = splitAddressLines(sellerAddr, 2);
-    vars["{{SELLER_ADDR_L1}}"] = sellerLines[0] || "";
-    vars["{{SELLER_ADDR_L2}}"] = sellerLines[1] || "";
+    vars["{{SELLER_ADDR_L1}}"] = sellerAddr;
+    vars["{{SELLER_ADDR_L2}}"] = "";
     vars["{{SELLER_HKID}}"] = sellerPerson?.id_number || sellerPerson?.passport_number || "";
 
-    // Buyer address
+    // Buyer address — 同上，完整一行
     const buyerAddr = buyerPerson ? buildPersonAddress(buyerPerson) : "";
-    const buyerLines = splitAddressLines(buyerAddr, 2);
-    vars["{{BUYER_ADDR_L1}}"] = buyerLines[0] || "";
-    vars["{{BUYER_ADDR_L2}}"] = buyerLines[1] || "";
+    vars["{{BUYER_ADDR_L1}}"] = buyerAddr;
+    vars["{{BUYER_ADDR_L2}}"] = "";
     vars["{{BUYER_HKID}}"] = buyerPerson?.id_number || buyerPerson?.passport_number || "";
 
     // Share Certificate specific
@@ -291,15 +289,14 @@ export async function onRequest(context: { request: Request; env: Env }) {
     vars["{{REG_OFFICE_L3}}"] = regLines[2] || "";
     vars["{{REG_OFFICE_L4}}"] = regLines[3] || "";
 
-    // Holder (buyer) details for share certificate
+    // Holder (buyer) details for share certificate — 持有人地址同样完整一行
     vars["{{HOLDER_NAME}}"] = tx.to_name || "";
     vars["{{HOLDER_HKID}}"] = buyerPerson?.id_number || buyerPerson?.passport_number || "";
     const holderAddr = buyerPerson ? buildPersonAddress(buyerPerson) : "";
-    const holderLines = splitAddressLines(holderAddr, 4);
-    vars["{{HOLDER_ADDR_L1}}"] = holderLines[0] || "";
-    vars["{{HOLDER_ADDR_L2}}"] = holderLines[1] || "";
-    vars["{{HOLDER_ADDR_L3}}"] = holderLines[2] || "";
-    vars["{{HOLDER_ADDR_L4}}"] = holderLines[3] || "";
+    vars["{{HOLDER_ADDR_L1}}"] = holderAddr;
+    vars["{{HOLDER_ADDR_L2}}"] = "";
+    vars["{{HOLDER_ADDR_L3}}"] = "";
+    vars["{{HOLDER_ADDR_L4}}"] = "";
 
     // ── Fill template via string replacement ──
     let rtfContent = rtfTemplate;

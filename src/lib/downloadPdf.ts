@@ -72,3 +72,5 @@ export function downloadBase64File(base64: string, filename: string, mime: strin
 export const DOCX_MIME =
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 export const RTF_MIME = 'application/rtf';
+export const XLSX_MIME =
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';

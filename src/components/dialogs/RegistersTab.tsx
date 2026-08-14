@@ -10,11 +10,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import {
   Plus, Edit, Trash2, Save, X, Download, Loader2, FileText, ArrowRight,
   Users, UserCheck, Briefcase, Clock, MapPin, Hash, Mail, Phone,
-  Shield, FileDigit, FileCheck, Stamp, ChevronRight, Sparkles, Building2,
+  Shield, FileDigit, FileCheck, Stamp, ChevronRight, Sparkles,
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { toast } from '@/hooks/use-toast';
-import { downloadAndOpenBase64Pdf, downloadBase64File, DOCX_MIME, RTF_MIME } from '@/lib/downloadPdf';
+import { downloadAndOpenBase64Pdf, downloadBase64File, DOCX_MIME, RTF_MIME, XLSX_MIME } from '@/lib/downloadPdf';
 import { Company, Person, Shareholder } from '@/types';
 import {
   useShareTransactions, useUpsertShareTransaction, useDeleteShareTransaction,
@@ -83,6 +83,9 @@ async function downloadRegister(fnName: string, companyId: string, brNumber: str
       } else if (result.docx) {
         const filename = result.filename || `${label}_${brNumber || ''}_${companyName}.docx`;
         downloadBase64File(result.docx, filename, DOCX_MIME);
+      } else if (result.xlsx) {
+        const filename = result.filename || `${label}_${brNumber || ''}_${companyName}.xlsx`;
+        downloadBase64File(result.xlsx, filename, XLSX_MIME);
       } else if (result.error) {
         throw new Error(result.error);
       } else {
@@ -457,24 +460,16 @@ export function RegistersTab({ company }: { company: Company }) {
             重要控制人 SCR (Word)
           </Button>
         </div>
-        {/* BVI 格式董事登記冊 (Excel 模板) */}
+        {/* BVI 格式董事登記冊 (Excel 模板，含自然人 + 法人两工作表) */}
         <p className="text-xs text-muted-foreground mt-2 mb-1">BVI 格式 — 董事登記冊 (Register of Directors)</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <Button variant="outline" size="sm"
-            onClick={() => handleDownload('generate-directors-register-bvi-pdf', 'DirectorsRegisterBVI_Individual', { format: 'individual' })}
+            onClick={() => handleDownload('generate-directors-register-bvi-xlsx', 'DirectorsRegisterBVI')}
             disabled={downloading !== null}>
-            {downloading === 'generate-directors-register-bvi-pdf'
+            {downloading === 'generate-directors-register-bvi-xlsx'
               ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
-              : <Users className="h-3.5 w-3.5 mr-1" />}
-            董事登記冊 — 自然人 (For Individual Director)
-          </Button>
-          <Button variant="outline" size="sm"
-            onClick={() => handleDownload('generate-directors-register-bvi-pdf', 'DirectorsRegisterBVI_Corporate', { format: 'corporate' })}
-            disabled={downloading !== null}>
-            {downloading === 'generate-directors-register-bvi-pdf'
-              ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
-              : <Building2 className="h-3.5 w-3.5 mr-1" />}
-            董事登記冊 — 法人 (For Corporate Director)
+              : <FileText className="h-3.5 w-3.5 mr-1" />}
+            董事登記冊 (Excel) — 自然人 + 法人
           </Button>
         </div>
       </div>

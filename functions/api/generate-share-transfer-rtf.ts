@@ -186,8 +186,28 @@ export async function onRequest(context: { request: Request; env: Env }) {
       } catch { /* non-critical */ }
     }
 
+    // ── Resolve the effective transaction (used for names + dates below) ──
+    const tx = transaction || (allTransactions.length > 0 ? allTransactions[0] : {});
+
+    // ── Fallback: find person by name (case-insensitive), company-scoped first ──
+    const findPersonByName = async (name: string, companyId: string): Promise<any | null> => {
+      const clean = String(name || "").trim().toLowerCase();
+      if (!clean) return null;
+      const scoped = await env.DB.prepare(
+        `SELECT p.* FROM persons p
+         JOIN person_company_roles pcr ON pcr.person_id = p.id
+         WHERE pcr.company_id = ? AND LOWER(TRIM(p.name_english)) = ?
+         LIMIT 1`
+      ).bind(companyId, clean).first();
+      if (scoped) return scoped;
+      return await env.DB.prepare(
+        "SELECT * FROM persons WHERE LOWER(TRIM(name_english)) = ? LIMIT 1"
+      ).bind(clean).first();
+    };
+
     // ── Fetch persons for address + HKID data ──
-    // Support both: top-level from_person_id/to_person_id (QuickFormDialog) AND transaction object
+    // Support both: top-level from_person_id/to_person_id (QuickFormDialog) AND transaction object.
+    // When no person id is available (legacy records), fall back to a name lookup.
     let sellerPerson: any = null;
     let buyerPerson: any = null;
     const sellerId = body.from_person_id || transaction?.from_person_id;
@@ -195,10 +215,14 @@ export async function onRequest(context: { request: Request; env: Env }) {
     if (sellerId) {
       sellerPerson = await env.DB.prepare("SELECT * FROM persons WHERE id = ?")
         .bind(sellerId).first();
+    } else if (tx.from_name) {
+      sellerPerson = await findPersonByName(tx.from_name, companyId);
     }
     if (buyerId) {
       buyerPerson = await env.DB.prepare("SELECT * FROM persons WHERE id = ?")
         .bind(buyerId).first();
+    } else if (tx.to_name) {
+      buyerPerson = await findPersonByName(tx.to_name, companyId);
     }
 
     // ── Read RTF template from R2 ──
@@ -218,7 +242,6 @@ export async function onRequest(context: { request: Request; env: Env }) {
     const rtfTemplate = await templateObj.text();
 
     // ── Build replacement variables ──
-    const tx = transaction || (allTransactions.length > 0 ? allTransactions[0] : {});
     const vars: Record<string, string> = {};
 
     // Common
@@ -230,6 +253,10 @@ export async function onRequest(context: { request: Request; env: Env }) {
     vars["{{PRICE_PER_SHARE}}"] = fmtMoney(tx.price_per_share, tx.currency);
     vars["{{TOTAL_CONSIDERATION}}"] = fmtMoney(tx.total_consideration, tx.currency);
     vars["{{CONSIDERATION}}"] = fmtMoney(tx.total_consideration, tx.currency);
+
+    // Dates (transaction date → signature/dating lines)
+    vars["{{TX_DATE}}"] = fmtDateSlash(tx.transaction_date);
+    vars["{{SIGN_DATE}}"] = fmtDateSlash(tx.transaction_date);
 
     // Names
     vars["{{SELLER_NAME}}"] = tx.from_name || "";

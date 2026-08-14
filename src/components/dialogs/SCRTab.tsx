@@ -8,7 +8,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Separator } from '@/components/ui/separator';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { SearchableSelect, type MultiSelectOption } from '@/components/ui/searchable-multiselect';
-import { Plus, Edit, Trash2, Save, X, Download, Loader2, ShieldCheck, UserCheck, UserPlus } from 'lucide-react';
+import { Plus, Edit, Trash2, Save, X, ShieldCheck, UserCheck, UserPlus } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 
 import { Company, SignificantController } from '@/types';
@@ -30,7 +30,6 @@ export function SCRTab({ company }: { company: Company }) {
   const upsert = useUpsertSCR();
   const del = useDeleteSCR();
   const [editing, setEditing] = useState<Partial<SignificantController> | null>(null);
-  const [downloading, setDownloading] = useState(false);
   // ME-14/15/20 指定代表：SCR tab 內的「重要控制人 / 指定代表」子視圖
   const [view, setView] = useState<'scr' | 'reps'>('scr');
 
@@ -110,34 +109,6 @@ export function SCRTab({ company }: { company: Company }) {
     });
   };
 
-  const handleDownload = async () => {
-    setDownloading(true);
-    try {
-      const token = localStorage.getItem("secretary_jwt") || "";
-      const url = `/api/generate-scr-pdf`;
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ companyId: company.id }),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      const result = await res.json();
-      const byteChars = atob(result.pdf);
-      const byteArray = new Uint8Array(byteChars.length);
-      for (let i = 0; i < byteChars.length; i++) byteArray[i] = byteChars.charCodeAt(i);
-      const blob = new Blob([byteArray], { type: 'application/pdf' });
-      const blobUrl = URL.createObjectURL(blob);
-      window.open(blobUrl, '_blank');
-    } catch (e: any) {
-      toast({ title: 'PDF 生成失敗', description: e.message, variant: 'destructive' });
-    } finally {
-      setDownloading(false);
-    }
-  };
-
   return (
     <div>
       {/* 從公司現有成員快速新增為重要控制人 */}
@@ -171,12 +142,7 @@ export function SCRTab({ company }: { company: Company }) {
           </button>
         </div>
         <div className="flex gap-2">
-          {view === 'scr' && (
-            <Button variant="outline" size="sm" onClick={handleDownload} disabled={downloading || scrs.length === 0}>
-              {downloading ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Download className="h-3.5 w-3.5 mr-1" />}
-              下載登記冊 PDF
-            </Button>
-          )}
+          {/* 2026-08-14 用户决定：登记册 PDF 按钮移除，SCR 登记册只走 RegistersTab 的 Word 导出 */}
           <Button variant="ghost" size="sm" onClick={() => setEditing(empty(company.id, regAddr))}>
             <Plus className="h-3.5 w-3.5 mr-1" /> 新增
           </Button>

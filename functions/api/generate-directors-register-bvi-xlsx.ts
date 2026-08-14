@@ -307,11 +307,13 @@ export async function onRequest(context: { request: Request; env: Env }) {
 
     // ── sheet2: Corporate Director ──
     // 用户 2026-08-14：法人董事暂不填值 — 保留模板空格子 + 表头（数据不全时留空手填）
+    // 2026-08-14 追加：分页按模板固定 3 槽，法人少也不缩格；≥4 法人时才克隆加槽
+    const n2 = Math.max(3, corporate.length);
     let s2 = atob(_tpl["xl/worksheets/sheet2.xml"]);
     s2 = fillFormulaCell(s2, "D", 1, coName);
     s2 = fillFormulaCell(s2, "D", 2, coNumber);
     s2 = buildSheetXml(
-      s2, corporate.length,
+      s2, n2,
       (slot6: string) => slot6, // 每位法人一个空格子；K 列公式由 renumberRow 剥离为空样式格
       ["K3:M3", "G2:I2", "D1:F1", "D2:F2", "F5:G5", "A4:C4", "B5:D5", "I5:J5"],
       (r) => [`B${r}:D${r}`, `F${r}:G${r}`, `I${r}:J${r}`],
@@ -325,7 +327,7 @@ export async function onRequest(context: { request: Request; env: Env }) {
     // ── workbook.xml：Print_Area 末行更新 ──
     let wb = atob(_tpl["xl/workbook.xml"]);
     const last1 = natural.length === 0 ? 10 : 5 * natural.length + 9;
-    const last2 = corporate.length === 0 ? 10 : 5 * corporate.length + 9;
+    const last2 = 5 * n2 + 9; // n2≥3 → 法人表 Print_Area 至少覆盖模板 3 槽末行 24
     wb = wb.replace(/'individual Director'!\$A\$1:\$L\$24/, `'individual Director'!$A$1:$L$${last1}`);
     wb = wb.replace(/'Corporate Director'!\$A\$1:\$M\$24/, `'Corporate Director'!$A$1:$M$${last2}`);
 

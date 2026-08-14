@@ -206,6 +206,11 @@ function shiftBlockY(blockXml: string, offset: number): string {
 
 const PAGE_BREAK = '<w:p><w:r><w:br w:type="page"/></w:r></w:p>';
 
+/** 0.75pt 全宽黑色横线（VML bar，与模板页框线同机制），topPt = 页面绝对 y（pt） */
+function vmlBar(topPt: number, id: string): string {
+  return `<w:p><w:pPr><w:widowControl w:val="0"/><w:autoSpaceDE w:val="0"/><w:autoSpaceDN w:val="0"/><w:adjustRightInd w:val="0"/><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:r><w:rPr><w:noProof/></w:rPr><w:pict><v:rect id="${id}" style="position:absolute;margin-left:42.75pt;margin-top:${topPt.toFixed(2)}pt;width:756.75pt;height:.75pt;z-index:-251629568;mso-position-horizontal-relative:page;mso-position-vertical-relative:page" o:allowincell="f" fillcolor="black" stroked="f"><w10:wrap anchorx="page" anchory="page"/></v:rect></w:pict></w:r></w:p>`;
+}
+
 // ══════════════════════════════════════════════════════════════
 export async function onRequest(context: { request: Request; env: Env }) {
   const { request, env } = context;
@@ -317,6 +322,18 @@ export async function onRequest(context: { request: Request; env: Env }) {
 
     let docXml = atob(entries["word/document.xml"]);
 
+    // 灰表头块上下分界线（参考 Testing ROD y=78.7/116.6，0.75pt 黑线）
+    const grayIdx = docXml.indexOf("_x0000_s2057");
+    if (grayIdx >= 0) {
+      const grayParaEnd = docXml.indexOf("</w:p>", grayIdx);
+      if (grayParaEnd >= 0) {
+        docXml = docXml.slice(0, grayParaEnd + 6)
+          + vmlBar(78.7, "_x0000_s3A01")
+          + vmlBar(116.6, "_x0000_s3A02")
+          + docXml.slice(grayParaEnd + 6);
+      }
+    }
+
     // ── Build officer paragraph blocks ──
     // Extract DIR1 block (12 paragraphs: Name→DateCeased) and DIR2 block (10 paragraphs: Name→DateApp)
     // The "Secretary" label rows (P25-P26) between them are template boilerplate — NOT cloned.
@@ -397,6 +414,12 @@ export async function onRequest(context: { request: Request; env: Env }) {
           b = PAGE_BREAK + headerBlockXml + b;
         }
         generatedParas.push(b);
+
+        // 董事间分界线：每个董事块之后一条 0.75pt 黑线（参考 Testing ROD 惯例：
+        // 董事组间细线 + 末位董事后数据区底线；像素实测参考所有线统一 0.75pt）
+        // 块原生占 y=2521..3241tw，末行文字底≈3481tw，下一块顶 3706tw → 间隙中心 3550tw
+        const sepTopPt = (3550 + rowOnPage * ROW_STEP) / 20 - 0.375;
+        generatedParas.push(vmlBar(sepTopPt, `_x0000_s3B${String(i).padStart(2, "0")}`));
       }
 
       // Replace everything from dirBlockStart to ROD_DATA_END paragraph

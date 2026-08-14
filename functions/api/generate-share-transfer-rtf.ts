@@ -116,6 +116,43 @@ function fmtShares(n: number | string | null | undefined): string {
   return num.toLocaleString("en-US");
 }
 
+// ── RTF-escape inserted values ──
+// 模板自身中文全用 \uN RTF unicode 转义（模板文件零非 ASCII 字节），
+// 与段落字体 charset 无关。若把 raw UTF-8 中文直接塞进模板，
+// Word 会按段落字体声明的 charset（如 \f41 fcharset136=Big5/CP950）
+// 解码字节 → 乱码（香港 → 擐+U+EA54+葛，生产已证实）。
+// 因此插入值统一转 \uN 转义：\uc1 前缀把 fallback 计数锁定为 1，
+// 每转义后跟 1 个 fallback 字符 '?'；N 为 signed 16-bit（BMP >32767 用负值）。
+// 同时转义 RTF 控制字符 \ { }，删除换行（RTF 里 raw 换行会破坏控制流）。
+function rtfEscape(s: string): string {
+  if (!s) return "";
+  let out = "";
+  for (const ch of s) {
+    const cp = ch.codePointAt(0)!;
+    if (cp === 0x5c) out += "\\\\"; // backslash
+    else if (cp === 0x7b) out += "\\{"; // {
+    else if (cp === 0x7d) out += "\\}"; // }
+    else if (cp === 0x0d || cp === 0x0a) {
+      /* drop newlines */
+    } else if (cp > 0x7f) {
+      if (cp <= 0xffff) {
+        const n = cp > 32767 ? cp - 65536 : cp;
+        out += `\\uc1\\u${n}?`;
+      } else {
+        // astral 字符：代理对（两个 \uN 组合）
+        const sp = cp - 0x10000;
+        const hi = 0xd800 + (sp >> 10);
+        const lo = 0xdc00 + (sp & 0x3ff);
+        const s16 = (u: number) => (u > 32767 ? u - 65536 : u);
+        out += `\\uc1\\u${s16(hi)}?\\u${s16(lo)}?`;
+      }
+    } else {
+      out += ch;
+    }
+  }
+  return out;
+}
+
 // ── Format currency amount ──
 function fmtMoney(val: number | string | null | undefined, currency?: string | null): string {
   if (val === null || val === undefined) return "";
@@ -337,9 +374,11 @@ export async function onRequest(context: { request: Request; env: Env }) {
     vars["{{HOLDER_ADDR_L4}}"] = "";
 
     // ── Fill template via string replacement ──
+    // 所有插入值经 rtfEscape：中文转 \uN 转义（防 Word 按段落字体 charset 误解码 UTF-8），
+    // \ { } 转义、换行删除 — 模板自身中文就是 \uN 形式，插入值与其一致
     let rtfContent = rtfTemplate;
     for (const [placeholder, value] of Object.entries(vars)) {
-      rtfContent = rtfContent.replaceAll(placeholder, value);
+      rtfContent = rtfContent.replaceAll(placeholder, rtfEscape(value));
     }
 
     // ── Build filename ──

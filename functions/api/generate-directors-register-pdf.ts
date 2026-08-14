@@ -211,6 +211,14 @@ export async function onRequest(context: { request: Request; env: Env }) {
 
         const values = [nameBlock, dobBlock, idInfo, position, dateApp, reasonBlock];
         y = drawDataRow(page, f, rodCols, values, y);
+
+        // 董事间分界线（与 DOCX 版 ROD 一致）：每个董事块后 0.75pt 黑线，末位兼作数据区底线
+        page.drawLine({
+          start: { x: MARGIN, y },
+          end: { x: PAGE_W - MARGIN, y },
+          color: rgb(0, 0, 0),
+          thickness: 0.75,
+        });
       }
     }
 

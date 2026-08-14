@@ -173,8 +173,9 @@ interface ScrRep {
 }
 
 // ── SCR row cloning ──
-// Extracts the template data row from Table[0] Row 1,
-// clones it for each controller, replaces the template rows.
+// 第1页 Table[0] 只放前 2 名控制人；第 3 名起溢出到第2页 Table[3]（SCR 续页表）。
+// Table[3] 结构：行0=表头（tblHeader 跨页重复），行1-2=两个空数据行（trHeight 851，
+// 列宽与 Table[0] 完全一致）→ 用填好的 Table[0] 模板行克隆替换它们。
 
 function buildScrControllerRows(docXml: string, controllers: ScrController[]): string {
   const marker = "{{SCR_ENTRY_DATE}}";
@@ -200,9 +201,25 @@ function buildScrControllerRows(docXml: string, controllers: ScrController[]): s
   // Determine replacement range: from row1Start to end of row2 (if present)
   const replaceEnd = row2End > 0 ? row2End : (row1End + "</w:tr>".length);
 
-  // Clone row for each controller
+  // ── Helper: fill one SCR row with a controller ──
+  function fillScrRow(templateRowXml: string, sc: ScrController): string {
+    let r = templateRowXml;
+    r = r.replaceAll("{{SCR_ENTRY_DATE}}", escXml(sc.entryDate));
+    r = r.replaceAll("{{SCR_NAME}}", escXml(sc.name));
+    r = r.replaceAll("{{SCR_ADDR}}", escXml(sc.addr));
+    r = r.replaceAll("{{SCR_ID}}", escXml(sc.idBlock));
+    r = r.replaceAll("{{SCR_NATURE}}", escXml(sc.nature));
+    r = r.replaceAll("{{SCR_DATES}}", escXml(sc.dates));
+    r = r.replaceAll("{{SCR_REMARKS}}", escXml(sc.remarks));
+    return r;
+  }
+
+  const page1 = controllers.slice(0, 2);
+  const overflow = controllers.slice(2);
+
+  // Clone row for the page-1 controllers
   const rows: string[] = [];
-  if (controllers.length === 0) {
+  if (page1.length === 0) {
     let r = templateRow;
     r = r.replaceAll("{{SCR_ENTRY_DATE}}", "");
     r = r.replaceAll("{{SCR_NAME}}", escXml("(No significant controllers / 尚無重要控制人記錄)"));
@@ -210,22 +227,47 @@ function buildScrControllerRows(docXml: string, controllers: ScrController[]): s
     for (const ph of scrPhs) r = r.replaceAll(`{{${ph}}}`, "");
     rows.push(r);
   } else {
-    for (const sc of controllers) {
-      let r = templateRow;
-      r = r.replaceAll("{{SCR_ENTRY_DATE}}", escXml(sc.entryDate));
-      r = r.replaceAll("{{SCR_NAME}}", escXml(sc.name));
-      r = r.replaceAll("{{SCR_ADDR}}", escXml(sc.addr));
-      r = r.replaceAll("{{SCR_ID}}", escXml(sc.idBlock));
-      r = r.replaceAll("{{SCR_NATURE}}", escXml(sc.nature));
-      r = r.replaceAll("{{SCR_DATES}}", escXml(sc.dates));
-      r = r.replaceAll("{{SCR_REMARKS}}", escXml(sc.remarks));
-      rows.push(r);
-    }
+    for (const sc of page1) rows.push(fillScrRow(templateRow, sc));
   }
 
   const before = docXml.substring(0, row1Start);
   const after = docXml.substring(replaceEnd);
   let result = before + rows.join("") + after;
+
+  // ── Overflow (>2 controllers) → Table[3]（文档第 4 个 <w:tbl>）──
+  if (overflow.length > 0) {
+    let t3Idx = -1;
+    let searchFrom = 0;
+    for (let t = 0; t < 4; t++) {
+      const p = result.indexOf("<w:tbl>", searchFrom);
+      if (p < 0) break;
+      t3Idx = p;
+      searchFrom = p + 1;
+    }
+    if (t3Idx >= 0) {
+      const tblEnd = result.indexOf("</w:tbl>", t3Idx);
+      if (tblEnd >= 0) {
+        const table3 = result.substring(t3Idx, tblEnd + "</w:tbl>".length);
+        // 行0=表头；行1/行2=空数据行（模板行标签都是 <w:tr w:rsidR=...> 带空格形态）
+        const tr1 = table3.indexOf("<w:tr ", 0);
+        const tr2 = tr1 >= 0 ? table3.indexOf("<w:tr ", tr1 + 1) : -1;
+        const tr3 = tr2 >= 0 ? table3.indexOf("<w:tr ", tr2 + 1) : -1;
+        if (tr2 >= 0) {
+          let overflowEnd: number;
+          if (tr3 >= 0) {
+            const r2EndIdx = table3.indexOf("</w:tr>", tr3);
+            overflowEnd = r2EndIdx >= 0 ? r2EndIdx + "</w:tr>".length : table3.length;
+          } else {
+            const tblEndIdx = table3.indexOf("</w:tbl>");
+            overflowEnd = tblEndIdx >= 0 ? tblEndIdx : table3.length;
+          }
+          const overflowRows = overflow.map((sc) => fillScrRow(templateRow, sc)).join("");
+          const newTable3 = table3.substring(0, tr2) + overflowRows + table3.substring(overflowEnd);
+          result = result.substring(0, t3Idx) + newTable3 + result.substring(tblEnd + "</w:tbl>".length);
+        }
+      }
+    }
+  }
 
   // Clean any remaining SCR2_* placeholders
   const scr2Phs = ["SCR2_ENTRY_DATE","SCR2_NAME","SCR2_ADDR","SCR2_ID",

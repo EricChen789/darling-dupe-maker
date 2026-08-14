@@ -58,6 +58,8 @@ function splitAddressBalanced(addr: string, numLines: number, maxCharsPerLine: n
 }
 
 // ── Build person address from structured fields ──
+// 回退链：结构化住宅地址 → address → 结构化服务地址 → service_address
+// （生产数据有 address 空但 service_address 有值的记录，如 PAUL TANG 买方 Timothy Tang）
 function buildPersonAddress(person: any): string {
   if (!person) return "";
   const parts = [
@@ -68,7 +70,16 @@ function buildPersonAddress(person: any): string {
     person.addr_region,
   ].filter(Boolean);
   if (parts.length > 0) return parts.join(", ");
-  return person.address || "";
+  if (person.address) return person.address;
+  const svcParts = [
+    person.svc_addr_flat,
+    person.svc_addr_building,
+    person.svc_addr_street,
+    person.svc_addr_district,
+    person.svc_addr_region,
+  ].filter(Boolean);
+  if (svcParts.length > 0) return svcParts.join(", ");
+  return person.service_address || "";
 }
 
 // ── Build company registered office address ──

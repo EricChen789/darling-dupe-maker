@@ -236,8 +236,12 @@ export function wrapText(
 
 // ═══ Unified Font Loading ═══
 // Strategy: 1) R2 bucket (fast, reliable) → 2) CDN fallback → 3) Helvetica only
+// R2 里存的是 TTF 内容（fontkit 无法解压 woff2）；key 名历史上是 NotoSansTC.woff2，
+// 兼容多个 key 名以防重命名后 R2 查不到。CDN 兜底必须是 fontkit 可解析的格式
+// （TTF/OTF 均可——实测 CFF OTF 可嵌入），绝不能再放 woff2。
 const CHINESE_FONT_URL_CDN =
-  "https://cdn.jsdelivr.net/fontsource/fonts/noto-sans-tc@latest/chinese-traditional-400-normal.woff2";
+  "https://raw.githubusercontent.com/googlefonts/noto-cjk/main/Sans/OTF/TraditionalChinese/NotoSansTC-Regular.otf";
+const FONT_R2_KEYS = ["NotoSansTC.woff2", "NotoSansTC.ttf", "NotoSansTC_full.ttf"];
 
 export interface EmbeddedFonts {
   cjk: any;
@@ -253,13 +257,20 @@ export async function fetchAndEmbedFont(
 
   let fontBytes: ArrayBuffer | null = null;
 
-  // 1) Try R2 bucket first
+  // 1) Try R2 bucket first (多个历史 key 名，取第一个有内容的)
   try {
     const r2Bucket = env.PDF_TEMPLATES || env.R2;
     if (r2Bucket) {
-      const r2Obj = await r2Bucket.get("NotoSansTC.woff2");
-      if (r2Obj) {
-        fontBytes = await r2Obj.arrayBuffer();
+      for (const key of FONT_R2_KEYS) {
+        try {
+          const r2Obj = await r2Bucket.get(key);
+          if (r2Obj) {
+            fontBytes = await r2Obj.arrayBuffer();
+            if (fontBytes && fontBytes.byteLength > 0) break;
+          }
+        } catch {
+          // 试下一个 key
+        }
       }
     }
   } catch {

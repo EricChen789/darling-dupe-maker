@@ -41,6 +41,26 @@ const EVENT_TYPE_TO_ROLE: Record<string, string> = {
 // ── Event types that QuickFormDialog can handle ──
 const QF_SUPPORTED_TYPES = new Set(Object.keys(EVENT_TYPE_TO_QF_TYPE));
 
+// ── 人事事件（委任／辭任）— 同一天打包生成 ND2A ──
+const PERSONNEL_EVENT_TYPES = new Set<string>([
+  'director_appoint', 'director_cease',
+  'secretary_appoint', 'secretary_cease',
+  'reserve_director_appoint', 'reserve_director_cease',
+]);
+
+// ── Normalise change_date (DD/MM/YYYY | YYYY-MM-DD | DDMMYYYY) → YYYYMMDD ──
+function dayKeyOf(dateStr?: string): string {
+  if (!dateStr) return '';
+  const t = String(dateStr).trim();
+  let d = '', m = '', y = '';
+  if (/^\d{8}$/.test(t)) { d = t.slice(0, 2); m = t.slice(2, 4); y = t.slice(4, 8); }
+  else if (/^\d{4}-\d{2}-\d{2}/.test(t)) { y = t.slice(0, 4); m = t.slice(5, 7); d = t.slice(8, 10); }
+  else if (/^\d{1,2}\/\d{1,2}\/\d{4}/.test(t)) {
+    const [dd, mm, yy] = t.split('/'); d = dd.padStart(2, '0'); m = mm.padStart(2, '0'); y = yy;
+  } else return '';
+  return `${y}${m}${d}`;
+}
+
 // ── Parse a change_event into QuickFormDialog-compatible format ──
 function changeEventToQfEvent(ev: ChangeEvent) {
   const qfType = EVENT_TYPE_TO_QF_TYPE[ev.event_type] || '';
@@ -64,6 +84,16 @@ function changeEventToQfEvent(ev: ChangeEvent) {
   // For reserve directors
   if (ev.event_type.startsWith('reserve_director')) {
     raw.isReserve = true;
+  }
+  // Date fallback: 辭任事件的 old_value 常缺 date_ceased、委任缺 date_appointed
+  // → 用 change_events.change_date（DD/MM/YYYY）補上，QuickFormDialog 會歸一化
+  if (explicitRole && ev.change_date) {
+    if (ev.event_type.endsWith('_cease') && !raw.date_ceased) {
+      raw.date_ceased = ev.change_date;
+    }
+    if (ev.event_type.endsWith('_appoint') && !raw.date_appointed) {
+      raw.date_appointed = ev.change_date;
+    }
   }
 
   const title = buildEventTitle(ev, raw);
@@ -120,7 +150,7 @@ interface TabChangeEventsFooterProps {
 export function TabChangeEventsFooter({ companyId, company, eventTypes, label }: TabChangeEventsFooterProps) {
   const [expanded, setExpanded] = useState(false);
   const [qfOpen, setQfOpen] = useState(false);
-  const [qfEvent, setQfEvent] = useState<any>(null);
+  const [qfEvents, setQfEvents] = useState<any[]>([]);
 
   const { data: allEvents = [], isLoading } = useChangeEvents(companyId);
 
@@ -138,9 +168,15 @@ export function TabChangeEventsFooter({ companyId, company, eventTypes, label }:
   if (isLoading) return null;
   if (filtered.length === 0) return null;
 
+  // ── 生成表格：同一天的全部人事事件（委任＋辭任）一併打包 ──
+  // 從 allEvents（全公司）分組，不限本 tab 過濾 — 董事 tab 也能帶上同日秘書變更
   const handleGenerate = (ev: ChangeEvent) => {
-    const qfEv = changeEventToQfEvent(ev);
-    setQfEvent(qfEv);
+    const isPersonnel = PERSONNEL_EVENT_TYPES.has(ev.event_type);
+    const dayKey = dayKeyOf(ev.change_date);
+    const sameDay = isPersonnel && dayKey
+      ? allEvents.filter(e => PERSONNEL_EVENT_TYPES.has(e.event_type) && dayKeyOf(e.change_date) === dayKey)
+      : [ev];
+    setQfEvents(sameDay.map(e => changeEventToQfEvent(e)));
     setQfOpen(true);
   };
 
@@ -224,7 +260,7 @@ export function TabChangeEventsFooter({ companyId, company, eventTypes, label }:
         open={qfOpen}
         onOpenChange={setQfOpen}
         company={company}
-        event={qfEvent}
+        events={qfEvents}
       />
     </>
   );

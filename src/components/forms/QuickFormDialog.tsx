@@ -9,6 +9,12 @@ import {
 import { toast } from '@/hooks/use-toast';
 import { Loader2, FileText, Download } from 'lucide-react';
 
+export interface QuickFormEvent {
+  type: string;
+  title: string;
+  raw: any;
+}
+
 interface QuickFormDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -21,16 +27,13 @@ interface QuickFormDialogProps {
     incorporationDate?: string;
     jurisdiction?: string;
   };
-  event: {
-    type: string;
-    title: string;
-    raw: any;
-  } | null;
+  /** 同一天的人事事件（委任＋辭任多於一人時會一併生成）或單一非人事事件 */
+  events: QuickFormEvent[];
 }
 
 // Form type → API endpoint mapping
 const FORM_CONFIGS: Record<string, { label: string; endpoint: string; icon: string }> = {
-  nd2a_appoint: { label: 'ND2A 委任通知書', endpoint: '/api/generate-nd2a-pdf', icon: '📋' },
+  nd2a_appoint: { label: 'ND2A 委任／停任通知書', endpoint: '/api/generate-nd2a-pdf', icon: '📋' },
   nd4_cease: { label: 'ND4 辭任通知書', endpoint: '/api/generate-nd4-pdf', icon: '📋' },
   bought_sold_note: { label: '買賣票據', endpoint: '/api/generate-share-transfer-rtf', icon: '💰' },
   instrument_of_transfer: { label: '轉讓文書', endpoint: '/api/generate-share-transfer-rtf', icon: '📄' },
@@ -39,14 +42,22 @@ const FORM_CONFIGS: Record<string, { label: string; endpoint: string; icon: stri
   nd2b_change: { label: 'ND2B 更改詳情通知書', endpoint: '/api/generate-nd2b-pdf', icon: '📋' },
 };
 
-function getFormOptions(eventType: string, raw: any): { key: string; config: typeof FORM_CONFIGS[string] }[] {
+function getFormOptions(events: QuickFormEvent[]): { key: string; config: typeof FORM_CONFIGS[string] }[] {
   const opts: { key: string; config: typeof FORM_CONFIGS[string] }[] = [];
 
-  if (eventType === 'appoint') {
+  // ── 人事事件（委任＋辭任）— 同一天多位人士一併處理 ──
+  const personnel = events.filter(e => e.type === 'appoint' || e.type === 'cease');
+  if (personnel.length > 0) {
+    // ND2A 一份可含委任＋停任（模板容量 2 停任 + 2 自然人 + 2 法人，超出自動分多份）
     opts.push({ key: 'nd2a_appoint', config: FORM_CONFIGS.nd2a_appoint });
-  } else if (eventType === 'cease') {
-    opts.push({ key: 'nd4_cease', config: FORM_CONFIGS.nd4_cease });
-  } else if (eventType === 'transfer') {
+    if (personnel.some(e => e.type === 'cease')) {
+      // ND4 是辭任人本人遞交的通知書 — 每位辭任人各生成一份
+      opts.push({ key: 'nd4_cease', config: FORM_CONFIGS.nd4_cease });
+    }
+  }
+
+  const eventType = events[0]?.type || '';
+  if (eventType === 'transfer') {
     opts.push({ key: 'bought_sold_note', config: FORM_CONFIGS.bought_sold_note });
     opts.push({ key: 'instrument_of_transfer', config: FORM_CONFIGS.instrument_of_transfer });
     opts.push({ key: 'share_certificate', config: FORM_CONFIGS.share_certificate });
@@ -60,11 +71,6 @@ function getFormOptions(eventType: string, raw: any): { key: string; config: typ
     opts.push({ key: 'share_certificate', config: FORM_CONFIGS.share_certificate });
   } else if (eventType === 'nd2b_change') {
     opts.push({ key: 'nd2b_change', config: FORM_CONFIGS.nd2b_change });
-  }
-
-  // Also allow for personnel roles
-  if (raw?.role && (eventType === 'appoint' || eventType === 'cease')) {
-    // Already covered above
   }
 
   return opts;
@@ -123,9 +129,157 @@ function rget(obj: any, camel: string, snake: string): string {
   return (obj[camel] ?? obj[snake] ?? '').toString();
 }
 
+// ── Helper: build one ND2A officer from a personnel QuickFormEvent ──
+// Handles both appointment (委任) and cessation (停任) — backend accepts mixed officers[].
+function buildNd2aOfficer(pe: QuickFormEvent): any {
+  const raw = pe.raw || {};
+  const rawRole = raw.role || 'director';
+  let role = mapRole(rawRole);
+  // If the person is an alternate director (候補董事), use 'alternate'
+  if (raw.isReserve) role = 'alternate';
+  const isAppoint = pe.type === 'appoint';
+  const today = new Date().toLocaleDateString('en-GB');
+
+  // Parse names once
+  const engFull = rget(raw, 'nameEnglish', 'name_english');
+  const { surname, otherNames } = parseEnglishName(engFull);
+  const nameChinese = rget(raw, 'nameChinese', 'name_chinese') || raw?.chinese_name || '';
+  const idNumber = rget(raw, 'idNumber', 'id_number');
+  const passportNumber = rget(raw, 'passportNumber', 'passport_number');
+  const isCorporate = (raw.identity || 'natural') === 'corporate';
+
+  // ── Address: residential first, fall back to service address ──
+  let addrFlatBlock = rget(raw, 'addrFlat', 'addr_flat') || rget(raw, 'addrFlatBlock', 'addr_flat_block');
+  let addrBuilding = rget(raw, 'addrBuilding', 'addr_building');
+  let addrStreetEstate = rget(raw, 'addrStreet', 'addr_street') || rget(raw, 'addrStreetEstate', 'addr_street_estate');
+  let addrDistrict = rget(raw, 'addrDistrict', 'addr_district');
+  let addrRegion = rget(raw, 'addrRegion', 'addr_region');
+  let address = raw?.address || '';
+  const svcAddrFlat = rget(raw, 'svcAddrFlat', 'svc_addr_flat');
+  const svcAddrBuilding = rget(raw, 'svcAddrBuilding', 'svc_addr_building');
+  const svcAddrStreet = rget(raw, 'svcAddrStreet', 'svc_addr_street');
+  const svcAddrDistrict = rget(raw, 'svcAddrDistrict', 'svc_addr_district');
+  const svcAddrRegion = rget(raw, 'svcAddrRegion', 'svc_addr_region');
+  const serviceAddress = raw?.serviceAddress || raw?.person_service_address || '';
+  const hasResAddr = addrFlatBlock || addrBuilding || addrStreetEstate || addrDistrict || addrRegion || address;
+  if (!hasResAddr) {
+    addrFlatBlock = svcAddrFlat;
+    addrBuilding = svcAddrBuilding;
+    addrStreetEstate = svcAddrStreet;
+    addrDistrict = svcAddrDistrict;
+    addrRegion = svcAddrRegion;
+    address = serviceAddress;
+  }
+
+  const officer: any = {
+    type: isAppoint ? 'appointment' : 'cessation',
+    role,
+    identity: raw.identity || 'natural',
+    nameEnglish: engFull,
+    nameSurname: surname,
+    nameOtherNames: otherNames,
+    nameChinese,
+    idNumber,
+    address,
+  };
+
+  if (isAppoint) {
+    // Appointment date — fall back to today if missing
+    officer.dateAppointed = normalizeDate(rget(raw, 'dateAppointed', 'date_appointed') || today);
+    if (!isCorporate) {
+      const alreadyDir = rget(raw, 'alreadyDirector', 'already_director');
+      officer.alreadyDirector = (alreadyDir === 'yes' || alreadyDir === 'no') ? alreadyDir : 'no';
+    }
+  } else {
+    // Cessation date — use actual date, DON'T fall back to today
+    const dateCeasedRaw = rget(raw, 'dateCeased', 'date_ceased');
+    officer.dateCeased = dateCeasedRaw ? normalizeDate(dateCeasedRaw) : '';
+    officer.cessationReason = 'resignation';
+    officer.stillHoldsOffice = 'no';
+  }
+
+  if (isCorporate) {
+    // Corporate-specific fields (P.3/P.6 法人團體)
+    officer.companyName = engFull;  // 公司英文名稱 → fill_4
+    const corpBR = rget(raw, 'companyNumberRef', 'company_number_ref') || idNumber || '';
+    officer.companyNumber = corpBR;  // 商業登記號碼 → fill_11
+    officer.placeIncorporated = rget(raw, 'placeIncorporated', 'place_incorporated') || raw?.addrRegion || raw?.addr_region || 'Hong Kong';
+    const tcspLicence = rget(raw, 'tcspNumber', 'tcsp_number') || (raw as any)?.tcsp_number || (raw as any)?.tcspLicence || '';
+    if (tcspLicence) officer.tcspLicence = tcspLicence;
+  }
+
+  // Passport
+  if (raw?.passportCountry || raw?.passport_country) officer.passportCountry = rget(raw, 'passportCountry', 'passport_country');
+  if (passportNumber) officer.passportNumber = passportNumber;
+  // Structured address (preferred by backend for P.2 fill_10~14 / P.7 fill_9~13)
+  if (addrFlatBlock || addrBuilding || addrStreetEstate || addrDistrict || addrRegion) {
+    officer.addrFlatBlock = addrFlatBlock;
+    officer.addrBuilding = addrBuilding;
+    officer.addrStreetEstate = addrStreetEstate;
+    officer.addrDistrict = addrDistrict;
+    officer.addrRegion = addrRegion;
+  }
+  // Alternate-to
+  if (role === 'alternate') {
+    officer.alternateTo = rget(raw, 'alternateTo', 'alternate_to');
+  }
+
+  return officer;
+}
+
+// ── Helper: ND2A payload for a list of officers ──
+function buildNd2aPayload(company: QuickFormDialogProps['company'], officers: any[]): any {
+  const today = new Date().toLocaleDateString('en-GB');
+  const DEFAULT_PRESENTER = {
+    name: 'Twinsail Consultants Limited',
+    address: 'Room 1203, 12/F, Wing On Centre, 111 Connaught Road Central, Hong Kong',
+    phone: '+852 2521 3888',
+    fax: '+852 2521 3999',
+    email: 'info@twinsail.com',
+    reference: 'TS-2026-001',
+  };
+  const firstOfficerName = officers[0]?.nameEnglish || '';
+  return {
+    company_id: company.id,
+    companyId: company.id,
+    companyName: company.name,
+    chineseCompanyName: company.chineseName || '',
+    brNumber: company.brNumber || '',
+    ciNumber: company.ciNumber || '',
+    officers,
+    signerName: firstOfficerName,
+    signDate: today.split('/').reverse().join('-'),  // DD/MM/YYYY → YYYY-MM-DD
+    presentorName: DEFAULT_PRESENTER.name,
+    presentorAddress: DEFAULT_PRESENTER.address,
+    presentorPhone: DEFAULT_PRESENTER.phone,
+    presentorFax: DEFAULT_PRESENTER.fax,
+    presentorEmail: DEFAULT_PRESENTER.email,
+    presentorReference: DEFAULT_PRESENTER.reference,
+  };
+}
+
+// ── Helper: split officers into ND2A forms respecting template capacity ──
+// Template: 2 cessations (P.1/P.4) + 2 natural appointments (P.2/P.5) + 2 corporate (P.3/P.6) per form.
+function chunkNd2aOfficers(officers: any[]): any[][] {
+  const cess = officers.filter(o => o.type === 'cessation');
+  const nat = officers.filter(o => o.type === 'appointment' && o.identity === 'natural');
+  const corp = officers.filter(o => o.type === 'appointment' && o.identity === 'corporate');
+  const nForms = Math.max(1, Math.ceil(cess.length / 2), Math.ceil(nat.length / 2), Math.ceil(corp.length / 2));
+  const chunks: any[][] = [];
+  for (let i = 0; i < nForms; i++) {
+    chunks.push([
+      ...cess.slice(i * 2, i * 2 + 2),
+      ...nat.slice(i * 2, i * 2 + 2),
+      ...corp.slice(i * 2, i * 2 + 2),
+    ]);
+  }
+  return chunks;
+}
+
 function buildFormPayload(
-  formKey: string, company: QuickFormDialogProps['company'], event: NonNullable<QuickFormDialogProps['event']>
+  formKey: string, company: QuickFormDialogProps['company'], events: QuickFormEvent[]
 ): any {
+  const event = events[0];
   const { raw } = event;
   const rawRole = raw?.role || 'director';
   let role = mapRole(rawRole);
@@ -196,67 +350,11 @@ function buildFormPayload(
 
   switch (formKey) {
     case 'nd2a_appoint': {
-      const isCorporate = (raw?.identity || 'natural') === 'corporate';
-      const officer: any = {
-        nameEnglish: engFull,
-        nameSurname: surname,
-        nameOtherNames: otherNames,
-        nameChinese,
-        role,
-        identity: raw?.identity || 'natural',
-        idNumber,
-        address,
-        dateAppointed,
-        type: 'appointment',
-      };
-      // Corporate-specific fields (P.3/P.5/P.7 法人團體)
-      // Backend mapping: companyName→fill_4, companyNumber→fill_11(BR), tcspLicence→fill_12(牌照號碼)
-      if (isCorporate) {
-        officer.companyName = engFull;  // 公司英文名稱 → fill_4
-        // 法人 companyNumber 用 company_number_ref（非 id_number，後者為 HKID 欄位）
-        const corpBR = rget(raw, 'companyNumberRef', 'company_number_ref') || idNumber || '';
-        officer.companyNumber = corpBR;  // 商業登記號碼 → fill_11
-        officer.placeIncorporated = rget(raw, 'placeIncorporated', 'place_incorporated') || raw?.addrRegion || raw?.addr_region || 'Hong Kong';
-        const tcspLicence = rget(raw, 'tcspNumber', 'tcsp_number') || (raw as any)?.tcsp_number || (raw as any)?.tcspLicence || '';
-        if (tcspLicence) officer.tcspLicence = tcspLicence;  // TCSP 牌照號碼 → fill_12
-      }
-      // Already director (for natural person cb_5/cb_6 on P.2)
-      if (!isCorporate) {
-        const alreadyDir = rget(raw, 'alreadyDirector', 'already_director');
-        if (alreadyDir === 'yes' || alreadyDir === 'no') {
-          officer.alreadyDirector = alreadyDir;
-        } else {
-          officer.alreadyDirector = 'no';  // default: not already a director
-        }
-      }
-      // Passport
-      if (raw?.passportCountry || raw?.passport_country) officer.passportCountry = rget(raw, 'passportCountry', 'passport_country');
-      if (passportNumber) officer.passportNumber = passportNumber;
-      // Structured address (preferred by backend for P.2 fill_10~14 / P.7 fill_9~13)
-      if (addrFlatBlock || addrBuilding || addrStreetEstate || addrDistrict || addrRegion) {
-        officer.addrFlatBlock = addrFlatBlock;
-        officer.addrBuilding = addrBuilding;
-        officer.addrStreetEstate = addrStreetEstate;
-        officer.addrDistrict = addrDistrict;
-        officer.addrRegion = addrRegion;
-      }
-      // Alternate-to
-      if (role === 'alternate') {
-        officer.alternateTo = rget(raw, 'alternateTo', 'alternate_to');
-      }
-      // Signer (defaults to the appointee) & presenter
-      return {
-        ...base,
-        officers: [officer],
-        signerName: engFull,
-        signDate: today.split('/').reverse().join('-'),  // DD/MM/YYYY → YYYY-MM-DD
-        presentorName: DEFAULT_PRESENTER.name,
-        presentorAddress: DEFAULT_PRESENTER.address,
-        presentorPhone: DEFAULT_PRESENTER.phone,
-        presentorFax: DEFAULT_PRESENTER.fax,
-        presentorEmail: DEFAULT_PRESENTER.email,
-        presentorReference: DEFAULT_PRESENTER.reference,
-      };
+      // 同一天全部人事事件（委任＋辭任）一併生成 ND2A
+      const officers = events
+        .filter(e => e.type === 'appoint' || e.type === 'cease')
+        .map(e => buildNd2aOfficer(e));
+      return buildNd2aPayload(company, officers);
     }
     case 'nd4_cease': {
       // ND4 backend expects flat top-level keys (NOT officers[] array)
@@ -508,40 +606,85 @@ async function downloadRtf(base64: string, filename: string) {
   URL.revokeObjectURL(url);
 }
 
-export function QuickFormDialog({ open, onOpenChange, company, event }: QuickFormDialogProps) {
+export function QuickFormDialog({ open, onOpenChange, company, events }: QuickFormDialogProps) {
   const [loading, setLoading] = useState<string | null>(null);
 
-  if (!event) return null;
-  const formOptions = getFormOptions(event.type, event.raw);
+  if (!events.length) return null;
+  const formOptions = getFormOptions(events);
   if (formOptions.length === 0) return null;
+
+  const personnelEvents = events.filter(e => e.type === 'appoint' || e.type === 'cease');
+  const resigners = personnelEvents.filter(e => e.type === 'cease');
 
   const handleGenerate = async (formKey: string) => {
     setLoading(formKey);
     try {
       const config = FORM_CONFIGS[formKey];
-      const payload = buildFormPayload(formKey, company, event);
       const token = localStorage.getItem('secretary_jwt') || '';
+      const safeName = (company.name || 'company').replace(/[^a-zA-Z0-9一-鿿]/g, '_');
 
-      const resp = await fetch(config.endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify(payload),
-      });
+      const postJson = async (payload: any) => {
+        const resp = await fetch(config.endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify(payload),
+        });
+        if (!resp.ok) {
+          const err = await resp.json().catch(() => ({ error: resp.statusText }));
+          throw new Error(err.error || `HTTP ${resp.status}`);
+        }
+        return resp.json();
+      };
 
-      if (!resp.ok) {
-        const err = await resp.json().catch(() => ({ error: resp.statusText }));
-        throw new Error(err.error || `HTTP ${resp.status}`);
+      // ── ND2A：同一天全部委任＋辭任人士，按模板容量自動分多份 ──
+      if (formKey === 'nd2a_appoint') {
+        const officers = personnelEvents.map(e => buildNd2aOfficer(e));
+        const chunks = chunkNd2aOfficers(officers);
+        for (let i = 0; i < chunks.length; i++) {
+          const payload = buildNd2aPayload(company, chunks[i]);
+          const result = await postJson(payload);
+          if (!result.pdf) throw new Error('No data in response');
+          const suffix = chunks.length > 1 ? `_第${i + 1}份` : '';
+          await downloadPdf(result.pdf, `${config.label.replace(/\s/g, '_')}_${safeName}${suffix}.pdf`);
+        }
+        toast({
+          title: '✅ PDF 已生成',
+          description: chunks.length > 1
+            ? `ND2A 共 ${chunks.length} 份（同日 ${officers.length} 位人士）下載完成`
+            : `ND2A（同日 ${officers.length} 位人士）下載完成`,
+        });
+        onOpenChange(false);
+        return;
       }
 
-      const result = await resp.json();
+      // ── ND4：辭任人本人遞交 — 每位辭任人各一份 ──
+      if (formKey === 'nd4_cease') {
+        let done = 0;
+        for (const ev of resigners) {
+          const payload = buildFormPayload('nd4_cease', company, [ev]);
+          const result = await postJson(payload);
+          if (!result.pdf) throw new Error('No data in response');
+          const suffix = resigners.length > 1 ? `_第${done + 1}份` : '';
+          await downloadPdf(result.pdf, `${config.label.replace(/\s/g, '_')}_${safeName}${suffix}.pdf`);
+          done++;
+        }
+        toast({
+          title: '✅ PDF 已生成',
+          description: resigners.length > 1 ? `ND4 共 ${done} 份（每位辭任人一份）下載完成` : 'ND4 下載完成',
+        });
+        onOpenChange(false);
+        return;
+      }
+
+      // ── 其他表格（股份交易等）— 單事件 ──
+      const payload = buildFormPayload(formKey, company, events);
+      const result = await postJson(payload);
       if (result.pdf) {
-        const safeName = (company.name || 'company').replace(/[^a-zA-Z0-9一-鿿]/g, '_');
         const filename = `${config.label.replace(/\s/g, '_')}_${safeName}.pdf`;
         await downloadPdf(result.pdf, filename);
         toast({ title: '✅ PDF 已生成', description: `${config.label} 下載完成` });
         onOpenChange(false);
       } else if (result.rtf) {
-        const safeName = (company.name || 'company').replace(/[^a-zA-Z0-9一-鿿]/g, '_');
         const filename = result.filename || `${config.label.replace(/\s/g, '_')}_${safeName}.rtf`;
         downloadRtf(result.rtf, filename);
         toast({ title: '✅ RTF 已生成', description: `${config.label} 下載完成` });
@@ -557,6 +700,12 @@ export function QuickFormDialog({ open, onOpenChange, company, event }: QuickFor
     }
   };
 
+  const eventTypeLabel = personnelEvents.length > 0
+    ? (personnelEvents.some(e => e.type === 'appoint') && personnelEvents.some(e => e.type === 'cease')
+      ? '委任＋辭任'
+      : personnelEvents[0].type === 'appoint' ? '委任' : '辭任')
+    : (events[0]?.type || '');
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
@@ -566,7 +715,9 @@ export function QuickFormDialog({ open, onOpenChange, company, event }: QuickFor
             生成相關表格
           </DialogTitle>
           <DialogDescription>
-            基於公司誌事件「{event.title}」自動生成對應的政府表格
+            {personnelEvents.length > 1
+              ? `同一天共有 ${personnelEvents.length} 位人士的委任／辭任記錄，可一併生成表格`
+              : `基於公司誌事件「${events[0]?.title || ''}」自動生成對應的政府表格`}
           </DialogDescription>
         </DialogHeader>
 
@@ -576,30 +727,54 @@ export function QuickFormDialog({ open, onOpenChange, company, event }: QuickFor
             {company.chineseName && <span className="text-foreground">（{company.chineseName}）</span>}
           </div>
           <div className="text-sm text-muted-foreground">
-            事件類型：<Badge variant="secondary" className="ml-1">{event.type}</Badge>
+            事件類型：<Badge variant="secondary" className="ml-1">{eventTypeLabel}</Badge>
+            {personnelEvents.length > 0 && (
+              <span className="text-xs text-muted-foreground/70 ml-1">（同日 {personnelEvents.length} 人）</span>
+            )}
           </div>
+
+          {/* 同一天人士清單 */}
+          {personnelEvents.length > 0 && (
+            <div className="rounded-md border border-border bg-muted/30 p-2 space-y-1 max-h-32 overflow-y-auto">
+              {personnelEvents.map((e, i) => (
+                <div key={i} className="text-xs flex items-center gap-2 min-w-0">
+                  <Badge variant={e.type === 'appoint' ? 'default' : 'destructive'} className="h-4 px-1 text-[10px] shrink-0">
+                    {e.type === 'appoint' ? '委任' : '辭任'}
+                  </Badge>
+                  <span className="truncate">{e.title}</span>
+                </div>
+              ))}
+            </div>
+          )}
 
           <div className="space-y-2 pt-2">
             <p className="text-sm font-medium">選擇要生成的表格：</p>
-            {formOptions.map(opt => (
-              <Button
-                key={opt.key}
-                variant="outline"
-                className="w-full justify-between"
-                disabled={loading !== null}
-                onClick={() => handleGenerate(opt.key)}
-              >
-                <span className="flex items-center gap-2">
-                  <span>{opt.config.icon}</span>
-                  <span>{opt.config.label}</span>
-                </span>
-                {loading === opt.key ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Download className="h-4 w-4" />
-                )}
-              </Button>
-            ))}
+            {formOptions.map(opt => {
+              const label = opt.key === 'nd2a_appoint' && personnelEvents.length > 1
+                ? `${opt.config.label}（同日 ${personnelEvents.length} 人）`
+                : opt.key === 'nd4_cease' && resigners.length > 1
+                  ? `${opt.config.label}（${resigners.length} 份）`
+                  : opt.config.label;
+              return (
+                <Button
+                  key={opt.key}
+                  variant="outline"
+                  className="w-full justify-between"
+                  disabled={loading !== null}
+                  onClick={() => handleGenerate(opt.key)}
+                >
+                  <span className="flex items-center gap-2">
+                    <span>{opt.config.icon}</span>
+                    <span>{label}</span>
+                  </span>
+                  {loading === opt.key ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Download className="h-4 w-4" />
+                  )}
+                </Button>
+              );
+            })}
           </div>
         </div>
       </DialogContent>

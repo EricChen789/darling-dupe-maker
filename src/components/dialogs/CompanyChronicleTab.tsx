@@ -19,7 +19,7 @@ import {
   Loader2, Pencil, Trash2, Save, X, Filter, Coins, Users, GitBranch,
   UserPlus, UserMinus, TrendingUp, FileOutput, Download,
 } from 'lucide-react';
-import { QuickFormDialog } from '@/components/forms/QuickFormDialog';
+import { QuickFormDialog, type QuickFormEvent } from '@/components/forms/QuickFormDialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { downloadBase64File, RTF_MIME } from '@/lib/downloadPdf';
 import { ShareTransactionForm } from '@/components/forms/ShareTransactionForm';
@@ -144,8 +144,20 @@ export function CompanyChronicleTab({ company }: { company: Company }) {
   const [compareMode, setCompareMode] = useState(false);
   const [compareIds, setCompareIds] = useState<string[]>([]);
   const [expandedVersion, setExpandedVersion] = useState<string | null>(null);
-  const [quickFormEvent, setQuickFormEvent] = useState<ChronicleEvent | null>(null);
+  const [quickFormEvents, setQuickFormEvents] = useState<QuickFormEvent[]>([]);
   const [quickFormOpen, setQuickFormOpen] = useState(false);
+
+  // ── 打開生成表格：同一天的全部人事事件（委任＋辭任）一併打包 ──
+  const handleQuickForm = (event: ChronicleEvent) => {
+    const isPersonnel = event.type === 'appoint' || event.type === 'cease';
+    const dayKey = (e: ChronicleEvent) => e.sortDate || String(e.date || '');
+    const key = dayKey(event);
+    const sameDay = isPersonnel && key
+      ? allEvents.filter(e => (e.type === 'appoint' || e.type === 'cease') && dayKey(e) === key)
+      : [event];
+    setQuickFormEvents(sameDay.map(ev => ({ type: ev.type, title: ev.title, raw: ev.raw })));
+    setQuickFormOpen(true);
+  };
 
   const isLoading = txsLoading || versionsLoading || logsLoading;
 
@@ -639,8 +651,7 @@ export function CompanyChronicleTab({ company }: { company: Company }) {
                         <Button variant="outline" size="sm" className="h-6 px-1.5 text-xs"
                           onClick={e => {
                             e.stopPropagation();
-                            setQuickFormEvent(event);
-                            setQuickFormOpen(true);
+                            handleQuickForm(event);
                           }}>
                           <FileOutput className="h-3 w-3 mr-1" /> 生成表格
                         </Button>
@@ -720,7 +731,7 @@ export function CompanyChronicleTab({ company }: { company: Company }) {
         open={quickFormOpen}
         onOpenChange={setQuickFormOpen}
         company={company}
-        event={quickFormEvent}
+        events={quickFormEvents}
       />
     </div>
   );

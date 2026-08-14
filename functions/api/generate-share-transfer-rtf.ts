@@ -33,6 +33,30 @@ function splitAddressLines(addr: string, numLines: number): string[] {
   return lines;
 }
 
+// ── 平衡分配：按逗号部件贪心装 N 行（预算内换行），多余部件并进最后一行，绝不丢尾 ──
+function splitAddressBalanced(addr: string, numLines: number, maxCharsPerLine: number): string[] {
+  const parts = addr.split(",").map((s) => s.trim()).filter(Boolean);
+  const lines: string[] = [];
+  let cur = "";
+  for (const p of parts) {
+    const candidate = cur ? `${cur}, ${p}` : p;
+    if (cur && lines.length < numLines - 1 && candidate.length > maxCharsPerLine) {
+      lines.push(cur);
+      cur = p;
+    } else {
+      cur = candidate;
+    }
+  }
+  if (cur) lines.push(cur);
+  while (lines.length < numLines) lines.push("");
+  // 安全网：部件多到超过行数时，超出的并进最后一行（完整地址不丢失）
+  while (lines.length > numLines) {
+    const extra = lines.pop() || "";
+    lines[lines.length - 1] = `${lines[lines.length - 1]}, ${extra}`;
+  }
+  return lines;
+}
+
 // ── Build person address from structured fields ──
 function buildPersonAddress(person: any): string {
   if (!person) return "";
@@ -262,16 +286,18 @@ export async function onRequest(context: { request: Request; env: Env }) {
     vars["{{SELLER_NAME}}"] = tx.from_name || "";
     vars["{{BUYER_NAME}}"] = tx.to_name || "";
 
-    // Seller address — 完整地址合并成一行（分两行会截断后半段，用户要求 2026-08-14）
+    // Seller address — 完整地址平衡装两行（超长的单行会超出页宽被截断，千问已证实）
     const sellerAddr = sellerPerson ? buildPersonAddress(sellerPerson) : "";
-    vars["{{SELLER_ADDR_L1}}"] = sellerAddr;
-    vars["{{SELLER_ADDR_L2}}"] = "";
+    const sellerLines = splitAddressBalanced(sellerAddr, 2, 58);
+    vars["{{SELLER_ADDR_L1}}"] = sellerLines[0] || "";
+    vars["{{SELLER_ADDR_L2}}"] = sellerLines[1] || "";
     vars["{{SELLER_HKID}}"] = sellerPerson?.id_number || sellerPerson?.passport_number || "";
 
-    // Buyer address — 同上，完整一行
+    // Buyer address — 同上，平衡两行
     const buyerAddr = buyerPerson ? buildPersonAddress(buyerPerson) : "";
-    vars["{{BUYER_ADDR_L1}}"] = buyerAddr;
-    vars["{{BUYER_ADDR_L2}}"] = "";
+    const buyerLines = splitAddressBalanced(buyerAddr, 2, 58);
+    vars["{{BUYER_ADDR_L1}}"] = buyerLines[0] || "";
+    vars["{{BUYER_ADDR_L2}}"] = buyerLines[1] || "";
     vars["{{BUYER_HKID}}"] = buyerPerson?.id_number || buyerPerson?.passport_number || "";
 
     // Share Certificate specific

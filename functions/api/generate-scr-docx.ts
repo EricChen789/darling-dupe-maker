@@ -381,6 +381,22 @@ function removeScrPage2(docXml: string): string {
   return docXml.slice(0, pStart) + docXml.slice(cutEnd);
 }
 
+// ── 表尾空白段清理 ──
+// LibreOffice 行高比 Word 略大：最后一个表格与 sectPr 之间的空白 spacer 段
+// （sz=18×2 + sz=6）在 LO 转换时会被挤到第 2 页（只含页眉页脚的空页）。
+// Word 本身放得下不受影响；删除它们 Word 版面完全不变（纯尾部空白），LO 收回 1 页。
+function stripTrailingSpacers(docXml: string): string {
+  const tblIdx = docXml.lastIndexOf('</w:tbl>');
+  if (tblIdx < 0) return docXml;
+  const lastTblEnd = tblIdx + '</w:tbl>'.length;
+  const sectIdx = docXml.indexOf('<w:sectPr', lastTblEnd);
+  if (sectIdx < 0) return docXml;
+  const tail = docXml.substring(lastTblEnd, sectIdx);
+  // 只删纯空白 spacer；若夹带任何文字内容则保守跳过
+  if (/<w:t[ >]/.test(tail)) return docXml;
+  return docXml.substring(0, lastTblEnd) + docXml.substring(sectIdx);
+}
+
 // ══════════════════════════════════════════════════════════════
 // Main handler
 // ══════════════════════════════════════════════════════════════
@@ -529,6 +545,9 @@ export async function onRequest(context: { request: Request; env: Env }) {
     if (controllers.length <= 2 && reps.length <= 1) {
       docXml = removeScrPage2(docXml);
     }
+
+    // LO 转换时表尾空白 spacer 会被挤到第 2 页 → 删除（Word 版面不变）
+    docXml = stripTrailingSpacers(docXml);
 
     entries["word/document.xml"] = btoa(docXml);
 

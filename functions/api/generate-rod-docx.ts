@@ -283,8 +283,16 @@ export async function onRequest(context: { request: Request; env: Env }) {
         ? (rget(p, 'id_number') || rget(p, 'passport_number') || '-')
         : (rget(p, 'company_number_ref') || '-');
 
-      const dateApp = rget(r, 'date_appointed') || '-';
-      const dateCea = rget(r, 'date_ceased') || '';
+      // 日期格式化：D1 存 DDMMYYYY（如 18062026）→ 加 / 分隔；兼容 ISO 与已带分隔符格式
+      const fmtDate = (d: string): string => {
+        const s = (d || '').trim();
+        if (!s) return '';
+        if (/^\d{8}$/.test(s)) return `${s.slice(0, 2)}/${s.slice(2, 4)}/${s.slice(4)}`;
+        if (/^\d{4}-\d{2}-\d{2}$/.test(s)) { const [y, m, dd] = s.split('-'); return `${dd}/${m}/${y}`; }
+        return s;
+      };
+      const dateApp = fmtDate(rget(r, 'date_appointed')) || '-';
+      const dateCea = fmtDate(rget(r, 'date_ceased'));
       const reason = dateCea ? 'Resigned' : 'Current';
 
       officers.push({

@@ -121,7 +121,7 @@ function buildSheetXml(
   return out;
 }
 
-// ── 日期 YYYY-MM-DD → DD/MM/YYYY（空 → ""）──
+// ── 日期 → DD/MM/YYYY（兼容 YYYY-MM-DD、DD/MM/YYYY、DDMMYYYY；空 → ""）──
 function fmtDate(s: string | null | undefined): string {
   if (!s) return "";
   const t = String(s).trim();
@@ -129,6 +129,8 @@ function fmtDate(s: string | null | undefined): string {
   if (/^\d{2}\/\d{2}\/\d{4}$/.test(t)) return t;
   const m = t.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (m) return `${m[3]}/${m[2]}/${m[1]}`;
+  const m2 = t.match(/^(\d{2})(\d{2})(\d{4})$/); // 生产数据常见 DDMMYYYY 无分隔符
+  if (m2) return `${m2[1]}/${m2[2]}/${m2[3]}`;
   return t;
 }
 

@@ -341,9 +341,9 @@ export async function onRequest(context: { request: Request; env: Env }) {
       if (region && !addr.includes(region)) addr = addr ? `${addr}, ${region}` : region;
       addr = addr.slice(0, 100);
 
-      // 自然人股东 occupation 默认 Merchant（香港惯例），DB 有值则保留
-      const isNat = (rget(p, 'identity') || 'natural') === 'natural';
-      const occupation = (rget(p, 'occupation') || (isNat ? 'Merchant' : '')).slice(0, 30);
+      // 股东名字不含 limited/ltd（非公司）→ occupation 默认 Merchant（香港惯例），DB 有值则保留
+      const isCorpName = /limited|ltd\b/i.test(nameEn);
+      const occupation = (rget(p, 'occupation') || (isCorpName ? '' : 'Merchant')).slice(0, 30);
       const dateAppRaw = rget(role, 'date_appointed');
       const dateApp = dateAppRaw ? fmtDateRom(dateAppRaw) : '-';
       const dateCeaRaw = rget(role, 'date_ceased');
@@ -411,7 +411,7 @@ export async function onRequest(context: { request: Request; env: Env }) {
       CO_BR: coBr,
     });
 
-    // ── Fill shareholder blocks (region-scoped, block B cloned for 3+) ──
+    // ── Fill shareholder blocks (region-scoped; 每页 2 个股东，第 3 个起整体移到新页) ──
     let docXml = atob(entries["word/document.xml"]);
     const rowRe = /<w:tr\b[\s\S]*?<\/w:tr>/g;
     const m: RegExpExecArray[] = [];
@@ -427,21 +427,47 @@ export async function onRequest(context: { request: Request; env: Env }) {
     const blockB = docXml.slice(rowStart(14), rowEnd(23));
     const suffix = docXml.slice(rowEnd(23));
 
+    // 拆文档骨架：每页 = tbl 开标签 + 表头行（tblPr/tblGrid + rows 0-2）；页尾段落仅放末页
+    const tblOpenM = /<w:tbl\b[^>]*>/.exec(prefix);
+    if (!tblOpenM) throw new Error('tbl open tag not found');
+    const tblOpen = tblOpenM[0];
+    const docHead = prefix.slice(0, tblOpenM.index);
+    const headerXml = prefix.slice(tblOpenM.index + tblOpen.length);
+    const tblClose = '</w:tbl>';
+    const tblCloseIdx = suffix.indexOf(tblClose);
+    if (tblCloseIdx < 0) throw new Error('tbl close tag not found');
+    // 尾段落处理：① 删除段落内嵌 sectPr → 整个文档单节（Word 对 header/footer 尺寸不同的
+    // continuous 节会强制分页 → 末页空白页）② 空段落压缩到 1pt 行高防溢出
+    const docTail = suffix.slice(tblCloseIdx + tblClose.length)
+      .replace(/<w:sectPr\b[\s\S]*?<\/w:sectPr>/, '')
+      .replace(/<w:sz w:val="\d+"\/>/g, '<w:sz w:val="2"/>')
+      .replace(/<w:szCs w:val="\d+"\/>/g, '<w:szCs w:val="2"/>');
+
+    const fillPage = (segs: string[]): string =>
+      tblOpen + headerXml + segs.join('') + tblClose;
+    // 分页段落：最小行高（1pt）的 page break，页 2+ 表格几乎贴页顶
+    const pageBreakP =
+      '<w:p><w:pPr><w:rPr><w:sz w:val="2"/><w:szCs w:val="2"/></w:rPr></w:pPr>' +
+      '<w:r><w:rPr><w:sz w:val="2"/><w:szCs w:val="2"/></w:rPr><w:br w:type="page"/></w:r></w:p>';
+
     let body: string;
     if (shareholders.length === 0) {
       // 无股东：单块占位提示（与旧行为一致）
-      body = fillBlock(blockA, {
+      body = fillPage([fillBlock(blockA, {
         fullName: '(No shareholders / 尚無股東記錄)',
         occupation: '', dateApp: '', addr: '', dateCea: '', rows: [],
-      });
+      })]);
     } else {
-      const blocks: string[] = [fillBlock(blockA, shareholders[0])];
-      for (let i = 1; i < shareholders.length; i++) {
-        blocks.push(sepXml + fillBlock(blockB, shareholders[i]));
+      const blocks = shareholders.map((sh, i) => fillBlock(i === 0 ? blockA : blockB, sh));
+      const pages: string[] = [];
+      for (let i = 0; i < blocks.length; i += 2) {
+        const segs = [blocks[i]];
+        if (blocks[i + 1]) segs.push(sepXml + blocks[i + 1]);
+        pages.push(fillPage(segs));
       }
-      body = blocks.join('');
+      body = pages.join(pageBreakP);
     }
-    docXml = prefix + body + suffix;
+    docXml = docHead + body + docTail;
     entries["word/document.xml"] = btoa(docXml);
 
     // ── Build ZIP ──

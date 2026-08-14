@@ -306,33 +306,13 @@ export async function onRequest(context: { request: Request; env: Env }) {
     );
 
     // ── sheet2: Corporate Director ──
+    // 用户 2026-08-14：法人董事暂不填值 — 保留模板空格子 + 表头（数据不全时留空手填）
     let s2 = atob(_tpl["xl/worksheets/sheet2.xml"]);
     s2 = fillFormulaCell(s2, "D", 1, coName);
     s2 = fillFormulaCell(s2, "D", 2, coNumber);
     s2 = buildSheetXml(
       s2, corporate.length,
-      (slot6: string, i: number) => {
-        const r = corporate[i];
-        const p = personMap.get(r.person_id) || {};
-        const corpNo = p.company_number_ref || "";
-        const regOffice = p.registered_office || p.address || "";
-        const place = p.place_incorporated || "";
-        const placeLower = place.toLowerCase();
-        const isBVI = placeLower.includes("bvi") || placeLower.includes("british virgin");
-        // K 列 BVI 公式换成计算值：IF(ISBLANK(E6),"",IF(OR(H6=BVI…),E6,I6))
-        const bviVal = !corpNo ? "" : isBVI ? corpNo : regOffice;
-        return fillCells(slot6, 6, {
-          A: fmtDate(r.date_appointed),
-          B: p.name_english || p.name_chinese || "",
-          E: corpNo,
-          F: fmtDate(p.date_of_incorporation),
-          H: place,
-          I: regOffice,
-          K: bviVal,
-          L: r.date_ceased ? fmtDate(r.date_ceased) : "Current",
-          M: "",
-        }, ["K"]);
-      },
+      (slot6: string) => slot6, // 每位法人一个空格子；K 列公式由 renumberRow 剥离为空样式格
       ["K3:M3", "G2:I2", "D1:F1", "D2:F2", "F5:G5", "A4:C4", "B5:D5", "I5:J5"],
       (r) => [`B${r}:D${r}`, `F${r}:G${r}`, `I${r}:J${r}`],
       (d) => [`D${22 + d}:L${22 + d}`, `D${23 + d}:L${23 + d}`, `L${24 + d}:M${24 + d}`],

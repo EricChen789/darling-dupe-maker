@@ -462,7 +462,9 @@ export async function onRequest(context: { request: Request; env: Env }) {
       if (region && !addr.includes(region)) addr = addr ? `${addr}, ${region}` : region;
       addr = addr.slice(0, 100);
 
-      const occ = (rget(p, 'occupation') || '').slice(0, 30);
+      // 自然人股东 occupation 默认 Merchant（香港惯例），DB 有值则保留
+      const isNat = (rget(p, 'identity') || 'natural') === 'natural';
+      const occ = (rget(p, 'occupation') || (isNat ? 'Merchant' : '')).slice(0, 30);
       const dateApp = fmtDate(rget(r, 'date_appointed'));
       const dateCea = fmtDate(rget(r, 'date_ceased'));
       const shares0 = Number(rget(r, 'shares') || 0);

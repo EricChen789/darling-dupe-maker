@@ -5748,6 +5748,8 @@ def _fill_nar1_pdf(data):
     _set_text(doc, fmap, 'fill_1_P.8', br8)
     # 14. 股本/公司成員詳情 — 預設勾選「非上市公司的成員詳情列於附表一」
     _check(doc, fmap, 'cb_1_P.8', True)
+    # 14. 成員詳情第3個方框（CD-ROM/DVD-ROM）按用戶要求一併勾選
+    _check(doc, fmap, 'cb_3_P.8', True)
     valid_members = [sh for sh in shareholders if (int(sh.get('shares', 0) or 0)) > 0]
     is_listed = '上市' in company_type or 'listed' in ct_lower
     if not is_listed:

@@ -723,6 +723,8 @@ export async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Ar
   // ═══ P.8 總結 + 簽署 ═══
   setF("fill_1_P.8", br8);
   checkF("cb_1_P.8", true);
+  // 14. 成員詳情第3個方框（CD-ROM/DVD-ROM）按用戶要求一併勾選
+  checkF("cb_3_P.8", true);
   if (!isListedCo) checkF("cb_4_P.8", true);
 
   // Calculate continuation counts

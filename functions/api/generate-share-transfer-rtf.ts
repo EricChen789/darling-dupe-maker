@@ -315,12 +315,13 @@ export async function onRequest(context: { request: Request; env: Env }) {
     vars["{{REG_OFFICE_L3}}"] = regLines[2] || "";
     vars["{{REG_OFFICE_L4}}"] = regLines[3] || "";
 
-    // Holder (buyer) details for share certificate — 持有人地址同样完整一行
+    // Holder (buyer) details for share certificate — 地址两行平衡分配（11pt 加粗，格子 492pt 约容 60 字/行）
     vars["{{HOLDER_NAME}}"] = tx.to_name || "";
     vars["{{HOLDER_HKID}}"] = buyerPerson?.id_number || buyerPerson?.passport_number || "";
     const holderAddr = buyerPerson ? buildPersonAddress(buyerPerson) : "";
-    vars["{{HOLDER_ADDR_L1}}"] = holderAddr;
-    vars["{{HOLDER_ADDR_L2}}"] = "";
+    const holderLines = splitAddressBalanced(holderAddr, 2, 60);
+    vars["{{HOLDER_ADDR_L1}}"] = holderLines[0] || "";
+    vars["{{HOLDER_ADDR_L2}}"] = holderLines[1] || "";
     vars["{{HOLDER_ADDR_L3}}"] = "";
     vars["{{HOLDER_ADDR_L4}}"] = "";
 

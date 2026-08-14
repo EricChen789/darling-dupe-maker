@@ -624,16 +624,40 @@ export function QuickFormDialog({ open, onOpenChange, company, events }: QuickFo
       const safeName = (company.name || 'company').replace(/[^a-zA-Z0-9一-鿿]/g, '_');
 
       const postJson = async (payload: any) => {
-        const resp = await fetch(config.endpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify(payload),
-        });
-        if (!resp.ok) {
-          const err = await resp.json().catch(() => ({ error: resp.statusText }));
-          throw new Error(err.error || `HTTP ${resp.status}`);
+        let lastErr: Error = new Error('Network error');
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          try {
+            // 30s 超时：生产边缘层偶发挂起，超时后重试
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 30000);
+            const resp = await fetch(config.endpoint, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+              body: JSON.stringify(payload),
+              signal: controller.signal,
+            });
+            clearTimeout(timer);
+            if (!resp.ok) {
+              if (resp.status >= 500 || resp.status === 429) {
+                throw new Error(`HTTP ${resp.status}`);
+              }
+              const err = await resp.json().catch(() => ({ error: resp.statusText }));
+              throw new Error(err.error || `HTTP ${resp.status}`);
+            }
+            return resp.json();
+          } catch (err: any) {
+            lastErr = err;
+            // 5xx/429/超时/网络错误可重试；4xx 不重试
+            const retriable = err.name === 'AbortError' || err.name === 'TypeError'
+              || /^HTTP (5\d\d|429)$/.test(err.message || '');
+            if (attempt < 3 && retriable) {
+              await new Promise(r => setTimeout(r, 1000 * attempt));
+              continue;
+            }
+            throw lastErr;
+          }
         }
-        return resp.json();
+        throw lastErr;
       };
 
       // ── ND2A：同一天全部委任＋辭任人士，按模板容量自動分多份 ──
@@ -642,7 +666,12 @@ export function QuickFormDialog({ open, onOpenChange, company, events }: QuickFo
         const chunks = chunkNd2aOfficers(officers);
         for (let i = 0; i < chunks.length; i++) {
           const payload = buildNd2aPayload(company, chunks[i]);
-          const result = await postJson(payload);
+          let result;
+          try {
+            result = await postJson(payload);
+          } catch (err: any) {
+            throw new Error(`第 ${i + 1} 份生成失敗（${err.message}），已下載 ${i} 份`);
+          }
           if (!result.pdf) throw new Error('No data in response');
           const suffix = chunks.length > 1 ? `_第${i + 1}份` : '';
           await downloadPdf(result.pdf, `${config.label.replace(/\s/g, '_')}_${safeName}${suffix}.pdf`);
@@ -662,7 +691,12 @@ export function QuickFormDialog({ open, onOpenChange, company, events }: QuickFo
         let done = 0;
         for (const ev of resigners) {
           const payload = buildFormPayload('nd4_cease', company, [ev]);
-          const result = await postJson(payload);
+          let result;
+          try {
+            result = await postJson(payload);
+          } catch (err: any) {
+            throw new Error(`第 ${done + 1} 份生成失敗（${err.message}），已下載 ${done} 份`);
+          }
           if (!result.pdf) throw new Error('No data in response');
           const suffix = resigners.length > 1 ? `_第${done + 1}份` : '';
           await downloadPdf(result.pdf, `${config.label.replace(/\s/g, '_')}_${safeName}${suffix}.pdf`);

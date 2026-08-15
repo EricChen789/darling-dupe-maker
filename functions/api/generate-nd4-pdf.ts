@@ -10,7 +10,7 @@
 import { PDFDocument, StandardFonts, PDFName } from 'pdf-lib';
 import {
   corsHeaders, jsonResp, uint8ToBase64, rget,
-  fetchAndEmbedFont, DEFAULT_PRESENTER,
+  DEFAULT_PRESENTER,
 } from './_pdf-utils';
 import { createFormHelpers, enableNeedAppearances, rebuildAcroFormFields } from './_acroform';
 import { verifyAuthRequest, type Env } from './_auth';
@@ -34,7 +34,9 @@ export async function onRequest(context: { request: Request; env: Env }) {
 
     const templateBytes = new Uint8Array(await templateObj.arrayBuffer());
     const pdfDoc = await PDFDocument.load(templateBytes);
-    const { cjk } = await fetchAndEmbedFont(pdfDoc, env as any);
+    // ⚠ 不加载 CJK 字体：中文字段走模板内置 /PMingLiU（_acroform setText），
+    // BR stamp 是纯 ASCII 用 Helvetica 即可。fetchAndEmbedFont 的 fontkit 解析
+    // 是连续请求触发 1102 (Worker exceeded resource limits) 的主因。
     const helv = await pdfDoc.embedFont(StandardFonts.Helvetica);
     enableNeedAppearances(pdfDoc);
     const { setText: _cjkSetText, check: _cjkCheck } = createFormHelpers(pdfDoc);
@@ -221,9 +223,8 @@ export async function onRequest(context: { request: Request; env: Env }) {
 
     // ═══ BR stamp on all pages ═══
     if (brNumber) {
-      const stampFont = cjk || helv;
       for (const page of pdfDoc.getPages()) {
-        page.drawText(brNumber, { x: 500, y: 820, size: 8, font: stampFont });
+        page.drawText(brNumber, { x: 500, y: 820, size: 8, font: helv });
       }
     }
 

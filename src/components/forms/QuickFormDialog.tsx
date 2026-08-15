@@ -625,12 +625,14 @@ export function QuickFormDialog({ open, onOpenChange, company, events }: QuickFo
 
       const postJson = async (payload: any) => {
         let lastErr: Error = new Error('Network error');
-        for (let attempt = 1; attempt <= 3; attempt++) {
+        for (let attempt = 1; attempt <= 4; attempt++) {
           try {
             // 30s 超时：生产边缘层偶发挂起，超时后重试
             const controller = new AbortController();
             const timer = setTimeout(() => controller.abort(), 30000);
-            const resp = await fetch(config.endpoint, {
+            // ?t= 破 CDN 缓存（含 503 错误页缓存），避免重试命中缓存的失败响应
+            const sep = config.endpoint.includes('?') ? '&' : '?';
+            const resp = await fetch(`${config.endpoint}${sep}t=${Date.now()}-${attempt}`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
               body: JSON.stringify(payload),
@@ -648,10 +650,12 @@ export function QuickFormDialog({ open, onOpenChange, company, events }: QuickFo
           } catch (err: any) {
             lastErr = err;
             // 5xx/429/超时/网络错误可重试；4xx 不重试
+            // 退避 3s/6s/9s：1102 (Worker exceeded resource limits) 是 isolate 级
+            // CPU 累积，需要较长窗口才能恢复
             const retriable = err.name === 'AbortError' || err.name === 'TypeError'
               || /^HTTP (5\d\d|429)$/.test(err.message || '');
-            if (attempt < 3 && retriable) {
-              await new Promise(r => setTimeout(r, 1000 * attempt));
+            if (attempt < 4 && retriable) {
+              await new Promise(r => setTimeout(r, 3000 * attempt));
               continue;
             }
             throw lastErr;
@@ -675,6 +679,8 @@ export function QuickFormDialog({ open, onOpenChange, company, events }: QuickFo
           if (!result.pdf) throw new Error('No data in response');
           const suffix = chunks.length > 1 ? `_第${i + 1}份` : '';
           await downloadPdf(result.pdf, `${config.label.replace(/\s/g, '_')}_${safeName}${suffix}.pdf`);
+          // 多份之间留间隔，避免连续请求复用同一 isolate 触发 1102
+          if (i < chunks.length - 1) await new Promise(r => setTimeout(r, 2500));
         }
         toast({
           title: '✅ PDF 已生成',
@@ -689,7 +695,8 @@ export function QuickFormDialog({ open, onOpenChange, company, events }: QuickFo
       // ── ND4：辭任人本人遞交 — 每位辭任人各一份 ──
       if (formKey === 'nd4_cease') {
         let done = 0;
-        for (const ev of resigners) {
+        for (let i = 0; i < resigners.length; i++) {
+          const ev = resigners[i];
           const payload = buildFormPayload('nd4_cease', company, [ev]);
           let result;
           try {
@@ -701,6 +708,8 @@ export function QuickFormDialog({ open, onOpenChange, company, events }: QuickFo
           const suffix = resigners.length > 1 ? `_第${done + 1}份` : '';
           await downloadPdf(result.pdf, `${config.label.replace(/\s/g, '_')}_${safeName}${suffix}.pdf`);
           done++;
+          // 多份之间留间隔，避免连续请求复用同一 isolate 触发 1102
+          if (i < resigners.length - 1) await new Promise(r => setTimeout(r, 2500));
         }
         toast({
           title: '✅ PDF 已生成',

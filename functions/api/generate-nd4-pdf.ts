@@ -55,8 +55,35 @@ export async function onRequest(context: { request: Request; env: Env }) {
     // 不刪 /AP（Chrome/PDFium 不重新生成外觀，刪了整條線會消失）。
     // ⚠ 必須在 setF 之前執行：fill_7 若被 setText 先 detach（widget 無 T）會變成
     // 無名字段；先 detach 並命名，再刪 parent 的 /T 防止 setText 二次 rename。
+    // 兩遍式：先緩存 parent 名字（同組多 widget 共享一個 parent，第一個 detach
+    // 刪 T 後同組後續 widget 會讀到空名 → 全變成 .0），再統一 detach。
     try {
       const inheritKeys = ["FT", "DA", "Ff", "Q", "DV", "Opt", "MaxLen"];
+      const parentNameCache = new Map<string, { gpName: string; pName: string }>();
+      // pass 1: 緩存帶 FT 的 parent 名字
+      for (const page of pdfDoc.getPages()) {
+        const annots = page.node.lookup(PDFName.of("Annots")) as any;
+        if (!annots || typeof annots.size !== "function") continue;
+        for (let i = 0; i < annots.size(); i++) {
+          try {
+            const widget = pdfDoc.context.lookup(annots.get(i)) as any;
+            if (!widget || typeof widget.get !== "function") continue;
+            if (String(widget.get(PDFName.of("Subtype"))) !== "/Widget") continue;
+            const parentRef = widget.get(PDFName.of("Parent"));
+            if (!parentRef || parentNameCache.has(String(parentRef))) continue;
+            const parent = pdfDoc.context.lookup(parentRef) as any;
+            if (!parent || typeof parent.get !== "function") continue;
+            if (!parent.get(PDFName.of("FT"))) continue;
+            const grandRef = parent.get(PDFName.of("Parent"));
+            const grand = grandRef ? (pdfDoc.context.lookup(grandRef) as any) : null;
+            parentNameCache.set(String(parentRef), {
+              gpName: grand ? decodePdfText(grand.get(PDFName.of("T"))) : "",
+              pName: decodePdfText(parent.get(PDFName.of("T"))),
+            });
+          } catch { /* skip */ }
+        }
+      }
+      // pass 2: detach
       let detached = 0;
       for (const page of pdfDoc.getPages()) {
         const annots = page.node.lookup(PDFName.of("Annots")) as any;
@@ -68,13 +95,9 @@ export async function onRequest(context: { request: Request; env: Env }) {
             if (String(widget.get(PDFName.of("Subtype"))) !== "/Widget") continue;
             const parentRef = widget.get(PDFName.of("Parent"));
             if (!parentRef) continue;
+            const info = parentNameCache.get(String(parentRef));
+            if (!info) continue;
             const parent = pdfDoc.context.lookup(parentRef) as any;
-            if (!parent || typeof parent.get !== "function") continue;
-            if (!parent.get(PDFName.of("FT"))) continue; // parent 無 FT = 2 級普通字段，widget 自帶 FT，不動
-            const grandRef = parent.get(PDFName.of("Parent"));
-            const grand = grandRef ? (pdfDoc.context.lookup(grandRef) as any) : null;
-            const gpName = grand ? decodePdfText(grand.get(PDFName.of("T"))) : "";
-            const pName = decodePdfText(parent.get(PDFName.of("T")));
             for (const k of inheritKeys) {
               const key = PDFName.of(k);
               if (!widget.get(key)) {
@@ -84,9 +107,11 @@ export async function onRequest(context: { request: Request; env: Env }) {
             }
             // 3 級（grandparent 有 T）：`${grand}.${parent}` → Dropdown1_P.2 / fill_7_P.1
             // 2 級（無 grandparent）：`${parent}.0`
-            widget.set(PDFName.of("T"), PDFString.of(gpName ? `${gpName}.${pName || "0"}` : `${pName || "field"}.0`));
+            widget.set(PDFName.of("T"), PDFString.of(info.gpName ? `${info.gpName}.${info.pName || "0"}` : `${info.pName || "field"}.0`));
             widget.delete(PDFName.of("Parent"));
-            parent.delete(PDFName.of("T")); // 防 setText 的 detachWidget 二次 rename（如 fill_7 → '1.fill_7_P.1'）
+            // 僅 /Tx parent（fill_7）刪 T：防 setText 的 detachWidget 二次 rename
+            // （如 fill_7 → '1.fill_7_P.1'）。dropdown parent（/Ch）setText 不會碰，保留無妨。
+            if (String(parent.get(PDFName.of("FT"))) === "/Tx") parent.delete(PDFName.of("T"));
             detached++;
           } catch { /* skip malformed widget */ }
         }

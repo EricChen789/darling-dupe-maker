@@ -615,15 +615,17 @@ export function QuickFormDialog({ open, onOpenChange, company, events }: QuickFo
 
   const personnelEvents = events.filter(e => e.type === 'appoint' || e.type === 'cease');
   const resigners = personnelEvents.filter(e => e.type === 'cease');
+  // ND2A 與 ND4 同時可生成（同日既有委任又有辭任）
+  const hasBoth = formOptions.some(o => o.key === 'nd2a_appoint') && formOptions.some(o => o.key === 'nd4_cease');
 
   const handleGenerate = async (formKey: string) => {
     setLoading(formKey);
     try {
-      const config = FORM_CONFIGS[formKey];
+      const config = FORM_CONFIGS[formKey] || FORM_CONFIGS.nd2a_appoint;
       const token = localStorage.getItem('secretary_jwt') || '';
       const safeName = (company.name || 'company').replace(/[^a-zA-Z0-9一-鿿]/g, '_');
 
-      const postJson = async (payload: any) => {
+      const postJson = async (endpoint: string, payload: any) => {
         let lastErr: Error = new Error('Network error');
         for (let attempt = 1; attempt <= 4; attempt++) {
           try {
@@ -631,8 +633,8 @@ export function QuickFormDialog({ open, onOpenChange, company, events }: QuickFo
             const controller = new AbortController();
             const timer = setTimeout(() => controller.abort(), 30000);
             // ?t= 破 CDN 缓存（含 503 错误页缓存），避免重试命中缓存的失败响应
-            const sep = config.endpoint.includes('?') ? '&' : '?';
-            const resp = await fetch(`${config.endpoint}${sep}t=${Date.now()}-${attempt}`, {
+            const sep = endpoint.includes('?') ? '&' : '?';
+            const resp = await fetch(`${endpoint}${sep}t=${Date.now()}-${attempt}`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
               body: JSON.stringify(payload),
@@ -665,55 +667,87 @@ export function QuickFormDialog({ open, onOpenChange, company, events }: QuickFo
       };
 
       // ── ND2A：同一天全部委任＋辭任人士，按模板容量自動分多份 ──
-      if (formKey === 'nd2a_appoint') {
+      const generateNd2a = async (): Promise<number> => {
+        const nd2aConfig = FORM_CONFIGS.nd2a_appoint;
         const officers = personnelEvents.map(e => buildNd2aOfficer(e));
         const chunks = chunkNd2aOfficers(officers);
         for (let i = 0; i < chunks.length; i++) {
           const payload = buildNd2aPayload(company, chunks[i]);
           let result;
           try {
-            result = await postJson(payload);
+            result = await postJson(nd2aConfig.endpoint, payload);
           } catch (err: any) {
-            throw new Error(`第 ${i + 1} 份生成失敗（${err.message}），已下載 ${i} 份`);
+            throw new Error(`ND2A 第 ${i + 1} 份生成失敗（${err.message}），已下載 ${i} 份`);
           }
           if (!result.pdf) throw new Error('No data in response');
           const suffix = chunks.length > 1 ? `_第${i + 1}份` : '';
-          await downloadPdf(result.pdf, `${config.label.replace(/\s/g, '_')}_${safeName}${suffix}.pdf`);
+          await downloadPdf(result.pdf, `${nd2aConfig.label.replace(/\s/g, '_')}_${safeName}${suffix}.pdf`);
           // 多份之间留间隔，避免连续请求复用同一 isolate 触发 1102
           if (i < chunks.length - 1) await new Promise(r => setTimeout(r, 2500));
         }
-        toast({
-          title: '✅ PDF 已生成',
-          description: chunks.length > 1
-            ? `ND2A 共 ${chunks.length} 份（同日 ${officers.length} 位人士）下載完成`
-            : `ND2A（同日 ${officers.length} 位人士）下載完成`,
-        });
-        onOpenChange(false);
-        return;
-      }
+        return chunks.length;
+      };
 
       // ── ND4：辭任人本人遞交 — 每位辭任人各一份 ──
-      if (formKey === 'nd4_cease') {
+      const generateNd4 = async (): Promise<number> => {
+        const nd4Config = FORM_CONFIGS.nd4_cease;
         let done = 0;
         for (let i = 0; i < resigners.length; i++) {
           const ev = resigners[i];
           const payload = buildFormPayload('nd4_cease', company, [ev]);
           let result;
           try {
-            result = await postJson(payload);
+            result = await postJson(nd4Config.endpoint, payload);
           } catch (err: any) {
-            throw new Error(`第 ${done + 1} 份生成失敗（${err.message}），已下載 ${done} 份`);
+            throw new Error(`ND4 第 ${done + 1} 份生成失敗（${err.message}），已下載 ${done} 份`);
           }
           if (!result.pdf) throw new Error('No data in response');
           const suffix = resigners.length > 1 ? `_第${done + 1}份` : '';
-          await downloadPdf(result.pdf, `${config.label.replace(/\s/g, '_')}_${safeName}${suffix}.pdf`);
+          await downloadPdf(result.pdf, `${nd4Config.label.replace(/\s/g, '_')}_${safeName}${suffix}.pdf`);
           done++;
           // 多份之间留间隔，避免连续请求复用同一 isolate 触发 1102
           if (i < resigners.length - 1) await new Promise(r => setTimeout(r, 2500));
         }
+        return done;
+      };
+
+      // ── 一起生成：ND2A 全份 → 間隔 2.5s → ND4 逐份 ──
+      if (formKey === 'both') {
+        const n2 = await generateNd2a();
+        let n4 = 0;
+        if (resigners.length > 0) {
+          await new Promise(r => setTimeout(r, 2500));
+          n4 = await generateNd4();
+        }
         toast({
           title: '✅ PDF 已生成',
-          description: resigners.length > 1 ? `ND4 共 ${done} 份（每位辭任人一份）下載完成` : 'ND4 下載完成',
+          description: resigners.length > 0
+            ? `ND2A ${n2} 份 ＋ ND4 ${n4} 份（同日 ${personnelEvents.length} 位人士）下載完成`
+            : `ND2A 共 ${n2} 份（同日 ${personnelEvents.length} 位人士）下載完成`,
+        });
+        onOpenChange(false);
+        return;
+      }
+
+      // ── 單獨 ND2A ──
+      if (formKey === 'nd2a_appoint') {
+        const n = await generateNd2a();
+        toast({
+          title: '✅ PDF 已生成',
+          description: n > 1
+            ? `ND2A 共 ${n} 份（同日 ${personnelEvents.length} 位人士）下載完成`
+            : `ND2A（同日 ${personnelEvents.length} 位人士）下載完成`,
+        });
+        onOpenChange(false);
+        return;
+      }
+
+      // ── 單獨 ND4 ──
+      if (formKey === 'nd4_cease') {
+        const n = await generateNd4();
+        toast({
+          title: '✅ PDF 已生成',
+          description: n > 1 ? `ND4 共 ${n} 份（每位辭任人一份）下載完成` : 'ND4 下載完成',
         });
         onOpenChange(false);
         return;
@@ -721,7 +755,7 @@ export function QuickFormDialog({ open, onOpenChange, company, events }: QuickFo
 
       // ── 其他表格（股份交易等）— 單事件 ──
       const payload = buildFormPayload(formKey, company, events);
-      const result = await postJson(payload);
+      const result = await postJson(config.endpoint, payload);
       if (result.pdf) {
         const filename = `${config.label.replace(/\s/g, '_')}_${safeName}.pdf`;
         await downloadPdf(result.pdf, filename);
@@ -792,30 +826,68 @@ export function QuickFormDialog({ open, onOpenChange, company, events }: QuickFo
 
           <div className="space-y-2 pt-2">
             <p className="text-sm font-medium">選擇要生成的表格：</p>
+            {/* 一起生成：ND2A ＋ ND4（同日委任＋辭任同時存在時） */}
+            {hasBoth && (
+              <Button
+                variant="default"
+                className="w-full"
+                disabled={loading !== null}
+                onClick={() => handleGenerate('both')}
+              >
+                {loading === 'both' ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                ) : (
+                  <span className="mr-2">📦</span>
+                )}
+                一起生成：ND2A ＋ ND4（同日 {personnelEvents.length} 人）
+              </Button>
+            )}
             {formOptions.map(opt => {
+              const isPersonnelForm = opt.key === 'nd2a_appoint' || opt.key === 'nd4_cease';
+              const otherLabel = opt.key === 'nd2a_appoint' ? 'ND4' : 'ND2A';
               const label = opt.key === 'nd2a_appoint' && personnelEvents.length > 1
                 ? `${opt.config.label}（同日 ${personnelEvents.length} 人）`
                 : opt.key === 'nd4_cease' && resigners.length > 1
                   ? `${opt.config.label}（${resigners.length} 份）`
                   : opt.config.label;
               return (
-                <Button
-                  key={opt.key}
-                  variant="outline"
-                  className="w-full justify-between"
-                  disabled={loading !== null}
-                  onClick={() => handleGenerate(opt.key)}
-                >
-                  <span className="flex items-center gap-2">
-                    <span>{opt.config.icon}</span>
-                    <span>{label}</span>
-                  </span>
-                  {loading === opt.key ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Download className="h-4 w-4" />
+                <div key={opt.key} className="space-y-1">
+                  {/* 連結對方：一併生成 */}
+                  {isPersonnelForm && hasBoth && (
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        className="text-xs text-primary hover:underline disabled:opacity-50 disabled:pointer-events-none"
+                        disabled={loading !== null}
+                        onClick={() => handleGenerate('both')}
+                      >
+                        一併生成 {otherLabel} →
+                      </button>
+                    </div>
                   )}
-                </Button>
+                  <Button
+                    variant="outline"
+                    className="w-full justify-between"
+                    disabled={loading !== null}
+                    onClick={() => handleGenerate(opt.key)}
+                  >
+                    <span className="flex items-center gap-2">
+                      <span>{opt.config.icon}</span>
+                      <span>{label}</span>
+                    </span>
+                    {loading === opt.key ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Download className="h-4 w-4" />
+                    )}
+                  </Button>
+                  {/* 僅 ND2A（無辭任記錄）提示 */}
+                  {opt.key === 'nd2a_appoint' && !hasBoth && (
+                    <p className="text-xs text-muted-foreground">
+                      💡 同日如有辭任記錄，ND4 將自動加入，可一併生成
+                    </p>
+                  )}
+                </div>
               );
             })}
           </div>

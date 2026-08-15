@@ -7,12 +7,12 @@
 //   P.2: role checkboxes (cb_1=director, cb_2=alternate, cb_3=secretary)
 //        + dropdown strikethrough + signer + date + BR stamp on all pages
 
-import { PDFDocument, StandardFonts, PDFName } from 'pdf-lib';
+import { PDFDocument, StandardFonts, PDFName, PDFString } from 'pdf-lib';
 import {
   corsHeaders, jsonResp, uint8ToBase64, rget,
   DEFAULT_PRESENTER,
 } from './_pdf-utils';
-import { createFormHelpers, enableNeedAppearances, rebuildAcroFormFields } from './_acroform';
+import { createFormHelpers, decodePdfText, enableNeedAppearances, rebuildAcroFormFields } from './_acroform';
 import { verifyAuthRequest, type Env } from './_auth';
 
 const TEMPLATE = "ND4-template.pdf";
@@ -40,7 +40,6 @@ export async function onRequest(context: { request: Request; env: Env }) {
     const helv = await pdfDoc.embedFont(StandardFonts.Helvetica);
     enableNeedAppearances(pdfDoc);
     const { setText: _cjkSetText, check: _cjkCheck } = createFormHelpers(pdfDoc);
-    const form = pdfDoc.getForm();  // kept for dropdown operations
 
     // CJK-aware set text field using createFormHelpers
     // Falls back to raw widget manipulation for fields not in the helpers map
@@ -136,79 +135,54 @@ export async function onRequest(context: { request: Request; env: Env }) {
     checkF('cb_2_P.2', officerType === 'alternate' || officerType === 'reserve_director');
     checkF('cb_3_P.2', officerType === 'secretary');
 
-    // ═══ P.2: Dropdown strikethrough (matching Flask _handle_nd4_dropdowns) ═══
-    // ND4 P.2 有 8 個 Dropdown widget（中英文雙行）：
-    //   Dropdown1/2 → "Director"/"Secretary" 互斥劃線
-    //   Dropdown3/4 → 候補董事 互斥劃線
-    //   Dropdown5/6 → 秘書辭任 互斥劃線
-    //   Dropdown7/8 → 簽署人身份 (董事/秘書)
-    // 策略：從 form 獲取 widget 實際位置，在被劃掉的角色上畫橫線
-    //       如果無法獲取 widget 則回退到 NAR1 風格的 drawLine 硬座標
+    // ═══ P.2: Dropdown 藍框可編輯恢復 ═══
+    // ND4 模板裡有 33 個 widget 掛在帶 FT 的 parent 上、自身無 FT：
+    //   - P.2 的 32 個 Dropdown：widget(無 T, 有 AP) → parent(T='2', FT=/Ch, Opt, DA, V, I)
+    //     → grandparent(T='Dropdown1_P'..'Dropdown8_P')
+    //   - P.1 的 fill_7（HKID）：widget → parent(T='1', FT=/Tx) → grandparent(T=fill_7_P)
+    // rebuildAcroFormFields 只收錄自帶 FT 的 widget；這些字段從未被 setText/check 觸碰、
+    // 保持掛靠 parent 的原始形態 → 被 rebuild 丟出 /Fields → 閱讀器裡變成
+    // 白色不可修改的靜態框（用戶反饋：藍色可修改框消失）。
+    // 修復：凡 parent 帶 FT 的 widget，複製 FT/Opt/DA/DV/Ff/Q 到自身、設全名 T、
+    // 刪 Parent 脫離為獨立字段，讓 rebuild 收錄 → 恢復藍色可編輯框（與本地 Flask 一致：
+    // dropdown 選項導出值都是 'Yes'，/I 恒為 0 → 顯示空白，劃線選項留給用戶手動選）。
+    // 不刪 /AP（Chrome/PDFium 不重新生成外觀，刪了整條線會消失）。
     try {
-      const page2 = pdfDoc.getPage(1); // 0-indexed, P.2 = page 1
-
-      // Helper: get widget rect for a dropdown field on a specific page
-      const getDropdownRect = (fieldName: string): { x: number; y: number; w: number; h: number } | null => {
-        try {
-          const dropdown = form.getDropdown(fieldName);
-          // pdf-lib 的 getDropdown 返回 PDFDropdown，acroField 包含 widget annotations
-          const acroField = (dropdown as any).acroField;
-          const fieldRef = acroField?.ref;
-          if (!fieldRef) return null;
-          // 透過 doc 上下文查找 widget
-          const field = pdfDoc.context.lookup(fieldRef) as any;
-          const kids = field?.lookup?.(PDFName.of('Kids'));
-          if (!kids) return null;
-          // 遍歷 kids 找在此頁面的 widget
-          const P = page2.ref;
-          for (let i = 0; i < kids.size(); i++) {
-            const kidRef = kids.get(i);
-            const kid = pdfDoc.context.lookup(kidRef) as any;
-            const kidP = kid?.lookup?.(PDFName.of('P'));
-            if (kidP && kidP === P) {
-              const rect = kid.lookup(PDFName.of('Rect'));
-              if (rect && rect.size() >= 4) {
-                return { x: rect.get(0), y: rect.get(1), w: rect.get(2) - rect.get(0), h: rect.get(3) - rect.get(1) };
+      const inheritKeys = ["FT", "DA", "Ff", "Q", "DV", "Opt", "MaxLen"];
+      let detached = 0;
+      for (const page of pdfDoc.getPages()) {
+        const annots = page.node.lookup(PDFName.of("Annots")) as any;
+        if (!annots || typeof annots.size !== "function") continue;
+        for (let i = 0; i < annots.size(); i++) {
+          try {
+            const widget = pdfDoc.context.lookup(annots.get(i)) as any;
+            if (!widget || typeof widget.get !== "function") continue;
+            if (String(widget.get(PDFName.of("Subtype"))) !== "/Widget") continue;
+            const parentRef = widget.get(PDFName.of("Parent"));
+            if (!parentRef) continue;
+            const parent = pdfDoc.context.lookup(parentRef) as any;
+            if (!parent || typeof parent.get !== "function") continue;
+            if (!parent.get(PDFName.of("FT"))) continue; // parent 無 FT = 2 級普通字段，widget 自帶 FT，不動
+            const grandRef = parent.get(PDFName.of("Parent"));
+            const grand = grandRef ? (pdfDoc.context.lookup(grandRef) as any) : null;
+            const gpName = grand ? decodePdfText(grand.get(PDFName.of("T"))) : "";
+            const pName = decodePdfText(parent.get(PDFName.of("T")));
+            for (const k of inheritKeys) {
+              const key = PDFName.of(k);
+              if (!widget.get(key)) {
+                const v = parent.get(key);
+                if (v !== undefined && v !== null) widget.set(key, v);
               }
             }
-          }
-        } catch { /* fall through */ }
-        return null;
-      };
-
-      // Determine which dropdowns to strike through
-      // If director resigning → strike through Secretary + non-applicable labels
-      // If secretary resigning → strike through Director + non-applicable labels
-
-      // Dropdown1/2: "Director" vs "Company Secretary" role declaration (互斥劃線)
-      // Dropdown3/4: Alternate Director role declaration
-      // Dropdown7/8: 簽署人身份 — Signer capacity (董事/秘書)
-      const crossPairs: string[] = [];
-      if (officerType === 'director') {
-        // Dropdown2 = Secretary(劃掉), Dropdown8 = Secretary signer(劃掉)
-        crossPairs.push('Dropdown_2_P.2', 'Dropdown_8_P.2');
-      } else if (officerType === 'secretary') {
-        // Dropdown1 = Director(劃掉), Dropdown7 = Director signer(劃掉)
-        crossPairs.push('Dropdown_1_P.2', 'Dropdown_7_P.2');
-      } else if (officerType === 'alternate' || officerType === 'reserve_director') {
-        // Dropdown3 = Director(劃掉, alternate is NOT director), Dropdown7/8 based on signer
-        crossPairs.push('Dropdown_3_P.2');
-        // For signer capacity: alternate is a type of director → cross Secretary (Dropdown8)
-        crossPairs.push('Dropdown_8_P.2');
-      }
-
-      // Try to draw lines using actual widget positions
-      for (const ddName of crossPairs) {
-        const rect = getDropdownRect(ddName);
-        if (rect) {
-          const yMid = rect.y + rect.h / 2;
-          page2.drawLine({
-            start: { x: rect.x + 2, y: yMid },
-            end: { x: rect.x + rect.w - 2, y: yMid },
-            thickness: 1.2,
-          });
+            // 3 級（grandparent 有 T）：`${grand}.${parent}` → Dropdown1_P.2 / fill_7_P.1
+            // 2 級（無 grandparent）：`${parent}.0`
+            widget.set(PDFName.of("T"), PDFString.of(gpName ? `${gpName}.${pName || "0"}` : `${pName || "field"}.0`));
+            widget.delete(PDFName.of("Parent"));
+            detached++;
+          } catch { /* skip malformed widget */ }
         }
       }
+      console.log(`ND4: detached ${detached} parented widgets for editable fields`);
     } catch { /* non-critical */ }
 
     // ═══ P.2: Signer + Sign Date ═══

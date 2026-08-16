@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Checkbox } from '@/components/ui/checkbox';
 import { ArrowLeft, Download, Loader2, Building2 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { useCompanies } from '@/hooks/useCompanies';
@@ -26,6 +27,8 @@ export default function ND4GeneratorForm({ onBack, initialCompanyId, onNavigate 
   const { data: companies = [] } = useCompanies();
   const [selectedCompanyId, setSelectedCompanyId] = useState('');
   const [generating, setGenerating] = useState(false);
+  // 頂部勾選：生成 ND4 時是否一併生成 ND2A 委任╱停任通知書（默認勾選）
+  const [generateNd2aTogether, setGenerateNd2aTogether] = useState(true);
   const { mutate: saveFormHistory } = useSaveFormHistory();
 
   const today = new Date();
@@ -185,6 +188,11 @@ export default function ND4GeneratorForm({ onBack, initialCompanyId, onNavigate 
   };
 
   const handleGenerate = async () => {
+    // 頂部勾選「同時生成 ND2A」→ 生成 ND4 時一併生成 ND2A 委任╱停任通知書
+    if (generateNd2aTogether) {
+      await handleGenerateBoth();
+      return;
+    }
     if (!formData.brNumber || !formData.companyName) { toast({ title: '錯誤', description: '請選擇公司', variant: 'destructive' }); return; }
     if (!formData.officerNameEnglish) { toast({ title: '錯誤', description: '請填寫辭任人英文名稱', variant: 'destructive' }); return; }
     setGenerating(true);
@@ -229,17 +237,17 @@ export default function ND4GeneratorForm({ onBack, initialCompanyId, onNavigate 
       <div className="flex items-center gap-3 mb-6">
         <Button variant="ghost" size="sm" onClick={onBack}><ArrowLeft className="h-4 w-4 mr-1" />返回</Button>
         <div><h1 className="text-2xl font-bold">ND4 — 公司秘書及董事辭任通知書</h1><p className="text-sm text-muted-foreground">Notice of Change in Particulars of Company Secretary and Director</p></div>
-        {/* 頂部互鏈：前往 ND2A ＋ 一併生成 */}
+        {/* 頂部互鏈：前往 ND2A ＋ 勾選同時生成 ND2A */}
         {onNavigate && (
           <div className="ml-auto flex flex-col items-end gap-1.5">
             <button type="button" className="text-xs text-primary hover:underline"
               onClick={() => onNavigate('nd2a', selectedCompanyId || undefined)}>
               ↗ 前往 ND2A 委任╱停任通知書
             </button>
-            <Button size="sm" onClick={handleGenerateBoth} disabled={generating}>
-              {generating ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : '📦 '}
-              一併生成 ND4 ＋ ND2A
-            </Button>
+            <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+              <Checkbox checked={generateNd2aTogether} onCheckedChange={v => setGenerateNd2aTogether(v === true)} disabled={generating} />
+              <span>同時生成 ND2A 委任╱停任通知書</span>
+            </label>
           </div>
         )}
       </div>

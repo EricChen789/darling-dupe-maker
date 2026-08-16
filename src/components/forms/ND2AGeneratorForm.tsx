@@ -14,6 +14,7 @@ import { ArrowLeft, Download, Loader2, Building2, Plus, Trash2 } from 'lucide-re
 import { toast } from '@/hooks/use-toast';
 import { useCompanies } from '@/hooks/useCompanies';
 import { downloadBase64Pdf } from '@/lib/downloadPdf';
+import { postJson, sleep, safeFileName, parseEnglishName, parseDateParts, chunkNd2aOfficers } from '@/lib/formGen';
 import RelatedFormsPrompt from './RelatedFormsPrompt';
 
 interface OfficerEntry {
@@ -80,9 +81,11 @@ const emptyOfficer = (): OfficerEntry => ({
 interface ND2AGeneratorFormProps {
   onBack: () => void;
   initialCompanyId?: string;
+  /** 頂部互鏈：切換到對方表單（帶當前公司 id 保留選擇） */
+  onNavigate?: (formKey: string, companyId?: string) => void;
 }
 
-export default function ND2AGeneratorForm({ onBack, initialCompanyId }: ND2AGeneratorFormProps) {
+export default function ND2AGeneratorForm({ onBack, initialCompanyId, onNavigate }: ND2AGeneratorFormProps) {
   const { data: companies = [] } = useCompanies();
   const { mutate: saveFormHistory } = useSaveFormHistory();
   const [selectedCompanyId, setSelectedCompanyId] = useState('');
@@ -170,6 +173,47 @@ export default function ND2AGeneratorForm({ onBack, initialCompanyId }: ND2AGene
   const addOfficer = () => setOfficers(prev => [...prev, emptyOfficer()]);
   const removeOfficer = (idx: number) => setOfficers(prev => prev.filter((_, i) => i !== idx));
 
+  const buildPayload = (list: OfficerEntry[], debug = false) => ({
+    brNumber, companyName, officers: list, signerName, signerCapacity, signDate,
+    presentorName, presentorAddress, presentorPhone, presentorFax, presentorEmail, presentorReference, debug,
+  });
+
+  // ── 由 ND2A 停任人構建 ND4 payload（專用端點，與 QuickFormDialog 一致） ──
+  const buildNd4PayloadFromOfficer = (officer: OfficerEntry): any => {
+    const engFull = (officer.nameEnglish || `${officer.nameSurname || ''} ${officer.nameOtherNames || ''}`.trim() || '').trim();
+    const parsed = parseEnglishName(engFull);
+    const surname = officer.nameSurname || parsed.surname;
+    const otherNames = officer.nameOtherNames || parsed.otherNames;
+    const ceased = parseDateParts(officer.dateCeased);
+    const sign = parseDateParts(signDate);
+    const payload: any = {
+      brNumber, companyName,
+      officerType: officer.role,               // director / secretary / alternate
+      identity: officer.identity,
+      resignationDay: ceased.day,
+      resignationMonth: ceased.month,
+      resignationYear: ceased.year,
+      signerName: signerName || presentorName || '',
+      signDateDay: sign.day,
+      signDateMonth: sign.month,
+      signDateYear: sign.year,
+      presentorName, presentorAddress, presentorPhone, presentorFax, presentorEmail, presentorReference,
+    };
+    if (officer.identity === 'natural') {
+      payload.officerNameChinese = officer.nameChinese;
+      payload.surname = surname;
+      payload.otherNames = otherNames;
+      payload.hkidPartial = (officer.idNumber || '').slice(0, 4);
+      payload.passportCountry = officer.passportCountry;
+      payload.passportPartial = officer.passportNumber;
+      if (officer.role === 'alternate') payload.alternateTo = officer.alternateTo;
+    } else {
+      payload.corporateName = officer.companyName || engFull;
+      payload.corporateNumber = officer.companyNumber;
+    }
+    return payload;
+  };
+
   const handleGenerate = async (debug = false) => {
     if (!brNumber || !companyName) {
       toast({ title: '錯誤', description: '請填寫公司名稱和商業登記號碼', variant: 'destructive' });
@@ -178,13 +222,8 @@ export default function ND2AGeneratorForm({ onBack, initialCompanyId }: ND2AGene
     setGenerating(true);
     try {
       const token = localStorage.getItem("secretary_jwt") || "";
-      const resp = await fetch(`/api/generate-nd2a-pdf`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ brNumber, companyName, officers, signerName, signerCapacity, signDate, presentorName, presentorAddress, presentorPhone, presentorFax, presentorEmail, presentorReference, debug }),
-      });
-      const result = await resp.json();
-      if (!resp.ok) throw new Error(result.error);
+      const result = await postJson('/api/generate-nd2a-pdf', buildPayload(officers, debug));
+      if (!result.pdf) throw new Error('No data in response');
 
       downloadBase64Pdf(result.pdf, `ND2A_${brNumber}_${companyName.replace(/\s+/g, '_')}.pdf`);
       saveFormHistory({ formType: 'ND2A', formData: { brNumber, companyName, selectedCompanyId, officers, signerId, signerName, signerCapacity, signDate, presentorName, presentorAddress, presentorPhone, presentorFax, presentorEmail, presentorReference } });
@@ -211,6 +250,66 @@ export default function ND2AGeneratorForm({ onBack, initialCompanyId }: ND2AGene
     }
   };
 
+  // ── 一併生成：ND2A（分份）→ 間隔 2.5s → ND4 每位辭任人一份 ──
+  const handleGenerateBoth = async () => {
+    if (!brNumber || !companyName) {
+      toast({ title: '錯誤', description: '請填寫公司名稱和商業登記號碼', variant: 'destructive' });
+      return;
+    }
+    const cessations = officers.filter(o => o.type === 'cessation');
+    if (cessations.length === 0) {
+      toast({ title: '無法一併生成', description: '請先加入至少一位停任人士（ND4 為辭任通知書）', variant: 'destructive' });
+      return;
+    }
+    setGenerating(true);
+    try {
+      const safeName = safeFileName(companyName);
+
+      // ── ND2A：按模板容量分多份 ──
+      const chunks = chunkNd2aOfficers(officers);
+      for (let i = 0; i < chunks.length; i++) {
+        let result;
+        try {
+          result = await postJson('/api/generate-nd2a-pdf', buildPayload(chunks[i], false));
+        } catch (err: any) {
+          throw new Error(`ND2A 第 ${i + 1} 份生成失敗（${err.message}），已下載 ${i} 份`);
+        }
+        if (!result.pdf) throw new Error('No data in response');
+        const suffix = chunks.length > 1 ? `_第${i + 1}份` : '';
+        downloadBase64Pdf(result.pdf, `ND2A_${brNumber}_${safeName}${suffix}.pdf`);
+        // 多份之間留間隔，避免連續請求複用同一 isolate 觸發 1102
+        if (i < chunks.length - 1) await sleep(2500);
+      }
+      saveFormHistory({ formType: 'ND2A', formData: { brNumber, companyName, selectedCompanyId, officers, signerId, signerName, signerCapacity, signDate, presentorName, presentorAddress, presentorPhone, presentorFax, presentorEmail, presentorReference } });
+
+      // ── ND4：每位辭任人一份 ──
+      await sleep(2500);
+      for (let i = 0; i < cessations.length; i++) {
+        let result;
+        try {
+          result = await postJson('/api/generate-nd4-pdf', buildNd4PayloadFromOfficer(cessations[i]));
+        } catch (err: any) {
+          throw new Error(`ND4 第 ${i + 1} 份生成失敗（${err.message}），已下載 ${i} 份`);
+        }
+        if (!result.pdf) throw new Error('No data in response');
+        const suffix = cessations.length > 1 ? `_第${i + 1}份` : '';
+        downloadBase64Pdf(result.pdf, `ND4_${brNumber}_${safeName}${suffix}.pdf`);
+        if (i < cessations.length - 1) await sleep(2500);
+      }
+
+      toast({
+        title: '✅ PDF 已生成',
+        description: `ND2A ${chunks.length} 份 ＋ ND4 ${cessations.length} 份（${officers.length} 位人士）下載完成`,
+      });
+    } catch (err: any) {
+      toast({ title: '生成失敗', description: err.message, variant: 'destructive' });
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const cessationOfficers = officers.filter(o => o.type === 'cessation');
+
   return (
     <div>
       <div className="flex items-center gap-3 mb-6">
@@ -219,6 +318,23 @@ export default function ND2AGeneratorForm({ onBack, initialCompanyId }: ND2AGene
           <h1 className="text-2xl font-bold">ND2A — 更改公司秘書及董事通知書 (委任╱停任)</h1>
           <p className="text-sm text-muted-foreground">Notice of Change of Company Secretary and Director (Appointment／Cessation)</p>
         </div>
+        {/* 頂部互鏈：前往 ND4 ＋ 一併生成 */}
+        {onNavigate && (
+          <div className="ml-auto flex flex-col items-end gap-1.5">
+            <button type="button" className="text-xs text-primary hover:underline"
+              onClick={() => onNavigate('nd4', selectedCompanyId || undefined)}>
+              ↗ 前往 ND4 辭任通知書
+            </button>
+            {cessationOfficers.length > 0 ? (
+              <Button size="sm" onClick={handleGenerateBoth} disabled={generating}>
+                {generating ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : '📦 '}
+                一併生成 ND2A ＋ ND4（{cessationOfficers.length} 位辭任人）
+              </Button>
+            ) : (
+              <span className="text-xs text-muted-foreground">💡 加入停任人士後可一併生成 ND4</span>
+            )}
+          </div>
+        )}
       </div>
 
       <FormHistorySelector formType="ND2A" onSelect={handleLoadHistory} />

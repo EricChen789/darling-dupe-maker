@@ -7,6 +7,8 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from '@/components/ui/dialog';
 import { toast } from '@/hooks/use-toast';
+import { downloadBase64Pdf } from '@/lib/downloadPdf';
+import { postJson, parseEnglishName, parseDateParts, normalizeDate, chunkNd2aOfficers, safeFileName } from '@/lib/formGen';
 import { Loader2, FileText, Download } from 'lucide-react';
 
 export interface QuickFormEvent {
@@ -74,45 +76,6 @@ function getFormOptions(events: QuickFormEvent[]): { key: string; config: typeof
   }
 
   return opts;
-}
-
-// ── Helper: parse English full name into surname + otherNames ──
-// Matches Flask `_parse_english_name`: comma → "SURNAME, Other Names";
-// otherwise Chinese/HK convention → first word = surname, rest = otherNames.
-function parseEnglishName(fullName: string): { surname: string; otherNames: string } {
-  if (!fullName) return { surname: '', otherNames: '' };
-  const cleaned = fullName.trim();
-  // Comma-separated: "SMITH, John" or "CHAN, Tai Man"
-  if (cleaned.includes(',')) {
-    const segs = cleaned.split(',').map(s => s.trim()).filter(Boolean);
-    if (segs.length >= 2) return { surname: segs[0], otherNames: segs.slice(1).join(' ') };
-    return { surname: segs[0] || '', otherNames: '' };
-  }
-  // Chinese/HK convention: first word = surname
-  const parts = cleaned.split(/\s+/);
-  if (parts.length <= 1) return { surname: parts[0] || '', otherNames: '' };
-  return { surname: parts[0], otherNames: parts.slice(1).join(' ') };
-}
-
-// ── Helper: parse date string into { day, month, year } ──
-function parseDateParts(dateStr: string): { day: string; month: string; year: string } {
-  if (!dateStr) return { day: '', month: '', year: '' };
-  // DD/MM/YYYY
-  let m = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (m) return { day: m[1].padStart(2, '0'), month: m[2].padStart(2, '0'), year: m[3] };
-  // YYYY-MM-DD
-  m = dateStr.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
-  if (m) return { day: m[3].padStart(2, '0'), month: m[2].padStart(2, '0'), year: m[1] };
-  // DDMMYYYY (8 digits)
-  m = dateStr.match(/^(\d{2})(\d{2})(\d{4})$/);
-  if (m) return { day: m[1], month: m[2], year: m[3] };
-  return { day: '', month: '', year: '' };
-}
-
-// ── Helper: normalise date to YYYY-MM-DD ──
-function normalizeDate(dateStr: string): string {
-  const { day, month, year } = parseDateParts(dateStr);
-  return day && month && year ? `${year}-${month}-${day}` : dateStr || '';
 }
 
 // ── Simple role mapper: Chinese/English role → canonical ──
@@ -256,24 +219,6 @@ function buildNd2aPayload(company: QuickFormDialogProps['company'], officers: an
     presentorEmail: DEFAULT_PRESENTER.email,
     presentorReference: DEFAULT_PRESENTER.reference,
   };
-}
-
-// ── Helper: split officers into ND2A forms respecting template capacity ──
-// Template: 2 cessations (P.1/P.4) + 2 natural appointments (P.2/P.5) + 2 corporate (P.3/P.6) per form.
-function chunkNd2aOfficers(officers: any[]): any[][] {
-  const cess = officers.filter(o => o.type === 'cessation');
-  const nat = officers.filter(o => o.type === 'appointment' && o.identity === 'natural');
-  const corp = officers.filter(o => o.type === 'appointment' && o.identity === 'corporate');
-  const nForms = Math.max(1, Math.ceil(cess.length / 2), Math.ceil(nat.length / 2), Math.ceil(corp.length / 2));
-  const chunks: any[][] = [];
-  for (let i = 0; i < nForms; i++) {
-    chunks.push([
-      ...cess.slice(i * 2, i * 2 + 2),
-      ...nat.slice(i * 2, i * 2 + 2),
-      ...corp.slice(i * 2, i * 2 + 2),
-    ]);
-  }
-  return chunks;
 }
 
 function buildFormPayload(
@@ -576,21 +521,6 @@ function buildFormPayload(
   }
 }
 
-async function downloadPdf(base64: string, filename: string) {
-  const byteChars = atob(base64);
-  const bytes = new Uint8Array(byteChars.length);
-  for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i);
-  const blob = new Blob([bytes], { type: 'application/pdf' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
-
 async function downloadRtf(base64: string, filename: string) {
   const byteChars = atob(base64);
   const bytes = new Uint8Array(byteChars.length);
@@ -622,49 +552,7 @@ export function QuickFormDialog({ open, onOpenChange, company, events }: QuickFo
     setLoading(formKey);
     try {
       const config = FORM_CONFIGS[formKey] || FORM_CONFIGS.nd2a_appoint;
-      const token = localStorage.getItem('secretary_jwt') || '';
-      const safeName = (company.name || 'company').replace(/[^a-zA-Z0-9一-鿿]/g, '_');
-
-      const postJson = async (endpoint: string, payload: any) => {
-        let lastErr: Error = new Error('Network error');
-        for (let attempt = 1; attempt <= 4; attempt++) {
-          try {
-            // 30s 超时：生产边缘层偶发挂起，超时后重试
-            const controller = new AbortController();
-            const timer = setTimeout(() => controller.abort(), 30000);
-            // ?t= 破 CDN 缓存（含 503 错误页缓存），避免重试命中缓存的失败响应
-            const sep = endpoint.includes('?') ? '&' : '?';
-            const resp = await fetch(`${endpoint}${sep}t=${Date.now()}-${attempt}`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-              body: JSON.stringify(payload),
-              signal: controller.signal,
-            });
-            clearTimeout(timer);
-            if (!resp.ok) {
-              if (resp.status >= 500 || resp.status === 429) {
-                throw new Error(`HTTP ${resp.status}`);
-              }
-              const err = await resp.json().catch(() => ({ error: resp.statusText }));
-              throw new Error(err.error || `HTTP ${resp.status}`);
-            }
-            return resp.json();
-          } catch (err: any) {
-            lastErr = err;
-            // 5xx/429/超时/网络错误可重试；4xx 不重试
-            // 退避 3s/6s/9s：1102 (Worker exceeded resource limits) 是 isolate 级
-            // CPU 累积，需要较长窗口才能恢复
-            const retriable = err.name === 'AbortError' || err.name === 'TypeError'
-              || /^HTTP (5\d\d|429)$/.test(err.message || '');
-            if (attempt < 4 && retriable) {
-              await new Promise(r => setTimeout(r, 3000 * attempt));
-              continue;
-            }
-            throw lastErr;
-          }
-        }
-        throw lastErr;
-      };
+      const safeName = safeFileName(company.name);
 
       // ── ND2A：同一天全部委任＋辭任人士，按模板容量自動分多份 ──
       const generateNd2a = async (): Promise<number> => {
@@ -681,7 +569,7 @@ export function QuickFormDialog({ open, onOpenChange, company, events }: QuickFo
           }
           if (!result.pdf) throw new Error('No data in response');
           const suffix = chunks.length > 1 ? `_第${i + 1}份` : '';
-          await downloadPdf(result.pdf, `${nd2aConfig.label.replace(/\s/g, '_')}_${safeName}${suffix}.pdf`);
+          await downloadBase64Pdf(result.pdf, `${nd2aConfig.label.replace(/\s/g, '_')}_${safeName}${suffix}.pdf`);
           // 多份之间留间隔，避免连续请求复用同一 isolate 触发 1102
           if (i < chunks.length - 1) await new Promise(r => setTimeout(r, 2500));
         }
@@ -703,7 +591,7 @@ export function QuickFormDialog({ open, onOpenChange, company, events }: QuickFo
           }
           if (!result.pdf) throw new Error('No data in response');
           const suffix = resigners.length > 1 ? `_第${done + 1}份` : '';
-          await downloadPdf(result.pdf, `${nd4Config.label.replace(/\s/g, '_')}_${safeName}${suffix}.pdf`);
+          await downloadBase64Pdf(result.pdf, `${nd4Config.label.replace(/\s/g, '_')}_${safeName}${suffix}.pdf`);
           done++;
           // 多份之间留间隔，避免连续请求复用同一 isolate 触发 1102
           if (i < resigners.length - 1) await new Promise(r => setTimeout(r, 2500));
@@ -758,7 +646,7 @@ export function QuickFormDialog({ open, onOpenChange, company, events }: QuickFo
       const result = await postJson(config.endpoint, payload);
       if (result.pdf) {
         const filename = `${config.label.replace(/\s/g, '_')}_${safeName}.pdf`;
-        await downloadPdf(result.pdf, filename);
+        await downloadBase64Pdf(result.pdf, filename);
         toast({ title: '✅ PDF 已生成', description: `${config.label} 下載完成` });
         onOpenChange(false);
       } else if (result.rtf) {

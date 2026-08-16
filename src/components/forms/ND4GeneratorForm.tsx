@@ -7,6 +7,7 @@ import { ArrowLeft, Download, Loader2, Building2 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { useCompanies } from '@/hooks/useCompanies';
 import { downloadBase64Pdf } from '@/lib/downloadPdf';
+import { postJson, sleep, safeFileName, parseEnglishName } from '@/lib/formGen';
 import { useSaveFormHistory } from '@/hooks/useFormHistory';
 import FormHistorySelector from './FormHistorySelector';
 import PresenterSelector from './PresenterSelector';
@@ -14,9 +15,14 @@ import type { Presenter } from '@/hooks/usePresenters';
 import PersonQuickPick from './PersonQuickPick';
 import AddressQuickPick from './AddressQuickPick';
 
-interface ND4GeneratorFormProps { onBack: () => void; initialCompanyId?: string; }
+interface ND4GeneratorFormProps {
+  onBack: () => void;
+  initialCompanyId?: string;
+  /** 頂部互鏈：切換到對方表單（帶當前公司 id 保留選擇） */
+  onNavigate?: (formKey: string, companyId?: string) => void;
+}
 
-export default function ND4GeneratorForm({ onBack, initialCompanyId }: ND4GeneratorFormProps) {
+export default function ND4GeneratorForm({ onBack, initialCompanyId, onNavigate }: ND4GeneratorFormProps) {
   const { data: companies = [] } = useCompanies();
   const [selectedCompanyId, setSelectedCompanyId] = useState('');
   const [generating, setGenerating] = useState(false);
@@ -85,86 +91,147 @@ export default function ND4GeneratorForm({ onBack, initialCompanyId }: ND4Genera
     if (data.selectedCompanyId) setSelectedCompanyId(data.selectedCompanyId);
   };
 
+  // ── 現有 ND4 生成（模板路徑 /api/generate-template-pdf），抽出供單獨/一併複用 ──
+  const generateNd4Once = async (): Promise<void> => {
+    // Parse English name into surname + other names (matching _parse_english_name logic)
+    const engName = (formData.officerNameEnglish || '').replace(/\s+/g, ' ').trim();
+    const { surname, otherNames } = parseEnglishName(engName);
+
+    // ND4 template AcroForm field mapping (verified against template labels 2026-07-30):
+    //   fill_3="代替 Alternate to"  fill_4=中文姓名  fill_5=英文姓氏  fill_6=英文名字
+    //   fill_7=HKID號碼  fill_8=護照簽發國  fill_9=法人公司名  fill_10=法人公司編號
+    //   fill_11/12/13=辭職日期D/M/Y  fill_14=提交人姓名  fill_15=提交人地址
+    //   fill_16=電話  fill_17=傳真  fill_18=電郵  fill_19=參考編號
+    const fields: Record<string, string> = {
+      'fill_1_P.1': formData.brNumber,
+      'fill_2_P.1': formData.companyName,
+      // Officer details: fill_4=中文姓名, fill_5=英文姓氏, fill_6=英文名字
+      'fill_4_P.1': formData.officerNameChinese || '',
+      'fill_5_P.1': surname,
+      'fill_6_P.1': otherNames,
+      // Identity documents
+      'fill_7_P.1': formData.hkidPartial || '',
+      'fill_8_P.1': formData.passportCountry || '',
+      'fill_8b_P.1': formData.passportPartial || '',
+      // Resignation effective date (fill_11/12/13 = 辭職日期 D/M/Y)
+      'fill_11_P.1': formData.resignationDay,
+      'fill_12_P.1': formData.resignationMonth,
+      'fill_13_P.1': formData.resignationYear,
+      // Signer
+      'fill_9_P.1': formData.signerName || '',
+      'fill_10_P.1': formData.signerCapacity || '',
+      // Presentor section
+      'fill_14_P.1': formData.presentorName || '',
+      'fill_15_P.1': formData.presentorAddress || '',
+      'fill_16_P.1': formData.presentorPhone || '',
+      'fill_17_P.1': formData.presentorFax || '',
+      'fill_18_P.1': formData.presentorEmail || '',
+      'fill_19_P.1': formData.presentorReference || '',
+      // P.2: BR + Signing section (fill_2=Name, fill_3=Date DD/MM/YYYY)
+      'fill_1_P.2': formData.brNumber || '',
+      'fill_2_P.2': formData.signerName || formData.presentorName || '',
+      'fill_3_P.2': `${formData.signDateDay}/${formData.signDateMonth}/${formData.signDateYear}`,
+    };
+    // fill_3 = "代替 Alternate to" — only fill when alternate director selected
+    if (formData.officerType === 'alternate') {
+      fields['fill_3_P.1'] = formData.officerNameEnglish || '';
+    }
+    const checkboxes: string[] = [];
+    // P.1: "是否仍然擔任" — 辭任必然是「否」(toggle_5_P.1 = No)
+    checkboxes.push('toggle_5_P.1');
+    // P.2: Officer role checkboxes
+    if (formData.officerType === 'director') checkboxes.push('cb_1_P.2');
+    else if (formData.officerType === 'alternate') checkboxes.push('cb_2_P.2');
+    else if (formData.officerType === 'secretary') checkboxes.push('cb_3_P.2');
+
+    const result = await postJson('/api/generate-template-pdf', {
+      template: 'ND4-template.pdf', fields, checkboxes, brNumber: formData.brNumber,
+      keepWidgets: true, removePages: [5, 4, 3, 2],
+      alignCenterFields: ['fill_4_P.1'], fieldMinFontSize: { 'fill_15_P.1': 10 },
+    });
+    if (!result.pdf) throw new Error('No data in response');
+    downloadBase64Pdf(result.pdf, 'ND4-form.pdf');
+  };
+
+  // ── 由 ND4 表單資料構建 ND2A payload（單一辭任人，專用端點） ──
+  const buildNd2aPayloadFromForm = () => {
+    const engFull = (formData.officerNameEnglish || '').replace(/\s+/g, ' ').trim();
+    const { surname, otherNames } = parseEnglishName(engFull);
+    const hasResignDate = formData.resignationDay && formData.resignationMonth && formData.resignationYear;
+    const officer: any = {
+      type: 'cessation',
+      role: formData.officerType,
+      identity: formData.identity,
+      nameEnglish: engFull,
+      nameSurname: surname,
+      nameOtherNames: otherNames,
+      nameChinese: formData.officerNameChinese,
+      idNumber: formData.hkidPartial,
+      dateCeased: hasResignDate
+        ? `${formData.resignationYear}-${String(formData.resignationMonth).padStart(2, '0')}-${String(formData.resignationDay).padStart(2, '0')}`
+        : '',
+      cessationReason: 'resignation',
+      stillHoldsOffice: 'no',
+    };
+    if (formData.identity === 'natural') {
+      officer.passportCountry = formData.passportCountry;
+      officer.passportNumber = formData.passportPartial;
+      if (formData.officerType === 'alternate') officer.alternateTo = engFull;
+    } else {
+      officer.companyName = engFull;
+      officer.companyNumber = formData.hkidPartial;
+      officer.placeIncorporated = 'Hong Kong';
+    }
+    const signDate = `${formData.signDateYear}-${String(formData.signDateMonth).padStart(2, '0')}-${String(formData.signDateDay).padStart(2, '0')}`;
+    return {
+      brNumber: formData.brNumber,
+      companyName: formData.companyName,
+      officers: [officer],
+      signerName: formData.signerName || formData.presentorName,
+      signerCapacity: formData.signerCapacity || 'director',
+      signDate,
+      presentorName: formData.presentorName,
+      presentorAddress: formData.presentorAddress,
+      presentorPhone: formData.presentorPhone,
+      presentorFax: formData.presentorFax,
+      presentorEmail: formData.presentorEmail,
+      presentorReference: formData.presentorReference,
+    };
+  };
+
   const handleGenerate = async () => {
     if (!formData.brNumber || !formData.companyName) { toast({ title: '錯誤', description: '請選擇公司', variant: 'destructive' }); return; }
     if (!formData.officerNameEnglish) { toast({ title: '錯誤', description: '請填寫辭任人英文名稱', variant: 'destructive' }); return; }
     setGenerating(true);
     try {
-      const token = localStorage.getItem("secretary_jwt") || "";
-      // Parse English name into surname + other names (matching _parse_english_name logic)
-      const engName = (formData.officerNameEnglish || '').replace(/\s+/g, ' ').trim();
-      let surname = '', otherNames = '';
-      if (engName) {
-        if (engName.includes(',')) {
-          const segs = engName.split(',').map(s => s.trim()).filter(Boolean);
-          surname = segs[0] || '';
-          otherNames = segs.slice(1).join(' ');
-        } else {
-          const parts = engName.split(' ');
-          surname = parts[0] || '';
-          otherNames = parts.slice(1).join(' ');
-        }
-      }
-
-      // ND4 template AcroForm field mapping (verified against template labels 2026-07-30):
-      //   fill_3="代替 Alternate to"  fill_4=中文姓名  fill_5=英文姓氏  fill_6=英文名字
-      //   fill_7=HKID號碼  fill_8=護照簽發國  fill_9=法人公司名  fill_10=法人公司編號
-      //   fill_11/12/13=辭職日期D/M/Y  fill_14=提交人姓名  fill_15=提交人地址
-      //   fill_16=電話  fill_17=傳真  fill_18=電郵  fill_19=參考編號
-      const resignDateStr = (formData.resignationDay && formData.resignationMonth && formData.resignationYear)
-        ? `${formData.resignationDay}/${formData.resignationMonth}/${formData.resignationYear}` : '';
-      const fields: Record<string, string> = {
-        'fill_1_P.1': formData.brNumber,
-        'fill_2_P.1': formData.companyName,
-        // Officer details: fill_4=中文姓名, fill_5=英文姓氏, fill_6=英文名字
-        'fill_4_P.1': formData.officerNameChinese || '',
-        'fill_5_P.1': surname,
-        'fill_6_P.1': otherNames,
-        // Identity documents
-        'fill_7_P.1': formData.hkidPartial || '',
-        'fill_8_P.1': formData.passportCountry || '',
-        'fill_8b_P.1': formData.passportPartial || '',
-        // Resignation effective date (fill_11/12/13 = 辭職日期 D/M/Y)
-        'fill_11_P.1': formData.resignationDay,
-        'fill_12_P.1': formData.resignationMonth,
-        'fill_13_P.1': formData.resignationYear,
-        // Signer
-        'fill_9_P.1': formData.signerName || '',
-        'fill_10_P.1': formData.signerCapacity || '',
-        // Presentor section
-        'fill_14_P.1': formData.presentorName || '',
-        'fill_15_P.1': formData.presentorAddress || '',
-        'fill_16_P.1': formData.presentorPhone || '',
-        'fill_17_P.1': formData.presentorFax || '',
-        'fill_18_P.1': formData.presentorEmail || '',
-        'fill_19_P.1': formData.presentorReference || '',
-        // P.2: BR + Signing section (fill_2=Name, fill_3=Date DD/MM/YYYY)
-        'fill_1_P.2': formData.brNumber || '',
-        'fill_2_P.2': formData.signerName || formData.presentorName || '',
-        'fill_3_P.2': `${formData.signDateDay}/${formData.signDateMonth}/${formData.signDateYear}`,
-      };
-      // fill_3 = "代替 Alternate to" — only fill when alternate director selected
-      if (formData.officerType === 'alternate') {
-        fields['fill_3_P.1'] = formData.officerNameEnglish || '';
-      }
-      const checkboxes: string[] = [];
-      // P.1: "是否仍然擔任" — 辭任必然是「否」(toggle_5_P.1 = No)
-      checkboxes.push('toggle_5_P.1');
-      // P.2: Officer role checkboxes
-      if (formData.officerType === 'director') checkboxes.push('cb_1_P.2');
-      else if (formData.officerType === 'alternate') checkboxes.push('cb_2_P.2');
-      else if (formData.officerType === 'secretary') checkboxes.push('cb_3_P.2');
-
-      const resp = await fetch(`/api/generate-template-pdf`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ template: 'ND4-template.pdf', fields, checkboxes, brNumber: formData.brNumber, keepWidgets: true, removePages: [5, 4, 3, 2], alignCenterFields: ['fill_4_P.1'], fieldMinFontSize: { 'fill_15_P.1': 10 } }),
-      });
-      const result = await resp.json();
-      if (!resp.ok) throw new Error(result.error || 'Unknown error');
-      downloadBase64Pdf(result.pdf, 'ND4-form.pdf');
+      await generateNd4Once();
       toast({ title: '生成成功', description: 'ND4 表格已下載' });
       saveFormHistory({ formType: 'ND4', formData: { formData, selectedCompanyId } });
+    } catch (err: any) { toast({ title: '生成失敗', description: err.message, variant: 'destructive' }); }
+    finally { setGenerating(false); }
+  };
+
+  // ── 一併生成：ND4（模板路徑）→ 間隔 2.5s → ND2A（單一辭任人） ──
+  const handleGenerateBoth = async () => {
+    if (!formData.brNumber || !formData.companyName) { toast({ title: '錯誤', description: '請選擇公司', variant: 'destructive' }); return; }
+    if (!formData.officerNameEnglish) { toast({ title: '錯誤', description: '請填寫辭任人英文名稱', variant: 'destructive' }); return; }
+    setGenerating(true);
+    try {
+      await generateNd4Once();
+      saveFormHistory({ formType: 'ND4', formData: { formData, selectedCompanyId } });
+
+      const safeName = safeFileName(formData.companyName);
+      await sleep(2500);
+      let result;
+      try {
+        result = await postJson('/api/generate-nd2a-pdf', buildNd2aPayloadFromForm());
+      } catch (err: any) {
+        throw new Error(`ND2A 生成失敗（${err.message}）`);
+      }
+      if (!result.pdf) throw new Error('No data in response');
+      downloadBase64Pdf(result.pdf, `ND2A_${formData.brNumber}_${safeName}.pdf`);
+
+      toast({ title: '✅ PDF 已生成', description: 'ND4 ＋ ND2A（辭任通知）下載完成' });
     } catch (err: any) { toast({ title: '生成失敗', description: err.message, variant: 'destructive' }); }
     finally { setGenerating(false); }
   };
@@ -177,6 +244,19 @@ export default function ND4GeneratorForm({ onBack, initialCompanyId }: ND4Genera
       <div className="flex items-center gap-3 mb-6">
         <Button variant="ghost" size="sm" onClick={onBack}><ArrowLeft className="h-4 w-4 mr-1" />返回</Button>
         <div><h1 className="text-2xl font-bold">ND4 — 公司秘書及董事辭任通知書</h1><p className="text-sm text-muted-foreground">Notice of Change in Particulars of Company Secretary and Director</p></div>
+        {/* 頂部互鏈：前往 ND2A ＋ 一併生成 */}
+        {onNavigate && (
+          <div className="ml-auto flex flex-col items-end gap-1.5">
+            <button type="button" className="text-xs text-primary hover:underline"
+              onClick={() => onNavigate('nd2a', selectedCompanyId || undefined)}>
+              ↗ 前往 ND2A 委任╱停任通知書
+            </button>
+            <Button size="sm" onClick={handleGenerateBoth} disabled={generating}>
+              {generating ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : '📦 '}
+              一併生成 ND4 ＋ ND2A
+            </Button>
+          </div>
+        )}
       </div>
 
       <FormHistorySelector formType="ND4" onSelect={handleLoadHistory} />

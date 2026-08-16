@@ -109,9 +109,9 @@ export function DocGenerationTab({ company }: DocGenerationTabProps) {
     const onBack = () => setPdfForm(null);
     const cid = company.id;
     switch (pdfForm) {
-      case 'nd2a': return <ND2AGeneratorForm onBack={onBack} initialCompanyId={cid} />;
+      case 'nd2a': return <ND2AGeneratorForm onBack={onBack} initialCompanyId={cid} onNavigate={(key) => setPdfForm(key)} />;
       case 'nd2b': return <ND2BGeneratorForm onBack={onBack} initialCompanyId={cid} />;
-      case 'nd4':  return <ND4GeneratorForm onBack={onBack} initialCompanyId={cid} />;
+      case 'nd4':  return <ND4GeneratorForm onBack={onBack} initialCompanyId={cid} onNavigate={(key) => setPdfForm(key)} />;
       case 'ndr1': return <NDR1GeneratorForm onBack={onBack} initialCompanyId={cid} />;
       case 'nr1':  return <NR1GeneratorForm onBack={onBack} initialCompanyId={cid} />;
       case 'nsc1': return <NSC1GeneratorForm onBack={onBack} initialCompanyId={cid} />;

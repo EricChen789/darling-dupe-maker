@@ -25,6 +25,8 @@ import ErrorBoundary from '@/components/ErrorBoundary';
 
 const Forms = () => {
   const [selectedForm, setSelectedForm] = useState<string | null>(null);
+  // ND2A ⇄ ND4 頂部互鏈切換時保留公司選擇
+  const [initialCompanyId, setInitialCompanyId] = useState<string | undefined>(undefined);
 
   const handleRefresh = () => {
     toast({ title: '已重新整理', description: '表格列表已更新' });
@@ -32,13 +34,21 @@ const Forms = () => {
 
   // CR form routing (nar1 is handled via Dialog at the bottom)
   if (selectedForm === 'nd2a') {
-    return <ND2AGeneratorForm onBack={() => setSelectedForm(null)} />;
+    return <ND2AGeneratorForm
+      onBack={() => { setSelectedForm(null); setInitialCompanyId(undefined); }}
+      initialCompanyId={initialCompanyId}
+      onNavigate={(key, cid) => { setInitialCompanyId(cid); setSelectedForm(key); }}
+    />;
   }
   if (selectedForm === 'nd2b') {
     return <ND2BGeneratorForm onBack={() => setSelectedForm(null)} />;
   }
   if (selectedForm === 'nd4') {
-    return <ND4GeneratorForm onBack={() => setSelectedForm(null)} />;
+    return <ND4GeneratorForm
+      onBack={() => { setSelectedForm(null); setInitialCompanyId(undefined); }}
+      initialCompanyId={initialCompanyId}
+      onNavigate={(key, cid) => { setInitialCompanyId(cid); setSelectedForm(key); }}
+    />;
   }
   if (selectedForm === 'ndr1') {
     return <NDR1GeneratorForm onBack={() => setSelectedForm(null)} />;

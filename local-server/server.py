@@ -7467,6 +7467,7 @@ def _fill_nsc1_pdf(data):
             ('fill_8_P.7', 'flat'), ('fill_9_P.7', 'building'),
             ('fill_10_P.7', 'street'), ('fill_11_P.7', 'district'),
             ('fill_12_P.7', 'country'), ('fill_13_P.7', 'shares'),
+            ('fill_14_P.7', 'remarks'),
         ]
         p7_specs_a2 = [
             ('fill_15_P.7', 'nameZh'), ('fill_16_P.7', 'surname'),
@@ -7474,6 +7475,7 @@ def _fill_nsc1_pdf(data):
             ('fill_19_P.7', 'flat'), ('fill_20_P.7', 'building'),
             ('fill_21_P.7', 'street'), ('fill_22_P.7', 'district'),
             ('fill_23_P.7', 'country'), ('fill_24_P.7', 'shares'),
+            ('fill_25_P.7', 'remarks'),
         ]
         for idx, a in enumerate(allottees_list[:2]):  # P.7 fits 2 allottees
             specs = p7_specs_a1 if idx == 0 else p7_specs_a2
@@ -7520,12 +7522,24 @@ def _fill_nsc1_pdf(data):
                     _check(doc, fmap, cb_name, True)
                 except Exception:
                     pass
-        # P.7 bottom page counter: "附表二第 _ 頁 Schedule 2 Page _"
-        # Each P.7 fits 2 allottees → pages = ceil(count / 2)
+        # P.7 bottom page counter: "附表二第 _ 頁 Schedule 2 Page _"（页码语义，非总数）
+        # Each P.7 fits 2 allottees → pages = ceil(count / 2)；原页固定第 1 頁，续页 k+1
         import math
         sched2_pages = max(1, math.ceil(len(allottees_list) / 2))
-        _set_if_empty('fill_26_P.7', str(sched2_pages))
-        _set_if_empty('fill_27_P.7', str(sched2_pages))
+        _set_if_empty('fill_26_P.7', '1')
+        _set_if_empty('fill_27_P.7', '1')
+        # P.7 顶部总表：股份類別 + 配發此類別股份的總數（2026-08-16，此前从未填入）
+        sched2_class_raw = share_class.strip()
+        sched2_class = sched2_class_raw
+        if not sched2_class_raw or sched2_class_raw.lower() == 'ordinary' \
+                or sched2_class_raw in ('普通股', '普通'):
+            sched2_class = '普通股 Ordinary'
+        allottee_shares_sum = sum(int(a.get('shares', 0) or 0) for a in allottees_list)
+        sched2_total_shares = allottee_shares_sum if allottee_shares_sum > 0 \
+            else (int(shares) if shares else 0)
+        _set_if_empty('fill_2_P.7', sched2_class)
+        if sched2_total_shares > 0:
+            _set_if_empty('fill_3_P.7', str(sched2_total_shares))
         # Only fallback to old top-level logic if allottees list is empty
     elif allottee_name or allottee_name_zh:
         # Allottee 1 name (backward compatibility)
@@ -7605,6 +7619,132 @@ def _fill_nsc1_pdf(data):
     for pno in range(doc.page_count - 1, -1, -1):
         if pno not in keep_indices:
             doc.delete_page(pno)
+
+    # ── Schedule 2 动态续页：>2 获配人时复制 P.7（每页 2 人，2026-08-16）──
+    # 复制页与原 P.7 共享字段对象：write 时 PyMuPDF 把字段 widget annot 挂到复制页
+    # （独立 xref、烘焙 /V、共享 /Parent 字段）→ 渲染器按共享 /V 画旧值。
+    # 修复：write 后重开 → 获配人区域 annot 改名 + 删 /Parent + 写独立 /V，
+    # 再全量重建 AcroForm /Fields（annot 直挂数组，与云端 rebuildAcroFormFields 等价）。
+    # 顶部 Class/Total、BR、底部计数器 annot 保持共享字段值 = 正确继承原页值。
+    if has_allottees and sched2_pages > 1:
+        p7_idx = sum(1 for i in keep_indices if i < 6)
+        for k in range(1, sched2_pages):
+            doc.fullcopy_page(p7_idx)  # 复制到文档末尾
+            copy_idx = len(doc) - 1
+            target_idx = p7_idx + k
+            if copy_idx != target_idx:
+                doc.move_page(copy_idx, target_idx)
+        pdf_bytes = doc.write(deflate=True)
+        doc.close()
+        doc = fitz.open(stream=pdf_bytes, filetype='pdf')
+
+        _slot_of = {}
+        for _nm in ['fill_4', 'fill_5', 'fill_6', 'fill_7', 'fill_8', 'fill_9', 'fill_10',
+                    'fill_11', 'fill_12', 'fill_13', 'cb_1', 'fill_14']:
+            _slot_of[_nm] = 0
+        for _nm in ['fill_15', 'fill_16', 'fill_17', 'fill_18', 'fill_19', 'fill_20', 'fill_21',
+                    'fill_22', 'fill_23', 'fill_24', 'cb_2', 'fill_25']:
+            _slot_of[_nm] = 1
+        _key_of = {
+            'fill_4': 'nameZh', 'fill_5': 'surname', 'fill_6': 'otherNames', 'fill_7': None,
+            'fill_8': 'flat', 'fill_9': 'building', 'fill_10': 'street', 'fill_11': 'district',
+            'fill_12': 'country', 'fill_13': 'shares', 'fill_14': 'remarks',
+            'fill_15': 'nameZh', 'fill_16': 'surname', 'fill_17': 'otherNames', 'fill_18': None,
+            'fill_19': 'flat', 'fill_20': 'building', 'fill_21': 'street', 'fill_22': 'district',
+            'fill_23': 'country', 'fill_24': 'shares', 'fill_25': 'remarks',
+        }
+        for k in range(1, sched2_pages):
+            page = doc[p7_idx + k]
+            for w in page.widgets():
+                nm = w.field_name
+                if not nm or not nm.endswith('_P.7'):
+                    continue
+                base = nm[:-4]
+                if base not in _slot_of:
+                    if base not in ('fill_26', 'fill_27'):
+                        continue  # 顶部/BR：保持共享字段值（继承）
+                    # 页脚计数器 = 页码（第 k+1 頁），每页独立
+                    ax = w._annot.xref
+                    doc.xref_set_key(ax, 'T', fitz.get_pdf_str(f'{nm}_S{k}'))
+                    doc.xref_set_key(ax, 'Parent', 'null')
+                    doc.xref_set_key(ax, 'V', fitz.get_pdf_str(str(k + 1)))
+                    doc.xref_set_key(ax, 'AP', 'null')
+                    continue
+                slot = _slot_of[base]
+                ai = 2 * k + slot
+                a = allottees_list[ai] if ai < len(allottees_list) else None
+                ax = w._annot.xref
+                # 改名 + 断开与共享字段的父子关系（⚠ 删 Parent 不是 P！P 是页面引用）
+                doc.xref_set_key(ax, 'T', fitz.get_pdf_str(f'{nm}_S{k}'))
+                doc.xref_set_key(ax, 'Parent', 'null')
+                if base.startswith('cb_'):
+                    is_joint = bool(a and (a.get('jointlyHeld') or a.get('allotteeJointlyHeld')))
+                    if is_joint:
+                        doc.xref_set_key(ax, 'V', '/Yes')
+                        doc.xref_set_key(ax, 'AS', '/Yes')
+                    else:
+                        doc.xref_set_key(ax, 'V', 'null')
+                        doc.xref_set_key(ax, 'AS', '/Off')
+                    continue
+                val = ''
+                if a:
+                    key = _key_of[base]
+                    if key:
+                        if key == 'nameZh':
+                            val = (a.get('nameZh', '') or '').strip()
+                        elif key == 'surname':
+                            name_en = (a.get('nameEn', '') or '').strip()
+                            surname = (a.get('surname', '') or '').strip()
+                            if name_en and not surname:
+                                parts = name_en.split()
+                                surname = parts[0] if len(parts) > 1 else name_en
+                            val = surname
+                        elif key == 'otherNames':
+                            name_en = (a.get('nameEn', '') or '').strip()
+                            surname = (a.get('surname', '') or '').strip()
+                            other = (a.get('otherNames', '') or '').strip()
+                            if name_en and not surname:
+                                parts = name_en.split()
+                                other = ' '.join(parts[1:]) if len(parts) > 1 else ''
+                            val = other
+                        elif key == 'flat':
+                            val = (a.get('flat', '') or a.get('allotteeFlat', '')).strip()
+                            if not val:
+                                val = (a.get('address', '') or a.get('allotteeAddress', '')).strip()
+                        elif key == 'building':
+                            val = (a.get('building', '') or a.get('allotteeBuilding', '')).strip()
+                        elif key == 'street':
+                            val = (a.get('street', '') or a.get('allotteeStreet', '')).strip()
+                        elif key == 'district':
+                            val = (a.get('district', '') or a.get('allotteeDistrict', '')).strip()
+                        elif key == 'country':
+                            val = (a.get('country', '') or a.get('allotteeCountry', '') or 'Hong Kong').strip()
+                        elif key == 'shares':
+                            val = str(a.get('shares', '') or a.get('allotteeShares', '') or shares or '').strip()
+                        elif key == 'remarks':
+                            val = (a.get('remarks', '') or a.get('allotteeRemarks', '')).strip()
+                if val:
+                    doc.xref_set_key(ax, 'V', fitz.get_pdf_str(val))
+                    doc.xref_set_key(ax, 'AP', 'null')
+                else:
+                    doc.xref_set_key(ax, 'V', 'null')
+                    doc.xref_set_key(ax, 'AP', 'null')
+        # 全量重建 AcroForm /Fields：所有页面 widget annot 直挂数组。
+        # 防止 Acrobat 按字段树取共享 /V 渲染复制页 annot（与云端 rebuildAcroFormFields 等价）。
+        try:
+            cat = doc.pdf_catalog()
+            acro_str = doc.xref_get_key(cat, 'AcroForm')[1]
+            acro_xref = int(acro_str.split()[0])
+            annot_refs = []
+            for pi in range(doc.page_count):
+                for w in doc[pi].widgets():
+                    annot_refs.append(f'{w._annot.xref} 0 R')
+            doc.xref_set_key(acro_xref, 'Fields', '[' + ' '.join(annot_refs) + ']')
+        except Exception:
+            pass
+        pdf_bytes = doc.write(deflate=True)
+        doc.close()
+        return pdf_bytes
 
     pdf_bytes = doc.write(deflate=True)
     doc.close()

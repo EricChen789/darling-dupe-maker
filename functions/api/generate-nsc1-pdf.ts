@@ -27,7 +27,9 @@ import {
   DEFAULT_PRESENTER
 } from './_pdf-utils';
 import { verifyAuthRequest, type Env } from './_auth';
-import { enableNeedAppearances } from './_acroform';
+import {
+  createFormHelpers, decodePdfText, enableNeedAppearances, rebuildAcroFormFields
+} from './_acroform';
 
 const TEMPLATE = "NSC1-template.pdf";
 
@@ -234,6 +236,15 @@ export async function onRequest(context: { request: Request; env: Env }) {
     const hasAllottees = allotteesList.length > 0 &&
       allotteesList.some((a: any) => (a.nameEn || a.nameZh || '').trim());
 
+    // P.7 顶部总表：股份類別 Class of Shares + 配發此類別股份的總數 Total Shares Allotted
+    // （2026-08-16 用户要求：这两个字段此前从未填入）
+    const sched2ClassRaw = String(shareClass || '').trim();
+    const sched2Class = (!sched2ClassRaw || /^ordinary$/i.test(sched2ClassRaw) ||
+      sched2ClassRaw === '普通股' || sched2ClassRaw === '普通')
+      ? '普通股 Ordinary' : sched2ClassRaw;
+    const allotteeSharesSum = allotteesList.reduce((s, a) => s + (Number(a?.shares) || 0), 0);
+    const sched2TotalShares = allotteeSharesSum > 0 ? allotteeSharesSum : (Number(shares) || 0);
+
     if (hasAllottees) {
       // Structured allottees list (new format)
       // P.7 widget layout (verified by Qwen VL + PyMuPDF text labels 2026-08-04):
@@ -243,71 +254,35 @@ export async function onRequest(context: { request: Request; env: Env }) {
       //   Allottee 2: fill_15=nameZh, fill_16=surname, fill_17=otherNames,
       //               fill_19=flat, fill_20=building, fill_21=street, fill_22=district, fill_23=country,
       //               fill_24=shares, cb_2=jointlyHeld
-      //   Note: fill_2/3 are section-level, fill_7/18 "英文名稱" removed per user request
-      //   Each P.7 page fits 2 allottees
-      const p7Specs1: [string, string][] = [
-        ['fill_4_P.7', 'nameZh'], ['fill_5_P.7', 'surname'], ['fill_6_P.7', 'otherNames'],
-        ['fill_8_P.7', 'flat'], ['fill_9_P.7', 'building'],
-        ['fill_10_P.7', 'street'], ['fill_11_P.7', 'district'], ['fill_12_P.7', 'country'],
-        ['fill_13_P.7', 'shares'],
-      ];
-      const p7Specs2: [string, string][] = [
-        ['fill_15_P.7', 'nameZh'], ['fill_16_P.7', 'surname'], ['fill_17_P.7', 'otherNames'],
-        ['fill_19_P.7', 'flat'], ['fill_20_P.7', 'building'],
-        ['fill_21_P.7', 'street'], ['fill_22_P.7', 'district'], ['fill_23_P.7', 'country'],
-        ['fill_24_P.7', 'shares'],
-      ];
+      //   Note: fill_2/3 are section-level (filled below), fill_7/18 "英文名稱" removed per user request
+      //   Each P.7 page fits 2 allottees; >2 → dynamic continuation pages (see page management)
       for (let i = 0; i < Math.min(allotteesList.length, 2); i++) {
-        const specs = i === 0 ? p7Specs1 : p7Specs2;
-        const a = allotteesList[i] || {};
-        const nameEn = String(a.nameEn || '').trim();
-        // Auto-parse surname/otherNames from nameEn if not provided (HK: surname FIRST)
-        let surname = String(a.surname || '').trim();
-        let otherNames = String(a.otherNames || '').trim();
-        if (nameEn && !surname) {
-          const parts = nameEn.split(/\s+/);
-          if (parts.length >= 2) {
-            surname = parts[0];  // HK convention: first word = surname
-            otherNames = parts.slice(1).join(' ');
-          } else {
-            surname = nameEn;
-          }
-        }
-        const merged: Record<string, string> = {
-          nameZh: String(a.nameZh || '').trim(),
-          nameEn,
-          surname,
-          otherNames,
-          flat: String(a.flat || '').trim(),
-          building: String(a.building || '').trim(),
-          street: String(a.street || '').trim(),
-          district: String(a.district || '').trim(),
-          postal: String(a.postal || '').trim(),
-          country: String(a.country || '').trim() || 'Hong Kong',
-          shares: String(a.shares || '').trim(),
-          remarks: String(a.remarks || '').trim(),
-        };
+        const specs = i === 0 ? P7_SPECS_1 : P7_SPECS_2;
+        const merged = buildAllotteeMerged(allotteesList[i] || {});
         for (const [field, key] of specs) {
           const val = merged[key] || '';
           if (val) setIfEmpty(field, val);
         }
         // Jointly held checkbox
-        if (a.jointlyHeld) {
+        if (allotteesList[i]?.jointlyHeld) {
           const cbName = i === 0 ? 'cb_1_P.7' : 'cb_2_P.7';
           try { form.getCheckBox(cbName).check(); } catch { /* skip */ }
         }
       }
-      // P.7 bottom page counter: "附表二第 _ 頁 Schedule 2 Page _"
-      // Each P.7 fits 2 allottees → pages = ceil(allotteesCount / 2)
+      // P.7 顶部总表：股份類別 + 配發此類別股份的總數（2026-08-16）
+      setIfEmpty('fill_2_P.7', sched2Class);
+      if (sched2TotalShares > 0) setIfEmpty('fill_3_P.7', String(sched2TotalShares));
+      // P.7 bottom page counter: "附表二第 _ 頁 Schedule 2 Page _"（页码语义，非总数）
+      // Each P.7 fits 2 allottees → pages = ceil(allotteesCount / 2)；原页固定第 1 頁，续页 k+1
       const sched2Pages = Math.max(1, Math.ceil(allotteesList.length / 2));
       try {
         const tf26 = form.getTextField('fill_26_P.7');
-        tf26.setText(String(sched2Pages));
+        tf26.setText('1');
         tf26.updateAppearances(helv);
       } catch { /* skip */ }
       try {
         const tf27 = form.getTextField('fill_27_P.7');
-        tf27.setText(String(sched2Pages));
+        tf27.setText('1');
         tf27.updateAppearances(helv);
       } catch { /* skip */ }
     } else if (allotteeName || allotteeNameZh) {
@@ -455,6 +430,49 @@ export async function onRequest(context: { request: Request; env: Env }) {
       if (!keepIndices.has(i)) pdfDoc.removePage(i);
     }
 
+    // ═══ Schedule 2 动态续页：获配人 >2 时复制 P.7（每页 2 人）═══
+    // 2026-08-16：用户要求「多名股东就要加附表二」。模式借鉴 ND2A 动态续页：
+    //   - 复制页插到 P.7 之后（删页后 P.7 新位置 = 原 6 号页之前保留的页数）
+    //   - ⚠ 每页单独 copyPages（同源多副本一次调用会共享 widget 对象，改名互相覆盖）
+    //   - renameDynamicWidgets：复制页 widget /T 加后缀（_S1/_S2…）、继承 FT/DA/Ff/Q/
+    //     DV/Opt/MaxLen、删 Parent；填完后 rebuildAcroFormFields 重建 /Fields
+    //   - 顶部 Class/Total、BR、底部计数器（附表二第 _ 頁 / Schedule 2 Page _）每页相同
+    const sched2PageCount = Math.max(1, Math.ceil(allotteesList.length / 2));
+    if (hasAllottees && sched2PageCount > 1) {
+      const p7NewIndex = [...keepIndices].filter((i) => i < 6).length;
+      const freshDoc = await PDFDocument.load(templateBytes);
+      for (let k = 1; k < sched2PageCount; k++) {
+        const [pg] = await pdfDoc.copyPages(freshDoc, [6]);
+        pdfDoc.insertPage(p7NewIndex + k, pg);
+        renameDynamicWidgets(pdfDoc, pg, `_S${k}`);
+      }
+      rebuildAcroFormFields(pdfDoc);
+
+      // 动态页填充走 createFormHelpers（静态填充用的 pdf-lib form API 缓存
+      // 不含改名后的新字段）
+      const h = createFormHelpers(pdfDoc);
+      for (let k = 1; k < sched2PageCount; k++) {
+        const sfx = `_S${k}`;
+        h.setText(`fill_1_P.7${sfx}`, brNumber);  // BR（每页右上角）
+        h.setText(`fill_2_P.7${sfx}`, sched2Class);
+        if (sched2TotalShares > 0) h.setText(`fill_3_P.7${sfx}`, String(sched2TotalShares));
+        h.setText(`fill_26_P.7${sfx}`, String(k + 1));  // 附表二第 _ 頁（页码）
+        h.setText(`fill_27_P.7${sfx}`, String(k + 1));  // Schedule 2 Page _（页码）
+        for (let slot = 0; slot < 2; slot++) {
+          const ai = 2 * k + slot;
+          if (ai >= allotteesList.length) break;
+          const a = allotteesList[ai] || {};
+          const specs = slot === 0 ? P7_SPECS_1 : P7_SPECS_2;
+          const merged = buildAllotteeMerged(a);
+          for (const [field, key] of specs) {
+            const val = merged[key] || '';
+            if (val) h.setText(`${field}${sfx}`, val);
+          }
+          if (a.jointlyHeld) h.check(`cb_${slot + 1}_P.7${sfx}`, true);
+        }
+      }
+    }
+
     // ── BR on remaining pages via widget-name iteration ──
     // 删页后页序已变，不能按 pageNo 猜字段名（如 P.7 保留后变成第 4 页）。
     // 直接遍历仍存活的 fill_1_P.* 字段填 BR。
@@ -478,6 +496,96 @@ export async function onRequest(context: { request: Request; env: Env }) {
   } catch (e: any) {
     console.error("NSC1 generation error:", e);
     return jsonResp({ error: e.message || 'Internal error' }, 500);
+  }
+}
+
+// ═══ P.7 附表二获配人槽位字段映射 ═══
+// 获配人 1（fill_4-14 + cb_1）/ 获配人 2（fill_15-25 + cb_2），结构镜像。
+// fill_7/18 = 英文名稱大框（用户之前要求不填，保持）；fill_2/3 = 顶部总表（section-level）
+const P7_SPECS_1: [string, string][] = [
+  ['fill_4_P.7', 'nameZh'], ['fill_5_P.7', 'surname'], ['fill_6_P.7', 'otherNames'],
+  ['fill_8_P.7', 'flat'], ['fill_9_P.7', 'building'],
+  ['fill_10_P.7', 'street'], ['fill_11_P.7', 'district'], ['fill_12_P.7', 'country'],
+  ['fill_13_P.7', 'shares'], ['fill_14_P.7', 'remarks'],
+];
+const P7_SPECS_2: [string, string][] = [
+  ['fill_15_P.7', 'nameZh'], ['fill_16_P.7', 'surname'], ['fill_17_P.7', 'otherNames'],
+  ['fill_19_P.7', 'flat'], ['fill_20_P.7', 'building'],
+  ['fill_21_P.7', 'street'], ['fill_22_P.7', 'district'], ['fill_23_P.7', 'country'],
+  ['fill_24_P.7', 'shares'], ['fill_25_P.7', 'remarks'],
+];
+
+// 获配人数据规范化：英文名自动拆姓/名（HK 惯例：首词 = 姓）
+function buildAllotteeMerged(a: any): Record<string, string> {
+  const nameEn = String(a.nameEn || '').trim();
+  let surname = String(a.surname || '').trim();
+  let otherNames = String(a.otherNames || '').trim();
+  if (nameEn && !surname) {
+    const parts = nameEn.split(/\s+/);
+    if (parts.length >= 2) {
+      surname = parts[0];  // HK convention: first word = surname
+      otherNames = parts.slice(1).join(' ');
+    } else {
+      surname = nameEn;
+    }
+  }
+  return {
+    nameZh: String(a.nameZh || '').trim(),
+    nameEn,
+    surname,
+    otherNames,
+    flat: String(a.flat || '').trim(),
+    building: String(a.building || '').trim(),
+    street: String(a.street || '').trim(),
+    district: String(a.district || '').trim(),
+    postal: String(a.postal || '').trim(),
+    country: String(a.country || '').trim() || 'Hong Kong',
+    shares: String(a.shares || '').trim(),
+    remarks: String(a.remarks || '').trim(),
+  };
+}
+
+// ═══ 动态续页：复制模板页 → widget 全名加 suffix → 脱离 parent ═══
+// （与 ND2A renameDynamicWidgets 同款；NSC1 动态页调用）
+function renameDynamicWidgets(pdfDoc: PDFDocument, page: any, suffix: string) {
+  const ctx = (pdfDoc as any).context;
+  const annots = page.node.lookup(PDFName.of("Annots")) as any;
+  if (!annots || typeof annots.size !== "function") return;
+  for (let i = 0; i < annots.size(); i++) {
+    try {
+      const widget = ctx.lookup(annots.get(i)) as any;
+      if (!widget || typeof widget.get !== "function") continue;
+      if (String(widget.get(PDFName.of("Subtype"))) !== "/Widget") continue;
+      const parentRef = widget.get(PDFName.of("Parent"));
+      let field: any = widget;
+      if (parentRef) {
+        try { field = ctx.lookup(parentRef) as any; } catch { field = widget; }
+      }
+      const parentName = decodePdfText(field.get(PDFName.of("T")));
+      const widgetName = decodePdfText(widget.get(PDFName.of("T")));
+      let fullName = parentName || widgetName;
+      const gpRef = field && field !== widget ? field.get?.(PDFName.of("Parent")) : undefined;
+      if (gpRef) {
+        try {
+          const gp = ctx.lookup(gpRef) as any;
+          const gpName = decodePdfText(gp.get(PDFName.of("T")));
+          if (gpName) fullName = widgetName ? `${gpName}.${widgetName}` : `${gpName}.${parentName}`;
+        } catch { /* keep */ }
+      } else if (parentName && widgetName && widgetName !== parentName) {
+        fullName = `${parentName}.${widgetName}`;
+      }
+      if (!fullName || /^\d+$/.test(fullName)) continue; // 无法解析全名的跳过
+      // 继承键（FT/DA/Ff/Q/DV/Opt/MaxLen）后脱离
+      for (const k of ["FT", "DA", "Ff", "Q", "DV", "Opt", "MaxLen"]) {
+        const key = PDFName.of(k);
+        if (!widget.get(key)) {
+          const v = field && field !== widget ? field.get(key) : undefined;
+          if (v !== undefined && v !== null) widget.set(key, v);
+        }
+      }
+      widget.set(PDFName.of("T"), PDFString.of(`${fullName}_${suffix}`));
+      widget.delete(PDFName.of("Parent"));
+    } catch { /* skip */ }
   }
 }
 

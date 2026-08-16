@@ -4,7 +4,7 @@
 //         changeType, newAddress, effectiveDate, signerName, signDate,
 //         presentorName, presentorAddress, presentorContact }
 
-import { PDFDocument, PDFName, StandardFonts } from "pdf-lib";
+import { PDFDocument, PDFName, PDFNumber } from "pdf-lib";
 import {
   corsHeaders, jsonResp, uint8ToBase64,
   parseEnglishName, DEFAULT_PRESENTER
@@ -43,9 +43,11 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
         tf.setText(String(value));
         // skip updateAppearances to save CPU for large templates
         if (align === 'right') {
-          (tf as any).acroField?.dict?.set(PDFName.of('Q'), 2);
+          // 必须用 PDFNumber —— 直接塞原始数字会在 save() 序列化时炸
+          // ("value.sizeInBytes is not a function")
+          tf.acroField.dict.set(PDFName.of('Q'), PDFNumber.of(2));
         } else if (align === 'center') {
-          (tf as any).acroField?.dict?.set(PDFName.of('Q'), 1);
+          tf.acroField.dict.set(PDFName.of('Q'), PDFNumber.of(1));
         }
       } catch { /* skip */ }
     };

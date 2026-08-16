@@ -103,7 +103,8 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
     // Don't flatten — saves CPU for large templates; NeedAppearances lets reader rebuild
     enableNeedAppearances(pdfDoc);
     // useObjectStreams: false saves significant CPU on large templates
-    const pdfBytes = await pdfDoc.save({ useObjectStreams: false });
+    // updateFieldAppearances: false — 中文名会触发 WinAnsi encode 500（NN6 同款处理）
+    const pdfBytes = await pdfDoc.save({ useObjectStreams: false, updateFieldAppearances: false });
     return jsonResp({ pdf: uint8ToBase64(new Uint8Array(pdfBytes)) });
   } catch (err: any) {
     console.error("NN7 generation error:", err);

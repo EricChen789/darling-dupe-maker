@@ -710,11 +710,13 @@ function fillND2A(pdfDoc: PDFDocument, data: ND2AData) {
   const insertSheets = async (templateBytes: Uint8Array) => {
     if (sheets.length === 0) return;
     const freshDoc = await PDFDocument.load(templateBytes, { ignoreEncryption: true });
-    const copies = await pdfDoc.copyPages(freshDoc, sheets.map(s => s.srcIdx));
-    copies.forEach((pg, i) => {
+    // ⚠ 必须每页单独 copyPages：pdf-lib 单次调用对同一源页的多份复制会经 copier
+    // 缓存共享同一组 widget 对象（改名会互相覆盖），分次调用才各自独立深拷贝
+    for (let i = 0; i < sheets.length; i++) {
+      const [pg] = await pdfDoc.copyPages(freshDoc, [sheets[i].srcIdx]);
       pdfDoc.insertPage(sheets[i].insertAt, pg);
       renameDynamicWidgets(pdfDoc, pg, sheets[i].suffix);
-    });
+    }
     // 重建字段映射，动态页字段以全名+suffix 收录
     recollect();
   };

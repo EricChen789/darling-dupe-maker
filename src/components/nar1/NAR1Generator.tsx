@@ -18,13 +18,13 @@ import {
 } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 import { FileText, Download, Loader2, Plus, Trash2 } from 'lucide-react';
-import { Company } from '@/types';
+import { Company, Person } from '@/types';
 import { toast } from '@/hooks/use-toast';
 import { useSaveFormHistory } from '@/hooks/useFormHistory';
 import { downloadBase64Pdf } from '@/lib/downloadPdf';
 import FormHistorySelector from '@/components/forms/FormHistorySelector';
 import PresenterSelector from '@/components/forms/PresenterSelector';
-import type { Presenter } from '@/hooks/usePresenters';
+import { usePresenterList, type Presenter } from '@/hooks/usePresenters';
 import AddressQuickPick from '@/components/forms/AddressQuickPick';
 import PersonQuickPick from '@/components/forms/PersonQuickPick';
 
@@ -122,6 +122,34 @@ function splitHkid(raw: string): { main: string; check: string } {
   const cleaned = raw.replace(/[()\-\s]/g, '');
   if (cleaned.length <= 1) return { main: cleaned, check: '' };
   return { main: cleaned.slice(0, -1), check: cleaned.slice(-1) };
+}
+
+/** 解析 DD/MM/YYYY（en-GB，D1 存儲格式）或 ISO YYYY-MM-DD → 日/月/年 */
+function parseDmy(s?: string): DateParts | null {
+  if (!s) return null;
+  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return { day: m[3], month: m[2], year: m[1] };
+  m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (m) return { day: m[1].padStart(2, '0'), month: m[2].padStart(2, '0'), year: m[3] };
+  return null;
+}
+
+/**
+ * NAR1 有效簽署人：公司設定 signerRoleId（person_company_roles.id，即 Person.id）→
+ * 無效或未設時 fallback：第一個秘書 → 第一個董事（與 Companies 列表/後端慣例一致）。
+ */
+function resolveEffectiveSigner(company: Company): { person?: Person; role: 'director' | 'secretary' | '' } {
+  const allIds = [...company.directors.map(d => d.id), ...company.secretaries.map(s => s.id)];
+  const explicit = company.signerRoleId || '';
+  const effId = (explicit && allIds.includes(explicit))
+    ? explicit
+    : (company.secretaries[0]?.id || company.directors[0]?.id || '');
+  if (!effId) return { role: '' };
+  const sec = company.secretaries.find(s => s.id === effId);
+  if (sec) return { person: sec, role: 'secretary' };
+  const dir = company.directors.find(d => d.id === effId);
+  if (dir) return { person: dir, role: 'director' };
+  return { role: '' };
 }
 
 const computeReturnDate = (incorporationDate?: string): string => {
@@ -332,6 +360,13 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
   const [presenterRef, setPresenterRef] = useState('');
 
   const { mutate: saveFormHistory } = useSaveFormHistory();
+  const { data: presenters = [] } = usePresenterList();
+
+  // ── Effective NAR1 signer (explicit signerRoleId → first secretary → first director) ──
+  const effectiveSigner = useMemo<{ person?: Person; role: 'director' | 'secretary' | '' }>(
+    () => (company ? resolveEffectiveSigner(company) : { person: undefined, role: '' }),
+    [company],
+  );
 
   // ── Continuation counts (auto-calculated) ──
   const continuationCounts = useMemo(() => ({
@@ -371,7 +406,7 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
           addrStreet: s.addrStreet || '', addrDistrict: s.addrDistrict || '', addrRegion: s.addrRegion || '',
           email: s.email || '', brNumber: s.brNumber || s.companyNumberRef || '',
           tcspLicense: s.tcspNumber || '', tcspExempt: false,
-          day: '', month: '', year: '',
+          ...(parseDmy(s.dateAppointed) || { day: '', month: '', year: '' }),
         });
       } else {
         const hkid = splitHkid(s.idNumber || '');
@@ -386,7 +421,7 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
           hkidMain: hkid.main, hkidCheck: hkid.check,
           passportCountry: s.passportCountry || '', passportNumber: s.passportNumber || '',
           tcspLicense: s.tcspNumber || '', tcspExempt: !s.tcspNumber,
-          day: '', month: '', year: '',
+          ...(parseDmy(s.dateAppointed) || { day: '', month: '', year: '' }),
         });
       }
     }
@@ -404,7 +439,7 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
           addrFlat: d.addrFlat || '', addrBuilding: d.addrBuilding || '',
           addrStreet: d.addrStreet || '', addrDistrict: d.addrDistrict || '', addrRegion: d.addrRegion || '',
           email: d.email || '', brNumber: d.brNumber || d.companyNumberRef || '',
-          day: '', month: '', year: '',
+          ...(parseDmy(d.dateAppointed) || { day: '', month: '', year: '' }),
         });
       } else {
         const hkid = splitHkid(d.idNumber || '');
@@ -418,7 +453,7 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
           email: d.email || '',
           hkidMain: hkid.main, hkidCheck: hkid.check,
           passportCountry: d.passportCountry || '', passportNumber: d.passportNumber || '',
-          day: '', month: '', year: '',
+          ...(parseDmy(d.dateAppointed) || { day: '', month: '', year: '' }),
         });
       }
     }
@@ -430,7 +465,8 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
       id: uid(),
       nameChinese: sh.nameChinese || sh.name || '', nameEnglish: sh.nameEnglish || '',
       identity: sh.identity || 'natural',
-      addrFlat: '', addrBuilding: '', addrStreet: '', addrDistrict: '', addrRegion: '',
+      addrFlat: sh.addrFlat || '', addrBuilding: sh.addrBuilding || '',
+      addrStreet: sh.addrStreet || '', addrDistrict: sh.addrDistrict || '', addrRegion: sh.addrRegion || '',
       shareClass: sh.shareType || 'Ordinary 普通股', shares: String(sh.shares || ''),
       currency: sh.currency || 'HKD', issuePrice: sh.issuePrice || '',
       paidUp: sh.paidUp || '', unpaid: sh.unpaid || '',
@@ -438,22 +474,40 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
     }));
     setShareholders(shArr);
 
-    // Load presenter
+    // Load presenter — auto-pick preferred presenter if already cached
+    const preferred = company.preferredPresenterId
+      ? presenters.find(p => p.id === company.preferredPresenterId)
+      : undefined;
     setPresenterNameCn('');
-    setPresenterNameEn('');
-    setPresenterAddress('');
-    setPresenterPhone('');
-    setPresenterFax('');
-    setPresenterEmail('');
-    setPresenterRef('');
+    setPresenterNameEn(preferred?.name || '');
+    setPresenterAddress(preferred?.address || '');
+    setPresenterPhone(preferred?.phone || '');
+    setPresenterFax(preferred?.fax || '');
+    setPresenterEmail(preferred?.email || '');
+    setPresenterRef(company.presenterReference || preferred?.reference || '');
 
-    // Signer
-    setSignerRole('');
+    // Signer — auto-pick: explicit signerRoleId → first secretary → first director
+    setSignerRole(resolveEffectiveSigner(company).role);
 
     // Records
     setCompanyRecords([]);
 
   }, [company, open]);
+
+  // Auto-fill preferred presenter once the presenters list loads (won't clobber user edits)
+  useEffect(() => {
+    if (!open || !company?.preferredPresenterId) return;
+    if (presenterNameEn || presenterNameCn || presenterAddress || presenterPhone || presenterEmail) return;
+    const p = presenters.find(x => x.id === company.preferredPresenterId);
+    if (!p) return;
+    setPresenterNameCn('');
+    setPresenterNameEn(p.name || '');
+    setPresenterAddress(p.address || '');
+    setPresenterPhone(p.phone || '');
+    setPresenterFax(p.fax || '');
+    setPresenterEmail(p.email || '');
+    setPresenterRef(company.presenterReference || p.reference || '');
+  }, [open, company, presenters]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Load history ──
   const handleLoadHistory = (data: any) => {
@@ -598,6 +652,13 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
         unpaid: sh.unpaid || '',
       }));
 
+      // Effective signer name: explicit signerRoleId → first secretary → first director
+      const effSigner = resolveEffectiveSigner(company);
+      const signerName = (effSigner.person ? (effSigner.person.nameEnglish || effSigner.person.nameChinese) : '')
+        || (signerRole === 'director'
+          ? (natDirs[0] ? `${natDirs[0].surname} ${natDirs[0].otherNames}`.trim() || natDirs[0].nameChinese : presenterNameEn)
+          : (natSecs[0] ? `${natSecs[0].surname} ${natSecs[0].otherNames}`.trim() || natSecs[0].nameChinese : corpSecs[0]?.nameEnglish || presenterNameEn));
+
       const payload = {
         name: company.name,
         chineseName: company.chineseName || '',
@@ -634,9 +695,7 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
           .filter(r => r.records.trim() || r.address.trim())
           .map(r => ({ records: r.records, address: r.address })),
         signer: signerRole ? {
-          name: signerRole === 'director'
-            ? (natDirs[0] ? `${natDirs[0].surname} ${natDirs[0].otherNames}`.trim() || natDirs[0].nameChinese : presenterNameEn)
-            : (natSecs[0] ? `${natSecs[0].surname} ${natSecs[0].otherNames}`.trim() || natSecs[0].nameChinese : corpSecs[0]?.nameEnglish || presenterNameEn),
+          name: signerName,
           role: signerRole,
         } : null,
         mortgageAmount,
@@ -1304,9 +1363,11 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
               {signerRole && (
                 <p className="text-xs text-muted-foreground mt-1">
                   簽署人：
-                  {signerRole === 'director'
-                    ? (natDirs[0] ? `${natDirs[0].surname} ${natDirs[0].otherNames}`.trim() || natDirs[0].nameChinese || corpDirs[0]?.nameEnglish || '（董事）' : '（董事）')
-                    : (natSecs[0] ? `${natSecs[0].surname} ${natSecs[0].otherNames}`.trim() || natSecs[0].nameChinese : corpSecs[0]?.nameEnglish || '（秘書）')
+                  {effectiveSigner.person
+                    ? (effectiveSigner.person.nameEnglish || effectiveSigner.person.nameChinese)
+                    : (signerRole === 'director'
+                      ? (natDirs[0] ? `${natDirs[0].surname} ${natDirs[0].otherNames}`.trim() || natDirs[0].nameChinese || corpDirs[0]?.nameEnglish || '（董事）' : '（董事）')
+                      : (natSecs[0] ? `${natSecs[0].surname} ${natSecs[0].otherNames}`.trim() || natSecs[0].nameChinese : corpSecs[0]?.nameEnglish || '（秘書）'))
                   }
                 </p>
               )}

@@ -100,6 +100,12 @@ export interface Shareholder {
   currency?: string;
   paidUp?: string;
   unpaid?: string;
+  // 分拆地址欄位（NAR1 Schedule 1 自動填充）
+  addrFlat?: string;
+  addrBuilding?: string;
+  addrStreet?: string;
+  addrDistrict?: string;
+  addrRegion?: string;
   // 法人股東專屬 (ME-08)：成立地點 / 公司編號 / TCSP 牌照號碼。存於 persons。
   placeIncorporated?: string;
   companyNumberRef?: string;

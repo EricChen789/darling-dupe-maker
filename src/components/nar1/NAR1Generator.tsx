@@ -389,22 +389,12 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
     sched1: Math.max(0, Math.ceil(shareholders.length / 2)), // P.8 填附表一总页数（与 generate-nar1-pdf.ts 一致）
   }), [natSecs.length, corpSecs.length, natDirs.length, corpDirs.length, shareholders.length]);
 
-  // ── Load company data on open ──
-  useEffect(() => {
-    if (!company || !open) return;
-    setReturnDate(computeReturnDate(company.incorporationDate));
-    setCompanyType((company.companyType as any) || 'private');
-    setBusinessCode(company.businessCode || '');
-    setBusinessNature(company.businessNature || '');
-    setTradingName(company.tradingName || '');
-    setRegFlat(company.regFlat || '');
-    setRegBuilding(company.regBuilding || '');
-    setRegStreet(company.regStreet || '');
-    setRegDistrict(company.regDistrict || '');
-    setRegRegion(company.regRegion || '');
-    setCompanyEmail(company.email || '');
-    setCompanyPhone(company.phone || '');
-    setMortgageAmount('');
+  // ── 頂部勾選：自動填入公司所有人員（董事／秘書／股東），默認勾選 ──
+  const [autoFillPeople, setAutoFillPeople] = useState(true);
+
+  // ── 自動填入公司所有人員：董事／秘書／股東 + 簽署人自動 ──
+  const applyPeopleAutoFill = () => {
+    if (!company) return;
 
     // Load secretaries
     const natSecArr: NatSecEntry[] = [];
@@ -481,6 +471,54 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
     }));
     setShareholders(shArr);
 
+    // Signer — auto-pick: explicit signerRoleId → first secretary → first director
+    setSignerRole(resolveEffectiveSigner(company).role);
+  };
+
+  // ── 勾選開關：ON=自動填人；OFF=清空人員列表（手動填寫）──
+  const handleAutoFillToggle = (on: boolean) => {
+    setAutoFillPeople(on);
+    if (on) {
+      applyPeopleAutoFill();
+    } else {
+      setNatSecs([]);
+      setCorpSecs([]);
+      setNatDirs([]);
+      setCorpDirs([]);
+      setShareholders([]);
+      setSignerRole('');
+    }
+  };
+
+  // ── Load company data on open ──
+  useEffect(() => {
+    if (!company || !open) return;
+    setReturnDate(computeReturnDate(company.incorporationDate));
+    setCompanyType((company.companyType as any) || 'private');
+    setBusinessCode(company.businessCode || '');
+    setBusinessNature(company.businessNature || '');
+    setTradingName(company.tradingName || '');
+    setRegFlat(company.regFlat || '');
+    setRegBuilding(company.regBuilding || '');
+    setRegStreet(company.regStreet || '');
+    setRegDistrict(company.regDistrict || '');
+    setRegRegion(company.regRegion || '');
+    setCompanyEmail(company.email || '');
+    setCompanyPhone(company.phone || '');
+    setMortgageAmount('');
+
+    // ── 人員自動填充：由頂部「自動填入公司所有人員」勾選控制 ──
+    if (autoFillPeople) {
+      applyPeopleAutoFill();
+    } else {
+      setNatSecs([]);
+      setCorpSecs([]);
+      setNatDirs([]);
+      setCorpDirs([]);
+      setShareholders([]);
+      setSignerRole('');
+    }
+
     // Load presenter — auto-pick preferred presenter if already cached
     const preferred = company.preferredPresenterId
       ? presenters.find(p => p.id === company.preferredPresenterId)
@@ -493,13 +531,10 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
     setPresenterEmail(preferred?.email || '');
     setPresenterRef(company.presenterReference || preferred?.reference || '');
 
-    // Signer — auto-pick: explicit signerRoleId → first secretary → first director
-    setSignerRole(resolveEffectiveSigner(company).role);
-
     // Records
     setCompanyRecords([]);
 
-  }, [company, open]);
+  }, [company, open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-fill preferred presenter once the presenters list loads (won't clobber user edits)
   useEffect(() => {
@@ -769,6 +804,18 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
             為「{company.name}」生成 NAR1 周年申報表 PDF
           </DialogDescription>
         </DialogHeader>
+
+        {/* ═══ 自動填入公司所有人員開關 ═══ */}
+        <label className="flex items-center gap-2.5 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            className="h-4 w-4 accent-blue-600"
+            checked={autoFillPeople}
+            onChange={e => handleAutoFillToggle(e.target.checked)}
+          />
+          <span className="text-sm font-medium">自動填入公司所有人員（董事／秘書／股東）</span>
+          <span className="text-xs text-muted-foreground">Auto-fill all officers &amp; shareholders — 取消勾選可自行手動填寫</span>
+        </label>
 
         <div className="space-y-6 py-4">
 

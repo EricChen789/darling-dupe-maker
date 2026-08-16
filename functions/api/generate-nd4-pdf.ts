@@ -121,9 +121,9 @@ export async function onRequest(context: { request: Request; env: Env }) {
 
     // CJK-aware set text field using createFormHelpers
     // Falls back to raw widget manipulation for fields not in the helpers map
-    const setF = (name: string, value?: string) => {
+    const setF = (name: string, value?: string, align?: 'left' | 'center' | 'right') => {
       if (value == null || value === "") return;
-      if (_cjkSetText(name, String(value)) === true) return;
+      if (_cjkSetText(name, String(value), align) === true) return;
       // Field not found in helpers map — skip silently
       console.warn(`⚠ ND4: field not found: ${name}`);
     };
@@ -178,7 +178,7 @@ export async function onRequest(context: { request: Request; env: Env }) {
       setF('fill_4_P.1', rget(data, 'officerNameChinese') || rget(data, 'nameChinese'));
       setF('fill_5_P.1', rget(data, 'surname'));
       setF('fill_6_P.1', rget(data, 'otherNames'));
-      setF('fill_7_P.1', (rget(data, 'hkidPartial') || '').replace(/[()\-\s]/g, '').toUpperCase().slice(0, 4));
+      setF('fill_7_P.1', (rget(data, 'hkidPartial') || '').replace(/[()\-\s]/g, '').toUpperCase().slice(0, 4), 'right');
       setF('fill_8_P.1', rget(data, 'passportCountry'));
       setF('fill_8b_P.1', rget(data, 'passportPartial'));
     } else {

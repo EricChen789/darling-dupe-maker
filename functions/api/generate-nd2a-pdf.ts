@@ -374,7 +374,7 @@ function cessSpec(officer: OfficerChange, p: 1 | 4, br8: string): SheetSpec {
       spec.texts.push({ name: 'fill_4_P.1', value: chinese });
       spec.texts.push({ name: 'fill_5_P.1', value: surname });
       spec.texts.push({ name: 'fill_6_P.1', value: other });
-      spec.texts.push({ name: 'fill_7_P.1', value: hkidPartial4(officer.idNumber || ''), align: 'left' });
+      spec.texts.push({ name: 'fill_7_P.1', value: hkidPartial4(officer.idNumber || ''), align: 'right' });
       spec.texts.push({ name: 'fill_8_P.1', value: officer.passportNumber ? parsePassportPartial(officer.passportNumber) : '' });
     } else {
       spec.texts.push({ name: 'fill_9_P.1', value: officer.nameChinese || '' });
@@ -399,7 +399,7 @@ function cessSpec(officer: OfficerChange, p: 1 | 4, br8: string): SheetSpec {
       spec.texts.push({ name: 'fill_3_P.4', value: chinese });
       spec.texts.push({ name: 'fill_4_P.4', value: surname });
       spec.texts.push({ name: 'fill_5_P.4', value: other });
-      spec.texts.push({ name: 'fill_6_P.4', value: hkidPartial4(officer.idNumber || ''), align: 'left' });
+      spec.texts.push({ name: 'fill_6_P.4', value: hkidPartial4(officer.idNumber || ''), align: 'right' });
       spec.texts.push({ name: 'fill_7_P.4', value: officer.passportNumber ? parsePassportPartial(officer.passportNumber) : '' });
     } else {
       spec.texts.push({ name: 'fill_8_P.4', value: officer.nameChinese || '' });

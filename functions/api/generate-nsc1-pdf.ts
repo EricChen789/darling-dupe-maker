@@ -439,7 +439,10 @@ export async function onRequest(context: { request: Request; env: Env }) {
     }
 
     // Keep pages referenced in fields dict (beyond P.3)
+    // ⚠ fill_1_* 是 BR-only 键（NSC1GeneratorForm 每页都传），不构成保留依据，
+    //   否则 P.4-P.10 空白续页全被保留。BR 由下方 remaining pages 循环统一补填。
     for (const name of Object.keys(fields)) {
+      if (name.startsWith('fill_1_P.')) continue;
       const m = name.match(/_P\.?(\d+)$/);
       if (m) {
         const idx = parseInt(m[1]) - 1;
@@ -452,16 +455,18 @@ export async function onRequest(context: { request: Request; env: Env }) {
       if (!keepIndices.has(i)) pdfDoc.removePage(i);
     }
 
-    // ── BR on remaining pages (P.7+) via direct widget fill ──
+    // ── BR on remaining pages via widget-name iteration ──
+    // 删页后页序已变，不能按 pageNo 猜字段名（如 P.7 保留后变成第 4 页）。
+    // 直接遍历仍存活的 fill_1_P.* 字段填 BR。
     if (brNumber) {
-      const remainingPages = pdfDoc.getPages();
-      for (let i = 3; i < remainingPages.length; i++) {
-        const pageNo = i + 1;
+      for (const f of form.getFields()) {
+        const n = f.getName();
+        if (!/^fill_1_P\.\d+$/.test(n)) continue;
         try {
-          const tf = form.getTextField(`fill_1_P.${pageNo}`);
+          const tf = form.getTextField(n);
           tf.setText(brNumber);
           tf.updateAppearances(helv);
-        } catch { /* skip if field doesn't exist on this page */ }
+        } catch { /* skip */ }
       }
     }
 

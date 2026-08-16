@@ -7588,7 +7588,11 @@ def _fill_nsc1_pdf(data):
     if has_allottees:
         keep_indices.add(6)  # P.7 = Schedule 2 allottee details
     # Keep pages referenced in fields dict
+    # ⚠ fill_1_* 是 BR-only 键（NSC1GeneratorForm 每页都传），不构成保留依据，
+    #   否则 P.4-P.10 空白续页全被保留。BR 已在删页前统一填入各页 fill_1_P.X。
     for name in fields:
+        if name.startswith('fill_1_P.'):
+            continue
         m = re.match(r'_P\.?(\d+)$', name)
         if m:
             idx = int(m.group(1)) - 1

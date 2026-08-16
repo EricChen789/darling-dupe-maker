@@ -96,7 +96,11 @@ function changeEventToQfEvent(ev: ChangeEvent) {
     }
   }
 
-  const title = buildEventTitle(ev, raw);
+  let title = buildEventTitle(ev, raw);
+  // raw 里没名字的事件（person_*_change 等）用 enrich 的 person_name 补上
+  if (title === (EVENT_TYPE_LABELS[ev.event_type] || ev.event_type) && ev.person_name) {
+    title = `${title}：${ev.person_name}`;
+  }
 
   // For ND2B changes, pass the original event_type so payload builder
   // can determine which change type (address/name/id/contact) to use.
@@ -109,6 +113,40 @@ function changeEventToQfEvent(ev: ChangeEvent) {
     title,
     raw,
   };
+}
+
+// ── Extract display name from a change_event ──
+// 辞任/退出：old_value 优先；委任/其他：new_value 优先；两源都查。
+// 兼容 snake_case（写入端实际字段）/camelCase/法人 company_name。
+// 最后 fallback 到 hook enrich 的 person_name（person_id → persons 表）。
+function extractPersonName(ev: ChangeEvent): string {
+  const sources = ev.event_type.endsWith('_cease') || ev.event_type === 'shareholder_remove'
+    ? [ev.old_value, ev.new_value]
+    : [ev.new_value, ev.old_value];
+  for (const src of sources) {
+    if (!src) continue;
+    try {
+      const raw: Record<string, any> = typeof src === 'string' ? JSON.parse(src) : src;
+      const en = raw.name_english || raw.nameEnglish || raw.name || raw.company_name || '';
+      const cn = raw.name_chinese || raw.nameChinese || '';
+      if (en || cn) return cn ? `${en} (${cn})` : en;
+    } catch { /* try next source */ }
+  }
+  return ev.person_name || '';
+}
+
+// ── Extract transaction description (share transfer/allotment) ──
+function extractTxDesc(ev: ChangeEvent): string {
+  try {
+    const raw: Record<string, any> = typeof ev.new_value === 'string' ? JSON.parse(ev.new_value) : (ev.new_value || {});
+    const from = raw.from_name || raw.fromName || '';
+    const to = raw.to_name || raw.toName || '';
+    const sh = raw.shares || 0;
+    if (from || to) {
+      return `${from || '（新發行）'} → ${to || '—'}${sh ? `，${Number(sh).toLocaleString()} 股` : ''}`;
+    }
+  } catch { /* ignore */ }
+  return '';
 }
 
 function buildEventTitle(ev: ChangeEvent, raw: Record<string, any>): string {
@@ -207,24 +245,8 @@ export function TabChangeEventsFooter({ companyId, company, eventTypes, label }:
             {filtered.map(ev => {
               const canGen = QF_SUPPORTED_TYPES.has(ev.event_type);
               const label = EVENT_TYPE_LABELS[ev.event_type] || ev.event_type;
-
-              // Parse raw for name display
-              let personName = '';
-              try {
-                const raw = typeof ev.new_value === 'string' ? JSON.parse(ev.new_value) : (ev.new_value || {});
-                personName = raw.nameEnglish || raw.name_english || raw.name || '';
-              } catch { /* ignore */ }
-              // For transactions, show from→to
-              let txDesc = '';
-              try {
-                const raw = typeof ev.new_value === 'string' ? JSON.parse(ev.new_value) : (ev.new_value || {});
-                const from = raw.from_name || raw.fromName || '';
-                const to = raw.to_name || raw.toName || '';
-                const sh = raw.shares || 0;
-                if (from || to) {
-                  txDesc = `${from || '（新發行）'} → ${to || '—'}${sh ? `，${Number(sh).toLocaleString()} 股` : ''}`;
-                }
-              } catch { /* ignore */ }
+              const personName = extractPersonName(ev);
+              const txDesc = extractTxDesc(ev);
 
               return (
                 <div key={ev.id} className="flex items-center justify-between gap-2 rounded-sm py-1 text-xs group">

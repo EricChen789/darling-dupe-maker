@@ -14,9 +14,13 @@ export interface ChangeEvent {
   related_form_type: string;
   nar1_period_id: string;
   created_at: string;
+  /** Enriched: person's display name (from persons table via person_id) */
+  person_name?: string;
 }
 
-/** Get all change events for a company, ordered by change_date descending */
+/** Get all change events for a company, ordered by change_date descending.
+ *  Enriches each event with person_name (from persons via person_id) so
+ *  footers can show names even when old/new_value has no name fields. */
 export function useChangeEvents(companyId: string | undefined) {
   return useQuery({
     queryKey: ['change_events', companyId],
@@ -28,7 +32,27 @@ export function useChangeEvents(companyId: string | undefined) {
         .eq('company_id', companyId)
         .order('change_date', { ascending: false });
       if (error) throw error;
-      return (data || []) as unknown as ChangeEvent[];
+      const events = (data || []) as unknown as ChangeEvent[];
+
+      // Enrich person names — needed for events whose values carry no name
+      // (person_address/id/contact_change) or no old_value (shareholder_remove)
+      const personIds = [...new Set(events.map(e => e.person_id).filter(Boolean))];
+      if (personIds.length > 0) {
+        try {
+          const { data: persons } = await supabase
+            .from('persons')
+            .select('id, name_english, name_chinese') as any;
+          const byId = new Map<string, any>((persons || []).map((p: any) => [p.id, p]));
+          for (const ev of events) {
+            const p = byId.get(ev.person_id);
+            if (!p) continue;
+            const en = p.name_english || '';
+            const cn = p.name_chinese || '';
+            ev.person_name = cn ? `${en} (${cn})` : en;
+          }
+        } catch { /* enrichment is best-effort, don't block events */ }
+      }
+      return events;
     },
   });
 }

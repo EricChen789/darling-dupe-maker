@@ -90,6 +90,8 @@ export default function ND2AGeneratorForm({ onBack, initialCompanyId, onNavigate
   const { mutate: saveFormHistory } = useSaveFormHistory();
   const [selectedCompanyId, setSelectedCompanyId] = useState('');
   const [generating, setGenerating] = useState(false);
+  // 頂部勾選：生成 ND2A 時是否一併生成 ND4（有停任人時生效，默認勾選）
+  const [generateNd4Together, setGenerateNd4Together] = useState(true);
   const [brNumber, setBrNumber] = useState('');
   const [companyName, setCompanyName] = useState('');
   const [officers, setOfficers] = useState<OfficerEntry[]>([emptyOfficer()]);
@@ -215,6 +217,12 @@ export default function ND2AGeneratorForm({ onBack, initialCompanyId, onNavigate
   };
 
   const handleGenerate = async (debug = false) => {
+    // 頂部勾選「同時生成 ND4」且存在停任人 → 生成 ND2A 時一併生成 ND4
+    const cessations = officers.filter(o => o.type === 'cessation');
+    if (!debug && generateNd4Together && cessations.length > 0) {
+      await handleGenerateBoth();
+      return;
+    }
     if (!brNumber || !companyName) {
       toast({ title: '錯誤', description: '請填寫公司名稱和商業登記號碼', variant: 'destructive' });
       return;
@@ -318,7 +326,7 @@ export default function ND2AGeneratorForm({ onBack, initialCompanyId, onNavigate
           <h1 className="text-2xl font-bold">ND2A — 更改公司秘書及董事通知書 (委任╱停任)</h1>
           <p className="text-sm text-muted-foreground">Notice of Change of Company Secretary and Director (Appointment／Cessation)</p>
         </div>
-        {/* 頂部互鏈：前往 ND4 ＋ 一併生成 */}
+        {/* 頂部互鏈：前往 ND4 ＋ 勾選同時生成 ND4 */}
         {onNavigate && (
           <div className="ml-auto flex flex-col items-end gap-1.5">
             <button type="button" className="text-xs text-primary hover:underline"
@@ -326,10 +334,10 @@ export default function ND2AGeneratorForm({ onBack, initialCompanyId, onNavigate
               ↗ 前往 ND4 辭任通知書
             </button>
             {cessationOfficers.length > 0 ? (
-              <Button size="sm" onClick={handleGenerateBoth} disabled={generating}>
-                {generating ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : '📦 '}
-                一併生成 ND2A ＋ ND4（{cessationOfficers.length} 位辭任人）
-              </Button>
+              <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+                <Checkbox checked={generateNd4Together} onCheckedChange={v => setGenerateNd4Together(v === true)} disabled={generating} />
+                <span>同時生成 ND4 辭任通知書（{cessationOfficers.length} 位辭任人）</span>
+              </label>
             ) : (
               <span className="text-xs text-muted-foreground">💡 加入停任人士後可一併生成 ND4</span>
             )}

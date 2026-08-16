@@ -14,7 +14,7 @@ import { ArrowLeft, Download, Loader2, Building2, Plus, Trash2 } from 'lucide-re
 import { toast } from '@/hooks/use-toast';
 import { useCompanies } from '@/hooks/useCompanies';
 import { downloadBase64Pdf } from '@/lib/downloadPdf';
-import { postJson, sleep, safeFileName, parseEnglishName, parseDateParts, chunkNd2aOfficers } from '@/lib/formGen';
+import { postJson, sleep, safeFileName, parseEnglishName, parseDateParts } from '@/lib/formGen';
 import RelatedFormsPrompt from './RelatedFormsPrompt';
 
 interface OfficerEntry {
@@ -273,21 +273,15 @@ export default function ND2AGeneratorForm({ onBack, initialCompanyId, onNavigate
     try {
       const safeName = safeFileName(companyName);
 
-      // ── ND2A：按模板容量分多份 ──
-      const chunks = chunkNd2aOfficers(officers);
-      for (let i = 0; i < chunks.length; i++) {
-        let result;
-        try {
-          result = await postJson('/api/generate-nd2a-pdf', buildPayload(chunks[i], false));
-        } catch (err: any) {
-          throw new Error(`ND2A 第 ${i + 1} 份生成失敗（${err.message}），已下載 ${i} 份`);
-        }
-        if (!result.pdf) throw new Error('No data in response');
-        const suffix = chunks.length > 1 ? `_第${i + 1}份` : '';
-        downloadBase64Pdf(result.pdf, `ND2A_${brNumber}_${safeName}${suffix}.pdf`);
-        // 多份之間留間隔，避免連續請求複用同一 isolate 觸發 1102
-        if (i < chunks.length - 1) await sleep(2500);
+      // ── ND2A：單一份表格（後端自動加頁，無需分份） ──
+      let result;
+      try {
+        result = await postJson('/api/generate-nd2a-pdf', buildPayload(officers, false));
+      } catch (err: any) {
+        throw new Error(`ND2A 生成失敗（${err.message}）`);
       }
+      if (!result.pdf) throw new Error('No data in response');
+      downloadBase64Pdf(result.pdf, `ND2A_${brNumber}_${safeName}.pdf`);
       saveFormHistory({ formType: 'ND2A', formData: { brNumber, companyName, selectedCompanyId, officers, signerId, signerName, signerCapacity, signDate, presentorName, presentorAddress, presentorPhone, presentorFax, presentorEmail, presentorReference } });
 
       // ── ND4：每位辭任人一份 ──

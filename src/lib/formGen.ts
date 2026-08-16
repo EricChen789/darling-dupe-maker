@@ -93,23 +93,3 @@ export function normalizeDate(dateStr: string): string {
   const { day, month, year } = parseDateParts(dateStr);
   return day && month && year ? `${year}-${month}-${day}` : dateStr || '';
 }
-
-/**
- * Split ND2A officers into forms respecting template capacity:
- * 2 cessations (P.1/P.4) + 2 natural appointments (P.2/P.5) + 2 corporate (P.3/P.6) per form.
- */
-export function chunkNd2aOfficers(officers: any[]): any[][] {
-  const cess = officers.filter(o => o.type === 'cessation');
-  const nat = officers.filter(o => o.type === 'appointment' && o.identity === 'natural');
-  const corp = officers.filter(o => o.type === 'appointment' && o.identity === 'corporate');
-  const nForms = Math.max(1, Math.ceil(cess.length / 2), Math.ceil(nat.length / 2), Math.ceil(corp.length / 2));
-  const chunks: any[][] = [];
-  for (let i = 0; i < nForms; i++) {
-    chunks.push([
-      ...cess.slice(i * 2, i * 2 + 2),
-      ...nat.slice(i * 2, i * 2 + 2),
-      ...corp.slice(i * 2, i * 2 + 2),
-    ]);
-  }
-  return chunks;
-}

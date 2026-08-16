@@ -8,7 +8,7 @@ import {
 } from '@/components/ui/dialog';
 import { toast } from '@/hooks/use-toast';
 import { downloadBase64Pdf } from '@/lib/downloadPdf';
-import { postJson, parseEnglishName, parseDateParts, normalizeDate, chunkNd2aOfficers, safeFileName } from '@/lib/formGen';
+import { postJson, parseEnglishName, parseDateParts, normalizeDate, safeFileName } from '@/lib/formGen';
 import { Loader2, FileText, Download } from 'lucide-react';
 
 export interface QuickFormEvent {
@@ -554,26 +554,19 @@ export function QuickFormDialog({ open, onOpenChange, company, events }: QuickFo
       const config = FORM_CONFIGS[formKey] || FORM_CONFIGS.nd2a_appoint;
       const safeName = safeFileName(company.name);
 
-      // ── ND2A：同一天全部委任＋辭任人士，按模板容量自動分多份 ──
+      // ── ND2A：同一天全部委任＋辭任人士 → 單一份表格（後端自動加頁） ──
       const generateNd2a = async (): Promise<number> => {
         const nd2aConfig = FORM_CONFIGS.nd2a_appoint;
         const officers = personnelEvents.map(e => buildNd2aOfficer(e));
-        const chunks = chunkNd2aOfficers(officers);
-        for (let i = 0; i < chunks.length; i++) {
-          const payload = buildNd2aPayload(company, chunks[i]);
-          let result;
-          try {
-            result = await postJson(nd2aConfig.endpoint, payload);
-          } catch (err: any) {
-            throw new Error(`ND2A 第 ${i + 1} 份生成失敗（${err.message}），已下載 ${i} 份`);
-          }
-          if (!result.pdf) throw new Error('No data in response');
-          const suffix = chunks.length > 1 ? `_第${i + 1}份` : '';
-          await downloadBase64Pdf(result.pdf, `${nd2aConfig.label.replace(/\s/g, '_')}_${safeName}${suffix}.pdf`);
-          // 多份之间留间隔，避免连续请求复用同一 isolate 触发 1102
-          if (i < chunks.length - 1) await new Promise(r => setTimeout(r, 2500));
+        let result;
+        try {
+          result = await postJson(nd2aConfig.endpoint, buildNd2aPayload(company, officers));
+        } catch (err: any) {
+          throw new Error(`ND2A 生成失敗（${err.message}）`);
         }
-        return chunks.length;
+        if (!result.pdf) throw new Error('No data in response');
+        await downloadBase64Pdf(result.pdf, `${nd2aConfig.label.replace(/\s/g, '_')}_${safeName}.pdf`);
+        return 1;
       };
 
       // ── ND4：辭任人本人遞交 — 每位辭任人各一份 ──

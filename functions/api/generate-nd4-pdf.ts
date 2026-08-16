@@ -178,7 +178,7 @@ export async function onRequest(context: { request: Request; env: Env }) {
       setF('fill_4_P.1', rget(data, 'officerNameChinese') || rget(data, 'nameChinese'));
       setF('fill_5_P.1', rget(data, 'surname'));
       setF('fill_6_P.1', rget(data, 'otherNames'));
-      setF('fill_7_P.1', rget(data, 'hkidPartial'));
+      setF('fill_7_P.1', (rget(data, 'hkidPartial') || '').replace(/[()\-\s]/g, '').toUpperCase().slice(0, 4));
       setF('fill_8_P.1', rget(data, 'passportCountry'));
       setF('fill_8b_P.1', rget(data, 'passportPartial'));
     } else {

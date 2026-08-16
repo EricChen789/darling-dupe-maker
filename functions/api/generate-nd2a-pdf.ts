@@ -82,7 +82,9 @@ const CJK_RE = /[㐀-鿿豈-﫿]/;
 
 function createFormHelpers(pdfDoc: PDFDocument) {
   enableNeedAppearances(pdfDoc);
-  const fields = collectFormFields(pdfDoc);
+  // let：动态续页插入后 recollect() 重建映射（setText/check 闭包引用同一变量）
+  let fields = collectFormFields(pdfDoc);
+  const recollect = () => { fields = collectFormFields(pdfDoc); };
 
   const setText = (fieldName: string, value: string, align?: 'left' | 'center' | 'right'): boolean => {
     const v = (value ?? "").toString();
@@ -280,7 +282,7 @@ function createFormHelpers(pdfDoc: PDFDocument) {
     return null;
   };
 
-  return { fields, setText, check, selectDropdown, getWidgetRect };
+  return { fields, setText, check, selectDropdown, getWidgetRect, recollect };
 }
 
 // ============================================================================
@@ -308,19 +310,320 @@ function parseEnglishName(fullName: string): { surname: string; otherNames: stri
 // MAIN fill function
 // ============================================================================
 
-function fillND2A(pdfDoc: PDFDocument, data: ND2AData) {
-  const { setText, check, selectDropdown, getWidgetRect } = createFormHelpers(pdfDoc);
-  const pages = pdfDoc.getPages();
+// ── Sheet spec：同一套字段映射同时驱动静态页与动态续页（复制页） ──
+// 所有 text 字段无条件写入（空串 = 清空模板样例数据，对动态复制页尤其重要）。
+interface SheetSpec {
+  texts: Array<{ name: string; value: string; align?: 'left' | 'center' | 'right' }>;
+  checks: string[];
+  dropdowns: Array<{ name: string; target: string }>;
+}
 
-  const br8 = (data.brNumber || "").replace(/[^0-9A-Za-z]/g, "").slice(0, 8);
+type ApplyFn = {
+  setText: (name: string, value: string, align?: 'left' | 'center' | 'right') => boolean;
+  check: (name: string, shouldCheck: boolean) => boolean;
+  selectDropdown: (name: string, target: string) => boolean;
+};
 
-  // BR number on every page
-  for (let p = 1; p <= 7; p++) {
-    try { setText(`fill_1_P.${p}`, br8); } catch {}
+function applySpec(spec: SheetSpec, h: ApplyFn) {
+  for (const t of spec.texts) h.setText(t.name, t.value, t.align);
+  for (const c of spec.checks) h.check(c, true);
+  for (const d of spec.dropdowns) h.selectDropdown(d.name, d.target);
+}
+
+// 非 PI 页 HKID 一律 4 位（2026-08-16；PI 页保留完整号码）
+function hkidPartial4(idNumber: string): string {
+  return (idNumber || '').replace(/[()\-\s]/g, '').toUpperCase().slice(0, 4);
+}
+
+function datePartsOf(dateStr?: string): { d: string; m: string; y: string } | null {
+  if (!dateStr) return null;
+  const parts = dateStr.split(/[\/\-]/);
+  if (parts.length < 3) return null;
+  return { d: parts[2], m: parts[1], y: parts[0] };
+}
+
+function parseOfficerName(officer: OfficerChange): { surname: string; other: string } {
+  const eng = officer.nameEnglish || '';
+  let surname = officer.nameSurname || '';
+  let other = officer.nameOtherNames || '';
+  if (!surname && eng) {
+    const parsed = parseEnglishName(eng);
+    surname = parsed.surname;
+    other = parsed.otherNames;
   }
+  return { surname, other };
+}
 
-  // P.1: Company name
-  setText("fill_2_P.1", data.companyName);
+function roleChecks(officer: OfficerChange, p: number): string[] {
+  if (officer.role === 'secretary') return [`cb_1_P.${p}`];
+  if (officer.role === 'alternate') return [`cb_3_P.${p}`];
+  return [`cb_2_P.${p}`];
+}
+
+// ── 停任页 spec：p=1 第2項 / p=4 續頁A（动态续页沿用 P.4 布局） ──
+function cessSpec(officer: OfficerChange, p: 1 | 4, br8: string): SheetSpec {
+  const spec: SheetSpec = { texts: [], checks: [], dropdowns: [] };
+  if (br8) spec.texts.push({ name: `fill_1_P.${p}`, value: br8 });
+  const { surname, other } = parseOfficerName(officer);
+  const chinese = officer.nameChinese || '';
+  const isNatural = officer.identity === 'natural';
+
+  if (p === 1) {
+    if (isNatural) {
+      spec.texts.push({ name: 'fill_3_P.1', value: officer.role === 'alternate' && officer.alternateTo ? officer.alternateTo : '' });
+      spec.texts.push({ name: 'fill_4_P.1', value: chinese });
+      spec.texts.push({ name: 'fill_5_P.1', value: surname });
+      spec.texts.push({ name: 'fill_6_P.1', value: other });
+      spec.texts.push({ name: 'fill_7_P.1', value: hkidPartial4(officer.idNumber || ''), align: 'left' });
+      spec.texts.push({ name: 'fill_8_P.1', value: officer.passportNumber ? parsePassportPartial(officer.passportNumber) : '' });
+    } else {
+      spec.texts.push({ name: 'fill_9_P.1', value: officer.nameChinese || '' });
+      spec.texts.push({ name: 'fill_10_P.1', value: officer.companyName || officer.nameEnglish || '' });
+    }
+    spec.checks.push(...roleChecks(officer, 1));
+    const reason1 = officer.cessationReason || 'resignation';
+    spec.checks.push(reason1 === 'deceased' ? 'cb_5_P.1' : 'cb_4_P.1');
+    const dp1 = datePartsOf(officer.dateCeased || officer.dateAppointed);
+    if (dp1) {
+      spec.texts.push({ name: 'fill_11_P.1', value: dp1.d });
+      spec.texts.push({ name: 'fill_12_P.1', value: dp1.m });
+      spec.texts.push({ name: 'fill_13_P.1', value: dp1.y });
+    }
+    if (officer.role !== 'secretary') {
+      spec.checks.push(officer.stillHoldsOffice === 'yes' ? 'cb_6_P.1' : 'cb_7_P.1');
+    }
+  } else {
+    // ── P.4 續頁A 停任（第2名及以後，动态续页同布局） ──
+    if (isNatural) {
+      spec.texts.push({ name: 'fill_2_P.4', value: officer.role === 'alternate' && officer.alternateTo ? officer.alternateTo : '' });
+      spec.texts.push({ name: 'fill_3_P.4', value: chinese });
+      spec.texts.push({ name: 'fill_4_P.4', value: surname });
+      spec.texts.push({ name: 'fill_5_P.4', value: other });
+      spec.texts.push({ name: 'fill_6_P.4', value: hkidPartial4(officer.idNumber || ''), align: 'left' });
+      spec.texts.push({ name: 'fill_7_P.4', value: officer.passportNumber ? parsePassportPartial(officer.passportNumber) : '' });
+    } else {
+      spec.texts.push({ name: 'fill_8_P.4', value: officer.nameChinese || '' });
+      spec.texts.push({ name: 'fill_9_P.4', value: officer.companyName || officer.nameEnglish || '' });
+    }
+    spec.checks.push(...roleChecks(officer, 4));
+    const reason4 = officer.cessationReason || 'resignation';
+    spec.checks.push(reason4 === 'deceased' ? 'cb_5_P.4' : 'cb_4_P.4');
+    const dp4 = datePartsOf(officer.dateCeased || officer.dateAppointed);
+    if (dp4) {
+      spec.texts.push({ name: 'fill_10_P.4', value: dp4.d });
+      spec.texts.push({ name: 'fill_11_P.4', value: dp4.m });
+      spec.texts.push({ name: 'fill_12_P.4', value: dp4.y });
+    }
+    if (officer.role !== 'secretary') {
+      spec.checks.push(officer.stillHoldsOffice === 'yes' ? 'cb_6_P.4' : 'cb_7_P.4');
+    }
+  }
+  return spec;
+}
+
+// ── 委任自然人页 spec：p=2 第3項 / p=5 續頁B（动态续页沿用 P.5 布局） ──
+function natApptSpec(officer: OfficerChange, p: 2 | 5, br8: string): SheetSpec {
+  const spec: SheetSpec = { texts: [], checks: [], dropdowns: [] };
+  if (br8) spec.texts.push({ name: `fill_1_P.${p}`, value: br8 });
+  const { surname, other } = parseOfficerName(officer);
+  const chinese = officer.nameChinese || '';
+  spec.texts.push({ name: `fill_2_P.${p}`, value: officer.role === 'alternate' && officer.alternateTo ? officer.alternateTo : '' });
+  spec.texts.push({ name: `fill_3_P.${p}`, value: chinese });
+  spec.texts.push({ name: `fill_4_P.${p}`, value: surname });
+  spec.texts.push({ name: `fill_5_P.${p}`, value: other });
+  const afb = officer.addrFlatBlock || '';
+  const ab = officer.addrBuilding || '';
+  const ase = officer.addrStreetEstate || '';
+  const ad = officer.addrDistrict || '';
+  const ar = officer.addrRegion || '';
+  spec.texts.push({ name: `fill_10_P.${p}`, value: afb });
+  spec.texts.push({ name: `fill_11_P.${p}`, value: ab });
+  spec.texts.push({ name: `fill_12_P.${p}`, value: ase });
+  spec.texts.push({ name: `fill_13_P.${p}`, value: ad });
+  spec.texts.push({ name: `fill_14_P.${p}`, value: ar });
+  if (!afb && !ab && !ase && !ad && !ar && officer.address) {
+    spec.texts.push({ name: `fill_10_P.${p}`, value: officer.address });
+  }
+  spec.texts.push({ name: `fill_16_P.${p}`, value: hkidPartial4(officer.idNumber || ''), align: 'right' });
+  spec.texts.push({ name: `fill_17_P.${p}`, value: officer.passportCountry || '' });
+  spec.texts.push({ name: `fill_18_P.${p}`, value: officer.passportNumber ? parsePassportPartial(officer.passportNumber) : '' });
+  const dp = datePartsOf(officer.type === 'appointment' ? officer.dateAppointed : officer.dateCeased);
+  if (dp) {
+    spec.texts.push({ name: `fill_21_P.${p}`, value: dp.d });
+    spec.texts.push({ name: `fill_22_P.${p}`, value: dp.m });
+    spec.texts.push({ name: `fill_23_P.${p}`, value: dp.y });
+  }
+  spec.checks.push(...roleChecks(officer, p));
+  if (officer.alreadyDirector === 'yes') spec.checks.push(`cb_5_P.${p}`);
+  else if (officer.alreadyDirector === 'no') spec.checks.push(`cb_6_P.${p}`);
+  if (officer.role === 'director' || officer.role === 'alternate') {
+    const crossField = officer.role === 'director' ? `Dropdown_2_P.${p}` : `Dropdown_1_P.${p}`;
+    for (const dn of [`Dropdown_1_P.${p}`, `Dropdown_2_P.${p}`]) {
+      spec.dropdowns.push({ name: dn, target: dn === crossField ? '—' : ' ' });
+    }
+  }
+  return spec;
+}
+
+// ── 委任法人页 spec：p=3 第4項 / p=6 續頁C（动态续页沿用 P.6 布局，无第二签署） ──
+function corpApptSpec(officer: OfficerChange, p: 3 | 6, data: ND2AData, br8: string): SheetSpec {
+  const spec: SheetSpec = { texts: [], checks: [], dropdowns: [] };
+  if (br8) spec.texts.push({ name: `fill_1_P.${p}`, value: br8 });
+  spec.texts.push({ name: `fill_3_P.${p}`, value: officer.nameChinese || '' });
+  spec.texts.push({ name: `fill_4_P.${p}`, value: officer.companyName || officer.nameEnglish || '' });
+  const addrFlat = officer.addrFlatBlock || '';
+  const addrBld = officer.addrBuilding || '';
+  const addrSe = officer.addrStreetEstate || '';
+  const addrDist = officer.addrDistrict || '';
+  const addrReg = officer.addrRegion || '';
+  spec.texts.push({ name: `fill_5_P.${p}`, value: addrFlat });
+  spec.texts.push({ name: `fill_6_P.${p}`, value: addrBld });
+  spec.texts.push({ name: `fill_7_P.${p}`, value: addrSe });
+  spec.texts.push({ name: `fill_8_P.${p}`, value: addrDist });
+  spec.texts.push({ name: `fill_9_P.${p}`, value: addrReg });
+  if (!addrFlat && !addrBld && !addrSe && !addrDist && !addrReg && officer.address) {
+    spec.texts.push({ name: `fill_5_P.${p}`, value: officer.address });
+  }
+  spec.texts.push({ name: `fill_10_P.${p}`, value: (officer as any).email || '' });
+  if (officer.companyNumber) spec.texts.push({ name: `fill_11_P.${p}`, value: officer.companyNumber });
+  if ((officer as any).tcspLicence) spec.texts.push({ name: `fill_12_P.${p}`, value: (officer as any).tcspLicence });
+  const dp = datePartsOf(officer.type === 'appointment' ? officer.dateAppointed : officer.dateCeased);
+  if (dp) {
+    spec.texts.push({ name: `fill_14_P.${p}`, value: dp.d });
+    spec.texts.push({ name: `fill_15_P.${p}`, value: dp.m });
+    spec.texts.push({ name: `fill_16_P.${p}`, value: dp.y });
+  }
+  spec.checks.push(...roleChecks(officer, p));
+  if (officer.alreadyDirector === 'yes') spec.checks.push(`cb_5_P.${p}`);
+  else if (officer.alreadyDirector === 'no') spec.checks.push(`cb_6_P.${p}`);
+  if (officer.role === 'director' || officer.role === 'alternate') {
+    const crossFieldC = officer.role === 'director' ? `Dropdown_2_P.${p}` : `Dropdown_1_P.${p}`;
+    for (const dn of [`Dropdown_1_P.${p}`, `Dropdown_2_P.${p}`]) {
+      spec.dropdowns.push({ name: dn, target: dn === crossFieldC ? '—' : ' ' });
+    }
+  }
+  // ── 法人團體簽署 ──
+  const capacity = data.signerCapacity || 'director';
+  const signerName = data.signerName || '';
+  const keepMap1: Record<string, string> = { director: 'Dropdown_3', secretary: 'Dropdown_4', authorizedRep: 'Dropdown_5' };
+  const keep1 = keepMap1[capacity] || 'Dropdown_3';
+  if (signerName) spec.texts.push({ name: `fill_17_P.${p}`, value: signerName });
+  for (const dn of ['Dropdown_3', 'Dropdown_4', 'Dropdown_5']) {
+    spec.dropdowns.push({ name: `${dn}_P.${p}`, target: dn !== keep1 ? '—' : ' ' });
+  }
+  if (p === 3) {
+    // 第二簽署（僅 P.3）
+    const keepMap2: Record<string, string> = { director: 'Dropdown_6', secretary: 'Dropdown_7', authorizedRep: 'Dropdown_6' };
+    const keep2 = keepMap2[capacity] || 'Dropdown_6';
+    if (signerName) spec.texts.push({ name: 'fill_22_P.3', value: signerName });
+    if (data.signDate) {
+      const sp = data.signDate.replace(/\//g, '-').split('-');
+      if (sp.length >= 3) spec.texts.push({ name: 'fill_23_P.3', value: `${sp[2]}/${sp[1]}/${sp[0]}` });
+    }
+    for (const dn of ['Dropdown_6', 'Dropdown_7']) {
+      spec.dropdowns.push({ name: `${dn}_P.3`, target: dn !== keep2 ? '—' : ' ' });
+    }
+  }
+  return spec;
+}
+
+// ── PI-ND2A 受保護資料页 spec：pageKey='P.7'（静态）或 'P.7_P2' 等（复制页） ──
+// PI 页是唯一保留完整 HKID 的位置（main + 校验位分两格）
+function piSpec(subject: OfficerChange, pageKey: string, br8: string): SheetSpec {
+  const spec: SheetSpec = { texts: [], checks: [], dropdowns: [] };
+  if (br8) spec.texts.push({ name: `fill_1_${pageKey}`, value: br8 });
+  const { surname, other } = parseOfficerName(subject);
+  spec.texts.push({ name: `fill_2_${pageKey}`, value: subject.nameChinese || '' });
+  spec.texts.push({ name: `fill_3_${pageKey}`, value: surname });
+  spec.texts.push({ name: `fill_4_${pageKey}`, value: other });
+  // Full HKID — strip brackets (NN1-style): main number + check digit, no parens
+  const idFull = subject.idNumber || '';
+  if (idFull) {
+    const cleaned = idFull.replace(/[()\-\s]/g, '');
+    if (cleaned.length > 1) {
+      spec.texts.push({ name: `fill_5_${pageKey}`, value: cleaned.slice(0, -1), align: 'right' });
+      spec.texts.push({ name: `fill_6_${pageKey}`, value: cleaned.slice(-1) });
+    } else {
+      spec.texts.push({ name: `fill_5_${pageKey}`, value: idFull, align: 'right' });
+    }
+  }
+  if (subject.passportCountry) spec.texts.push({ name: `fill_7_${pageKey}`, value: subject.passportCountry });
+  if (subject.passportNumber) spec.texts.push({ name: `fill_8_${pageKey}`, value: subject.passportNumber });
+  const afb7 = subject.addrFlatBlock || '';
+  const ab7 = subject.addrBuilding || '';
+  const ase7 = subject.addrStreetEstate || '';
+  const ad7 = subject.addrDistrict || '';
+  const ar7 = subject.addrRegion || '';
+  if (afb7 || ab7 || ase7 || ad7 || ar7) {
+    spec.texts.push({ name: `fill_9_${pageKey}`, value: afb7 });
+    spec.texts.push({ name: `fill_10_${pageKey}`, value: ab7 });
+    spec.texts.push({ name: `fill_11_${pageKey}`, value: ase7 });
+    spec.texts.push({ name: `fill_12_${pageKey}`, value: ad7 });
+    spec.texts.push({ name: `fill_13_${pageKey}`, value: ar7 });
+  } else if (subject.address) {
+    spec.texts.push({ name: `fill_9_${pageKey}`, value: subject.address });
+  }
+  const role7 = subject.role || 'director';
+  if (role7 === 'secretary') spec.checks.push(`cb_1_${pageKey}`);
+  else if (role7 === 'alternate') spec.checks.push(`cb_3_${pageKey}`);
+  else spec.checks.push(`cb_2_${pageKey}`);
+  return spec;
+}
+
+// ── 动态续页：复制模板页 → 全名加 suffix 改名 → 脱离 parent ──
+// （借用 NAR1 addDynamicContinuationSheet 思路；ND2A 直接复制模板自带的续页A/B/C/PI 页，
+//   改名后 setText/check/selectDropdown 走与静态页完全相同的映射）
+function renameDynamicWidgets(pdfDoc: PDFDocument, page: any, suffix: string) {
+  const ctx = (pdfDoc as any).context;
+  const annots = page.node.lookup(PDFName.of("Annots")) as any;
+  if (!annots || typeof annots.size !== "function") return;
+  for (let i = 0; i < annots.size(); i++) {
+    try {
+      const widget = ctx.lookup(annots.get(i)) as any;
+      if (!widget || typeof widget.get !== "function") continue;
+      if (String(widget.get(PDFName.of("Subtype"))) !== "/Widget") continue;
+      const parentRef = widget.get(PDFName.of("Parent"));
+      let field: any = widget;
+      if (parentRef) {
+        try { field = ctx.lookup(parentRef) as any; } catch { field = widget; }
+      }
+      const parentName = decodePdfText(field.get(PDFName.of("T")));
+      const widgetName = decodePdfText(widget.get(PDFName.of("T")));
+      let fullName = parentName || widgetName;
+      const gpRef = field && field !== widget ? field.get?.(PDFName.of("Parent")) : undefined;
+      if (gpRef) {
+        try {
+          const gp = ctx.lookup(gpRef) as any;
+          const gpName = decodePdfText(gp.get(PDFName.of("T")));
+          if (gpName) fullName = widgetName ? `${gpName}.${widgetName}` : `${gpName}.${parentName}`;
+        } catch { /* keep */ }
+      } else if (parentName && widgetName && widgetName !== parentName) {
+        fullName = `${parentName}.${widgetName}`;
+      }
+      if (!fullName || /^\d+$/.test(fullName)) continue; // 无法解析全名的跳过
+      // 继承键（FT/DA/Ff/Q/DV/Opt/MaxLen）后脱离
+      for (const k of ["FT", "DA", "Ff", "Q", "DV", "Opt", "MaxLen"]) {
+        const key = PDFName.of(k);
+        if (!widget.get(key)) {
+          const v = field && field !== widget ? field.get(key) : undefined;
+          if (v !== undefined && v !== null) widget.set(key, v);
+        }
+      }
+      widget.set(PDFName.of("T"), PDFString.of(`${fullName}_${suffix}`));
+      widget.delete(PDFName.of("Parent"));
+    } catch { /* skip */ }
+  }
+}
+
+interface DynSheet {
+  srcIdx: number;     // 模板源页（0-based：3=P.4 续页A, 4=P.5 续页B, 5=P.6 续页C, 6=P.7 PI）
+  insertAt: number;   // 目标插入位置（已含之前插入的位移）
+  suffix: string;     // 字段名后缀（如 C1/N1/B1/P2）
+}
+
+function fillND2A(pdfDoc: PDFDocument, data: ND2AData) {
+  const { setText, check, selectDropdown, recollect } = createFormHelpers(pdfDoc);
+  const br8 = (data.brNumber || "").replace(/[^0-9A-Za-z]/g, "").slice(0, 8);
 
   // ===== Officer routing =====
   // Page allocation (template structure verified 2026-08-13, 千问 VL):
@@ -330,386 +633,33 @@ function fillND2A(pdfDoc: PDFDocument, data: ND2AData) {
   //   P.4 = 續頁A 停任 (2nd cessation)
   //   P.5 = 續頁B 委任自然人 (2nd natural appointment)
   //   P.6 = 續頁C 委任法人 (2nd corporate appointment)
-  //   P.7 = PI-ND2A 受保護資料 (filled separately below; only for natural appointments)
+  //   P.7 = PI-ND2A 受保護資料 (one per natural person; filled below)
+  //   第3名及以後 → 动态复制对应续页（2026-08-16，借鉴 NAR1 动态续页方案）
   const officers = data.officers || [];
-  let cessIdx = 0;      // cessations: P.1 → P.4
-  let natApptIdx = 0;   // natural appts: P.2 → P.5
-  let corpApptIdx = 0;  // corporate appts: P.3 → P.6
+  const cessations = officers.filter(o => o.type === 'cessation');
+  const natAppts = officers.filter(o => o.type !== 'cessation' && o.identity === 'natural');
+  const corpAppts = officers.filter(o => o.type !== 'cessation' && o.identity === 'corporate');
+  const naturals = officers.filter(o => o.identity === 'natural');
 
-  for (const officer of officers) {
-    const isNatural = officer.identity === 'natural';
-    const isCessation = officer.type === 'cessation';
-    let page: number | null;
-
-    if (isCessation) {
-      page = cessIdx < 2 ? [1, 4][cessIdx] : null;
-      cessIdx++;
-    } else if (isNatural) {
-      page = natApptIdx < 2 ? [2, 5][natApptIdx] : null;
-      natApptIdx++;
-    } else {
-      page = corpApptIdx < 2 ? [3, 6][corpApptIdx] : null;
-      corpApptIdx++;
-    }
-    if (page === null) continue; // beyond template capacity
-    const p = page;
-
-    if (isNatural || isCessation) {
-      // Parse English name (自然人需要；法人停任解析结果无副作用——法人分支用 officer.nameChinese/companyName)
-      const eng = officer.nameEnglish || '';
-      let surname = officer.nameSurname || '';
-      let other = officer.nameOtherNames || '';
-      if (!surname && eng) {
-        const parsed = parseEnglishName(eng);
-        surname = parsed.surname;
-        other = parsed.otherNames;
-      }
-      const chinese = officer.nameChinese || '';
-
-      // ── Page-specific field mapping ──
-      if (p === 2 || p === 5) {
-        // P.2/P.5: Natural person appointment (P.5 續頁B has identical layout)
-        // fill_2 = Alternate to (only for alternate director)
-        if (officer.role === 'alternate' && officer.alternateTo) {
-          setText(`fill_2_P.${p}`, officer.alternateTo);
-        }
-        setText(`fill_3_P.${p}`, chinese);
-        setText(`fill_4_P.${p}`, surname);
-        setText(`fill_5_P.${p}`, other);
-        // Structured address: fill_10~14
-        const afb = officer.addrFlatBlock || '';
-        const ab = officer.addrBuilding || '';
-        const ase = officer.addrStreetEstate || '';
-        const ad = officer.addrDistrict || '';
-        const ar = officer.addrRegion || '';
-        if (afb || ab || ase || ad || ar) {
-          setText(`fill_10_P.${p}`, afb);
-          setText(`fill_11_P.${p}`, ab);
-          setText(`fill_12_P.${p}`, ase);
-          setText(`fill_13_P.${p}`, ad);
-          setText(`fill_14_P.${p}`, ar);
-        } else {
-          setText(`fill_10_P.${p}`, officer.address);
-        }
-        // HKID (first 4 chars) + Passport
-        const hkid4 = (officer.idNumber || '').replace(/[()\-\s]/g, '').toUpperCase().slice(0, 4);
-        if (hkid4) setText(`fill_16_P.${p}`, hkid4, 'right');
-        if (officer.passportCountry) setText(`fill_17_P.${p}`, officer.passportCountry);
-        if (officer.passportNumber) setText(`fill_18_P.${p}`, parsePassportPartial(officer.passportNumber));
-        // Date: fill_21/22/23 = D/M/Y
-        const dateStr = officer.type === 'appointment' ? officer.dateAppointed : officer.dateCeased;
-        if (dateStr) {
-          const parts = dateStr.split(/[\/\-]/);
-          if (parts.length >= 3) {
-            setText(`fill_21_P.${p}`, parts[2]); // day
-            setText(`fill_22_P.${p}`, parts[1]); // month
-            setText(`fill_23_P.${p}`, parts[0]); // year
-          }
-        }
-        // Role checkboxes: cb_1=秘書, cb_2=董事, cb_3=候補董事 (mutually exclusive)
-        if (officer.role === 'secretary') {
-          check(`cb_1_P.${p}`, true);
-        } else if (officer.role === 'alternate') {
-          check(`cb_3_P.${p}`, true);
-        } else {
-          check(`cb_2_P.${p}`, true);
-        }
-        // Already director? cb_5=是, cb_6=否
-        if (officer.alreadyDirector === 'yes') {
-          check(`cb_5_P.${p}`, true);
-        } else if (officer.alreadyDirector === 'no') {
-          check(`cb_6_P.${p}`, true);
-        }
-        // P.2 底部聲明：cross out "董事" or "候補董事*" in consent statement
-        // Dropdown_1_P.2 → "董事" (director), Dropdown_2_P.2 → "候補董事*" (alternate director)
-        // role='director'  → cross out "候補董事*" (Dropdown_2), keep "董事" visible (Dropdown_1)
-        // role='alternate' → cross out "董事" (Dropdown_1), keep "候補董事*" visible (Dropdown_2)
-        // NOTE: ND2A template has duplicate widget instances (Chinese + English rows), so no break
-        if (officer.role === 'director' || officer.role === 'alternate') {
-          const crossField = officer.role === 'director' ? `Dropdown_2_P.${p}` : `Dropdown_1_P.${p}`;
-          for (const dn of [`Dropdown_1_P.${p}`, `Dropdown_2_P.${p}`]) {
-            const useDashes = dn === crossField;
-            // Select the dropdown option: blank (keep visible) or dashes (crossed out)
-            // selectDropdown 内部已对每个实例画贯穿横线
-            if (useDashes) {
-              selectDropdown(dn, '—');
-            } else {
-              selectDropdown(dn, ' ');
-            }
-          }
-        }
-      } else if (p === 1) {
-        // ── P.1 第2項 停任（首名停任人，自然人/法人）──
-        // A. 現時在公司註冊處登記的詳情：
-        //   自然人: fill_3=代替, fill_4=中文姓名, fill_5=姓氏, fill_6=名字,
-        //           fill_7=香港身分證部分號碼(maxlen 5), fill_8=護照部分號碼
-        //   法人:   fill_9=中文名稱, fill_10=英文名稱
-        // B. 停任詳情：cb_4=辭職／其他, cb_5=去世, fill_11/12/13=停任日期 D/M/Y,
-        //    cb_6=是 / cb_7=否（是否仍然擔任——董事/候補董事填，公司秘書免填）
-        if (isNatural) {
-          if (officer.role === 'alternate' && officer.alternateTo) {
-            setText('fill_3_P.1', officer.alternateTo);
-          }
-          setText('fill_4_P.1', chinese);
-          setText('fill_5_P.1', surname);
-          setText('fill_6_P.1', other);
-          const hkidClean = (officer.idNumber || '').replace(/[()\-\s]/g, '').toUpperCase();
-          if (hkidClean) setText('fill_7_P.1', hkidClean.slice(0, 5), 'left');
-          if (officer.passportNumber) setText('fill_8_P.1', parsePassportPartial(officer.passportNumber));
-        } else {
-          setText('fill_9_P.1', officer.nameChinese || '');
-          setText('fill_10_P.1', officer.companyName || officer.nameEnglish || '');
-        }
-        if (officer.role === 'secretary') {
-          check('cb_1_P.1', true);
-        } else if (officer.role === 'alternate') {
-          check('cb_3_P.1', true);
-        } else {
-          check('cb_2_P.1', true);
-        }
-        // B. 停任詳情
-        const reason1 = officer.cessationReason || 'resignation';
-        if (reason1 === 'deceased') {
-          check('cb_5_P.1', true);
-        } else {
-          check('cb_4_P.1', true);
-        }
-        const dateStr1 = officer.dateCeased || officer.dateAppointed;
-        if (dateStr1) {
-          const parts = dateStr1.split(/[\/\-]/);
-          if (parts.length >= 3) {
-            setText('fill_11_P.1', parts[2]); // day
-            setText('fill_12_P.1', parts[1]); // month
-            setText('fill_13_P.1', parts[0]); // year
-          }
-        }
-        // 是否仍然擔任（公司秘書免填，模板註13）
-        if (officer.role !== 'secretary') {
-          check(officer.stillHoldsOffice === 'yes' ? 'cb_6_P.1' : 'cb_7_P.1', true);
-        }
-      } else if (p === 4) {
-        // ── P.4 續頁A 停任（第2名停任人）──
-        //   自然人: fill_2=代替, fill_3=中文姓名, fill_4=姓氏, fill_5=名字,
-        //           fill_6=香港身分證部分號碼(maxlen 5), fill_7=護照部分號碼
-        //   法人:   fill_8=中文名稱, fill_9=英文名稱
-        //   B.停任詳情：cb_4/cb_5, fill_10/11/12=停任日期 D/M/Y, cb_6/cb_7=是否仍然擔任
-        if (isNatural) {
-          if (officer.role === 'alternate' && officer.alternateTo) {
-            setText('fill_2_P.4', officer.alternateTo);
-          }
-          setText('fill_3_P.4', chinese);
-          setText('fill_4_P.4', surname);
-          setText('fill_5_P.4', other);
-          const hkidClean = (officer.idNumber || '').replace(/[()\-\s]/g, '').toUpperCase();
-          if (hkidClean) setText('fill_6_P.4', hkidClean.slice(0, 5), 'left');
-          if (officer.passportNumber) setText('fill_7_P.4', parsePassportPartial(officer.passportNumber));
-        } else {
-          setText('fill_8_P.4', officer.nameChinese || '');
-          setText('fill_9_P.4', officer.companyName || officer.nameEnglish || '');
-        }
-        if (officer.role === 'secretary') {
-          check('cb_1_P.4', true);
-        } else if (officer.role === 'alternate') {
-          check('cb_3_P.4', true);
-        } else {
-          check('cb_2_P.4', true);
-        }
-        const reason4 = officer.cessationReason || 'resignation';
-        if (reason4 === 'deceased') {
-          check('cb_5_P.4', true);
-        } else {
-          check('cb_4_P.4', true);
-        }
-        const dateStr4 = officer.dateCeased || officer.dateAppointed;
-        if (dateStr4) {
-          const parts = dateStr4.split(/[\/\-]/);
-          if (parts.length >= 3) {
-            setText('fill_10_P.4', parts[2]);
-            setText('fill_11_P.4', parts[1]);
-            setText('fill_12_P.4', parts[0]);
-          }
-        }
-        if (officer.role !== 'secretary') {
-          check(officer.stillHoldsOffice === 'yes' ? 'cb_6_P.4' : 'cb_7_P.4', true);
-        }
-      }
-    } else {
-      // ── 法人團體 (Body Corporate)：P.3 第4項（首名）/ P.6 續頁C（第2名）──
-      // ── P.3/P.5 法人團體 ──
-      // Field mapping verified by 千问 VL (2026-08-01):
-      //   fill_3 = 中文名稱, fill_4 = 英文名稱
-      //   fill_5 = Flat/Floor/Block, fill_6 = Building
-      //   fill_7 = Street/Estate, fill_8 = District/City
-      //   fill_9 = Country/Region, fill_10 = Email
-      //   fill_11 = Business Registration Number (牌照) [right col]
-      //   fill_12 = TCSP Licence No. [left col]
-      //   fill_14/15/16 = Date of Appointment D/M/Y
-      setText(`fill_3_P.${p}`, officer.nameChinese || '');
-      setText(`fill_4_P.${p}`, officer.companyName || officer.nameEnglish || '');
-      // 五欄地址：優先使用結構化地址，fallback 到 flat address
-      const addrFlat = officer.addrFlatBlock || '';
-      const addrBld = officer.addrBuilding || '';
-      const addrSe = officer.addrStreetEstate || '';
-      const addrDist = officer.addrDistrict || '';
-      const addrReg = officer.addrRegion || '';
-      if (addrFlat || addrBld || addrSe || addrDist || addrReg) {
-      setText(`fill_5_P.${p}`, addrFlat);
-      setText(`fill_6_P.${p}`, addrBld);
-      setText(`fill_7_P.${p}`, addrSe);
-      setText(`fill_8_P.${p}`, addrDist);
-      setText(`fill_9_P.${p}`, addrReg);
-      } else {
-      // Fallback: parse flat address string
-      if (officer.address) setText(`fill_5_P.${p}`, officer.address);
-      }
-      // Email
-      if (officer.email) setText(`fill_10_P.${p}`, officer.email);
-      // Business Registration Number (商業登記號碼 = 牌照)
-      if (officer.companyNumber) setText(`fill_11_P.${p}`, officer.companyNumber);
-      // TCSP Licence No. (fill_12, left column) — only if applicable
-      if ((officer as any).tcspLicence) setText(`fill_12_P.${p}`, (officer as any).tcspLicence);
-      // Date: fill_14/15/16 = D/M/Y
-      const dateStr = officer.type === 'appointment' ? officer.dateAppointed : officer.dateCeased;
-      if (dateStr) {
-      const parts = dateStr.split(/[\/\-]/);
-      if (parts.length >= 3) {
-        setText(`fill_14_P.${p}`, parts[2]);
-        setText(`fill_15_P.${p}`, parts[1]);
-        setText(`fill_16_P.${p}`, parts[0]);
-      }
-      }
-      // Role
-      if (officer.role === 'secretary') {
-      check(`cb_1_P.${p}`, true);
-      } else if (officer.role === 'alternate') {
-      check(`cb_3_P.${p}`, true);
-      } else {
-      check(`cb_2_P.${p}`, true);
-      }
-      // 上述董事或候補董事在獲得這次委任時，是否已經是這公司的現任候補董事或董事? cb_5=是, cb_6=否
-      if (officer.alreadyDirector === 'yes') {
-        check(`cb_5_P.${p}`, true);
-      } else if (officer.alreadyDirector === 'no') {
-        check(`cb_6_P.${p}`, true);
-      }
-      // P.3/P.6 底部聲明（同意書）：cross out "董事" or "候補董事*"（同 Flask，2026-08-13）
-      // Dropdown_1 → "董事", Dropdown_2 → "候補董事*"
-      if (officer.role === 'director' || officer.role === 'alternate') {
-        const crossFieldC = officer.role === 'director' ? `Dropdown_2_P.${p}` : `Dropdown_1_P.${p}`;
-        for (const dn of [`Dropdown_1_P.${p}`, `Dropdown_2_P.${p}`]) {
-          selectDropdown(dn, dn === crossFieldC ? '—' : ' ');
-        }
-      }
-
-      // ── P.3/P.6 法人團體簽署（由前端 簽署人/身份/日期 驅動，2026-08-13）──
-      // 第一簽署：董事(法人團體)的 董事(Dropdown_3)／公司秘書(Dropdown_4)／獲授權人士(Dropdown_5)*
-      //   姓名 = fill_17（P.3 與 P.6 都有此欄位）
-      // 第二簽署（僅 P.3）：董事(Dropdown_6)／公司秘書(Dropdown_7)，姓名=fill_22，日期=fill_23（DD/MM/YYYY）
-      // selectDropdown 内部已设置 /I+/V 并对每个实例画贯穿横线
-      const capacity = data.signerCapacity || 'director';
-      const signerName = data.signerName || '';
-      const keepMap1: Record<string, string> = { director: 'Dropdown_3', secretary: 'Dropdown_4', authorizedRep: 'Dropdown_5' };
-      const keep1 = keepMap1[capacity] || 'Dropdown_3';
-      if (signerName) setText(`fill_17_P.${p}`, signerName);
-      // First signature: Dropdown_3/4/5 (keep one per capacity, cross out the rest)
-      for (const dn of ['Dropdown_3', 'Dropdown_4', 'Dropdown_5']) {
-        const key = `${dn}_P.${p}`;
-        if (dn !== keep1) {
-          selectDropdown(key, '—');
-        } else {
-          selectDropdown(key, ' ');
-        }
-      }
-      if (p === 3) {
-        // Second signature (P.3 only): name + date + 董事/公司秘書（獲授權人士按董事處理）
-        const keepMap2: Record<string, string> = { director: 'Dropdown_6', secretary: 'Dropdown_7', authorizedRep: 'Dropdown_6' };
-        const keep2 = keepMap2[capacity] || 'Dropdown_6';
-        if (signerName) setText('fill_22_P.3', signerName);
-        if (data.signDate) {
-          const sp = data.signDate.replace(/\//g, '-').split('-');
-          if (sp.length >= 3) setText('fill_23_P.3', `${sp[2]}/${sp[1]}/${sp[0]}`);
-        }
-        for (const dn of ['Dropdown_6', 'Dropdown_7']) {
-          const key = `${dn}_P.3`;
-          if (dn !== keep2) {
-            selectDropdown(key, '—');
-          } else {
-            selectDropdown(key, ' ');
-          }
-        }
-      }
-    }  // end P.3/P.6 block
+  // BR number on every static page
+  for (let p = 1; p <= 7; p++) {
+    try { setText(`fill_1_P.${p}`, br8); } catch {}
   }
 
-  // ── PI-ND2A 受保護資料頁（P.7）：有自然人時填寫，頁面永不刪除 ──
-  // 取第一個自然人（委任或停任皆可）；純法人表格時 P.7 留空但仍保留（2026-08-13）。
-  const piSubject = officers.find((o) => o.identity === 'natural');
-  if (piSubject) {
-    const p = 7;
-    const eng = piSubject.nameEnglish || '';
-    let surname7 = piSubject.nameSurname || '';
-    let other7 = piSubject.nameOtherNames || '';
-    if (!surname7 && eng) {
-      const parsed = parseEnglishName(eng);
-      surname7 = parsed.surname;
-      other7 = parsed.otherNames;
-    }
-    setText(`fill_2_P.${p}`, piSubject.nameChinese || '');
-    setText(`fill_3_P.${p}`, surname7);
-    setText(`fill_4_P.${p}`, other7);
-    // Full HKID — strip brackets (NN1-style): main number + check digit, no parens
-    const idFull = piSubject.idNumber || '';
-    if (idFull) {
-      const cleaned = idFull.replace(/[()\-\s]/g, '');
-      if (cleaned.length > 1) {
-        setText(`fill_5_P.${p}`, cleaned.slice(0, -1), 'right');
-        setText(`fill_6_P.${p}`, cleaned.slice(-1));
-      } else {
-        setText(`fill_5_P.${p}`, idFull, 'right');
-      }
-    }
-    if (piSubject.passportCountry) setText(`fill_7_P.${p}`, piSubject.passportCountry);
-    if (piSubject.passportNumber) setText(`fill_8_P.${p}`, piSubject.passportNumber);
-    // Address
-    const afb7 = piSubject.addrFlatBlock || '';
-    const ab7 = piSubject.addrBuilding || '';
-    const ase7 = piSubject.addrStreetEstate || '';
-    const ad7 = piSubject.addrDistrict || '';
-    const ar7 = piSubject.addrRegion || '';
-    if (afb7 || ab7 || ase7 || ad7 || ar7) {
-      setText(`fill_9_P.${p}`, afb7);
-      setText(`fill_10_P.${p}`, ab7);
-      setText(`fill_11_P.${p}`, ase7);
-      setText(`fill_12_P.${p}`, ad7);
-      setText(`fill_13_P.${p}`, ar7);
-    } else {
-      setText(`fill_9_P.${p}`, piSubject.address || '');
-    }
-    const role7 = piSubject.role || 'director';
-    if (role7 === 'secretary') check(`cb_1_P.${p}`, true);
-    else if (role7 === 'alternate') check(`cb_3_P.${p}`, true);
-    else check(`cb_2_P.${p}`, true);
-  }
+  // P.1: Company name
+  setText("fill_2_P.1", data.companyName);
 
-  // P.3 底部續頁計數器（fill_18=續頁A停任, fill_19=續頁B自然人, fill_20=續頁C法人, fill_21=PI頁數）
-  // 續頁被刪除時計數器留空；PI 頁永不刪除 → 固定 '1'
-  const nCessC = officers.filter((o) => o.type === 'cessation').length;
-  const nNatC = officers.filter((o) => o.identity === 'natural' && o.type !== 'cessation').length;
-  const nCorpC = officers.filter((o) => o.identity === 'corporate' && o.type !== 'cessation').length;
-  if (nCessC >= 2) setText('fill_18_P.3', '1');
-  if (nNatC >= 2) setText('fill_19_P.3', '1');
-  if (nCorpC >= 2) setText('fill_20_P.3', '1');
-  setText('fill_21_P.3', '1');
+  // Static fills: first 2 of each kind
+  if (cessations[0]) applySpec(cessSpec(cessations[0], 1, br8), { setText, check, selectDropdown });
+  if (cessations[1]) applySpec(cessSpec(cessations[1], 4, br8), { setText, check, selectDropdown });
+  if (natAppts[0]) applySpec(natApptSpec(natAppts[0], 2, br8), { setText, check, selectDropdown });
+  if (natAppts[1]) applySpec(natApptSpec(natAppts[1], 5, br8), { setText, check, selectDropdown });
+  if (corpAppts[0]) applySpec(corpApptSpec(corpAppts[0], 3, data, br8), { setText, check, selectDropdown });
+  if (corpAppts[1]) applySpec(corpApptSpec(corpAppts[1], 6, data, br8), { setText, check, selectDropdown });
 
-  // ===== P.1: Signer & presenter info =====
-  // Note: P.1 fill_9 is NOT used for signer name in ND2A template
-  // (ND2A has no separate P.1 signer name field — signer is on P.2)
-
-  // ── P.1 提交人信息（字段映射對齊 Flask _fill_nd2a_pdf）──
-  // fill_14 = 提交人名稱, fill_15 = 提交人地址
+  // ===== P.1: Presenter info =====
   const pName = data.presentorName || DEFAULT_PRESENTER.name;
   const pAddr = data.presentorAddress || DEFAULT_PRESENTER.address;
-  // 取得個別聯絡欄位，若不存在則從 presentorContact 字串提取或使用 DEFAULT_PRESENTER
   const pPhone = data.presentorPhone || DEFAULT_PRESENTER.phone;
   const pFax = data.presentorFax || DEFAULT_PRESENTER.fax;
   const pEmail = data.presentorEmail || DEFAULT_PRESENTER.email;
@@ -717,13 +667,87 @@ function fillND2A(pdfDoc: PDFDocument, data: ND2AData) {
 
   setText("fill_14_P.1", pName);
   setText("fill_15_P.1", pAddr);
-  // fill_16-19 = 電話 / 傳真 / 電郵 / 檔號（10pt → 缩小字号防溢出）
   setText("fill_16_P.1", pPhone);
   setText("fill_17_P.1", pFax);
   setText("fill_18_P.1", pEmail);
   setText("fill_19_P.1", pRef);
 
+  // ===== Page management =====
+  // 1) Delete instruction pages after P.7 (P.8~P.17 填表須知)
+  const allPages = pdfDoc.getPages();
+  if (allPages.length > 7) {
+    for (let i = allPages.length - 1; i >= 7; i--) {
+      pdfDoc.removePage(i);
+    }
+  }
+  // 2) 续页无内容则删除（降序）：P.6 续页C, P.5 续页B, P.4 续页A；PI 页（P.7）永不删除
+  if (corpAppts.length < 2) pdfDoc.removePage(5);
+  if (natAppts.length < 2) pdfDoc.removePage(4);
+  if (cessations.length < 2) pdfDoc.removePage(3);
+
+  // 3) 动态续页（第3名及以后）— 按类型分组：停任续页紧跟 P.4、自然人紧跟 P.5、法人紧跟 P.6
+  const cessOver = cessations.slice(2);
+  const natOver = natAppts.slice(2);
+  const corpOver = corpAppts.slice(2);
+  const insertAfterP4 = 3;                                               // P.4 恒为 index 3（若保留）
+  const insertAfterP5 = cessations.length >= 2 ? 4 : 3;                  // P.5 的 index
+  const insertAfterP6 = insertAfterP5 + (natAppts.length >= 2 ? 1 : 0);  // P.6 的 index
+  const piIdx = pdfDoc.getPageCount() - 1;                               // P.7 恒为最后一页
+
+  const sheets: DynSheet[] = [];
+  cessOver.forEach((_, i) => sheets.push({ srcIdx: 3, insertAt: insertAfterP4 + 1 + i, suffix: `C${i + 1}` }));
+  natOver.forEach((_, i) => sheets.push({ srcIdx: 4, insertAt: insertAfterP5 + 1 + cessOver.length + i, suffix: `N${i + 1}` }));
+  corpOver.forEach((_, i) => sheets.push({ srcIdx: 5, insertAt: insertAfterP6 + 1 + cessOver.length + natOver.length + i, suffix: `B${i + 1}` }));
+
+  // 4) PI 页：每名自然人一页（P.7 + 复制页插到末尾）
+  const piCopies = naturals.slice(1);
+  piCopies.forEach((_, i) => sheets.push({
+    srcIdx: 6,
+    insertAt: piIdx + 1 + cessOver.length + natOver.length + corpOver.length + i,
+    suffix: `P${i + 2}`,
+  }));
+
+  const insertSheets = async (templateBytes: Uint8Array) => {
+    if (sheets.length === 0) return;
+    const freshDoc = await PDFDocument.load(templateBytes, { ignoreEncryption: true });
+    const copies = await pdfDoc.copyPages(freshDoc, sheets.map(s => s.srcIdx));
+    copies.forEach((pg, i) => {
+      pdfDoc.insertPage(sheets[i].insertAt, pg);
+      renameDynamicWidgets(pdfDoc, pg, sheets[i].suffix);
+    });
+    // 重建字段映射，动态页字段以全名+suffix 收录
+    recollect();
+  };
+
+  // 5) 填充动态页（改名后走与静态页相同的 spec 映射）
+  const fillDynamic = () => {
+    if (sheets.length === 0) return;
+    const wrap = (suffix: string): ApplyFn => ({
+      setText: (n, v, a) => setText(`${n}_${suffix}`, v, a),
+      check: (n, s) => check(`${n}_${suffix}`, s),
+      selectDropdown: (n, t) => selectDropdown(`${n}_${suffix}`, t),
+    });
+    const base: ApplyFn = { setText, check, selectDropdown };
+    cessOver.forEach((o, i) => applySpec(cessSpec(o, 4, br8), wrap(`C${i + 1}`)));
+    natOver.forEach((o, i) => applySpec(natApptSpec(o, 5, br8), wrap(`N${i + 1}`)));
+    corpOver.forEach((o, i) => applySpec(corpApptSpec(o, 6, data, br8), wrap(`B${i + 1}`)));
+    piCopies.forEach((o, i) => applySpec(piSpec(o, `P.7_P${i + 2}`, br8), base));
+  };
+
+  // 6) PI-ND2A 受保護資料页（P.7）：第一名自然人填静态页
+  if (naturals[0]) applySpec(piSpec(naturals[0], 'P.7', br8), { setText, check, selectDropdown });
+
+  // 7) P.3 底部续页计数器（fill_18=续页A停任, fill_19=续页B自然人, fill_20=续页C法人, fill_21=PI页数）
+  // 数值 = 该类续页总页数（含动态页）；无续页则留空
+  if (cessations.length >= 2) setText('fill_18_P.3', String(cessations.length - 1));
+  if (natAppts.length >= 2) setText('fill_19_P.3', String(natAppts.length - 1));
+  if (corpAppts.length >= 2) setText('fill_20_P.3', String(corpAppts.length - 1));
+  setText('fill_21_P.3', String(Math.max(1, naturals.length)));
+
   rebuildAcroFormFields(pdfDoc);
+
+  // 返回后续步骤（onRequest 按序执行：插入动态页 → 填充 → save）
+  return { insertSheets, fillDynamic };
 }
 
 // ============================================================================
@@ -806,25 +830,10 @@ export async function onRequest(context: { request: Request; env: Env }) {
     if (data.debug) {
       await fillDebug(pdfDoc);
     } else {
-      fillND2A(pdfDoc, data);
+      const { insertSheets, fillDynamic } = fillND2A(pdfDoc, data);
+      await insertSheets(new Uint8Array(templateBytes));
+      fillDynamic();
     }
-
-    // Delete blank pages after P.7 (keep P.1~P.7, P.8+ are blank instruction pages)
-    const allPages = pdfDoc.getPages();
-    if (allPages.length > 7) {
-      for (let i = allPages.length - 1; i >= 7; i--) {
-        pdfDoc.removePage(i);
-      }
-    }
-    // 續頁無內容則刪除（降序）：P.6 續頁C=法人委任#2, P.5 續頁B=自然人委任#2, P.4 續頁A=停任#2
-    // PI 受保護資料頁（P.7）永不刪除（2026-08-13）
-    const officersH = data.officers || [];
-    const nCess = officersH.filter((o) => o.type === 'cessation').length;
-    const nNat = officersH.filter((o) => o.identity === 'natural' && o.type !== 'cessation').length;
-    const nCorp = officersH.filter((o) => o.identity === 'corporate' && o.type !== 'cessation').length;
-    if (nCorp < 2) pdfDoc.removePage(5);
-    if (nNat < 2) pdfDoc.removePage(4);
-    if (nCess < 2) pdfDoc.removePage(3);
 
     const pdfBytes = await pdfDoc.save({ updateFieldAppearances: false });
     const base64 = uint8ToBase64(new Uint8Array(pdfBytes));

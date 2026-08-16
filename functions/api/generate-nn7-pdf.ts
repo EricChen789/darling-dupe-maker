@@ -69,7 +69,7 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
       setF("fill_3_P.1", data.nameChinese);
       setF("fill_4_P.1", surname);
       setF("fill_5_P.1", otherNames);
-      setF("fill_7_P.1", data.idNumber, 'right');
+      setF("fill_7_P.1", (data.idNumber || '').replace(/[()\-\s]/g, '').toUpperCase().slice(0, 4), 'right');
 
       // P.2 變更詳情
       if (data.changeType === "address" && data.newAddress) {

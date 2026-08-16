@@ -108,7 +108,7 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
       setText("fill_3_P.1", data.nameChinese);
       setText("fill_4_P.1", surname);
       setText("fill_5_P.1", otherNames);
-      setText("fill_7_P.1", (data.idNumber || '').replace(/[()\-\s]/g, ''), 'right');
+      setText("fill_7_P.1", (data.idNumber || '').replace(/[()\-\s]/g, '').toUpperCase().slice(0, 4), 'right');
       if (data.passportCountry || data.passportPlaceOfIssue) {
         setText("fill_7b_P.1", data.passportCountry || data.passportPlaceOfIssue);
       }
@@ -237,7 +237,7 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
       setText("fill_2_P.4", data.nameChinese);
       setText("fill_5_P.4", surname);
       setText("fill_6_P.4", otherNames);
-      setText("fill_7_P.4", (data.idNumber || '').replace(/[()\-\s]/g, ''), 'right');
+      setText("fill_7_P.4", (data.idNumber || '').replace(/[()\-\s]/g, '').toUpperCase().slice(0, 4), 'right');
 
       // ═══ Section B: Change details (mirror P.2) ═══
       // (a) Name change

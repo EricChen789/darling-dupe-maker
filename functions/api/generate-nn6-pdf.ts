@@ -97,7 +97,7 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
       if (isNatural) {
         setF(`fill_3_P.${p}`, officer.nameEnglish);
         setF(`fill_4_P.${p}`, officer.nameChinese);
-        setF(`fill_7_P.${p}`, officer.idNumber);
+        setF(`fill_7_P.${p}`, (officer.idNumber || '').replace(/[()\-\s]/g, '').toUpperCase().slice(0, 4));
         setF(`fill_8_P.${p}`, officer.address);
         if (officer.type !== 'cessation' && officer.dateAppointed) {
           const parts = officer.dateAppointed.split(/[-/]/);

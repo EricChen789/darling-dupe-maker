@@ -134,6 +134,18 @@ function parseDmy(s?: string): DateParts | null {
   return null;
 }
 
+/** 地址 5 欄：優先分欄欄位；全空時整串地址回退到「街道」欄（老資料只有 address 字串） */
+function splitAddr(p: { addrFlat?: string; addrBuilding?: string; addrStreet?: string; addrDistrict?: string; addrRegion?: string; address?: string }) {
+  const hasSplit = !!(p.addrFlat || p.addrBuilding || p.addrStreet || p.addrDistrict || p.addrRegion);
+  return {
+    addrFlat: p.addrFlat || '',
+    addrBuilding: p.addrBuilding || '',
+    addrStreet: p.addrStreet || (!hasSplit ? (p.address || '') : ''),
+    addrDistrict: p.addrDistrict || '',
+    addrRegion: p.addrRegion || '',
+  };
+}
+
 /**
  * NAR1 有效簽署人：公司設定 signerRoleId（person_company_roles.id，即 Person.id）→
  * 無效或未設時 fallback：第一個秘書 → 第一個董事（與 Companies 列表/後端慣例一致）。
@@ -402,8 +414,7 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
         corpSecArr.push({
           id: uid(),
           nameChinese: s.nameChinese || '', nameEnglish: s.nameEnglish || '',
-          addrFlat: s.addrFlat || '', addrBuilding: s.addrBuilding || '',
-          addrStreet: s.addrStreet || '', addrDistrict: s.addrDistrict || '', addrRegion: s.addrRegion || '',
+          ...splitAddr(s),
           email: s.email || '', brNumber: s.brNumber || s.companyNumberRef || '',
           tcspLicense: s.tcspNumber || '', tcspExempt: false,
           ...(parseDmy(s.dateAppointed) || { day: '', month: '', year: '' }),
@@ -415,8 +426,7 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
           nameChinese: s.nameChinese || '', surname: '', otherNames: s.nameEnglish || '',
           prevNameChinese: s.previousNameChinese || '', prevNameEnglish: s.previousNameEnglish || '',
           aliasChinese: s.aliasChinese || '', aliasEnglish: s.aliasEnglish || '',
-          addrFlat: s.addrFlat || '', addrBuilding: s.addrBuilding || '',
-          addrStreet: s.addrStreet || '', addrDistrict: s.addrDistrict || '', addrRegion: s.addrRegion || '',
+          ...splitAddr(s),
           email: s.email || '',
           hkidMain: hkid.main, hkidCheck: hkid.check,
           passportCountry: s.passportCountry || '', passportNumber: s.passportNumber || '',
@@ -436,8 +446,7 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
         corpDirArr.push({
           id: uid(), isAlternate: false, alternateTo: '',
           nameChinese: d.nameChinese || '', nameEnglish: d.nameEnglish || '',
-          addrFlat: d.addrFlat || '', addrBuilding: d.addrBuilding || '',
-          addrStreet: d.addrStreet || '', addrDistrict: d.addrDistrict || '', addrRegion: d.addrRegion || '',
+          ...splitAddr(d),
           email: d.email || '', brNumber: d.brNumber || d.companyNumberRef || '',
           ...(parseDmy(d.dateAppointed) || { day: '', month: '', year: '' }),
         });
@@ -448,8 +457,7 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
           nameChinese: d.nameChinese || '', surname: '', otherNames: d.nameEnglish || '',
           prevNameChinese: d.previousNameChinese || '', prevNameEnglish: d.previousNameEnglish || '',
           aliasChinese: d.aliasChinese || '', aliasEnglish: d.aliasEnglish || '',
-          addrFlat: d.addrFlat || '', addrBuilding: d.addrBuilding || '',
-          addrStreet: d.addrStreet || '', addrDistrict: d.addrDistrict || '', addrRegion: d.addrRegion || '',
+          ...splitAddr(d),
           email: d.email || '',
           hkidMain: hkid.main, hkidCheck: hkid.check,
           passportCountry: d.passportCountry || '', passportNumber: d.passportNumber || '',
@@ -465,8 +473,7 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
       id: uid(),
       nameChinese: sh.nameChinese || sh.name || '', nameEnglish: sh.nameEnglish || '',
       identity: sh.identity || 'natural',
-      addrFlat: sh.addrFlat || '', addrBuilding: sh.addrBuilding || '',
-      addrStreet: sh.addrStreet || '', addrDistrict: sh.addrDistrict || '', addrRegion: sh.addrRegion || '',
+      ...splitAddr(sh),
       shareClass: sh.shareType || 'Ordinary 普通股', shares: String(sh.shares || ''),
       currency: sh.currency || 'HKD', issuePrice: sh.issuePrice || '',
       paidUp: sh.paidUp || '', unpaid: sh.unpaid || '',

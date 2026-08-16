@@ -732,6 +732,8 @@ function fillND2A(pdfDoc: PDFDocument, data: ND2AData) {
     natOver.forEach((o, i) => applySpec(natApptSpec(o, 5, br8), wrap(`N${i + 1}`)));
     corpOver.forEach((o, i) => applySpec(corpApptSpec(o, 6, data, br8), wrap(`B${i + 1}`)));
     piCopies.forEach((o, i) => applySpec(piSpec(o, `P.7_P${i + 2}`, br8), base));
+    // 改名脱离的 widget 需重编 /Fields 才会被阅读器收录（蓝框）
+    rebuildAcroFormFields(pdfDoc);
   };
 
   // 6) PI-ND2A 受保護資料页（P.7）：第一名自然人填静态页

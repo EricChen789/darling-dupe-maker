@@ -444,7 +444,7 @@ export async function onRequest(context: { request: Request; env: Env }) {
       for (let k = 1; k < sched2PageCount; k++) {
         const [pg] = await pdfDoc.copyPages(freshDoc, [6]);
         pdfDoc.insertPage(p7NewIndex + k, pg);
-        renameDynamicWidgets(pdfDoc, pg, `_S${k}`);
+        renameDynamicWidgets(pdfDoc, pg, `S${k}`);  // 函数内拼 `${fullName}_${suffix}`，勿带下划线
       }
       rebuildAcroFormFields(pdfDoc);
 

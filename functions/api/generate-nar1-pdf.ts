@@ -138,9 +138,15 @@ function computePeriodStart(returnDate: string): string {
 }
 
 const PURE_NUMBER_RE = /^[\d,.\s]+$/;
-const ADDR_FLAT_RE = /^(?:flat|room|rm|unit|shop|suite|ste|workshop|portion|floor|fl|\d+\/f|g\/f|gf|lg\/f|ug\/f|m\/f|b\d*\/f)\b/i;
-const ADDR_COUNTRY_RE = /(hong\s*kong|hk\b|china|prc|macau|macao|singapore|taiwan|united\s+\w+|\busa\b|\buk\b|canada|australia|japan|korea|h\.?k\.?\s*sar|香港|中國|澳門|台灣|新加坡|日本|韓國|英國|美國|加拿大|澳洲)/i;
-const ADDR_DISTRICT_HINTS = /(kowloon|hong\s*kong|new\s*territories|n\.t\.|island|wan\s*chai|central|tsim|mong\s*kok|sham\s*shui|kwun\s*tong|sha\s*tin|tai\s*po|tuen\s*mun|yuen\s*long|tsuen\s*wan|kwai\s*tsing|sai\s*kung|north\s*district|southern\s*district|eastern\s*district|九龍|香港島|新界)/i;
+const ADDR_FLAT_RE = /^(?:flat|room|rm|unit|shop|suite|ste|workshop|portion|all\s+that\s+portion|floor|fl|\d+\/f|g\/f|gf|lg\/f|ug\/f|m\/f|b\d*\/f)\b/i;
+const ADDR_COUNTRY_RE = /(hong\s*kong|hk\b|china|prc|macau|macao|singapore|taiwan|united\s+\w+|british\s+virgin\s+islands|virgin\s+islands|b\.?\s*v\.?\s*i\.?|cayman\s+islands|\busa\b|\buk\b|canada|australia|japan|korea|h\.?k\.?\s*sar|香港|中國|澳門|台灣|新加坡|日本|韓國|英國|美國|加拿大|澳洲)/i;
+const ADDR_DISTRICT_HINTS = /(kowloon|hong\s*kong|new\s*territories|n\.t\.|island|wan\s*chai|chai\s*wan|central|sheung\s*wan|tsim|mong\s*kok|sham\s*shui|kwun\s*tong|sha\s*tin|tai\s*po|tuen\s*mun|yuen\s*long|tsuen\s*wan|kwai\s*tsing|kwai\s*chung|sai\s*kung|north\s*district|southern\s*district|eastern\s*district|hung\s*hom|causeway\s*bay|quarry\s*bay|north\s*point|happy\s*valley|aberdeen|jordan|yau\s*ma\s*tei|tai\s*kok\s*tsui|to\s*kwa\s*wan|ho\s*man\s*tin|lai\s*chi\s*kok|mei\s*foo|tsing\s*yi|tseung\s*kwan\s*o|fan\s*ling|sheung\s*shui|tin\s*shui\s*wai|tung\s*chung|lantau|stanley|wong\s*tai\s*sin|lam\s*tin|kowloon\s*city|kowloon\s*bay|kowloon\s*tong|ma\s*on\s*shan|tai\s*wai|fo\s*tan|九龍|香港島|新界)/i;
+/** 像街道/門牌號的段（以數字/No. 開頭或含道路類詞）— 不應被吞進「區」行 */
+const ADDR_STREET_RE = /(^\s*no\.?\s*\d|^\d|[,-]\s*\d|\bstreet\b|\broad\b|\blane\b|\bavenue\b|\bdrive\b|\bcrescent\b|\bterrace\b|\bboulevard\b|\bpath\b|\bway\b)/i;
+/** 大廈類詞 — 用來①區分行名裡的 district 詞（如 Central Tower 不吞進「區」行）②拆分 flat 段內嵌大廈名 */
+const BUILDING_WORD_RE = /\b(buildings?|mansion|mansions|houses?|centre|center|tower|plaza|estate|gardens?|court|block|factory|villa|apartments?)\b/i;
+/** flat 段拆分：室號部分 + 餘下（大廈名）— 處理 "Room 405 Tung Ning Building" 類 */
+const ADDR_FLAT_SPLIT_RE = /^((?:flat|room|rm|unit|shop|suite|ste|workshop)\s*\S+(?:\s+\d+\/?f)?)(.*)$/i;
 
 const fmtAmount = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtInt = (n: number) => n.toLocaleString("en-US");
@@ -169,19 +175,60 @@ const parseAddress = (addr: string) => {
   if (!addr) return { flat: '', building: '', street: '', district: '', country: '' };
   let parts = addr.split(',').map(s => s.trim()).filter(s => s && !PURE_NUMBER_RE.test(s));
   if (parts.length === 0) return { flat: '', building: '', street: '', district: '', country: '' };
-  if (parts.length === 1) return { flat: '', building: '', street: parts[0], district: '', country: '' };
   let country = '';
   if (ADDR_COUNTRY_RE.test(parts[parts.length - 1])) country = parts.pop()!;
   let district = '';
-  if (parts.length > 1 && (ADDR_DISTRICT_HINTS.test(parts[parts.length - 1]) || parts.length >= 3)) {
+  // 末段像純區名才進「區」行；像街道/門牌（"88 Des Voeux Road Central"）或大廈名（"Central Tower"）不吞（用戶「移動一下」需求）
+  if (parts.length > 1 && ADDR_DISTRICT_HINTS.test(parts[parts.length - 1])
+      && !ADDR_STREET_RE.test(parts[parts.length - 1]) && !BUILDING_WORD_RE.test(parts[parts.length - 1])) {
     district = parts.pop()!;
   }
   const flatParts: string[] = [];
-  while (parts.length > 1 && ADDR_FLAT_RE.test(parts[0])) flatParts.push(parts.shift()!);
+  while (parts.length > 0 && ADDR_FLAT_RE.test(parts[0])) flatParts.push(parts.shift()!);
+  // 「Room 405 Tung Ning Building」類：flat 段內嵌大廈名 → 拆開（室行只留室號，大廈名進大廈行）
+  let building = '';
+  for (let i = flatParts.length - 1; i >= 0; i--) {
+    const m = flatParts[i].match(ADDR_FLAT_SPLIT_RE);
+    if (m && BUILDING_WORD_RE.test(m[2])) {
+      building = m[2].replace(/^[,\s]+/, '').trim();
+      flatParts[i] = m[1].trim();
+      if (!flatParts[i]) flatParts.splice(i, 1);
+      break;
+    }
+  }
   const flat = flatParts.join(', ');
-  const building = parts.shift() || '';
-  const street = parts.join(', ');
+  let street = '';
+  if (parts.length === 0) {
+    street = '';
+  } else if (parts.length === 1 && !building && !BUILDING_WORD_RE.test(parts[0])
+      && (ADDR_DISTRICT_HINTS.test(parts[0]) || ADDR_STREET_RE.test(parts[0]))) {
+    // 單段且像區名或街道（如 "Kwai Chung" / "88 Des Voeux Road Central"）→ 街道行，別吞進大廈行
+    street = parts[0];
+  } else {
+    if (!building) {
+      // 「Tower 1, Harbour Centre」類：首段是 tower/block 等且次段也是大廈名 → 合併進大廈行
+      if (parts.length >= 2 && BUILDING_WORD_RE.test(parts[0]) && BUILDING_WORD_RE.test(parts[1])
+          && !ADDR_STREET_RE.test(parts[1]) && !ADDR_DISTRICT_HINTS.test(parts[1])) {
+        building = parts.shift() + ', ' + parts.shift();
+      } else {
+        building = parts.shift() || '';
+      }
+    }
+    street = parts.join(', ');
+  }
   return { flat, building, street, district, country };
+};
+
+/** 董事通訊地址 5 行：優先董事自己的地址，缺項回退註冊辦事處（HK 慣例） */
+const directorAddrRows = (dAddr: { flat: string; building: string; street: string; district: string; country: string }, office: any) => {
+  const hasOwn = !!(dAddr.flat || dAddr.building || dAddr.street || dAddr.district || dAddr.country);
+  return {
+    flat: dAddr.flat || office.flat || '',
+    building: dAddr.building || office.building || '',
+    street: dAddr.street || office.street || '',
+    district: dAddr.district || office.district || '',
+    country: dAddr.country || (hasOwn ? 'Hong Kong' : (office.region || office.country || '')),
+  };
 };
 
 const parseHkidPartial = (idNumber: string): string => {
@@ -464,6 +511,9 @@ export async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Ar
 
   const templateBytes = new Uint8Array(await templateObj.arrayBuffer());
   const pdfDoc = await PDFDocument.load(templateBytes);
+  // Capture original template pages BEFORE any dynamic insertion — page-removal
+  // indices would drift once dynamic pages are inserted mid-document.
+  const originalTemplatePages = pdfDoc.getPages();
 
   // 2) Embed Helvetica for BR stamp
   const helv = await pdfDoc.embedFont(StandardFonts.Helvetica);
@@ -687,11 +737,12 @@ export async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Ar
     setF("fill_3_P.5", d.nameChinese || "");
     setF("fill_4_P.5", surname);
     setF("fill_5_P.5", otherNames);
-    setF("fill_10_P.5", office.flat || "");
-    setF("fill_11_P.5", office.building || "");
-    setF("fill_12_P.5", office.street || "");
-    setF("fill_13_P.5", office.district || "");
-    setF("fill_14_P.5", office.region || (office as any).country || "");
+    const dr = directorAddrRows(parseAddress(d.address || ''), office);
+    setF("fill_10_P.5", dr.flat);
+    setF("fill_11_P.5", dr.building);
+    setF("fill_12_P.5", dr.street);
+    setF("fill_13_P.5", dr.district);
+    setF("fill_14_P.5", dr.country);
     setF("fill_15_P.5", d.email || "");
     const hkid = parseHkidPartial(d.idNumber || '');
     if (hkid) setF("fill_16_P.5", hkid);
@@ -768,6 +819,8 @@ export async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Ar
     } catch { /* skip */ }
   }
 
+  let hasDynamicPages = false;
+
   // ═══ Pre-built pages: P.9 Schedule 1 (shareholders #1+#2) ═══
   if (validMembers.length > 0 && !isListedCo) {
     setF("fill_1_P.9", day);
@@ -812,48 +865,68 @@ export async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Ar
     setF("fill_30_P.9", String(sched1Pages));
   }
 
-  // ═══ Pre-built: P.10 (shareholders #3+#4 or Schedule 2) ═══
+  // ═══ 附表一第2+頁：成員3+（非上市）═══
+  // 官方表格規定「如超過兩名成員，可另加附表一」—— 必須用附表一(idx 8)副本，
+  // 不能用附表二(idx 9)：其標題「上市公司適用」+ 百分比欄 + 室/大廈窄框均不適用非上市公司。
+  // 插入位置：緊跟附表一第1頁（模板 idx 8）之後。
   if (validMembers.length > 2 && !isListedCo) {
-    setF("fill_1_P.10", day);
-    setF("fill_2_P.10", month);
-    setF("fill_3_P.10", year);
-    setF("fill_4_P.10", br8);
-    if (shareInfos.length > 0) {
-      setF("fill_5_P.10", allClassNames);
-      setF("fill_6_P.10", fmtInt(totalAllShares));
-    }
-    const slotsP10 = [
-      { name: 7, surname: 8, other: 9, shares: 16, flat: 11, building: 12, street: 13, district: 14, country: 15 },
-      { name: 19, surname: 20, other: 21, shares: 28, flat: 23, building: 24, street: 25, district: 26, country: 27 },
-    ];
-    for (let idx = 0; idx < Math.min(2, validMembers.length - 2); idx++) {
-      const sh = validMembers[idx + 2];
-      const F = slotsP10[idx];
-      const isCorp = sh.identity === "corporate";
-      const fullName = sh.nameEnglish || sh.name || "";
-      const { surname, otherNames } = parseEnglishName(fullName);
-      const addr = parseAddress(sh.address || "");
-      const safe = (v: string) => (v && PURE_NUMBER_RE.test(v) ? "" : v);
-      const country = safe(addr.country) || "Hong Kong";
+    let schedInsertAfter = 8;  // 附表一第1頁（模板 idx 8）的索引
+    for (let si = 2; si < validMembers.length; si += 2) {
+      const suffix = `dynS1_${si}`;
+      const sh1 = validMembers[si];
+      const sh2 = validMembers[si + 1];
 
-      setF(`fill_${F.name}_P.10`, sh.nameChinese || "");
-      if (isCorp) {
-        setF(`fill_${F.surname}_P.10`, fullName);
-      } else {
-        setF(`fill_${F.surname}_P.10`, surname);
-        setF(`fill_${F.other}_P.10`, otherNames);
+      const values: Record<string, string> = {};
+      const setV = (k: string, v: string) => { values[k] = v || ''; };
+      setV("fill_1_P.9", day);
+      setV("fill_2_P.9", month);
+      setV("fill_3_P.9", year);
+      setV("fill_4_P.9", br8);
+      if (shareInfos.length > 0) {
+        setV("fill_5_P.9", allClassNames);
+        setV("fill_6_P.9", fmtInt(totalAllShares));
       }
-      const sharesNum = Number(sh.shares) || 0;
-      setF(`fill_${F.shares}_P.10`, sharesNum > 0 ? fmtInt(sharesNum) : "0");
-      setF(`fill_${F.flat}_P.10`, safe(addr.flat));
-      setF(`fill_${F.building}_P.10`, safe(addr.building));
-      setF(`fill_${F.street}_P.10`, safe(addr.street));
-      setF(`fill_${F.district}_P.10`, safe(addr.district));
-      setF(`fill_${F.country}_P.10`, country);
+
+      const slots = [
+        { name: 7, surname: 8, other: 9, shares: 16, flat: 11, building: 12, street: 13, district: 14, country: 15 },
+        { name: 18, surname: 19, other: 20, shares: 27, flat: 22, building: 23, street: 24, district: 25, country: 26 },
+      ];
+
+      [sh1, sh2].forEach((sh, idx) => {
+        if (!sh) return;
+        const F = slots[idx];
+        const isCorp = sh.identity === "corporate";
+        const fullName = sh.nameEnglish || sh.name || "";
+        const { surname, otherNames } = parseEnglishName(fullName);
+        const addr = parseAddress(sh.address || "");
+        const safe = (v: string) => (v && PURE_NUMBER_RE.test(v) ? "" : v);
+        const country = safe(addr.country) || "Hong Kong";
+
+        setV(`fill_${F.name}_P.9`, sh.nameChinese || "");
+        if (isCorp) {
+          setV(`fill_${F.surname}_P.9`, fullName);
+        } else {
+          setV(`fill_${F.surname}_P.9`, surname);
+          setV(`fill_${F.other}_P.9`, otherNames);
+        }
+        const sharesNum = Number(sh.shares) || 0;
+        setV(`fill_${F.shares}_P.9`, sharesNum > 0 ? fmtInt(sharesNum) : "0");
+        setV(`fill_${F.flat}_P.9`, safe(addr.flat));
+        setV(`fill_${F.building}_P.9`, safe(addr.building));
+        setV(`fill_${F.street}_P.9`, safe(addr.street));
+        setV(`fill_${F.district}_P.9`, safe(addr.district));
+        setV(`fill_${F.country}_P.9`, country);
+      });
+
+      setV("fill_29_P.9", String(Math.floor(si / 2) + 1));
+      setV("fill_30_P.9", String(sched1Pages));
+
+      const slot: ContinuationSlot = { fieldNames: Object.keys(values), values };
+      schedInsertAfter = await addDynamicContinuationSheet(pdfDoc, templateBytes, 8, schedInsertAfter, slot, suffix);
+      hasDynamicPages = true;
     }
-    setF("fill_31_P.10", "2");
-    setF("fill_32_P.10", String(sched1Pages));
   } else if (isListedCo) {
+    // ═══ Pre-built: P.10 附表二 (上市公司: 類別/總數 header) ═══
     setF("fill_1_P.10", day);
     setF("fill_2_P.10", month);
     setF("fill_3_P.10", year);
@@ -862,6 +935,8 @@ export async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Ar
       setF("fill_5_P.10", allClassNames);
       setF("fill_6_P.10", fmtInt(totalAllShares));
     }
+    setF("fill_31_P.10", "1");
+    setF("fill_32_P.10", "1");
   }
 
   // ═══ Pre-built: P.11 續頁A (nat sec #2) ═══
@@ -920,11 +995,12 @@ export async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Ar
     setF("fill_6_P.13", d.nameChinese || "");
     setF("fill_7_P.13", surname);
     setF("fill_8_P.13", otherNames);
-    setF("fill_13_P.13", office.flat || "");
-    setF("fill_14_P.13", office.building || "");
-    setF("fill_15_P.13", office.street || "");
-    setF("fill_16_P.13", office.district || "");
-    setF("fill_17_P.13", office.region || (office as any).country || "");
+    const dr = directorAddrRows(parseAddress(d.address || ''), office);
+    setF("fill_13_P.13", dr.flat);
+    setF("fill_14_P.13", dr.building);
+    setF("fill_15_P.13", dr.street);
+    setF("fill_16_P.13", dr.district);
+    setF("fill_17_P.13", dr.country);
     setF("fill_18_P.13", d.email || "");
     const hkid = parseHkidPartial(d.idNumber || '');
     if (hkid) setF("fill_19_P.13", hkid);
@@ -978,8 +1054,6 @@ export async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Ar
 
   // Template page indices (0-based):
   // 10=P.11(Sheet A), 11=P.12(Sheet B), 12=P.13(Sheet C), 13=P.14(Sheet D), 8=P.9(Sched1)
-
-  let hasDynamicPages = false;
 
   // ── Sheet A: Extra nat secs (3rd+) ──
   // Pre-built: 2 (P.3 + P.11). Extra beyond 2 need dynamic copies of P.11 (index 10).
@@ -1073,11 +1147,12 @@ export async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Ar
       setV("fill_6_P.13", d.nameChinese || "");
       setV("fill_7_P.13", surname);
       setV("fill_8_P.13", otherNames);
-      setV("fill_13_P.13", office.flat || "");
-      setV("fill_14_P.13", office.building || "");
-      setV("fill_15_P.13", office.street || "");
-      setV("fill_16_P.13", office.district || "");
-      setV("fill_17_P.13", office.region || (office as any).country || "");
+      const dr = directorAddrRows(parseAddress(d.address || ''), office);
+      setV("fill_13_P.13", dr.flat);
+      setV("fill_14_P.13", dr.building);
+      setV("fill_15_P.13", dr.street);
+      setV("fill_16_P.13", dr.district);
+      setV("fill_17_P.13", dr.country);
       setV("fill_18_P.13", d.email || "");
       setV("fill_19_P.13", parseHkidPartial(d.idNumber || ''));
       setV("fill_20_P.13", (d as any).passportCountry || d.nationality || '');
@@ -1147,66 +1222,7 @@ export async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Ar
     }
   }
 
-  // ── Schedule 1: Extra shareholders (5th+) ──
-  // Pre-built: 4 (2 on P.9 + 2 on P.10). Extra beyond 4 need dynamic copies of P.9 (index 8).
-  // Schedule 1 goes BEFORE Sheet continuations, so we process it after all Sheets.
-  // Insert at end of document — all dynamic continuation sheets go after pre-built pages.
-  if (validMembers.length > 4 && !isListedCo) {
-    let insertAfter = pdfDoc.getPageCount() - 1;
-    for (let si = 4; si < validMembers.length; si += 2) {
-      const suffix = `dynS1_${si}`;
-      const sh1 = validMembers[si];
-      const sh2 = validMembers[si + 1];
-
-      const values: Record<string, string> = {};
-      const setV = (k: string, v: string) => { values[k] = v || ''; };
-      setV("fill_1_P.9", day);
-      setV("fill_2_P.9", month);
-      setV("fill_3_P.9", year);
-      setV("fill_4_P.9", br8);
-      if (shareInfos.length > 0) {
-        setV("fill_5_P.9", allClassNames);
-        setV("fill_6_P.9", fmtInt(totalAllShares));
-      }
-
-      const slots = [
-        { name: 7, surname: 8, other: 9, shares: 16, flat: 11, building: 12, street: 13, district: 14, country: 15 },
-        { name: 18, surname: 19, other: 20, shares: 27, flat: 22, building: 23, street: 24, district: 25, country: 26 },
-      ];
-
-      [sh1, sh2].forEach((sh, idx) => {
-        if (!sh) return;
-        const F = slots[idx];
-        const isCorp = sh.identity === "corporate";
-        const fullName = sh.nameEnglish || sh.name || "";
-        const { surname, otherNames } = parseEnglishName(fullName);
-        const addr = parseAddress(sh.address || "");
-        const safe = (v: string) => (v && PURE_NUMBER_RE.test(v) ? "" : v);
-        const country = safe(addr.country) || "Hong Kong";
-
-        setV(`fill_${F.name}_P.9`, sh.nameChinese || "");
-        if (isCorp) {
-          setV(`fill_${F.surname}_P.9`, fullName);
-        } else {
-          setV(`fill_${F.surname}_P.9`, surname);
-          setV(`fill_${F.other}_P.9`, otherNames);
-        }
-        setV(`fill_${F.shares}_P.9`, String(sh.shares || 0));
-        setV(`fill_${F.flat}_P.9`, safe(addr.flat));
-        setV(`fill_${F.building}_P.9`, safe(addr.building));
-        setV(`fill_${F.street}_P.9`, safe(addr.street));
-        setV(`fill_${F.district}_P.9`, safe(addr.district));
-        setV(`fill_${F.country}_P.9`, country);
-      });
-
-      setV("fill_29_P.9", String(Math.floor(si / 2) + 1));
-      setV("fill_30_P.9", String(sched1Pages));
-
-      const slot: ContinuationSlot = { fieldNames: Object.keys(values), values };
-      insertAfter = await addDynamicContinuationSheet(pdfDoc, templateBytes, 8, insertAfter, slot, suffix);
-      hasDynamicPages = true;
-    }
-  }
+  // （附表一第2+頁已在上方 P.9/P.10 段內處理：非上市成員3+ 用附表一副本緊跟第1頁插入）
 
   // ═══ BR 蓋印在所有頁面 ═══
   if (br8) {
@@ -1219,37 +1235,29 @@ export async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Ar
   // Template structure (27 pages total):
   //   Pages 0-14: 15 content pages with AcroForm widgets (P.1-P.15)
   //   Pages 15-26: 12 blank spare pages (copy sources for dynamic continuation)
-  // Dynamic continuation pages are inserted at end (index 27+).
+  // Dynamic continuation pages are inserted mid-document (附表一第2+頁緊跟 P.9) or at end.
   //
   // Strategy: keep only needed content pages + dynamic pages, remove the rest.
+  // Removal resolves indices by PAGE IDENTITY (originalTemplatePages), because
+  // dynamic insertions shift the original template indices.
 
   // Pre-built content pages to KEEP (indices 0-14):
   const keepPrebuiltPages = new Set<number>();
   for (let i = 0; i <= 7; i++) keepPrebuiltPages.add(i);  // P.1-P.8 always
-  if (validMembers.length > 0 && !isListedCo) keepPrebuiltPages.add(8);  // P.9
-  if ((validMembers.length > 2 && !isListedCo) || isListedCo) keepPrebuiltPages.add(9);  // P.10
+  if (validMembers.length > 0 && !isListedCo) keepPrebuiltPages.add(8);  // P.9 附表一第1頁
+  if (isListedCo) keepPrebuiltPages.add(9);  // P.10 附表二（僅上市公司；非上市第2+頁用附表一副本）
   if (natSecs.length > 1) keepPrebuiltPages.add(10);  // P.11
   if (corpSecs.length > 1) keepPrebuiltPages.add(11);  // P.12
   if (natDirs.length > 1) keepPrebuiltPages.add(12);  // P.13
   if (corpDirs.length > 1) keepPrebuiltPages.add(13);  // P.14
   if (validRecords.length > 0) keepPrebuiltPages.add(14);  // P.15
 
-  // Collect pages to remove
+  // Collect pages to remove — resolve by page identity (indices drift after insertions)
   const pagesToRemove: number[] = [];
-
-  // Unneeded pre-built content pages (indices 0-14)
-  for (let i = 14; i >= 0; i--) {
-    if (!keepPrebuiltPages.has(i)) {
-      pagesToRemove.push(i);
-    }
-  }
-
-  // Blank spare pages (indices 15-26). These are copy sources for
-  // addDynamicContinuationSheet and are never needed in the final output.
-  const spareStart = 15;  // first blank spare page index
-  const spareCount = 12;  // 27-page template has 12 spare pages
-  for (let i = spareStart + spareCount - 1; i >= spareStart; i--) {
-    pagesToRemove.push(i);
+  for (let i = 0; i < originalTemplatePages.length; i++) {
+    if (keepPrebuiltPages.has(i)) continue;
+    const cur = pdfDoc.getPageIndex(originalTemplatePages[i]);
+    if (cur >= 0) pagesToRemove.push(cur);
   }
 
   // Sort descending so higher indices are removed first (no index drift)

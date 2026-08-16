@@ -53,7 +53,8 @@ function getFormOptions(events: QuickFormEvent[]): { key: string; config: typeof
     // ND2A 一份可含委任＋停任（模板容量 2 停任 + 2 自然人 + 2 法人，超出自動分多份）
     opts.push({ key: 'nd2a_appoint', config: FORM_CONFIGS.nd2a_appoint });
     if (personnel.some(e => e.type === 'cease')) {
-      // ND4 是辭任人本人遞交的通知書 — 每位辭任人各生成一份
+      // ND4 是辭任人本人遞交的通知書 — 按需生成（每位辭任人一份），
+      // 默認「一起生成」只出 1 份 ND2A（辭任已併入其停任區塊）
       opts.push({ key: 'nd4_cease', config: FORM_CONFIGS.nd4_cease });
     }
   }
@@ -545,8 +546,6 @@ export function QuickFormDialog({ open, onOpenChange, company, events }: QuickFo
 
   const personnelEvents = events.filter(e => e.type === 'appoint' || e.type === 'cease');
   const resigners = personnelEvents.filter(e => e.type === 'cease');
-  // ND2A 與 ND4 同時可生成（同日既有委任又有辭任）
-  const hasBoth = formOptions.some(o => o.key === 'nd2a_appoint') && formOptions.some(o => o.key === 'nd4_cease');
 
   const handleGenerate = async (formKey: string) => {
     setLoading(formKey);
@@ -592,19 +591,16 @@ export function QuickFormDialog({ open, onOpenChange, company, events }: QuickFo
         return done;
       };
 
-      // ── 一起生成：ND2A 全份 → 間隔 2.5s → ND4 逐份 ──
+      // ── 一起生成：全部委任＋辭任 → 單一份 ND2A（官方表格一份可含多人委任＋停任，
+      //    後端動態續頁；不再自動生成每人一份 ND4 — 用戶需要辭任人本人簽署的
+      //    ND4 時可點下方 ND4 按鈕單獨生成）──
       if (formKey === 'both') {
-        const n2 = await generateNd2a();
-        let n4 = 0;
-        if (resigners.length > 0) {
-          await new Promise(r => setTimeout(r, 2500));
-          n4 = await generateNd4();
-        }
+        await generateNd2a();
+        const nAppoint = personnelEvents.filter(e => e.type === 'appoint').length;
+        const nCease = personnelEvents.filter(e => e.type === 'cease').length;
         toast({
           title: '✅ PDF 已生成',
-          description: resigners.length > 0
-            ? `ND2A ${n2} 份 ＋ ND4 ${n4} 份（同日 ${personnelEvents.length} 位人士）下載完成`
-            : `ND2A 共 ${n2} 份（同日 ${personnelEvents.length} 位人士）下載完成`,
+          description: `ND2A 1 份（同日 ${nAppoint} 人委任 ＋ ${nCease} 人辭任，全部併入同一表格）下載完成`,
         });
         onOpenChange(false);
         return;
@@ -707,8 +703,8 @@ export function QuickFormDialog({ open, onOpenChange, company, events }: QuickFo
 
           <div className="space-y-2 pt-2">
             <p className="text-sm font-medium">選擇要生成的表格：</p>
-            {/* 一起生成：ND2A ＋ ND4（同日委任＋辭任同時存在時） */}
-            {hasBoth && (
+            {/* 一起生成：同日多位人士（委任＋辭任）→ 單一份 ND2A（一份表可含多人委任＋停任） */}
+            {personnelEvents.length > 1 && (
               <Button
                 variant="default"
                 className="w-full"
@@ -720,32 +716,21 @@ export function QuickFormDialog({ open, onOpenChange, company, events }: QuickFo
                 ) : (
                   <span className="mr-2">📦</span>
                 )}
-                一起生成：ND2A ＋ ND4（同日 {personnelEvents.length} 人）
+                一起生成：ND2A 1 份（含同日 {personnelEvents.length} 人：{personnelEvents.filter(e => e.type === 'appoint').length} 委任 ＋ {personnelEvents.filter(e => e.type === 'cease').length} 辭任）
               </Button>
             )}
             {formOptions.map(opt => {
-              const isPersonnelForm = opt.key === 'nd2a_appoint' || opt.key === 'nd4_cease';
-              const otherLabel = opt.key === 'nd2a_appoint' ? 'ND4' : 'ND2A';
-              const label = opt.key === 'nd2a_appoint' && personnelEvents.length > 1
+              const isNd2a = opt.key === 'nd2a_appoint';
+              const isNd4 = opt.key === 'nd4_cease';
+              // 主按鈕已覆蓋多人的 ND2A 場景，outline 版只在單人時顯示
+              if (isNd2a && personnelEvents.length > 1) return null;
+              const label = isNd2a
                 ? `${opt.config.label}（同日 ${personnelEvents.length} 人）`
-                : opt.key === 'nd4_cease' && resigners.length > 1
-                  ? `${opt.config.label}（${resigners.length} 份）`
+                : isNd4 && resigners.length > 1
+                  ? `${opt.config.label}（${resigners.length} 份，每位辭任人一份）`
                   : opt.config.label;
               return (
                 <div key={opt.key} className="space-y-1">
-                  {/* 連結對方：一併生成 */}
-                  {isPersonnelForm && hasBoth && (
-                    <div className="flex justify-end">
-                      <button
-                        type="button"
-                        className="text-xs text-primary hover:underline disabled:opacity-50 disabled:pointer-events-none"
-                        disabled={loading !== null}
-                        onClick={() => handleGenerate('both')}
-                      >
-                        一併生成 {otherLabel} →
-                      </button>
-                    </div>
-                  )}
                   <Button
                     variant="outline"
                     className="w-full justify-between"
@@ -762,10 +747,16 @@ export function QuickFormDialog({ open, onOpenChange, company, events }: QuickFo
                       <Download className="h-4 w-4" />
                     )}
                   </Button>
-                  {/* 僅 ND2A（無辭任記錄）提示 */}
-                  {opt.key === 'nd2a_appoint' && !hasBoth && (
+                  {/* ND2A 含辭任提示（辭任人停任區塊已併入 ND2A） */}
+                  {isNd2a && resigners.length > 0 && (
                     <p className="text-xs text-muted-foreground">
-                      💡 同日如有辭任記錄，ND4 將自動加入，可一併生成
+                      💡 辭任人士已一併列入 ND2A 停任區塊（一份表可含多人委任＋停任）
+                    </p>
+                  )}
+                  {/* ND4 提示：本人簽署遞交，按需逐人生成 */}
+                  {isNd4 && (
+                    <p className="text-xs text-muted-foreground">
+                      💡 ND4 為辭任人本人遞交的通知書，每位辭任人一份，按需生成
                     </p>
                   )}
                 </div>

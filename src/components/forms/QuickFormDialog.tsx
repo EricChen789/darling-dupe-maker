@@ -357,7 +357,8 @@ function buildFormPayload(
         shares: raw?.shares || 0,
         price_per_share: raw?.price_per_share || raw?.pricePerShare || '',
         total_consideration: raw?.total_consideration || raw?.totalConsideration || '',
-        transaction_date: raw?.transaction_date || raw?.transactionDate || today,
+        // 日期留空：轉讓文件日期稍後再填（不自動填今天）
+        transaction_date: raw?.transaction_date || raw?.transactionDate || '',
         currency: raw?.currency || 'HKD',
       };
     }
@@ -374,7 +375,8 @@ function buildFormPayload(
         to_name: toName,
         shares: raw?.shares || 0,
         price_per_share: raw?.price_per_share || raw?.pricePerShare || '',
-        transaction_date: raw?.transaction_date || raw?.transactionDate || today,
+        // 日期留空：轉讓文件日期稍後再填（不自動填今天）
+        transaction_date: raw?.transaction_date || raw?.transactionDate || '',
       };
     }
     case 'nsc1': {
@@ -499,7 +501,8 @@ function buildFormPayload(
       return nd2bPayload;
     }
     case 'share_certificate': {
-      const txDate = raw?.transaction_date || raw?.transactionDate || today;
+      // 日期留空：轉讓文件日期稍後再填（不自動填今天）
+      const txDate = raw?.transaction_date || raw?.transactionDate || '';
       return {
         ...base,
         companyId: company.id,

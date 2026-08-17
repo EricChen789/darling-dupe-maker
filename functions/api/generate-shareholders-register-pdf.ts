@@ -514,9 +514,10 @@ export async function onRequest(context: { request: Request; env: Env }) {
         if (!txShares) continue;
         const cur = rget(tx, 'currency') || currency;
         const totalConsid = Number(rget(tx, 'total_consideration') || 0);
-        const priceEach = Number(rget(tx, 'price_per_share') || 0);
-        const money = totalConsid > 0 ? fmtMoney(cur, totalConsid)
-          : priceEach > 0 ? fmtMoney(cur, txShares * priceEach) : '';
+        const priceEach = Number(String(rget(tx, 'price_per_share') || '').replace(/,/g, ''));
+        // Consideration = 股數 × 每股股價（自動計算；股價未填才回退存庫總代價）
+        const money = priceEach > 0 ? fmtMoney(cur, txShares * priceEach)
+          : totalConsid > 0 ? fmtMoney(cur, totalConsid) : '';
         const date = fmtDate(rget(tx, 'transaction_date'));
         const deed = (rget(tx, 'instrument_number') || '').slice(0, 20);
 

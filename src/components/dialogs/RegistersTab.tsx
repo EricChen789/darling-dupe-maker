@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -18,6 +18,7 @@ import { downloadAndOpenBase64Pdf, downloadBase64File, DOCX_MIME, RTF_MIME, XLSX
 import { Company, Person, Shareholder } from '@/types';
 import {
   useShareTransactions, useUpsertShareTransaction, useDeleteShareTransaction,
+  computeTransactionSeq,
   type ShareTransaction,
 } from '@/hooks/useShareTransactions';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -145,6 +146,19 @@ export function RegistersTab({ company }: { company: Company }) {
   const delTx = useDeleteShareTransaction();
   const [editingTx, setEditingTx] = useState<EditTx | null>(null);
 
+  // 交易編號：按發生時間順序 1、2、3…（同日按建立時間，無日期排最後）
+  const txSeqMap = useMemo(() => {
+    const sorted = [...txs].sort((a, b) => {
+      const da = a.transaction_date ? a.transaction_date : '￿';
+      const db = b.transaction_date ? b.transaction_date : '￿';
+      if (da !== db) return da < db ? -1 : 1;
+      return String(a.created_at || '').localeCompare(String(b.created_at || ''));
+    });
+    const m = new Map<string, number>();
+    sorted.forEach((t, i) => m.set(t.id, i + 1));
+    return m;
+  }, [txs]);
+
   // ── RTF 交易選擇對話框 ──
   const [rtfPickerOpen, setRtfPickerOpen] = useState(false);
   const [pendingDocType, setPendingDocType] = useState<string>('');
@@ -222,8 +236,9 @@ export function RegistersTab({ company }: { company: Company }) {
   // ── Share tx save ──
   const handleSaveTx = () => {
     if (!editingTx) return;
-    if (!editingTx.transaction_date) {
-      toast({ title: '請填寫交易日期', variant: 'destructive' }); return;
+    // 日期留空：文件日期稍後再填（不強制）；編號留空按發生順序自動編 1、2、3…
+    if (!editingTx.instrument_number) {
+      editingTx.instrument_number = String(computeTransactionSeq(txs, editingTx));
     }
     upsertTx.mutate(editingTx, {
       onSuccess: () => { toast({ title: '已儲存' }); setEditingTx(null); },
@@ -349,6 +364,7 @@ export function RegistersTab({ company }: { company: Company }) {
                   <div key={t.id} className="rounded-md border border-border bg-muted/30 p-3 text-sm group">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="text-xs font-mono">No. {txSeqMap.get(t.id)}</Badge>
                         <span className="font-medium">{t.transaction_date}</span>
                         <Badge variant="outline" className="text-xs">{t.transaction_type}</Badge>
                         <span className="text-xs text-muted-foreground">

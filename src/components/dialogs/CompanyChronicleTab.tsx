@@ -10,6 +10,7 @@ import { Separator } from '@/components/ui/separator';
 import { toast } from '@/hooks/use-toast';
 import {
   useShareTransactions, useUpsertShareTransaction, useDeleteShareTransaction,
+  computeTransactionSeq,
   type ShareTransaction,
 } from '@/hooks/useShareTransactions';
 import { useCompanyVersions, useCreateVersionSnapshot, versionFieldLabel, type CompanyVersion } from '@/hooks/useCompanyVersions';
@@ -327,7 +328,10 @@ export function CompanyChronicleTab({ company }: { company: Company }) {
   // ── 操作 ──
   const saveTx = () => {
     if (!editingTx) return;
-    if (!editingTx.transaction_date) { toast({ title: '請填寫交易日期', variant: 'destructive' }); return; }
+    // 日期留空：文件日期稍後再填（不強制）；編號留空按發生順序自動編 1、2、3…
+    if (!editingTx.instrument_number) {
+      editingTx.instrument_number = String(computeTransactionSeq(txs, editingTx));
+    }
     upsertTx.mutate(editingTx, {
       onSuccess: () => {
         toast({ title: '交易記錄已儲存' });

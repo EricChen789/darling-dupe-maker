@@ -12,6 +12,7 @@ import { toast } from '@/hooks/use-toast';
 import { useUpdateShareholder } from '@/hooks/useCompanies';
 import {
   useShareTransactions, useUpsertShareTransaction, useDeleteShareTransaction,
+  computeTransactionSeq,
   type ShareTransaction,
 } from '@/hooks/useShareTransactions';
 import { Coins, ArrowRight, Plus, Pencil, Trash2, Save, X, Briefcase, FileText, Download } from 'lucide-react';
@@ -62,6 +63,19 @@ export const ShareCapitalTab = ({ company }: { company: Company }) => {
     };
   }, [shareholders]);
 
+  // 交易編號：按發生時間順序 1、2、3…（同日按建立時間，無日期排最後）
+  const txSeqMap = useMemo(() => {
+    const sorted = [...txs].sort((a, b) => {
+      const da = a.transaction_date ? a.transaction_date : '￿';
+      const db = b.transaction_date ? b.transaction_date : '￿';
+      if (da !== db) return da < db ? -1 : 1;
+      return String(a.created_at || '').localeCompare(String(b.created_at || ''));
+    });
+    const m = new Map<string, number>();
+    sorted.forEach((t, i) => m.set(t.id, i + 1));
+    return m;
+  }, [txs]);
+
 
   const saveSh = (shId: string, data: ShFormType) => {
     updateShareholder.mutate(
@@ -85,7 +99,12 @@ export const ShareCapitalTab = ({ company }: { company: Company }) => {
 
   const saveTx = () => {
     if (!editingTx) return;
-    if (!editingTx.transaction_date) { toast({ title: '請填寫交易日期', variant: 'destructive' }); return; }
+    // 日期留空：文件日期稍後再填（不強制）
+    // 編號：文件編號留空時按發生順序自動編 1、2、3…
+    if (!editingTx.instrument_number) {
+      const seq = computeTransactionSeq(txs, editingTx);
+      editingTx.instrument_number = String(seq);
+    }
     upsertTx.mutate(editingTx, {
       onSuccess: () => { toast({ title: '交易記錄已儲存' }); setEditingTx(null); },
       onError: (e: any) => toast({ title: '儲存失敗', description: e.message, variant: 'destructive' }),
@@ -262,6 +281,7 @@ export const ShareCapitalTab = ({ company }: { company: Company }) => {
               <div key={tx.id} className="rounded-md border border-border bg-muted/30 p-3 text-sm">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="text-xs font-mono">No. {txSeqMap.get(tx.id)}</Badge>
                     <Badge variant="secondary" className="text-xs">{TX_TYPE_LABEL[tx.transaction_type] || tx.transaction_type}</Badge>
                     <span className="text-xs text-muted-foreground">{tx.transaction_date}</span>
                   </div>
@@ -324,7 +344,7 @@ export const ShareCapitalTab = ({ company }: { company: Company }) => {
                 {txs.filter(t => t.instrument_number).map(tx => (
                   <div key={tx.id} className="rounded-md border border-border bg-muted/20 p-2 text-sm flex items-center justify-between">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <Badge variant="outline" className="text-xs font-mono">{tx.instrument_number}</Badge>
+                      <Badge variant="outline" className="text-xs font-mono">No. {txSeqMap.get(tx.id)}</Badge>
                       <span className="text-xs text-muted-foreground">{tx.transaction_date}</span>
                       <span className="text-xs">{tx.to_name || '—'}</span>
                       <Badge variant="default" className="text-xs">{(tx.shares || 0).toLocaleString()} 股</Badge>

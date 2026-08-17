@@ -226,7 +226,6 @@ export async function onRequest(context: { request: Request; env: Env }) {
         const s1 = shs[0], s2 = shs[1];
         const shShares = s1.shares || 0;
         const shPrice = parseFloat(s1.issue_price) || 1.00;
-        const today = new Date().toISOString().slice(0, 10);
         transaction = {
           from_person_id: s1.person_id,
           from_name: s1.name_english,
@@ -236,26 +235,29 @@ export async function onRequest(context: { request: Request; env: Env }) {
           share_type: s1.share_type || "Ordinary",
           price_per_share: s1.issue_price || "1.00",
           total_consideration: shShares * shPrice,
-          transaction_date: today,
+          transaction_date: "",  // 日期留空：文件日期稍後再填（不自動填今天）
         };
       }
     }
 
+    // ── 編號：按發生時間順序 1、2、3…（日期升序、同日按建立時間；無日期排最後）──
+    const seqResult = await env.DB.prepare(
+      "SELECT id FROM share_transactions WHERE company_id = ? ORDER BY CASE WHEN transaction_date = '' OR transaction_date IS NULL THEN 1 ELSE 0 END, transaction_date ASC, created_at ASC"
+    ).bind(companyId).all();
+    const seqIds = ((seqResult.results || []) as any[]).map((r) => r.id);
+    let seqNo = transaction?.id ? seqIds.indexOf(transaction.id) + 1 : 0;
+    if (seqNo <= 0) seqNo = seqIds.length + 1;
+
     // ── Auto-generate certificate number if missing (for share_certificate docType) ──
     if (docType === "share_certificate" && transaction && !transaction.instrument_number) {
-      const br = (company as any).company_number || "00000000";
-      const brSuffix = br.replace(/[^0-9A-Za-z]/g, "").slice(0, 8);
-      const certCount = await env.DB.prepare(
-        "SELECT COUNT(*) as cnt FROM share_transactions WHERE company_id = ? AND instrument_number != ''"
-      ).bind(companyId).first();
-      const seq = String(((certCount as any)?.cnt || 0) + 1).padStart(4, "0");
-      const certNo = `SC-${brSuffix}-${seq}`;
-      transaction.instrument_number = certNo;
-      try {
-        await env.DB.prepare(
-          "UPDATE share_transactions SET instrument_number = ? WHERE id = ?"
-        ).bind(certNo, transaction.id).run();
-      } catch { /* non-critical */ }
+      transaction.instrument_number = String(seqNo);
+      if (transaction.id) {
+        try {
+          await env.DB.prepare(
+            "UPDATE share_transactions SET instrument_number = ? WHERE id = ?"
+          ).bind(String(seqNo), transaction.id).run();
+        } catch { /* non-critical */ }
+      }
     }
 
     // ── Resolve the effective transaction (used for names + dates below) ──
@@ -323,8 +325,13 @@ export async function onRequest(context: { request: Request; env: Env }) {
     const shares = tx.shares || 0;
     vars["{{SHARES}}"] = fmtShares(shares);
     vars["{{PRICE_PER_SHARE}}"] = fmtMoney(tx.price_per_share, tx.currency);
-    vars["{{TOTAL_CONSIDERATION}}"] = fmtMoney(tx.total_consideration, tx.currency);
-    vars["{{CONSIDERATION}}"] = fmtMoney(tx.total_consideration, tx.currency);
+    // Consideration = 股數 × 每股股價（自動計算；股價未填才回退存庫總代價）
+    const priceNum = parseFloat(String(tx.price_per_share ?? "").replace(/,/g, ""));
+    const consideration = !isNaN(priceNum) && priceNum > 0
+      ? (Number(shares) || 0) * priceNum
+      : (parseFloat(String(tx.total_consideration ?? "").replace(/,/g, "")) || 0);
+    vars["{{TOTAL_CONSIDERATION}}"] = consideration > 0 ? fmtMoney(consideration, tx.currency) : "";
+    vars["{{CONSIDERATION}}"] = consideration > 0 ? fmtMoney(consideration, tx.currency) : "";
 
     // Dates (transaction date → signature/dating lines)
     vars["{{TX_DATE}}"] = fmtDateSlash(tx.transaction_date);
@@ -352,8 +359,8 @@ export async function onRequest(context: { request: Request; env: Env }) {
     vars["{{COMPANY_NUMBER}}"] = (company as any).company_number || "";
     vars["{{INCORP_DATE}}"] = fmtDateSlash((company as any).incorporation_date);
 
-    // Certificate number
-    vars["{{CERT_NO}}"] = tx.instrument_number || "";
+    // Certificate number（無手填編號時用發生順序編號 1、2、3…）
+    vars["{{CERT_NO}}"] = tx.instrument_number || String(seqNo);
 
     // Registered office address (4 lines)
     const regAddr = buildCompanyAddress(company);
@@ -389,7 +396,7 @@ export async function onRequest(context: { request: Request; env: Env }) {
       share_certificate: "ShareCertificate",
     };
     const label = docLabel[docType] || "Document";
-    const refNo = tx.instrument_number || tx.id || "auto";
+    const refNo = tx.instrument_number || String(seqNo);
     const filename = `${label}_${coNum}_${refNo}.rtf`;
 
     // ── Return base64-encoded RTF ──

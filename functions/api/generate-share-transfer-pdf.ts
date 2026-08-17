@@ -77,7 +77,6 @@ export async function onRequest(context: { request: Request; env: Env }) {
         const s1 = shs[0], s2 = shs[1];
         const shShares = s1.shares || 0;
         const shPrice = parseFloat(s1.issue_price) || 1.00;
-        const today = new Date().toISOString().slice(0, 10);
         transaction = {
           from_person_id: s1.person_id,
           from_name: s1.name_english,
@@ -87,28 +86,30 @@ export async function onRequest(context: { request: Request; env: Env }) {
           share_type: s1.share_type || 'Ordinary',
           price_per_share: s1.issue_price || '1.00',
           total_consideration: shShares * shPrice,
-          transaction_date: today,
+          transaction_date: "",  // 日期留空：文件日期稍後再填（不自動填今天）
         };
       }
     }
 
+    // ── 編號：按發生時間順序 1、2、3…（日期升序、同日按建立時間；無日期排最後）──
+    const seqResult = await env.DB.prepare(
+      "SELECT id FROM share_transactions WHERE company_id = ? ORDER BY CASE WHEN transaction_date = '' OR transaction_date IS NULL THEN 1 ELSE 0 END, transaction_date ASC, created_at ASC"
+    ).bind(companyId).all();
+    const seqIds = ((seqResult.results || []) as any[]).map((r) => r.id);
+    let seqNo = transaction?.id ? seqIds.indexOf(transaction.id) + 1 : 0;
+    if (seqNo <= 0) seqNo = seqIds.length + 1;
+
     // ── Auto-generate certificate number if missing (for share_certificate docType) ──
     if (docType === "share_certificate" && transaction && !transaction.instrument_number) {
-      const br = (company as any).company_number || '00000000';
-      const brSuffix = br.replace(/[^0-9A-Za-z]/g, '').slice(0, 8);
-      // Count existing certificates for this company to generate sequential number
-      const certCount = await env.DB.prepare(
-        "SELECT COUNT(*) as cnt FROM share_transactions WHERE company_id = ? AND instrument_number != ''"
-      ).bind(companyId).first();
-      const seq = String(((certCount as any)?.cnt || 0) + 1).padStart(4, '0');
-      const certNo = `SC-${brSuffix}-${seq}`;
-      transaction.instrument_number = certNo;
+      transaction.instrument_number = String(seqNo);
       // Persist the certificate number back to the transaction
-      try {
-        await env.DB.prepare(
-          "UPDATE share_transactions SET instrument_number = ? WHERE id = ?"
-        ).bind(certNo, transaction.id).run();
-      } catch { /* non-critical */ }
+      if (transaction.id) {
+        try {
+          await env.DB.prepare(
+            "UPDATE share_transactions SET instrument_number = ? WHERE id = ?"
+          ).bind(String(seqNo), transaction.id).run();
+        } catch { /* non-critical */ }
+      }
     }
 
     // Load CJK font via R2-first shared helper (avoids CDN fetch CPU timeout)
@@ -117,11 +118,11 @@ export async function onRequest(context: { request: Request; env: Env }) {
     const fonts = { cjk: cjkFont, ascii: asciiFont, asciiBold: asciiFont };
 
     if (docType === "share_certificate") {
-      await buildShareCertificate(pdf, fonts, company as any, transaction, shareholders);
+      await buildShareCertificate(pdf, fonts, company as any, transaction, shareholders, seqNo);
     } else if (docType === "bought_sold_note") {
-      await buildBoughtSoldNote(pdf, fonts, company as any, transaction, allTransactions);
+      await buildBoughtSoldNote(pdf, fonts, company as any, transaction, allTransactions, seqNo);
     } else {
-      await buildInstrumentOfTransfer(pdf, fonts, company as any, transaction, allTransactions);
+      await buildInstrumentOfTransfer(pdf, fonts, company as any, transaction, allTransactions, seqNo);
     }
 
     const bytes = await pdf.save();
@@ -141,7 +142,7 @@ export async function onRequest(context: { request: Request; env: Env }) {
 // ── Instrument of Transfer ──
 async function buildInstrumentOfTransfer(
   pdf: PDFDocument, fonts: { cjk: any; ascii: any; asciiBold: any },
-  company: any, transaction: any, allTransactions: any[],
+  company: any, transaction: any, allTransactions: any[], seqNo: number,
 ) {
   const { cjk, ascii } = fonts;
   const page = pdf.addPage([PAGE_W, PAGE_H]);
@@ -172,20 +173,22 @@ async function buildInstrumentOfTransfer(
   y -= 20;
 
   const tx = transaction || (allTransactions.length > 0 ? allTransactions[0] : {});
-  const itxShares = tx.shares || 0;
-  const itxParVal = parseFloat(tx.price_per_share) || 1.00;
-  const itxCons = tx.total_consideration || (itxShares * itxParVal);
+  const itxShares = Number(tx.shares) || 0;
+  const itxParVal = parseFloat(String(tx.price_per_share ?? "").replace(/,/g, "")) || 0;
+  // Consideration = 股數 × 每股股價（自動計算；股價未填才回退存庫總代價）
+  const itxCons = itxParVal > 0 ? itxShares * itxParVal
+    : (parseFloat(String(tx.total_consideration ?? "").replace(/,/g, "")) || 0);
   const sharesFmt = typeof itxShares === 'number' ? itxShares.toLocaleString('en-US') : String(itxShares);
-  const consFmt = typeof itxCons === 'number' ? itxCons.toLocaleString('en-US') : String(itxCons);
+  const consFmt = itxCons.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   drawLine("轉讓人 Transferor:", tx.from_name || "________________");
   drawLine("受讓人 Transferee:", tx.to_name || "________________");
-  drawLine("股份數目 No. of Shares:", tx.shares ? `${sharesFmt}  of  HK$${itxParVal.toFixed(2)}  each` : "________________");
+  drawLine("股份數目 No. of Shares:", tx.shares ? `${sharesFmt}  of  HK$${(itxParVal || 1).toFixed(2)}  each` : "________________");
   drawLine("股份類別 Share Class:", tx.share_type || "Ordinary");
   drawLine("每股代價 Price per Share:", tx.currency ? `${tx.currency} ${tx.price_per_share || ""}` : "________________");
-  drawLine("總代價 Total Consideration:", tx.total_consideration ? `HK$${consFmt}` : (itxCons ? `HK$${consFmt}` : "________________"));
+  drawLine("總代價 Total Consideration:", itxCons ? `HK$${consFmt}` : "________________");
   drawLine("轉讓日期 Transfer Date:", tx.transaction_date || "________________");
-  drawLine("文書編號 Instrument No:", tx.instrument_number || "________________");
+  drawLine("文書編號 Instrument No:", tx.instrument_number || String(seqNo));
 
   y -= 20;
   drawMixed(page, "轉讓人簽署 / Signed by Transferor:", {
@@ -216,7 +219,7 @@ async function buildInstrumentOfTransfer(
 // Free-form layout, tab-stop alignment, 16pt bold title, 1.5pt thick line, TNR 12pt
 async function buildBoughtSoldNote(
   pdf: PDFDocument, fonts: { cjk: any; ascii: any; asciiBold: any },
-  company: any, transaction: any, allTransactions: any[],
+  company: any, transaction: any, allTransactions: any[], seqNo: number,
 ) {
   const { cjk, ascii, asciiBold } = fonts;
   const page = pdf.addPage([PAGE_W, PAGE_H]);
@@ -227,9 +230,12 @@ async function buildBoughtSoldNote(
   const tx = transaction || (allTransactions.length > 0 ? allTransactions[0] : {});
   const fromName = tx.from_name || "";
   const toName = tx.to_name || "";
-  const shares = tx.shares || 0;
+  const shares = Number(tx.shares) || 0;
   const parVal = tx.price_per_share || "1.00";
-  const consideration = tx.total_consideration || (shares * parseFloat(parVal));
+  // Consideration = 股數 × 每股股價（自動計算；股價未填才回退存庫總代價）
+  const parValNum = parseFloat(String(tx.price_per_share ?? "").replace(/,/g, ""));
+  const consideration = !isNaN(parValNum) && parValNum > 0 ? shares * parValNum
+    : (parseFloat(String(tx.total_consideration ?? "").replace(/,/g, "")) || 0);
   const txDate = tx.transaction_date || "";
   const coName = company.name || "";
 
@@ -342,7 +348,7 @@ async function buildBoughtSoldNote(
 // ── Share Certificate ──
 async function buildShareCertificate(
   pdf: PDFDocument, fonts: { cjk: any; ascii: any; asciiBold: any },
-  company: any, transaction: any, shareholders: any[],
+  company: any, transaction: any, shareholders: any[], seqNo: number,
 ) {
   const { cjk, ascii, asciiBold } = fonts;
   const page = pdf.addPage([PAGE_W, PAGE_H]);
@@ -420,7 +426,7 @@ async function buildShareCertificate(
   });
 
   y -= 30;
-  drawMixed(page, `證書編號 Certificate No: ${tx.instrument_number || "______________"}`, {
+  drawMixed(page, `證書編號 Certificate No: ${tx.instrument_number || String(seqNo)}`, {
     x: 50, y, size: 9, cjk, ascii, color: rgb(0.4, 0.4, 0.4),
   });
 

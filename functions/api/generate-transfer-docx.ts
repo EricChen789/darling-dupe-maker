@@ -201,12 +201,8 @@ export async function onRequest(context: { request: Request; env: Env }) {
     // Authorized persons (director + optional secretary)
     const authPersons = dirName;
 
-    // Signature date (today)
-    const today = new Date();
-    const dd = String(today.getDate()).padStart(2, '0');
-    const mm = String(today.getMonth() + 1).padStart(2, '0');
-    const yyyy = today.getFullYear();
-    const sigDate = `${dd}/${mm}/${yyyy}`;
+    // Signature date — 日期留空：轉讓文件日期稍後再填（不再自動填今天）
+    const sigDate = '';
 
     // ── Get template ──
     const template = TRANSFER_TEMPLATE;

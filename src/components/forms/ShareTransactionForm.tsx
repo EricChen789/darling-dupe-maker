@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Save, X, ArrowRight, UserPlus } from 'lucide-react';
 import PersonQuickPick, { type PersonQuickPickData } from '@/components/forms/PersonQuickPick';
-import type { ShareTransaction } from '@/hooks/useShareTransactions';
+import { computeConsideration, type ShareTransaction } from '@/hooks/useShareTransactions';
 
 export interface ShareholderInfo {
   id: string;
@@ -220,7 +220,7 @@ export function ShareTransactionForm({ tx, onChange, onSave, onCancel, saving, c
         <div className="space-y-1">
           <Label className="text-xs">股數</Label>
           <Input type="number" value={tx.shares ?? 0}
-            onChange={e => onChange({ ...tx, shares: Number(e.target.value) || 0 })} />
+            onChange={e => onChange({ ...tx, shares: Number(e.target.value) || 0, total_consideration: computeConsideration(Number(e.target.value) || 0, tx.price_per_share) })} />
           {fromSh && tx.shares === fromSh.shares && (
             <p className="text-xs text-green-600">✓ 已自動填入 {fromSh.nameEnglish || fromSh.nameChinese} 的持股數</p>
           )}
@@ -241,19 +241,20 @@ export function ShareTransactionForm({ tx, onChange, onSave, onCancel, saving, c
       </div>
 
       {/* ── Row 4: Price + Consideration + Instrument ── */}
+      {/* 總代價 = 股數 × 每股價格，自動計算（不可手改） */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         <div className="space-y-1">
           <Label className="text-xs">每股價格</Label>
           <Input value={tx.price_per_share || ''}
-            onChange={e => onChange({ ...tx, price_per_share: e.target.value })} />
+            onChange={e => onChange({ ...tx, price_per_share: e.target.value, total_consideration: computeConsideration(tx.shares, e.target.value) })} />
         </div>
         <div className="space-y-1">
-          <Label className="text-xs">總代價</Label>
-          <Input value={tx.total_consideration || ''}
-            onChange={e => onChange({ ...tx, total_consideration: e.target.value })} />
+          <Label className="text-xs">總代價（自動 = 股數 × 股價）</Label>
+          <Input value={computeConsideration(tx.shares, tx.price_per_share) || tx.total_consideration || ''}
+            readOnly className="bg-muted/50 cursor-default" placeholder="—" />
         </div>
         <div className="space-y-1">
-          <Label className="text-xs">文件編號</Label>
+          <Label className="text-xs">文件編號（留空自動按順序編 1、2、3…）</Label>
           <Input value={tx.instrument_number || ''}
             onChange={e => onChange({ ...tx, instrument_number: e.target.value })} />
         </div>

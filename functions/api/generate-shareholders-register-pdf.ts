@@ -180,12 +180,16 @@ interface RomCanvasStruct {
 }
 
 // 模块级缓存：同 isolate 内跨请求复用（CF 模块作用域持久）
-let romCanvas: { bytes: Uint8Array; struct: RomCanvasStruct } | null = null;
+// ⚠️ TTL 10 分钟强制重取：isolate 可存活数分钟~数小时，画布更新后不重取会一直用旧版（2026-08-17 教训）
+const ROM_CANVAS_TTL_MS = 10 * 60 * 1000;
+let romCanvas: { bytes: Uint8Array; struct: RomCanvasStruct; at: number } | null = null;
 let romCanvasFailed = false;
+let romCanvasFailedAt = 0;
 
 async function getRomCanvas(env: Env): Promise<{ bytes: Uint8Array; struct: RomCanvasStruct } | null> {
-  if (romCanvas) return romCanvas;
-  if (romCanvasFailed) return null;
+  const now = Date.now();
+  if (romCanvas && now - romCanvas.at < ROM_CANVAS_TTL_MS) return romCanvas;
+  if (romCanvasFailed && now - romCanvasFailedAt < ROM_CANVAS_TTL_MS) return null;
   try {
     const [pdfObj, jsonObj] = await Promise.all([
       env.PDF_TEMPLATES.get("rom-canvas.pdf"),
@@ -193,16 +197,20 @@ async function getRomCanvas(env: Env): Promise<{ bytes: Uint8Array; struct: RomC
     ]);
     if (!pdfObj || !jsonObj) {
       romCanvasFailed = true;
+      romCanvasFailedAt = now;
       return null;
     }
     romCanvas = {
       bytes: new Uint8Array(await pdfObj.arrayBuffer()),
       struct: JSON.parse(await jsonObj.text()),
+      at: now,
     };
+    romCanvasFailed = false;
     return romCanvas;
   } catch (e: any) {
     console.error("ROM canvas load failed:", e?.message || e);
     romCanvasFailed = true;
+    romCanvasFailedAt = now;
     return null;
   }
 }

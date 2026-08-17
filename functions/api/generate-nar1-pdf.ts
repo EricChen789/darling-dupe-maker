@@ -842,8 +842,8 @@ export async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Ar
     }
 
     const slotsP9 = [
-      { name: 7, surname: 8, other: 9, shares: 16, flat: 11, building: 12, street: 13, district: 14, country: 15 },
-      { name: 18, surname: 19, other: 20, shares: 27, flat: 22, building: 23, street: 24, district: 25, country: 26 },
+      { name: 7, surname: 8, other: 9, eng: 10, shares: 16, flat: 11, building: 12, street: 13, district: 14, country: 15 },
+      { name: 18, surname: 19, other: 20, eng: 21, shares: 27, flat: 22, building: 23, street: 24, district: 25, country: 26 },
     ];
     for (let idx = 0; idx < Math.min(2, validMembers.length); idx++) {
       const sh = validMembers[idx];
@@ -855,9 +855,12 @@ export async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Ar
       const safe = (v: string) => (v && PURE_NUMBER_RE.test(v) ? "" : v);
       const country = safe(addr.country) || "Hong Kong";
 
-      setF(`fill_${F.name}_P.9`, sh.nameChinese || "");
+      // 中文欄只填真實中文名（老數據 nameChinese 常誤存英文名 → 留空）
+      const cn = sh.nameChinese && sh.nameChinese.trim().toUpperCase() !== fullName.trim().toUpperCase() ? sh.nameChinese : "";
+      setF(`fill_${F.name}_P.9`, cn);
       if (isCorp) {
-        setF(`fill_${F.surname}_P.9`, fullName);
+        // 法人：公司名填「英文名稱」欄（模板設計），英文姓名/姓氏/名字不填
+        setF(`fill_${F.eng}_P.9`, fullName);
       } else {
         setF(`fill_${F.surname}_P.9`, surname);
         setF(`fill_${F.other}_P.9`, otherNames);
@@ -897,8 +900,8 @@ export async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Ar
       }
 
       const slots = [
-        { name: 7, surname: 8, other: 9, shares: 16, flat: 11, building: 12, street: 13, district: 14, country: 15 },
-        { name: 18, surname: 19, other: 20, shares: 27, flat: 22, building: 23, street: 24, district: 25, country: 26 },
+        { name: 7, surname: 8, other: 9, eng: 10, shares: 16, flat: 11, building: 12, street: 13, district: 14, country: 15 },
+        { name: 18, surname: 19, other: 20, eng: 21, shares: 27, flat: 22, building: 23, street: 24, district: 25, country: 26 },
       ];
 
       [sh1, sh2].forEach((sh, idx) => {
@@ -911,9 +914,12 @@ export async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Ar
         const safe = (v: string) => (v && PURE_NUMBER_RE.test(v) ? "" : v);
         const country = safe(addr.country) || "Hong Kong";
 
-        setV(`fill_${F.name}_P.9`, sh.nameChinese || "");
+        // 中文欄只填真實中文名（老數據 nameChinese 常誤存英文名 → 留空）
+        const cn = sh.nameChinese && sh.nameChinese.trim().toUpperCase() !== fullName.trim().toUpperCase() ? sh.nameChinese : "";
+        setV(`fill_${F.name}_P.9`, cn);
         if (isCorp) {
-          setV(`fill_${F.surname}_P.9`, fullName);
+          // 法人：公司名填「英文名稱」欄（模板設計），英文姓名/姓氏/名字不填
+          setV(`fill_${F.eng}_P.9`, fullName);
         } else {
           setV(`fill_${F.surname}_P.9`, surname);
           setV(`fill_${F.other}_P.9`, otherNames);

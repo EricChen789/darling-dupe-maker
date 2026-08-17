@@ -202,6 +202,23 @@ export async function onRequest(context: { request: Request; env: Env }) {
         "SELECT * FROM share_transactions WHERE id = ? AND company_id = ?"
       ).bind(transactionId, companyId).first();
       if (!transaction) throw new Error("Transaction not found");
+    } else if (body.from_name || body.to_name || body.shares) {
+      // QuickFormDialog「生成表格」：交易数据平铺在顶层（无 transaction 对象）。
+      // 必须以传入数据为准 — 否则会落进下方 D1 查询、错用最近一笔旧交易
+      // → 日期/买卖方/代价全错（生产已证实：日期 10/06/2026 混入、买家张冠李戴）
+      transaction = {
+        from_person_id: body.from_person_id || "",
+        from_name: body.from_name || "",
+        to_person_id: body.to_person_id || "",
+        to_name: body.to_name || "",
+        shares: body.shares || 0,
+        share_type: body.share_type || "Ordinary",
+        price_per_share: body.price_per_share ?? "",
+        total_consideration: body.total_consideration ?? "",
+        transaction_date: body.transaction_date ?? "",
+        instrument_number: body.instrument_number ?? "",
+        currency: body.currency || "HKD",
+      };
     } else {
       const txResult = await env.DB.prepare(
         "SELECT * FROM share_transactions WHERE company_id = ? ORDER BY transaction_date DESC"

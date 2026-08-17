@@ -559,7 +559,11 @@ export async function onRequest(context: { request: Request; env: Env }) {
           }
           const out = buildFastPdf(canvas, pagesText);
           return new Response(JSON.stringify({ pdf: uint8ToBase64(out) }), {
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
+            headers: {
+              ...corsHeaders, "Content-Type": "application/json",
+              "X-Rom-Path": "fast",
+              "X-Rom-Canvas": `${canvas.bytes.length}:${canvas.struct.arialName || canvas.struct.helvName || "?"}`,
+            },
           });
         } catch (e: any) {
           console.error("ROM fast path failed — falling back to slow path:", e?.message || e);
@@ -671,7 +675,7 @@ export async function onRequest(context: { request: Request; env: Env }) {
 
     const bytes = await pdf.save();
     return new Response(JSON.stringify({ pdf: uint8ToBase64(new Uint8Array(bytes)) }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...corsHeaders, "Content-Type": "application/json", "X-Rom-Path": "slow" },
     });
   } catch (e: any) {
     console.error("generate-shareholders-register-pdf error:", e);

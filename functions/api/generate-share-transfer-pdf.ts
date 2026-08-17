@@ -140,6 +140,16 @@ export async function onRequest(context: { request: Request; env: Env }) {
 }
 
 // ── Instrument of Transfer ──
+// 日期統一 DD/MM/YYYY（與 RTF 模板一致）；空值回空（日期留空待填）
+function fmtDateSlash(s: string | null | undefined): string {
+  if (!s) return "";
+  const t = String(s).trim();
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(t)) return t;
+  const m = t.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return `${m[3]}/${m[2]}/${m[1]}`;
+  return t;
+}
+
 async function buildInstrumentOfTransfer(
   pdf: PDFDocument, fonts: { cjk: any; ascii: any; asciiBold: any },
   company: any, transaction: any, allTransactions: any[], seqNo: number,
@@ -187,7 +197,7 @@ async function buildInstrumentOfTransfer(
   drawLine("股份類別 Share Class:", tx.share_type || "Ordinary");
   drawLine("每股代價 Price per Share:", tx.currency ? `${tx.currency} ${tx.price_per_share || ""}` : "________________");
   drawLine("總代價 Total Consideration:", itxCons ? `HK$${consFmt}` : "________________");
-  drawLine("轉讓日期 Transfer Date:", tx.transaction_date || "________________");
+  drawLine("轉讓日期 Transfer Date:", fmtDateSlash(tx.transaction_date) || "________________");
   drawLine("文書編號 Instrument No:", tx.instrument_number || String(seqNo));
 
   y -= 20;
@@ -236,7 +246,7 @@ async function buildBoughtSoldNote(
   const parValNum = parseFloat(String(tx.price_per_share ?? "").replace(/,/g, ""));
   const consideration = !isNaN(parValNum) && parValNum > 0 ? shares * parValNum
     : (parseFloat(String(tx.total_consideration ?? "").replace(/,/g, "")) || 0);
-  const txDate = tx.transaction_date || "";
+  const txDate = fmtDateSlash(tx.transaction_date);
   const coName = company.name || "";
 
   const sharesFmt = typeof shares === 'number' ? shares.toLocaleString('en-US') : String(shares);
@@ -443,7 +453,7 @@ async function buildShareCertificate(
   });
 
   y -= 24;
-  drawMixed(page, `簽發日期 Issue Date: ${tx.transaction_date || "________________"}`, {
+  drawMixed(page, `簽發日期 Issue Date: ${fmtDateSlash(tx.transaction_date) || "________________"}`, {
     x: 50, y, size: 9, cjk, ascii,
   });
 

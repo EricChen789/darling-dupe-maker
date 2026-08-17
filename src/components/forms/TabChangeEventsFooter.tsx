@@ -186,7 +186,7 @@ interface TabChangeEventsFooterProps {
 }
 
 export function TabChangeEventsFooter({ companyId, company, eventTypes, label }: TabChangeEventsFooterProps) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true); // 默认展开；用户可手动点击收起
   const [qfOpen, setQfOpen] = useState(false);
   const [qfEvents, setQfEvents] = useState<any[]>([]);
 

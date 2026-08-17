@@ -208,7 +208,8 @@ const parseAddress = (addr: string) => {
     if (!building) {
       // 「Tower 1, Harbour Centre」類：首段是 tower/block 等且次段也是大廈名 → 合併進大廈行
       if (parts.length >= 2 && BUILDING_WORD_RE.test(parts[0]) && BUILDING_WORD_RE.test(parts[1])
-          && !ADDR_STREET_RE.test(parts[1]) && !ADDR_DISTRICT_HINTS.test(parts[1])) {
+          && !ADDR_STREET_RE.test(parts[1]) && !ADDR_DISTRICT_HINTS.test(parts[1])
+          && !ADDR_FLAT_RE.test(parts[1])) {
         building = parts.shift() + ', ' + parts.shift();
       } else {
         building = parts.shift() || '';

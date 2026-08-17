@@ -1252,11 +1252,13 @@ export async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Ar
   if (corpDirs.length > 1) keepPrebuiltPages.add(13);  // P.14
   if (validRecords.length > 0) keepPrebuiltPages.add(14);  // P.15
 
-  // Collect pages to remove — resolve by page identity (indices drift after insertions)
+  // Collect pages to remove — resolve by page identity (indices drift after insertions).
+  // pdf-lib 1.17.1 没有 getPageIndex；pageCache/pageMap 保证同一页叶子节点的 wrapper 复用 → indexOf 可靠。
   const pagesToRemove: number[] = [];
+  const curPages = pdfDoc.getPages();
   for (let i = 0; i < originalTemplatePages.length; i++) {
     if (keepPrebuiltPages.has(i)) continue;
-    const cur = pdfDoc.getPageIndex(originalTemplatePages[i]);
+    const cur = curPages.indexOf(originalTemplatePages[i]);
     if (cur >= 0) pagesToRemove.push(cur);
   }
 

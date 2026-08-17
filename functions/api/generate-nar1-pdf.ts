@@ -351,15 +351,16 @@ interface ContinuationSlot {
 
 async function addDynamicContinuationSheet(
   pdfDoc: PDFDocument,
-  templateBytes: Uint8Array,
+  srcDoc: PDFDocument,
   sourcePageIndex: number,
   insertAfterIndex: number,
   slot: ContinuationSlot,
   suffix: string,
 ): Promise<number> {
-  // 1) Load fresh template and copy the page
-  const freshDoc = await PDFDocument.load(templateBytes, { ignoreEncryption: true });
-  const [copiedPage] = await pdfDoc.copyPages(freshDoc, [sourcePageIndex]);
+  // 1) Copy the page from the SHARED template source doc.
+  //    每页 fresh load 会重复解析模板并重新嵌入字体等资源（实测 5.79MB→4.39MB→一次copy 3.00MB）
+  //    → 共用 srcDoc 减少膨胀与 CPU（1102 风险）。
+  const [copiedPage] = await pdfDoc.copyPages(srcDoc, [sourcePageIndex]);
   const newIndex = insertAfterIndex + 1;
   pdfDoc.insertPage(newIndex, copiedPage);
 
@@ -514,6 +515,13 @@ export async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Ar
   // Capture original template pages BEFORE any dynamic insertion — page-removal
   // indices would drift once dynamic pages are inserted mid-document.
   const originalTemplatePages = pdfDoc.getPages();
+
+  // 动态续页源文档（惰性单次加载）：所有副本共用，避免每页重复解析模板+重嵌字体（PDF 膨胀/1102）
+  let dynSourceDoc: PDFDocument | null = null;
+  const getDynSourceDoc = async (): Promise<PDFDocument> => {
+    if (!dynSourceDoc) dynSourceDoc = await PDFDocument.load(templateBytes, { ignoreEncryption: true });
+    return dynSourceDoc;
+  };
 
   // 2) Embed Helvetica for BR stamp
   const helv = await pdfDoc.embedFont(StandardFonts.Helvetica);
@@ -922,7 +930,7 @@ export async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Ar
       setV("fill_30_P.9", String(sched1Pages));
 
       const slot: ContinuationSlot = { fieldNames: Object.keys(values), values };
-      schedInsertAfter = await addDynamicContinuationSheet(pdfDoc, templateBytes, 8, schedInsertAfter, slot, suffix);
+      schedInsertAfter = await addDynamicContinuationSheet(pdfDoc, await getDynSourceDoc(), 8, schedInsertAfter, slot, suffix);
       hasDynamicPages = true;
     }
   } else if (isListedCo) {
@@ -1089,7 +1097,7 @@ export async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Ar
         fieldNames: Object.keys(values),
         values,
       };
-      insertAfter = await addDynamicContinuationSheet(pdfDoc, templateBytes, 10, insertAfter, slot, suffix);
+      insertAfter = await addDynamicContinuationSheet(pdfDoc, await getDynSourceDoc(), 10, insertAfter, slot, suffix);
       hasDynamicPages = true;
     }
   }
@@ -1124,7 +1132,7 @@ export async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Ar
         values,
       };
       // Insert after the last dynamic page (or end of doc)
-      insertAfter = await addDynamicContinuationSheet(pdfDoc, templateBytes, 11, insertAfter, slot, suffix);
+      insertAfter = await addDynamicContinuationSheet(pdfDoc, await getDynSourceDoc(), 11, insertAfter, slot, suffix);
       hasDynamicPages = true;
     }
   }
@@ -1164,7 +1172,7 @@ export async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Ar
         values,
         checkboxes,
       };
-      insertAfter = await addDynamicContinuationSheet(pdfDoc, templateBytes, 12, insertAfter, slot, suffix);
+      insertAfter = await addDynamicContinuationSheet(pdfDoc, await getDynSourceDoc(), 12, insertAfter, slot, suffix);
       hasDynamicPages = true;
     }
   }
@@ -1217,7 +1225,7 @@ export async function buildNAR1Pdf(data: CompanyData, env: Env): Promise<Uint8Ar
         fieldNames: Object.keys(values),
         values,
       };
-      insertAfter = await addDynamicContinuationSheet(pdfDoc, templateBytes, 13, insertAfter, slot, suffix);
+      insertAfter = await addDynamicContinuationSheet(pdfDoc, await getDynSourceDoc(), 13, insertAfter, slot, suffix);
       hasDynamicPages = true;
     }
   }

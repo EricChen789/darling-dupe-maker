@@ -7,12 +7,13 @@
  * 输入: _verify_output/rom-template-bg-r2.pdf (R2 真实模板)
  *       _verify_output/rom_subset_gb.ttf   (fontTools 子集字体: Big5L1∪GB2312∪生产∪HK)
  *       _verify_output/rom_charset_gb.txt  (字符集: Big5L1∪GB2312∩字体 ∪ 生产 ∪ HK 常用)
+ *       _verify_output/arial-subset.ttf    (Arial ASCII+Latin1 子集 — 与模板背景 Arial 字体一致)
  * 输出: _verify_output/rom-canvas.pdf      (上传 R2: rom-canvas.pdf)
  *       _verify_output/rom-canvas.json     (上传 R2: rom-canvas.json — 结构+字符码表)
  *
  * 用法: node scripts/build_rom_canvas.cjs
  */
-const { PDFDocument, StandardFonts, rgb } = require("pdf-lib");
+const { PDFDocument, rgb } = require("pdf-lib");
 const fontkit = require("@pdf-lib/fontkit");
 const fs = require("fs");
 
@@ -75,6 +76,7 @@ function bakeCovers(page) {
 (async () => {
   const tplBytes = fs.readFileSync("_verify_output/rom-template-bg-r2.pdf");
   const fontBytes = fs.readFileSync("_verify_output/rom_subset_gb.ttf");
+  const arialBytes = fs.readFileSync("_verify_output/arial-subset.ttf");
   const charset = [...new Set(fs.readFileSync("_verify_output/rom_charset_gb.txt", "utf8"))];
 
   const pdf = await PDFDocument.create();
@@ -87,9 +89,9 @@ function bakeCovers(page) {
   page.drawPage(tplPage);
   bakeCovers(page);
 
-  // 预子集字体 + Helvetica（ASCII 标准字体，运行时直接用资源名）
+  // 预子集字体 + Arial 子集（ASCII/Latin1 — 与模板背景 Arial 字体一致，2026-08-17 字体统一）
   const cjkFont = await pdf.embedFont(fontBytes, { subset: true });
-  const helv = await pdf.embedFont(StandardFonts.Helvetica);
+  const arial = await pdf.embedFont(arialBytes, { subset: true });
 
   // 全字符注册编码：先 drawText 一条包含全部字符的字符串（白色微字号，不可见）
   // → pdf-lib 给每个字形分配 2 字节码 → 再 encodeText 逐字取码
@@ -109,8 +111,20 @@ function bakeCovers(page) {
     const w = cjkFont.widthOfTextAtSize(ch, 1000);       // em(1000) 单位宽度
     chars[ch] = { c: code, w: Math.round(w * 100) / 100 };
   }
-  // Helvetica 也注册（画一个空白字符，确保字体资源存在于页 Resources）
-  page.drawText(" ", { x: 0, y: -100, size: 0.1, font: helv, color: WHITE });
+  // Arial 注册全部 ASCII+Latin1 字符（画在页外注册字形码，运行时直接用码表）
+  const ASCII_CHARS =
+    String.fromCharCode(...Array.from({ length: 0x7f - 0x20 }, (_, i) => 0x20 + i)) +
+    String.fromCharCode(...Array.from({ length: 0x100 - 0xa0 }, (_, i) => 0xa0 + i)) +
+    "€•–—‘’“”"; // € • – — ‘ ’ “ ”
+  page.drawText(ASCII_CHARS, { x: 0, y: -100, size: 0.1, font: arial, color: WHITE });
+
+  const asciiChars = {};
+  for (const ch of ASCII_CHARS) {
+    const code = arial.encodeText(ch).value;
+    const w = arial.widthOfTextAtSize(ch, 1000);
+    asciiChars[ch] = { c: code, w: Math.round(w * 100) / 100 };
+  }
+  console.log(`arial ASCII 注册 ${Object.keys(asciiChars).length} 字符，示例 'H'=${JSON.stringify(asciiChars['H'])}, '€'=${JSON.stringify(asciiChars['€'])}`);
 
   const canvasBytes = Buffer.from(await pdf.save());
 
@@ -144,7 +158,7 @@ function bakeCovers(page) {
   const resourcesRef = resDict && resDict.ref ? resDict.ref.toString() : null;
 
   // 字体资源名：/Font dict → 名字（/F1 等）+ 对应字体（BaseFont 判断）
-  let cjkName = null, helvName = null;
+  let cjkName = null, arialName = null, helvName = null;
   const fontDict = resDict ? resDict.lookup(PDFName.of("Font")) : null;
   if (fontDict) {
     for (const key of fontDict.keys ? fontDict.keys() : []) {
@@ -155,6 +169,7 @@ function bakeCovers(page) {
         if (bf) {
           const bfn = bf.toString();
           if (bfn.includes("NotoSansTC")) cjkName = key.toString().slice(1);
+          else if (bfn.includes("Arial")) arialName = key.toString().slice(1);
           else if (bfn.includes("Helvetica")) helvName = key.toString().slice(1);
         }
       } else if (v && v.toString && v.toString().includes("Helvetica")) {
@@ -185,15 +200,16 @@ function bakeCovers(page) {
     startxref, maxObj, pageRef: pageRef, pagesRef, rootRef, resourcesRef,
     coverStreamRef,
     pageDict: pageDictBytes, pagesDict: pagesDictBytes, resDict: resDictBytes,
-    cjkName, helvName,
+    cjkName, arialName, helvName,
     charsetCount: cmapChars.length,
+    asciiChars,
     chars,
   };
   fs.writeFileSync("_verify_output/rom-canvas.pdf", canvasBytes);
   fs.writeFileSync("_verify_output/rom-canvas.json", JSON.stringify(struct));
   console.log(`canvas: ${canvasBytes.length} bytes → _verify_output/rom-canvas.pdf`);
   console.log(`struct: startxref=${startxref} maxObj=${maxObj} page=${pageRef} pages=${pagesRef} root=${rootRef} res=${resourcesRef}`);
-  console.log(`coverStream=${coverStreamRef} cjkFont=/${cjkName} helv=/${helvName} chars=${cmapChars.length}`);
+  console.log(`coverStream=${coverStreamRef} cjkFont=/${cjkName} arial=/${arialName} helv=/${helvName} chars=${cmapChars.length} ascii=${Object.keys(asciiChars).length}`);
   console.log(`pageDict(${pageDictBytes.length}B) pagesDict(${pagesDictBytes ? pagesDictBytes.length : 0}B) resDict=${resDictBytes ? resDictBytes.length : "indirect"}B`);
   console.log("✓ 生成完成");
 })();

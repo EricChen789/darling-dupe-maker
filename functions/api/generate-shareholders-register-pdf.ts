@@ -2,7 +2,8 @@
 // Register of Members (ROM) — Paul Tang「Lung Shun - ROM」模板（2026-08-13 重写）
 // R2 背景模板 = Lung Shun ROM 样本第 1 页（黑色表格、15 列交易表、每股东 5 行交易）
 // 叠加真实数据（白块覆盖样本值 + 重绘）→ 与 Paul Tang 样本排版一致
-import { PDFDocument, rgb } from "pdf-lib";
+import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
+import fontkit from "@pdf-lib/fontkit";
 import { verifyAuthRequest, type Env as AuthEnv } from './_auth';
 import {
   uint8ToBase64, fetchAndEmbedFont, rget,
@@ -172,8 +173,10 @@ interface RomCanvasStruct {
   pageDict: string;
   pagesDict: string;
   cjkName: string;
-  helvName: string;
+  arialName?: string;   // Arial 子集字体（与模板背景 Arial 一致，2026-08-17）
+  helvName?: string;    // 旧画布兼容（Helvetica）
   chars: Record<string, { c: string; w: number }>;
+  asciiChars?: Record<string, { c: string; w: number }>;  // ASCII+Latin1 → Arial 码表
 }
 
 // 模块级缓存：同 isolate 内跨请求复用（CF 模块作用域持久）
@@ -204,13 +207,23 @@ async function getRomCanvas(env: Env): Promise<{ bytes: Uint8Array; struct: RomC
   }
 }
 
-// 快速路径文本宽度（pt）— ASCII 用 AFM 表，CJK 用画布字符表
+// 快速路径文本宽度（pt）— ASCII/Latin1 用 Arial 码表，CJK 用画布字符表
+function fastFontOf(S: RomCanvasStruct, ch: string): "a" | "c" {
+  const c = ch.charCodeAt(0);
+  if (c <= 0x7F) return "a";
+  if (S.asciiChars && S.asciiChars[ch]) return "a"; // Latin-1 扩展（é £ ¥ €…）→ Arial
+  return "c";
+}
+
 function fastTextWidth(S: RomCanvasStruct, text: string, size: number): number {
   let w = 0;
   for (const ch of text) {
-    const c = ch.charCodeAt(0);
-    if (c <= 0x7F) w += ((HELV_W[c] || 500) / 1000) * size;
-    else w += ((S.chars[ch] ? S.chars[ch].w : 1000) / 1000) * size;
+    if (fastFontOf(S, ch) === "a") {
+      const aw = S.asciiChars && S.asciiChars[ch] ? S.asciiChars[ch].w : HELV_W[ch.charCodeAt(0)] || 500;
+      w += (aw / 1000) * size;
+    } else {
+      w += ((S.chars[ch] ? S.chars[ch].w : 1000) / 1000) * size;
+    }
   }
   return w;
 }
@@ -218,32 +231,28 @@ function fastTextWidth(S: RomCanvasStruct, text: string, size: number): number {
 const escHex = (s: string) =>
   s.split("").map((ch) => ch.charCodeAt(0).toString(16).padStart(2, "0")).join("");
 
-// 一行文本 → 内容流操作符（按 ASCII/CJK 分段；bold = 同字体 x+0.5 重绘，与 drawMixed 一致）
+// 一行文本 → 内容流操作符（按 Arial/CJK 分段；bold = 同字体 x+0.5 重绘，与 drawMixed 一致）
 function fastTextOps(S: RomCanvasStruct, x: number, y: number, size: number, text: string, bold: boolean): string {
   const clean = (text || "").replace(/[\n\r\t]/g, " ");
   let ops = "";
-  let seg = "", segCjk: boolean | null = null;
+  let seg = "", segKind: "a" | "c" | null = null;
   const flush = () => {
     if (!seg) return;
-    const fontName = segCjk ? S.cjkName : S.helvName;
-    if (segCjk) {
-      let hex = "";
-      for (const ch of seg) hex += S.chars[ch].c;
-      ops += `BT /${fontName} ${size} Tf 1 0 0 1 ${x} ${y} Tm <${hex}> Tj ET\n`;
-      if (bold) ops += `BT /${fontName} ${size} Tf 1 0 0 1 ${x + 0.5} ${y} Tm <${hex}> Tj ET\n`;
-      x += fastTextWidth(S, seg, size);
-    } else {
-      const hex = escHex(seg);
-      ops += `BT /${fontName} ${size} Tf 1 0 0 1 ${x} ${y} Tm <${hex}> Tj ET\n`;
-      if (bold) ops += `BT /${fontName} ${size} Tf 1 0 0 1 ${x + 0.5} ${y} Tm <${hex}> Tj ET\n`;
-      x += fastTextWidth(S, seg, size);
+    const fontName = segKind === "a" ? (S.arialName || S.helvName || S.cjkName) : S.cjkName;
+    let hex = "";
+    for (const ch of seg) {
+      if (segKind === "a") hex += S.asciiChars && S.asciiChars[ch] ? S.asciiChars[ch].c : escHex(ch);
+      else hex += S.chars[ch].c;
     }
-    seg = ""; segCjk = null;
+    ops += `BT /${fontName} ${size} Tf 1 0 0 1 ${x} ${y} Tm <${hex}> Tj ET\n`;
+    if (bold) ops += `BT /${fontName} ${size} Tf 1 0 0 1 ${x + 0.5} ${y} Tm <${hex}> Tj ET\n`;
+    x += fastTextWidth(S, seg, size);
+    seg = ""; segKind = null;
   };
   for (const ch of clean) {
-    const ascii = ch.charCodeAt(0) <= 0x7F;
-    if (segCjk === null) segCjk = !ascii;
-    else if (segCjk !== !ascii) { flush(); segCjk = !ascii; }
+    const kind = fastFontOf(S, ch);
+    if (segKind === null) segKind = kind;
+    else if (segKind !== kind) { flush(); segKind = kind; }
     seg += ch;
   }
   flush();
@@ -257,11 +266,14 @@ function fastCenterOps(S: RomCanvasStruct, cx: number, y: number, size: number, 
   return fastTextOps(S, cx - fastTextWidth(S, t, size) / 2, y, size, t, bold);
 }
 
-// 预扫描：任一非 ASCII 字符不在画布字符表 → 返回该字符（走慢路径，防字形字节错位）
+// 预扫描：任一字符不在画布字体码表（Arial Latin1 或 CJK）→ 返回该字符（走慢路径，防字形字节错位）
 function fastPathMissingChar(S: RomCanvasStruct, texts: string[]): string | null {
   for (const t of texts) {
     for (const ch of t) {
-      if (ch.charCodeAt(0) > 0x7F && !S.chars[ch]) return ch;
+      if (ch.charCodeAt(0) > 0x7F) {
+        if (S.asciiChars && S.asciiChars[ch]) continue; // Latin-1 扩展 → Arial 码表
+        if (!S.chars[ch]) return ch;
+      }
     }
   }
   return null;
@@ -552,7 +564,19 @@ export async function onRequest(context: { request: Request; env: Env }) {
     if (!templateObj) throw new Error("ROM template not found in R2");
     const templateBytes = new Uint8Array(await templateObj.arrayBuffer());
     const pdf = await PDFDocument.create();
-    const { cjk: cjkFont, ascii: asciiFont } = await fetchAndEmbedFont(pdf, env as any);
+    const { cjk: cjkFont } = await fetchAndEmbedFont(pdf, env as any);
+    // ASCII 字体用 Arial 子集（与模板背景 Arial 字体一致，2026-08-17 字体统一）；缺失回退 Helvetica
+    let asciiFont: any = null;
+    try {
+      const arialObj = await env.PDF_TEMPLATES.get("fonts/arial-subset.ttf");
+      if (arialObj) {
+        pdf.registerFontkit(fontkit);
+        asciiFont = await pdf.embedFont(await arialObj.arrayBuffer());
+      }
+    } catch (e: any) {
+      console.error("ROM Arial subset embed failed:", e?.message || e);
+    }
+    if (!asciiFont) asciiFont = await pdf.embedFont(StandardFonts.Helvetica);
     const fo = { cjk: cjkFont, ascii: asciiFont };
     const templateDoc = await PDFDocument.load(templateBytes);
     // 只用第 1 页（模板第 2 页为空白页）

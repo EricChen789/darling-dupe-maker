@@ -260,9 +260,11 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
       }
 
       // (c) 別名 — 中文 / 英文
-      if (newAliasCn || newAliasEng) {
-        if (newAliasCn) setText("fill_16_P.4", newAliasCn);
-        if (newAliasEng) setText("fill_17_P.4", newAliasEng);
+      const p4AliasCn = data.newAliasChinese || '';
+      const p4AliasEng = data.newAliasEnglish || '';
+      if (p4AliasCn || p4AliasEng) {
+        if (p4AliasCn) setText("fill_16_P.4", p4AliasCn);
+        if (p4AliasEng) setText("fill_17_P.4", p4AliasEng);
         fillDateTriple('fill_18_P.4', 'fill_19_P.4', 'fill_20_P.4');
       }
 

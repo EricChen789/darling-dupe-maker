@@ -441,7 +441,19 @@ async function addDynamicContinuationSheet(
         resolvedName === cb || resolvedName.startsWith(cb) || cb.startsWith(resolvedName)
       );
 
-      if (!matchedTextKey && !isCheckbox) continue;
+      if (!matchedTextKey && !isCheckbox) {
+        // 未填充的 widget 也必须改名（加 suffix）：否则副本页与源页同名字段
+        // 会被渲染器（Acrobat/pdf.js）按字段名合并 → 源页已填值重复显示在
+        // 副本页上（Bug: 附表一第2页底部重复出现 PEAK CONNECT INTERNATIONAL LIMITED）。
+        detachWidget(widget, parent);
+        widget.set(PDFName.of('T'), PDFString.of(`${resolvedName}_${suffix}`));
+        const ft2 = widget.get(PDFName.of('FT'));
+        if (ft2 && String(ft2) === '/Tx') {
+          widget.set(PDFName.of('V'), PDFString.of(''));
+          widget.delete(PDFName.of('AP'));
+        }
+        continue;
+      }
 
       matchCount++;
 

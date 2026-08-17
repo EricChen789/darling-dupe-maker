@@ -16,6 +16,8 @@ export interface ChangeEvent {
   created_at: string;
   /** Enriched: person's display name (from persons table via person_id) */
   person_name?: string;
+  /** Enriched: full person record (name_english/name_chinese/id_number) */
+  person?: any;
 }
 
 /** Get all change events for a company, ordered by change_date descending.
@@ -41,7 +43,7 @@ export function useChangeEvents(companyId: string | undefined) {
         try {
           const { data: persons } = await supabase
             .from('persons')
-            .select('id, name_english, name_chinese') as any;
+            .select('id, name_english, name_chinese, id_number, passport_number') as any;
           const byId = new Map<string, any>((persons || []).map((p: any) => [p.id, p]));
           for (const ev of events) {
             const p = byId.get(ev.person_id);
@@ -49,6 +51,7 @@ export function useChangeEvents(companyId: string | undefined) {
             const en = p.name_english || '';
             const cn = p.name_chinese || '';
             ev.person_name = cn ? `${en} (${cn})` : en;
+            ev.person = p;
           }
         } catch { /* enrichment is best-effort, don't block events */ }
       }

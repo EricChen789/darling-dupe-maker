@@ -463,7 +463,10 @@ function buildFormPayload(
         nameChinese,
         idNumber,
         passportNumber: passportNumber,
-        effectiveDate: today.split('/').reverse().join('-'),
+        // 生效日期 = 变更事件本身的 change_date（不是生成当天）
+        effectiveDate: raw?.change_date
+          ? normalizeDate(raw.change_date)
+          : today.split('/').reverse().join('-'),
         signerName: engFull,
         signDate: today.split('/').reverse().join('-'),
         presentorName: raw?.presentorName || DEFAULT_PRESENTER.name,

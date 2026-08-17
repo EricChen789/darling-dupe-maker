@@ -106,6 +106,19 @@ function changeEventToQfEvent(ev: ChangeEvent) {
   // can determine which change type (address/name/id/contact) to use.
   if (qfType === 'nd2b_change') {
     raw._event_type = ev.event_type;
+    // person_*_change 事件的 new_value 只有更改后的字段，没有现时资料
+    // （姓名/HKID/護照/職位）→ 从 persons 表 enrich 的 ev.person 补齐。
+    // 只补缺失字段：person_name_change/person_id_change 的 new_value
+    // 本身就带新姓名/新证件号，不能被旧资料覆盖。
+    if (ev.person) {
+      if (!raw.name_english && ev.person.name_english) raw.name_english = ev.person.name_english;
+      if (!raw.name_chinese && ev.person.name_chinese) raw.name_chinese = ev.person.name_chinese;
+      if (!raw.id_number && ev.person.id_number) raw.id_number = ev.person.id_number;
+      if (!raw.passport_number && ev.person.passport_number) raw.passport_number = ev.person.passport_number;
+    }
+    if (!raw.role && ev.role) raw.role = ev.role;
+    // 生效日期用变更事件本身的 change_date（QuickFormDialog 会归一化）
+    if (ev.change_date) raw.change_date = ev.change_date;
   }
 
   return {

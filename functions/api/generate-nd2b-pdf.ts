@@ -78,12 +78,27 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
       }
     }
 
-    // ── Build new address ──
-    const newAddrParts = [
+    // ── Build new address (dedup: skip parts already contained in an earlier part,
+    //    e.g. flat "Unit 611, ... Tower 1, Harbour Centre" contains building "Harbour Centre",
+    //    district "Hung Hom, Kowloon" contains region "Kowloon") ──
+    const newAddrPartsRaw = [
       data.newFlat || '', data.newBuilding || '',
       data.newStreet || '', data.newDistrict || '', data.newRegion || ''
-    ];
-    const newAddress = newAddrParts.filter(Boolean).join(', ') || data.newAddress || '';
+    ].map((p: any) => String(p || '').trim()).filter(Boolean);
+    const newAddrParts: string[] = [];
+    for (const p of newAddrPartsRaw) {
+      if (newAddrParts.some(a => a.includes(p))) continue;
+      newAddrParts.push(p);
+    }
+    const newAddress = newAddrParts.join(', ') || data.newAddress || '';
+
+    // ── Helper: fill a 日/月/年 date triple (template columns are 日|月|年 left→right) ──
+    const fillDateTriple = (dKey: string, mKey: string, yKey: string) => {
+      if (!effDay) return;
+      setText(dKey, effDay);
+      setText(mKey, effMonth);
+      setText(yKey, effYear);
+    };
 
     // ── Build new English name ──
     let newSurname = data.newNameSurname || '';
@@ -108,90 +123,62 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
       setText("fill_3_P.1", data.nameChinese);
       setText("fill_4_P.1", surname);
       setText("fill_5_P.1", otherNames);
-      setText("fill_7_P.1", (data.idNumber || '').replace(/[()\-\s]/g, '').toUpperCase().slice(0, 4), 'right');
-      if (data.passportCountry || data.passportPlaceOfIssue) {
-        setText("fill_7b_P.1", data.passportCountry || data.passportPlaceOfIssue);
-      }
+      // 身分識別：fill_6=香港身分證部分號碼，fill_7=護照部分號碼（模板坐标实测）
+      setText("fill_6_P.1", (data.idNumber || '').replace(/[()\-\s]/g, '').toUpperCase().slice(0, 4), 'right');
       if (data.passportNumber) {
-        setText("fill_7c_P.1", (data.passportNumber || '').slice(0, 8));
+        setText("fill_7_P.1", (data.passportNumber || '').slice(0, 8), 'right');
       }
 
       // ── P.2: Change details (multi-type support) ──
-      // Current name (item 14) — ALWAYS filled to identify the person
-      const currentNameEn = data.nameEnglish || `${surname} ${otherNames}`.trim();
-      const currentNameDisplay = [data.nameChinese, currentNameEn].filter(Boolean).join(' ');
-      setText("fill_2_P.2", currentNameDisplay);
+      // 現時資料（姓名/HKID）在 P.1 A 部分；B 部分只填有更改的項目。
+      // 欄位對照（模板坐标实测）：(a)中文姓名=fill_2 (b)姓氏=fill_6/名字=fill_7
+      // (c)別名=fill_11中/fill_12英 (d)通常住址=仅日期fill_16/17/18（新住址填PI-ND2B頁）
+      // (e)通訊地址=fill_19~23 (f)電郵=fill_27 (g)HKID=fill_31
+      // (h)護照=fill_35簽發國家/fill_36部分號碼
 
-      // Effective date (shared across rows)
-      if (effDay) {
-        setText("fill_5_P.2", effDay);
-        setText("fill_4_P.2", effMonth);
-        setText("fill_3_P.2", effYear);
-      }
-
-      // (a) 姓名更改
+      // (a) 姓名更改 — 新姓名（(a)中文姓名日期=3/4/5，(b)英文姓名日期=8/9/10）
       if (changeTypes.includes('name')) {
-        // fill_2 already filled above with current name
-        if (newChinese) setText("fill_6_P.2", newChinese);
-        if (newEnglish) setText("fill_7_P.2", newEnglish);
-        if (effDay) {
-          setText("fill_10_P.2", effDay);
-          setText("fill_9_P.2", effMonth);
-          setText("fill_8_P.2", effYear);
-        }
+        if (newChinese) setText("fill_2_P.2", newChinese);
+        if (newChinese) fillDateTriple('fill_3_P.2', 'fill_4_P.2', 'fill_5_P.2');
+        if (newSurname) setText("fill_6_P.2", newSurname);
+        if (newOther) setText("fill_7_P.2", newOther);
+        if (newSurname || newOther) fillDateTriple('fill_8_P.2', 'fill_9_P.2', 'fill_10_P.2');
       }
 
-      // (b) 別名
+      // (b) 別名 — 中文 / 英文
       const newAliasEng = data.newAliasEnglish || '';
       const newAliasCn = data.newAliasChinese || '';
       if (newAliasEng || newAliasCn) {
-        setText("fill_12_P.2", `${newAliasEng} ${newAliasCn}`.trim());
-        if (effDay) {
-          setText("fill_15_P.2", effDay);
-          setText("fill_14_P.2", effMonth);
-          setText("fill_13_P.2", effYear);
-        }
+        if (newAliasCn) setText("fill_11_P.2", newAliasCn);
+        if (newAliasEng) setText("fill_12_P.2", newAliasEng);
+        fillDateTriple('fill_13_P.2', 'fill_14_P.2', 'fill_15_P.2');
       }
 
-      // (d) 地址更改
+      // (d) 地址更改 — 董事新的通常住址須在 PI-ND2B 頁填報，此處只填生效日期
       if (changeTypes.includes('address')) {
-        setText("fill_19_P.2", data.newFlat || newAddress);
-        setText("fill_20_P.2", data.newBuilding);
-        setText("fill_21_P.2", data.newStreet);
-        setText("fill_22_P.2", data.newDistrict);
-        setText("fill_23_P.2", data.newRegion);
-        if (effDay) {
-          setText("fill_26_P.2", effDay);
-          setText("fill_25_P.2", effMonth);
-          setText("fill_24_P.2", effYear);
-        }
+        fillDateTriple('fill_16_P.2', 'fill_17_P.2', 'fill_18_P.2');
       }
 
       // (f) 聯絡資料更改
       if (changeTypes.includes('contact') && data.newEmail) {
         setText("fill_27_P.2", data.newEmail);
-        if (effDay) {
-          setText("fill_30_P.2", effDay);
-          setText("fill_29_P.2", effMonth);
-          setText("fill_28_P.2", effYear);
-        }
+        fillDateTriple('fill_28_P.2', 'fill_29_P.2', 'fill_30_P.2');
       }
 
-      // (g) 證件號碼更改
+      // (g) 證件號碼更改 — HKID 部分號碼 + 護照
       if (changeTypes.includes('id')) {
         if (data.newIdNumber) {
-          setText("fill_35_P.2", (data.newIdNumber || '').replace(/[()\-\s]/g, ''), 'right');
-          if (effDay) {
-            setText("fill_34_P.2", effDay);
-            setText("fill_33_P.2", effMonth);
-            setText("fill_32_P.2", effYear);
-          }
-        }
-        if (data.passportNumber) {
-          setText("fill_37_P.2", (data.passportNumber || '').slice(0, 8));
+          setText("fill_31_P.2", (data.newIdNumber || '').replace(/[()\-\s]/g, ''), 'right');
+          fillDateTriple('fill_32_P.2', 'fill_33_P.2', 'fill_34_P.2');
         }
         if (data.passportPlaceOfIssue || data.passportCountry) {
-          setText("fill_36_P.2", data.passportPlaceOfIssue || data.passportCountry);
+          setText("fill_35_P.2", data.passportPlaceOfIssue || data.passportCountry);
+        }
+        if (data.passportNumber) {
+          setText("fill_36_P.2", (data.passportNumber || '').slice(0, 8));
+        }
+        if (data.passportNumber || data.passportPlaceOfIssue || data.passportCountry) {
+          fillDateTriple('fill_37_P.2', 'fill_38_P.2', 'fill_39_P.2');
         }
       }
 
@@ -200,20 +187,28 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
       setText("fill_2_P.6", data.nameChinese);
       setText("fill_3_P.6", surname);
       setText("fill_4_P.6", otherNames);
-      if (changeTypes.includes('address') && newAddress) {
-        setText("fill_9_P.6", newAddress);
+      // PI-ND2B 地址 5 行分項填寫：室/樓/座 → 大廈 → 街道 → 區 → 國家/地區
+      if (changeTypes.includes('address')) {
+        if (data.newFlat) setText("fill_9_P.6", data.newFlat);
+        if (data.newBuilding) setText("fill_10_P.6", data.newBuilding);
+        if (data.newStreet) setText("fill_11_P.6", data.newStreet);
+        if (data.newDistrict) setText("fill_12_P.6", data.newDistrict);
+        if (data.newRegion) setText("fill_13_P.6", data.newRegion);
       } else if (data.newAddress) {
         setText("fill_9_P.6", data.newAddress);
       }
-      // HKID
+      // PI 頁只填報有更改的項目：HKID 完整號碼（主號入 fill_5，括號內校驗碼入 fill_6）
       if (changeTypes.includes('id') && data.newIdNumber) {
-        setText("fill_5_P.6", (data.newIdNumber || '').replace(/[()\-\s]/g, ''), 'right');
-      } else {
-        setText("fill_5_P.6", (data.idNumber || '').replace(/[()\-\s]/g, ''), 'right');
+        const newIdClean = String(data.newIdNumber || '').replace(/[()\-\s]/g, '').toUpperCase();
+        setText("fill_5_P.6", newIdClean.length >= 8 ? newIdClean.slice(0, 7) : newIdClean, 'right');
+        if (newIdClean.length >= 8) setText("fill_6_P.6", newIdClean.slice(7, 8));
       }
-      // Passport country
-      const ppoi = data.passportPlaceOfIssue || data.passportCountry || '';
-      if (ppoi) setText("fill_7_P.6", ppoi);
+      // 護照：只在證件更改時填報
+      if (changeTypes.includes('id')) {
+        const ppoi = data.passportPlaceOfIssue || data.passportCountry || '';
+        if (ppoi) setText("fill_7_P.6", ppoi);
+        if (data.passportNumber) setText("fill_8_P.6", String(data.passportNumber).slice(0, 12));
+      }
     }
 
     // ── P.1 提交人信息 ──
@@ -226,70 +221,76 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
 
     // ── P.3 簽署 ──
     setText("fill_30_P.3", data.signerName);
-    setText("fill_31_P.3", data.signDate);
+    // signDate 以 DD/MM/YYYY 显示（前端传 YYYY-MM-DD）
+    const signDateRaw = String(data.signDate || '');
+    const signParts = signDateRaw.split('-');
+    const signDateDisplay = signParts.length === 3
+      ? `${signParts[2].padStart(2, '0')}/${signParts[1].padStart(2, '0')}/${signParts[0]}`
+      : signDateRaw;
+    setText("fill_31_P.3", signDateDisplay);
 
     // ── Fill P.4 Continuation Sheet A (natural person) ──
     // Section A: Current registered particulars
     // Section B: Details of changes (continuation from P.2)
     if (isNatural) {
       // ═══ Section A: Current registered details ═══
+      // 欄位對照（模板坐标实测）：fill_2=中文姓名 fill_3=姓氏 fill_4=名字
+      // fill_5=香港身分證部分號碼 fill_6=護照部分號碼
       check(role === "secretary" ? "cb_1_P.4" : role === "alternate" ? "cb_3_P.4" : "cb_2_P.4", true);
       setText("fill_2_P.4", data.nameChinese);
-      setText("fill_5_P.4", surname);
-      setText("fill_6_P.4", otherNames);
-      setText("fill_7_P.4", (data.idNumber || '').replace(/[()\-\s]/g, '').toUpperCase().slice(0, 4), 'right');
+      setText("fill_3_P.4", surname);
+      setText("fill_4_P.4", otherNames);
+      setText("fill_5_P.4", (data.idNumber || '').replace(/[()\-\s]/g, '').toUpperCase().slice(0, 4), 'right');
+      if (data.passportNumber) {
+        setText("fill_6_P.4", (data.passportNumber || '').slice(0, 8), 'right');
+      }
 
       // ═══ Section B: Change details (mirror P.2) ═══
-      // (a) Name change
+      // 欄位對照：(a)中文姓名=fill_7 (b)姓氏=fill_11/名字=fill_12 (c)別名=fill_16中/fill_17英
+      // (d)通常住址=仅日期fill_21/22/23（新住址填PI-ND2B頁）
+      // (e)通訊地址=fill_24~28 (f)電郵=fill_32 (g)HKID=fill_36 (h)護照=fill_40國家/fill_41號碼
+
+      // (a)/(b) 姓名更改 — 新中文姓名 + 新英文姓名（姓氏/名字分框）
       if (changeTypes.includes('name')) {
-        if (newChinese) setText("fill_16_P.4", newChinese);
-        const newEngName = `${newSurname} ${newOther}`.trim();
-        if (newEngName) setText("fill_17_P.4", newEngName);
-        if (effDay) {
-          setText("fill_20_P.4", effDay);
-          setText("fill_19_P.4", effMonth);
-          setText("fill_18_P.4", effYear);
-        }
+        if (newChinese) setText("fill_7_P.4", newChinese);
+        if (newChinese) fillDateTriple('fill_8_P.4', 'fill_9_P.4', 'fill_10_P.4');
+        if (newSurname) setText("fill_11_P.4", newSurname);
+        if (newOther) setText("fill_12_P.4", newOther);
+        if (newSurname || newOther) fillDateTriple('fill_13_P.4', 'fill_14_P.4', 'fill_15_P.4');
       }
 
-      // (d) Address change
+      // (c) 別名 — 中文 / 英文
+      if (newAliasCn || newAliasEng) {
+        if (newAliasCn) setText("fill_16_P.4", newAliasCn);
+        if (newAliasEng) setText("fill_17_P.4", newAliasEng);
+        fillDateTriple('fill_18_P.4', 'fill_19_P.4', 'fill_20_P.4');
+      }
+
+      // (d) 地址更改 — 董事新的通常住址須在 PI-ND2B 頁填報，此處只填生效日期
       if (changeTypes.includes('address')) {
-        if (data.newFlat) setText("fill_24_P.4", data.newFlat);
-        else if (data.newAddress) setText("fill_24_P.4", data.newAddress);
-        if (data.newBuilding) setText("fill_25_P.4", data.newBuilding);
-        if (data.newStreet) setText("fill_26_P.4", data.newStreet);
-        if (data.newDistrict) setText("fill_27_P.4", data.newDistrict);
-        if (data.newRegion) setText("fill_28_P.4", data.newRegion);
-        if (effDay) {
-          setText("fill_31_P.4", effDay);
-          setText("fill_30_P.4", effMonth);
-          setText("fill_29_P.4", effYear);
-        }
+        fillDateTriple('fill_21_P.4', 'fill_22_P.4', 'fill_23_P.4');
       }
 
-      // (g) ID change
-      if (changeTypes.includes('id')) {
-        if (data.newIdNumber) setText("fill_32_P.4", (data.newIdNumber || '').replace(/[()\-\s]/g, ''), 'right');
-        // P.4 passport: fill_36=issuing country, fill_37=passport number (matches P.2 layout)
-        if (data.passportCountry || data.passportPlaceOfIssue) {
-          setText("fill_36_P.4", data.passportCountry || data.passportPlaceOfIssue);
-        }
-        if (data.passportNumber) setText("fill_37_P.4", (data.passportNumber || '').slice(0, 8));
-        if (effDay) {
-          setText("fill_35_P.4", effDay);
-          setText("fill_34_P.4", effMonth);
-          setText("fill_33_P.4", effYear);
-        }
-      }
-
-      // (f) Contact change
+      // (f) 聯絡資料更改
       if (changeTypes.includes('contact') && data.newEmail) {
-        setText("fill_40_P.4", data.newEmail);
-        if (effDay) {
-          setText("fill_44_P.4", effDay);
-          setText("fill_43_P.4", effMonth);
-          setText("fill_42_P.4", effYear);
+        setText("fill_32_P.4", data.newEmail);
+        fillDateTriple('fill_33_P.4', 'fill_34_P.4', 'fill_35_P.4');
+      }
+
+      // (g) 證件號碼更改 — HKID 部分號碼
+      if (changeTypes.includes('id') && data.newIdNumber) {
+        setText("fill_36_P.4", (data.newIdNumber || '').replace(/[()\-\s]/g, ''), 'right');
+        fillDateTriple('fill_37_P.4', 'fill_38_P.4', 'fill_39_P.4');
+      }
+      // (h) 護照 — 簽發國家/地區 + 部分號碼
+      if (changeTypes.includes('id') && (data.passportNumber || data.passportPlaceOfIssue || data.passportCountry)) {
+        if (data.passportPlaceOfIssue || data.passportCountry) {
+          setText("fill_40_P.4", data.passportPlaceOfIssue || data.passportCountry);
         }
+        if (data.passportNumber) {
+          setText("fill_41_P.4", (data.passportNumber || '').slice(0, 8));
+        }
+        fillDateTriple('fill_42_P.4', 'fill_43_P.4', 'fill_44_P.4');
       }
     }
 

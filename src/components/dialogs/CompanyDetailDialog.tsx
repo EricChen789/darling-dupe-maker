@@ -1052,7 +1052,8 @@ export const CompanyDetailDialog = ({ open, onOpenChange, company }: CompanyDeta
                 <TabChangeEventsFooter
                   companyId={company.id}
                   company={company}
-                  eventTypes={['address_change', 'name_change', 'company_email_change', 'company_phone_change']}
+                  // 电邮/电话变更生不成有效表格，不在此显示（记录仍保留供 NAR1 未申报提示用）
+                  eventTypes={['address_change', 'name_change']}
                   label="公司資料變更記錄"
                 />
               </TabsContent>

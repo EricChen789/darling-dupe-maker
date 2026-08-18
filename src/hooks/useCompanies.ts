@@ -397,6 +397,7 @@ export async function findOrCreatePerson(input: {
       identity,
       name_english: nameEng,
       name_chinese: nameZh,
+      normalized_key: nameEng.toLowerCase().replace(/[^a-z0-9]/g, ''),
       id_number: idNum,
       address: input.address || '',
       service_address: input.serviceAddress || '',

@@ -1422,6 +1422,14 @@ export function buildNN1Summary(input: Nn1WritebackInput): WritebackSummaryItem[
  *   isAlternate→is_reserve、alternateTo→notes）→ *_appoint 事件（authorized_rep_appoint 已加入 EVENT_FORM_MAP，related 'NN1'）
  * → 法人同型（identity corporate、companyNumberRef=brNumber）
  */
+/** NN1 職位 → appoint 事件類型（authorized_representative 的事件名是 authorized_rep_appoint，見 EVENT_FORM_MAP） */
+function nn1AppointEvent(role: string, isReserve?: boolean): string {
+  if (role === 'director') return isReserve ? 'reserve_director_appoint' : 'director_appoint';
+  if (role === 'secretary') return 'secretary_appoint';
+  if (role === 'authorized_representative') return 'authorized_rep_appoint';
+  return `${role}_appoint`;
+}
+
 export async function writebackNN1(input: Nn1WritebackInput): Promise<string[]> {
   const labels: string[] = [];
   const d = todayDDMMYYYY();
@@ -1470,7 +1478,7 @@ export async function writebackNN1(input: Nn1WritebackInput): Promise<string[]> 
         });
         await recordFormEvent({
           companyId,
-          eventType: p.role === 'director' && p.isReserve ? 'reserve_director_appoint' : `${p.role}_appoint`,
+          eventType: nn1AppointEvent(p.role, p.isReserve),
           personId, role: stored.role,
           changeDate: d, relatedFormType: 'NN1',
           newValue: { name: nameEn || nameZh },
@@ -1502,7 +1510,7 @@ export async function writebackNN1(input: Nn1WritebackInput): Promise<string[]> 
         });
         await recordFormEvent({
           companyId,
-          eventType: c.role === 'director' && c.isReserve ? 'reserve_director_appoint' : `${c.role}_appoint`,
+          eventType: nn1AppointEvent(c.role, c.isReserve),
           personId, role: c.role,
           changeDate: d, relatedFormType: 'NN1',
           newValue: { name: nameEn || nameZh },

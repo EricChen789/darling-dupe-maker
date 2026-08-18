@@ -417,6 +417,13 @@ export async function findOrCreatePerson(input: {
     } as any)
     .select('id').single();
   if (error) throw error;
+  // 後端 POST 回傳的 id 是 D1 rowid 而非 UUID（api 回 {id: last_row_id}）——
+  // 後續 persons.update / person_company_roles.person_id 外鍵必須用真 UUID，重新查一次。
+  const { data: real } = await supabase
+    .from('persons').select('id')
+    .eq(idNum ? 'id_number' : 'name_english', idNum || nameEng)
+    .limit(1);
+  if ((real as any[])?.length) return (real as any[])[0].id;
   return created.id;
 }
 

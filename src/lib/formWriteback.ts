@@ -51,6 +51,35 @@ export async function resolveCompanyId(brNumber: string, selectedCompanyId?: str
 /** 完整香港身份證格式（部分號碼不參與去重，防誤串庫） */
 export const HKID_FULL_RE = /^[A-Z]{1,2}\d{6,7}\(\d\)$/;
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** 錯誤 → 可讀字串（後端 throw 的物件只有 status/error，String(e) 會變 '[object Object]'） */
+export function errText(e: any): string {
+  if (!e) return '未知錯誤';
+  if (typeof e === 'string') return e;
+  return e.message || e.error || e.error_description || JSON.stringify(e);
+}
+
+/** 由證件號碼／姓名重新解析 persons.id（真 UUID）。findOrCreatePerson 新建路徑可能回 D1 rowid，這裡兜底。 */
+async function resolveRealPersonId(nameEnglish: string, fullHkid: string): Promise<string | null> {
+  try {
+    if (fullHkid) {
+      const byId = await supabase.from('persons').select('id').eq('id_number', fullHkid).limit(1);
+      if ((byId.data as any[])?.length) return (byId.data as any[])[0].id;
+    }
+    const n = String(nameEnglish || '').trim();
+    if (n) {
+      const exact = await supabase.from('persons').select('id').eq('name_english', n).limit(5);
+      if ((exact.data as any[])?.length) return (exact.data as any[])[0].id;
+      const fuzzy = await supabase.from('persons').select('id').eq('name_english__like', `%${n}%`).limit(5);
+      if ((fuzzy.data as any[])?.length) return (fuzzy.data as any[])[0].id;
+    }
+  } catch (e: any) {
+    console.warn('[formWriteback] resolveRealPersonId failed:', e?.message || e);
+  }
+  return null;
+}
+
 export interface PersonFormInput {
   identity?: 'natural' | 'corporate';
   nameEnglish?: string;
@@ -83,7 +112,7 @@ export interface PersonFormInput {
 export async function upsertPersonFromForm(input: PersonFormInput): Promise<string> {
   const idRaw = (input.idNumber || '').trim();
   const fullHkid = idRaw.match(HKID_FULL_RE) ? idRaw : '';
-  const personId = await findOrCreatePerson({
+  let personId = await findOrCreatePerson({
     identity: input.identity || 'natural',
     nameEnglish: input.nameEnglish || '',
     nameChinese: input.nameChinese || '',
@@ -99,6 +128,12 @@ export async function upsertPersonFromForm(input: PersonFormInput): Promise<stri
     addr_district: input.addr_district,
     addr_region: input.addr_region,
   });
+
+  // findOrCreatePerson 新建路徑可能回 D1 rowid（非 UUID）——兜底重解析（useCompanies 已修，此為保險）
+  if (!UUID_RE.test(personId)) {
+    const real = await resolveRealPersonId(input.nameEnglish || '', fullHkid);
+    if (real) personId = real;
+  }
 
   // 非空字段才補丁，避免把既有資料洗空（姓名匹配路徑不會回寫這些字段）
   const patch: Record<string, any> = {};

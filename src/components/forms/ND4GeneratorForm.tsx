@@ -17,7 +17,7 @@ import type { Presenter } from '@/hooks/usePresenters';
 import PersonQuickPick from './PersonQuickPick';
 import AddressQuickPick from './AddressQuickPick';
 import ConfirmWritebackDialog from './ConfirmWritebackDialog';
-import { resolveCompanyId, buildND4Summary, writebackND4, type WritebackSummaryItem } from '@/lib/formWriteback';
+import { resolveCompanyId, buildND4Summary, writebackND4, errText, type WritebackSummaryItem } from '@/lib/formWriteback';
 
 interface ND4GeneratorFormProps {
   onBack: () => void;
@@ -219,7 +219,7 @@ export default function ND4GeneratorForm({ onBack, initialCompanyId, onNavigate 
       if (labels.length > 0) toast({ title: '已同步資料庫', description: labels.join('；') });
       if (warns.length > 0) toast({ title: '部分寫回未完成', description: warns.join('；'), variant: 'destructive' });
     } catch (e: any) {
-      toast({ title: '資料庫寫回失敗', description: e?.message || String(e), variant: 'destructive' });
+      toast({ title: '資料庫寫回失敗', description: errText(e), variant: 'destructive' });
     }
   };
 

@@ -15,7 +15,7 @@ import PresenterSelector from './PresenterSelector';
 import type { Presenter } from '@/hooks/usePresenters';
 import AddressQuickPick from './AddressQuickPick';
 import ConfirmWritebackDialog from './ConfirmWritebackDialog';
-import { resolveCompanyId, buildNN7Summary, writebackNN7, type WritebackSummaryItem } from '@/lib/formWriteback';
+import { resolveCompanyId, buildNN7Summary, writebackNN7, errText, type WritebackSummaryItem } from '@/lib/formWriteback';
 
 // ── 香港 18 區（繁體，用於下拉選單） ──
 const HK_DISTRICTS = [
@@ -229,7 +229,7 @@ export default function NN7GeneratorForm({ onBack, prefillPerson, initialCompany
       if (labels.length > 0) toast({ title: '已同步資料庫', description: labels.join('；') });
       if (warns.length > 0) toast({ title: '部分寫回未完成', description: warns.join('；'), variant: 'destructive' });
     } catch (e: any) {
-      toast({ title: '資料庫寫回失敗', description: e?.message || String(e), variant: 'destructive' });
+      toast({ title: '資料庫寫回失敗', description: errText(e), variant: 'destructive' });
     }
   };
 

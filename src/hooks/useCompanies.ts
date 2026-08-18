@@ -654,14 +654,17 @@ export function useUpdateCompany() {
       if (error) throw error;
     },
     onSuccess: (_data, variables) => {
+      const { id: companyId, data } = variables;
+      // 变更前旧值（refetch 前从缓存取）——name_change 的 NNC2 需要旧公司名称
+      const cached: any[] = (queryClient.getQueryData(['companies']) as any[]) || [];
+      const oldCompany = cached.find((c: any) => c.id === companyId);
       queryClient.refetchQueries({ queryKey: ['companies'] });
       // Record change events for NAR1 smart filing
-      const { id: companyId, data } = variables;
       if (data.regFlat !== undefined || data.regBuilding !== undefined || data.regStreet !== undefined || data.regDistrict !== undefined || data.regRegion !== undefined) {
-        recordChangeEvent({ company_id: companyId, event_type: 'address_change', new_value: { reg_flat: data.regFlat, reg_building: data.regBuilding, reg_street: data.regStreet, reg_district: data.regDistrict, reg_region: data.regRegion }, related_form_type: 'NR1' });
+        recordChangeEvent({ company_id: companyId, event_type: 'address_change', old_value: oldCompany ? { reg_flat: oldCompany.regFlat, reg_building: oldCompany.regBuilding, reg_street: oldCompany.regStreet, reg_district: oldCompany.regDistrict, reg_region: oldCompany.regRegion } : undefined, new_value: { reg_flat: data.regFlat, reg_building: data.regBuilding, reg_street: data.regStreet, reg_district: data.regDistrict, reg_region: data.regRegion }, related_form_type: 'NR1' });
       }
       if (data.name !== undefined || data.chineseName !== undefined) {
-        recordChangeEvent({ company_id: companyId, event_type: 'name_change', new_value: { name: data.name, chinese_name: data.chineseName }, related_form_type: 'NNC2' });
+        recordChangeEvent({ company_id: companyId, event_type: 'name_change', old_value: oldCompany ? { name: oldCompany.name, chinese_name: oldCompany.chineseName } : undefined, new_value: { name: data.name, chinese_name: data.chineseName }, related_form_type: 'NNC2' });
       }
       if (data.email !== undefined) {
         recordChangeEvent({ company_id: companyId, event_type: 'company_email_change', new_value: { email: data.email }, related_form_type: 'NR1' });

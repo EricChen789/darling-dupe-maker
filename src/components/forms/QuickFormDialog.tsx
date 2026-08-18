@@ -42,6 +42,8 @@ const FORM_CONFIGS: Record<string, { label: string; endpoint: string; icon: stri
   share_certificate: { label: '股票證書', endpoint: '/api/generate-share-transfer-rtf', icon: '🏷️' },
   nsc1: { label: 'NSC1 配發申報書', endpoint: '/api/generate-nsc1-pdf', icon: '📋' },
   nd2b_change: { label: 'ND2B 更改詳情通知書', endpoint: '/api/generate-nd2b-pdf', icon: '📋' },
+  nr1: { label: 'NR1 更改註冊辦事處地址通知書', endpoint: '/api/generate-nr1-pdf', icon: '📋' },
+  nnc2: { label: 'NNC2 更改公司名稱通知書', endpoint: '/api/generate-nnc2-pdf', icon: '📋' },
 };
 
 function getFormOptions(events: QuickFormEvent[]): { key: string; config: typeof FORM_CONFIGS[string] }[] {
@@ -74,6 +76,10 @@ function getFormOptions(events: QuickFormEvent[]): { key: string; config: typeof
     opts.push({ key: 'share_certificate', config: FORM_CONFIGS.share_certificate });
   } else if (eventType === 'nd2b_change') {
     opts.push({ key: 'nd2b_change', config: FORM_CONFIGS.nd2b_change });
+  } else if (eventType === 'nr1') {
+    opts.push({ key: 'nr1', config: FORM_CONFIGS.nr1 });
+  } else if (eventType === 'nnc2') {
+    opts.push({ key: 'nnc2', config: FORM_CONFIGS.nnc2 });
   }
 
   return opts;
@@ -502,6 +508,59 @@ function buildFormPayload(
       }
       nd2bPayload.changeTypes = changeTypes;
       return nd2bPayload;
+    }
+    case 'nr1': {
+      // 註冊辦事處地址變更：生效日期 = 变更事件的 change_date
+      const changeParts = parseDateParts(raw?.change_date || today);
+      const now = new Date();
+      return {
+        brNumber: company.brNumber || '',
+        companyName: company.name,
+        flat: raw?.reg_flat || '',
+        building: raw?.reg_building || '',
+        street: raw?.reg_street || '',
+        district: raw?.reg_district || '',
+        region: raw?.reg_region || '',
+        addressEffectiveDay: changeParts.day,
+        addressEffectiveMonth: changeParts.month,
+        addressEffectiveYear: changeParts.year,
+        email: '', emailEffectiveDay: '', emailEffectiveMonth: '', emailEffectiveYear: '',
+        phone: '', phoneEffectiveDay: '', phoneEffectiveMonth: '', phoneEffectiveYear: '',
+        signerName: '',  // 签署时再填
+        signerCapacity: '',
+        signDateDay: String(now.getDate()).padStart(2, '0'),
+        signDateMonth: String(now.getMonth() + 1).padStart(2, '0'),
+        signDateYear: String(now.getFullYear()),
+        presentorName: DEFAULT_PRESENTER.name,
+        presentorAddress: DEFAULT_PRESENTER.address,
+        presentorContact: `Tel: ${DEFAULT_PRESENTER.phone}  Fax: ${DEFAULT_PRESENTER.fax}  Email: ${DEFAULT_PRESENTER.email}`,
+      };
+    }
+    case 'nnc2': {
+      // 更改公司名稱：特別決議日期 = 变更事件的 change_date；旧名来自 old_value
+      const rd = parseDateParts(raw?.change_date || today);
+      const rdDmY = rd.day && rd.month && rd.year ? `${rd.day}/${rd.month}/${rd.year}` : (raw?.change_date || '');
+      return {
+        fields: {
+          'fill_1_P.1': company.brNumber || '',
+          'fill_2_P.1': raw?.old_name || '',
+          'fill_3_P.1': raw?.old_chinese_name || '',
+          'fill_4_P.1': rd.day,
+          'fill_5_P.1': rd.month,
+          'fill_6_P.1': rd.year,
+          'fill_7_P.1': raw?.name || '',
+          'fill_8_P.1': raw?.chinese_name || '',
+          'fill_9_P.1': '',  // 簽署人留空，簽署時再填
+          'fill_10_P.1': rdDmY,
+          'fill_11_P.1': DEFAULT_PRESENTER.name,
+          'fill_12_P.1': DEFAULT_PRESENTER.name,
+          'fill_13_P.1': DEFAULT_PRESENTER.address,
+          'fill_14_P.1': DEFAULT_PRESENTER.phone,
+          'fill_15_P.1': DEFAULT_PRESENTER.fax,
+          'fill_16_P.1': DEFAULT_PRESENTER.email,
+          'fill_17_P.1': DEFAULT_PRESENTER.reference,
+        },
+      };
     }
     case 'share_certificate': {
       // 日期留空：轉讓文件日期稍後再填（不自動填今天）

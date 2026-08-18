@@ -26,6 +26,9 @@ const EVENT_TYPE_TO_QF_TYPE: Record<string, string> = {
   person_name_change: 'nd2b_change',
   person_id_change: 'nd2b_change',
   person_contact_change: 'nd2b_change',
+  // 公司资料变更（公司资料 Tab）
+  address_change: 'nr1',
+  name_change: 'nnc2',
 };
 
 // ── Map event_type to role for QuickFormDialog ──
@@ -100,6 +103,19 @@ function changeEventToQfEvent(ev: ChangeEvent) {
   // raw 里没名字的事件（person_*_change 等）用 enrich 的 person_name 补上
   if (title === (EVENT_TYPE_LABELS[ev.event_type] || ev.event_type) && ev.person_name) {
     title = `${title}：${ev.person_name}`;
+  }
+
+  // name_change 的 NNC2 需要旧公司名称（old_value 里）
+  if (qfType === 'nnc2' && ev.old_value) {
+    try {
+      const oldRaw = typeof ev.old_value === 'string' ? JSON.parse(ev.old_value) : (ev.old_value || {});
+      if (oldRaw.name) raw.old_name = oldRaw.name;
+      if (oldRaw.chinese_name) raw.old_chinese_name = oldRaw.chinese_name;
+    } catch { /* keep empty */ }
+  }
+  // 公司资料变更（NR1/NNC2）：生效日期用变更事件本身的 change_date
+  if ((qfType === 'nr1' || qfType === 'nnc2') && ev.change_date) {
+    raw.change_date = ev.change_date;
   }
 
   // For ND2B changes, pass the original event_type so payload builder

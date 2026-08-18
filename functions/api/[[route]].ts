@@ -452,6 +452,11 @@ for (const table of TABLES) {
       if (row.id === undefined || row.id === null || row.id === '') {
         row.id = generateUUID();
       }
+      // change_events：前端 recordChangeEvent 不传 created_at（D1 无默认值，
+      // 旧行全空），补上以便同日多事件按最新在前排序
+      if (table === "change_events" && (row.created_at === undefined || row.created_at === null || row.created_at === '')) {
+        row.created_at = new Date().toISOString();
+      }
       const keys = Object.keys(row);
       const values = Object.values(row);
       const placeholders = keys.map(() => "?").join(", ");

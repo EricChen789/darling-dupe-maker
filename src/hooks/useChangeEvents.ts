@@ -35,6 +35,19 @@ export function useChangeEvents(companyId: string | undefined) {
         .order('change_date', { ascending: false });
       if (error) throw error;
       const events = (data || []) as unknown as ChangeEvent[];
+      // 客户端排序：change_date（DD/MM/YYYY → YYYYMMDD 可比键）倒序，
+      // 同日多个事件再按 created_at 倒序，最新在前
+      const dateKey = (s?: string) => {
+        const t = String(s || '').trim();
+        const m = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+        if (!m) return t;
+        return `${m[3]}${m[2].padStart(2, '0')}${m[1].padStart(2, '0')}`;
+      };
+      events.sort((a, b) => {
+        const dc = dateKey(b.change_date).localeCompare(dateKey(a.change_date));
+        if (dc !== 0) return dc;
+        return String(b.created_at || '').localeCompare(String(a.created_at || ''));
+      });
 
       // Enrich person names — needed for events whose values carry no name
       // (person_address/id/contact_change) or no old_value (shareholder_remove)

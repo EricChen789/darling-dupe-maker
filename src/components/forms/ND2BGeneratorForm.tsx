@@ -417,16 +417,17 @@ export default function ND2BGeneratorForm({ onBack, prefillPerson, prefillNewAdd
       downloadBase64Pdf(result.pdf, `ND2B-${formData.companyName || 'form'}.pdf`);
       saveFormHistory({ formType: 'ND2B', formData: { formData, selectedCompanyId, selectedPersonId } });
 
-      // 寫回資料庫（PDF 成功才寫；含 persons 更新 + 事件，person_id 用 persons.id、change_date 用 DD/MM/YYYY）
-      if (writebackCompanyId) {
-        await runWriteback(writebackCompanyId);
-      }
-
       const changeCount = formData.changeTypes.length;
       const changeDesc = changeCount > 0
         ? `已記錄 ${changeCount} 項變更：${formData.changeTypes.map((t: string) => ({address:'地址', name:'姓名', id:'證件', contact:'聯絡'}[t] || t)).join('、')}`
         : '';
       toast({ title: '生成成功', description: `ND2B 表格已下載${changeDesc ? ' · ' + changeDesc : ''}` });
+
+      // 寫回資料庫（PDF 成功才寫；含 persons 更新 + 事件，person_id 用 persons.id、change_date 用 DD/MM/YYYY）
+      // 放在「生成成功」toast 之後（TOAST_LIMIT=1，後發的 toast 會覆蓋前者，與 ND4/NN6/NN7 順序一致）
+      if (writebackCompanyId) {
+        await runWriteback(writebackCompanyId);
+      }
     } catch (err: any) {
       toast({ title: '生成失敗', description: err.message, variant: 'destructive' });
     } finally {

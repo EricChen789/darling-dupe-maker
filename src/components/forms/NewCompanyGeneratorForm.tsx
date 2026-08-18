@@ -17,6 +17,12 @@ import { downloadBase64Pdf } from '@/lib/downloadPdf';
 import AddressQuickPick from './AddressQuickPick';
 import PersonQuickPick from './PersonQuickPick';
 import { useCompanies } from '@/hooks/useCompanies';
+import { useQueryClient } from '@tanstack/react-query';
+import ConfirmWritebackDialog from './ConfirmWritebackDialog';
+import {
+  buildNewCompanySummary, writebackNewCompany, errText,
+  type NewCompanyWritebackInput, type WritebackSummaryItem,
+} from '@/lib/formWriteback';
 
 interface Props { onBack: () => void; initialCompanyId?: string; }
 
@@ -67,9 +73,11 @@ const HK_DISTRICTS = [
 export default function NewCompanyGeneratorForm({ onBack, initialCompanyId }: Props) {
   const { data: companies = [] } = useCompanies();
   const { mutate: saveFormHistory } = useSaveFormHistory();
+  const queryClient = useQueryClient();
   const [jurisdiction, setJurisdiction] = useState<'HK' | 'BVI'>('HK');
   const [generating, setGenerating] = useState(false);
   const [referenceCompanyId, setReferenceCompanyId] = useState('');
+  const [pendingWriteback, setPendingWriteback] = useState<{ title: string; summary: WritebackSummaryItem[] } | null>(null);
 
   // Common
   const [companyName, setCompanyName] = useState('');
@@ -175,11 +183,59 @@ export default function NewCompanyGeneratorForm({ onBack, initialCompanyId }: Pr
     }
   };
 
-  const handleGenerate = async () => {
+  // ── 寫回資料庫：確認框 → doGenerate（PDF 成功才寫）──
+  const buildWritebackInput = (): NewCompanyWritebackInput => ({
+    name: companyName.trim(),
+    chineseName: companyChinese.trim(),
+    jurisdiction: jurisdiction === 'HK' ? 'Hong Kong' : 'BVI',
+    companyType,
+    businessNature,
+    businessCode,
+    regFlat: addrFlat, regBuilding: addrBuilding, regStreet: addrStreet,
+    regDistrict: addrDistrict, regRegion: addrRegion,
+    email: companyEmail, phone: companyPhone,
+    officers: officers
+      .filter(o => (o.nameEnglish || o.nameChinese).trim())
+      .map(o => ({
+        role: o.role, identity: o.identity,
+        nameEnglish: o.nameEnglish, nameChinese: o.nameChinese,
+        idNumber: o.idNumber, address: o.address,
+        dateOfBirth: o.dateOfBirth, placeIncorporated: o.placeIncorporated,
+        companyNumberRef: o.companyNumberRef,
+        previousNameChinese: o.previousNameChinese, previousNameEnglish: o.previousNameEnglish,
+        aliasChinese: o.aliasChinese, aliasEnglish: o.aliasEnglish,
+        passportCountry: o.passportCountry, tcspLicense: o.tcspLicense,
+      })),
+    shareholders: shareholders
+      .filter(s => [s.surname, s.otherNames].join(' ').trim() || s.name.trim())
+      .map(s => ({
+        name: s.name, surname: s.surname, otherNames: s.otherNames,
+        address: s.address, shares: s.shares, shareType: s.shareType, amountPaid: s.amountPaid,
+      })),
+  });
+
+  const runWriteback = async () => {
+    try {
+      const labels = await writebackNewCompany(buildWritebackInput());
+      queryClient.invalidateQueries({ queryKey: ['companies'] });
+      const warns = labels.filter(l => l.startsWith('⚠'));
+      if (labels.length > 0) toast({ title: '已同步資料庫', description: labels.join('；') });
+      if (warns.length > 0) toast({ title: '部分寫回未完成', description: warns.join('；'), variant: 'destructive' });
+    } catch (e: any) {
+      toast({ title: '資料庫寫回失敗', description: errText(e), variant: 'destructive' });
+    }
+  };
+
+  // NNC1 確認框入口
+  const handleGenerate = () => {
     if (!companyName.trim()) {
       toast({ title: '請填寫公司名稱', variant: 'destructive' });
       return;
     }
+    setPendingWriteback({ title: 'NNC1 生成確認', summary: buildNewCompanySummary(buildWritebackInput()) });
+  };
+
+  const doGenerate = async () => {
     setGenerating(true);
     try {
       // ── Common data (used by both HK and BVI) ──
@@ -696,6 +752,9 @@ export default function NewCompanyGeneratorForm({ onBack, initialCompanyId }: Pr
           // 提醒用戶可以一併生成 IRBR1
           setShowIRBR1Reminder(true);
         }
+
+        // 寫回資料庫（放在 IRBR1 toast 之後，TOAST_LIMIT=1 順序一致）
+        await runWriteback();
       } else {
         // BVI — keep generic generator
         const sections: GenericFormSection[] = [];
@@ -738,6 +797,7 @@ export default function NewCompanyGeneratorForm({ onBack, initialCompanyId }: Pr
         if (ok) {
           saveFormHistory({ formType: 'NNC1', formData: { jurisdiction, companyName, companyChinese, companyType, regAddress: regAddressJoined, addrFlat, addrBuilding, addrStreet, addrDistrict, addrRegion, companyEmail, companyPhone, businessNature, businessCode, shareCapital, totalShares, submitterNameCn, submitterNameEn, submitterAddress, submitterPhone, submitterFax, submitterEmail, submitterRef, signerDate, authorisedShares, registeredAgent, officers, shareholders, signerShareholderIndex, includeIRBR1, irbr1Yes } });
           toast({ title: 'PDF 已生成', description: 'BVI 表格已下載' });
+          await runWriteback();
         }
       }
     } catch (err: any) {
@@ -1192,6 +1252,15 @@ export default function NewCompanyGeneratorForm({ onBack, initialCompanyId }: Pr
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmWritebackDialog
+        open={!!pendingWriteback}
+        title={pendingWriteback?.title || ''}
+        summary={pendingWriteback?.summary || []}
+        canWrite
+        onConfirm={() => { setPendingWriteback(null); doGenerate(); }}
+        onCancel={() => setPendingWriteback(null)}
+      />
     </div>
   );
 }

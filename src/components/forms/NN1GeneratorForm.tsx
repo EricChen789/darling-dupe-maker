@@ -16,6 +16,12 @@ import { toast } from '@/hooks/use-toast';
 import { useCompanies } from '@/hooks/useCompanies';
 import { useSaveFormHistory } from '@/hooks/useFormHistory';
 import { downloadBase64Pdf } from '@/lib/downloadPdf';
+import { useQueryClient } from '@tanstack/react-query';
+import ConfirmWritebackDialog from './ConfirmWritebackDialog';
+import {
+  buildNN1Summary, writebackNN1, errText, dmyToDDMMYYYY,
+  type Nn1WritebackInput, type Nn1NaturalInput, type Nn1CorporateInput, type WritebackSummaryItem,
+} from '@/lib/formWriteback';
 import FormHistorySelector from './FormHistorySelector';
 import PresenterSelector from './PresenterSelector';
 import type { Presenter } from '@/hooks/usePresenters';
@@ -254,6 +260,8 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
   const { data: companies = [] } = useCompanies();
   const [selectedCompanyId, setSelectedCompanyId] = useState(initialCompanyId || '');
   const [generating, setGenerating] = useState(false);
+  const queryClient = useQueryClient();
+  const [pendingWriteback, setPendingWriteback] = useState<{ title: string; summary: WritebackSummaryItem[] } | null>(null);
   const selectedCompany = useMemo(() => companies.find(c => c.id === selectedCompanyId), [companies, selectedCompanyId]);
 
   // ═══ P.1: Company Info ═══
@@ -473,9 +481,107 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
     if (data.dirCorps && Array.isArray(data.dirCorps)) setDirCorps(data.dirCorps);
   };
 
-  // ═══════════ GENERATE ═══════════
-  const handleGenerate = async () => {
+  // ═══════════ WRITEBACK ═══════════
+  const buildWritebackInput = (): Nn1WritebackInput => {
+    const natPersons: Nn1NaturalInput[] = [];
+    for (const a of authRepNats) {
+      if (!a.surname && !a.otherNames && !a.nameChinese) continue;
+      natPersons.push({
+        role: 'authorized_representative',
+        nameChinese: a.nameChinese, surname: a.surname, otherNames: a.otherNames,
+        addrFlat: a.addrFlat, addrBuilding: a.addrBuilding, addrStreet: a.addrStreet, addrDistrict: a.addrDistrict,
+        email: a.email, hkidMain: a.hkidMain, hkidCheck: a.hkidCheck,
+        passportCountry: a.passportCountry, passportNumber: a.passportNumber,
+      });
+    }
+    if (hasSecNat && (secNat.surname || secNat.otherNames || secNat.nameChinese)) {
+      natPersons.push({
+        role: 'secretary',
+        nameChinese: secNat.nameChinese, surname: secNat.surname, otherNames: secNat.otherNames,
+        prevNameChinese: secNat.prevNameChinese, prevNameEnglish: secNat.prevNameEnglish,
+        aliasChinese: secNat.aliasChinese, aliasEnglish: secNat.aliasEnglish,
+        addrFlat: secNat.addrFlat, addrBuilding: secNat.addrBuilding, addrStreet: secNat.addrStreet,
+        addrDistrict: secNat.addrDistrict, addrRegion: secNat.addrRegion,
+        email: secNat.email, hkidMain: secNat.hkidMain, hkidCheck: secNat.hkidCheck,
+        passportCountry: secNat.passportCountry, passportNumber: secNat.passportNumber,
+      });
+    }
+    for (const d of dirNats) {
+      if (!d.surname && !d.otherNames && !d.nameChinese) continue;
+      natPersons.push({
+        role: 'director',
+        nameChinese: d.nameChinese, surname: d.surname, otherNames: d.otherNames,
+        prevNameChinese: d.prevNameChinese, prevNameEnglish: d.prevNameEnglish,
+        aliasChinese: d.aliasChinese, aliasEnglish: d.aliasEnglish,
+        addrFlat: d.addrFlat, addrBuilding: d.addrBuilding, addrStreet: d.addrStreet,
+        addrDistrict: d.addrDistrict, addrRegion: d.addrRegion,
+        email: d.email, hkidMain: d.hkidMain, hkidCheck: d.hkidCheck,
+        passportCountry: d.passportCountry, passportNumber: d.passportNumber,
+        isReserve: d.isAlternate, alternateTo: d.alternateTo,
+      });
+    }
+    const corpPersons: Nn1CorporateInput[] = [];
+    for (const c of authRepCorps) {
+      if (!c.nameEnglish && !c.nameChinese) continue;
+      corpPersons.push({
+        role: 'authorized_representative',
+        nameChinese: c.nameChinese, nameEnglish: c.nameEnglish,
+        addrFlat: c.addrFlat, addrBuilding: c.addrBuilding, addrStreet: c.addrStreet, addrDistrict: c.addrDistrict,
+        email: c.email,
+      });
+    }
+    for (const s of secCorps) {
+      if (!s.nameEnglish && !s.nameChinese) continue;
+      corpPersons.push({
+        role: 'secretary',
+        nameChinese: s.nameChinese, nameEnglish: s.nameEnglish,
+        addrFlat: s.addrFlat, addrBuilding: s.addrBuilding, addrStreet: s.addrStreet,
+        addrDistrict: s.addrDistrict, addrRegion: s.addrRegion,
+        email: s.email, brNumber: s.brNumber,
+      });
+    }
+    for (const d of dirCorps) {
+      if (!d.nameEnglish && !d.nameChinese) continue;
+      corpPersons.push({
+        role: 'director',
+        nameChinese: d.nameChinese, nameEnglish: d.nameEnglish,
+        addrFlat: d.addrFlat, addrBuilding: d.addrBuilding, addrStreet: d.addrStreet,
+        addrDistrict: d.addrDistrict, addrRegion: d.addrRegion,
+        email: d.email,
+        isReserve: d.isAlternate, alternateTo: d.alternateTo,
+      });
+    }
+    return {
+      name: proposedNameEn.trim(),
+      chineseName: proposedNameCn.trim(),
+      jurisdiction: 'Non-Hong Kong',
+      incorporationDate: dmyToDDMMYYYY(estDay, estMonth, estYear),
+      regFlat: ppbFlat, regBuilding: ppbBuilding, regStreet: ppbStreet, regDistrict: ppbDistrict,
+      email: companyEmail, phone: companyPhone,
+      natPersons, corpPersons,
+    };
+  };
+
+  const runWriteback = async () => {
+    try {
+      const labels = await writebackNN1(buildWritebackInput());
+      queryClient.invalidateQueries({ queryKey: ['companies'] });
+      const warns = labels.filter(l => l.startsWith('⚠'));
+      if (labels.length > 0) toast({ title: '已同步資料庫', description: labels.join('；') });
+      if (warns.length > 0) toast({ title: '部分寫回未完成', description: warns.join('；'), variant: 'destructive' });
+    } catch (e: any) {
+      toast({ title: '資料庫寫回失敗', description: errText(e), variant: 'destructive' });
+    }
+  };
+
+  // NN1 確認框入口
+  const handleGenerate = () => {
     if (!proposedNameEn.trim()) { toast({ title: '錯誤', description: '請填寫擬用公司英文名稱', variant: 'destructive' }); return; }
+    setPendingWriteback({ title: 'NN1 生成確認', summary: buildNN1Summary(buildWritebackInput()) });
+  };
+
+  // ═══════════ GENERATE ═══════════
+  const doGenerate = async () => {
     setGenerating(true);
     try {
       const token = localStorage.getItem("secretary_jwt") || "";
@@ -716,6 +822,9 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
         formType: 'NN1',
         formData: { proposedNameEn, proposedNameCn, placeOfIncorporation, estDay, estMonth, estYear, addrFlat, addrBuilding, addrStreet, addrDistrict, companyEmail, companyPhone, regOffFlat, regOffBuilding, regOffStreet, regOffDistrict, regOffCountry, ppbFlat, ppbBuilding, ppbStreet, ppbDistrict, ppbCountry, overseasEmail, presenterNameCn, presenterNameEn, presenterAddress, presenterPhone, presenterFax, presenterEmail, presenterRef, charterDocs, incorpCert, acctFromDay, acctFromMonth, acctFromYear, acctToDay, acctToMonth, acctToYear, noAcctsRequired, incorpLess18m, signatoryName, signDateDay, signDateMonth, signDateYear, signatoryCapacity, hasSecNat, selectedCompanyId, authRepNats, authRepCorps, secNat: hasSecNat ? secNat : null, secCorps, dirNats, dirCorps, includeIRBR2, irbr2Registered, irbr2Elect3yr },
       });
+
+      // 寫回資料庫（PDF 成功才寫；放在歷史保存之後，TOAST_LIMIT=1 順序一致）
+      await runWriteback();
 
     } catch (err: any) {
       toast({ title: '生成失敗', description: err.message, variant: 'destructive' });
@@ -1314,6 +1423,15 @@ export default function NN1GeneratorForm({ onBack, initialCompanyId }: { onBack:
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmWritebackDialog
+        open={!!pendingWriteback}
+        title={pendingWriteback?.title || ''}
+        summary={pendingWriteback?.summary || []}
+        canWrite
+        onConfirm={() => { setPendingWriteback(null); doGenerate(); }}
+        onCancel={() => setPendingWriteback(null)}
+      />
     </div>
   );
 }

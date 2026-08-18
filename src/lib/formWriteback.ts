@@ -1155,3 +1155,344 @@ export async function writebackNSC1(
   if (labels.length === 0) labels.push('⚠ 沒有可寫入的獲配人');
   return labels;
 }
+
+// ── NNC1（新公司成立表格）──
+
+export interface Nnc1OfficerInput {
+  role: 'director' | 'secretary';
+  identity: 'natural' | 'corporate';
+  nameEnglish?: string;
+  nameChinese?: string;
+  idNumber?: string;
+  address?: string;               // comma-joined structured address
+  dateOfBirth?: string;
+  placeIncorporated?: string;
+  companyNumberRef?: string;
+  previousNameChinese?: string;
+  previousNameEnglish?: string;
+  aliasChinese?: string;
+  aliasEnglish?: string;
+  passportCountry?: string;
+  tcspLicense?: string;
+}
+
+export interface Nnc1ShareholderInput {
+  name?: string;                  // 中文姓名
+  surname?: string;
+  otherNames?: string;
+  address?: string;               // comma-joined structured address
+  shares?: number;
+  shareType?: string;
+  amountPaid?: string;
+}
+
+export interface NewCompanyWritebackInput {
+  name: string;
+  chineseName: string;
+  jurisdiction: 'Hong Kong' | 'BVI';
+  companyType?: string;
+  businessNature?: string;
+  businessCode?: string;
+  regFlat?: string;
+  regBuilding?: string;
+  regStreet?: string;
+  regDistrict?: string;
+  regRegion?: string;
+  email?: string;
+  phone?: string;
+  officers: Nnc1OfficerInput[];
+  shareholders: Nnc1ShareholderInput[];
+}
+
+/** comma-joined 地址 → 5 欄（表單 parseAddr 同款語義） */
+export function splitCommaAddr(addr?: string): { flat: string; building: string; street: string; district: string; region: string } {
+  const parts = String(addr || '').split(/[,，]\s*/);
+  return {
+    flat: parts[0] || '', building: parts[1] || '',
+    street: parts[2] || '', district: parts[3] || '', region: parts[4] || '',
+  };
+}
+
+export function buildNewCompanySummary(input: NewCompanyWritebackInput): WritebackSummaryItem[] {
+  const items: WritebackSummaryItem[] = [{ label: '建立新公司', detail: input.name }];
+  for (const o of input.officers || []) {
+    const n = ((o.nameEnglish || '').trim()) || ((o.nameChinese || '').trim());
+    if (!n) continue;
+    items.push({ label: `${o.role === 'director' ? '董事' : '公司秘書'}：${n}`, detail: o.identity === 'corporate' ? '法人' : '' });
+  }
+  for (const s of input.shareholders || []) {
+    const n = [s.surname, s.otherNames].filter(Boolean).join(' ').trim() || (s.name || '').trim();
+    if (!n) continue;
+    items.push({ label: `股東：${n}`, detail: `${s.shares || 0} 股` });
+  }
+  return items;
+}
+
+/**
+ * NNC1 寫回：ensureCompany 建公司（jurisdiction HK/BVI，公司編號留空=BR 待批，成立日期=今天）
+ * → officers → upsertPersonFromForm（法人含 placeIncorporated/companyNumberRef；秘書 TCSP 牌）
+ * → upsertRole（director/secretary，dateAppointed=今天）→ *_appoint 事件
+ * → shareholders → person + upsertRole(shareholder, shares/shareType/paidUp) → shareholder_add 事件（related 'NNC1'）
+ */
+export async function writebackNewCompany(input: NewCompanyWritebackInput): Promise<string[]> {
+  const labels: string[] = [];
+  const d = todayDDMMYYYY();
+  try {
+    const companyId = await ensureCompany({
+      name: input.name,
+      chineseName: input.chineseName,
+      jurisdiction: input.jurisdiction,
+      companyType: input.companyType || '',
+      businessNature: input.businessNature || '',
+      businessCode: input.businessCode || '',
+      incorporationDate: d,
+      reg_flat: input.regFlat || '',
+      reg_building: input.regBuilding || '',
+      reg_street: input.regStreet || '',
+      reg_district: input.regDistrict || '',
+      reg_region: input.regRegion || '',
+      email: input.email || '',
+      phone: input.phone || '',
+    });
+    labels.push(`已建立公司：${input.name}`);
+
+    for (const o of input.officers || []) {
+      const nameEn = (o.nameEnglish || '').trim();
+      const nameZh = (o.nameChinese || '').trim();
+      if (!nameEn && !nameZh) continue;
+      const addr = splitCommaAddr(o.address);
+      try {
+        const personId = await upsertPersonFromForm({
+          identity: o.identity,
+          nameEnglish: nameEn,
+          nameChinese: nameZh,
+          idNumber: o.idNumber,
+          address: o.address,
+          addr_flat: addr.flat, addr_building: addr.building, addr_street: addr.street,
+          addr_district: addr.district, addr_region: addr.region,
+          dateOfBirth: o.dateOfBirth,
+          placeIncorporated: o.placeIncorporated,
+          companyNumberRef: o.companyNumberRef,
+          previousNameChinese: o.previousNameChinese,
+          previousNameEnglish: o.previousNameEnglish,
+          aliasChinese: o.aliasChinese,
+          aliasEnglish: o.aliasEnglish,
+          passportCountry: o.passportCountry,
+          tcspNumber: o.tcspLicense,
+        });
+        await upsertRole({ personId, companyId, role: o.role, dateAppointed: d });
+        await recordFormEvent({
+          companyId, eventType: ROLE_EVENT_MAP[o.role].appoint, personId, role: o.role,
+          changeDate: d, relatedFormType: 'NNC1',
+          newValue: { name: nameEn || nameZh, identity: o.identity },
+        });
+        labels.push(`已寫入${ROLE_LABEL[o.role]}：${nameEn || nameZh}`);
+      } catch (e: any) {
+        labels.push(`⚠ ${ROLE_LABEL[o.role]}「${nameEn || nameZh}」寫回失敗：${errText(e)}`);
+      }
+    }
+
+    for (const s of input.shareholders || []) {
+      const nameEn = [s.surname, s.otherNames].filter(Boolean).join(' ').trim();
+      const nameZh = (s.name || '').trim();
+      if (!nameEn && !nameZh) continue;
+      const addr = splitCommaAddr(s.address);
+      const shares = Math.floor(Number(s.shares) || 0);
+      try {
+        const personId = await upsertPersonFromForm({
+          identity: 'natural',
+          nameEnglish: nameEn,
+          nameChinese: nameZh,
+          address: s.address,
+          addr_flat: addr.flat, addr_building: addr.building, addr_street: addr.street,
+          addr_district: addr.district, addr_region: addr.region,
+        });
+        await upsertRole({
+          personId, companyId, role: 'shareholder', dateAppointed: d,
+          shares, shareType: s.shareType || 'Ordinary', currency: 'HKD', paidUp: s.amountPaid || '',
+        });
+        await recordFormEvent({
+          companyId, eventType: 'shareholder_add', personId, role: 'shareholder',
+          changeDate: d, relatedFormType: 'NNC1',
+          newValue: { name: nameEn || nameZh, shares },
+        });
+        labels.push(`已寫入股東：${nameEn || nameZh}（${shares} 股）`);
+      } catch (e: any) {
+        labels.push(`⚠ 股東「${nameEn || nameZh}」寫回失敗：${errText(e)}`);
+      }
+    }
+  } catch (e: any) {
+    labels.push(`⚠ 新公司寫回失敗：${errText(e)}`);
+  }
+  return labels;
+}
+
+// ── NN1（註冊非香港公司）──
+
+export interface Nn1NaturalInput {
+  role: 'director' | 'secretary' | 'authorized_representative';
+  nameChinese?: string;
+  surname?: string;
+  otherNames?: string;
+  prevNameChinese?: string;
+  prevNameEnglish?: string;
+  aliasChinese?: string;
+  aliasEnglish?: string;
+  addrFlat?: string;
+  addrBuilding?: string;
+  addrStreet?: string;
+  addrDistrict?: string;
+  addrRegion?: string;
+  email?: string;
+  hkidMain?: string;
+  hkidCheck?: string;
+  passportCountry?: string;
+  passportNumber?: string;
+  isReserve?: boolean;
+  alternateTo?: string;
+}
+
+export interface Nn1CorporateInput {
+  role: 'director' | 'secretary' | 'authorized_representative';
+  nameChinese?: string;
+  nameEnglish?: string;
+  addrFlat?: string;
+  addrBuilding?: string;
+  addrStreet?: string;
+  addrDistrict?: string;
+  addrRegion?: string;
+  email?: string;
+  brNumber?: string;
+  isReserve?: boolean;
+  alternateTo?: string;
+}
+
+export interface Nn1WritebackInput {
+  name: string;                       // proposedNameEn
+  chineseName: string;                // proposedNameCn
+  jurisdiction?: string;              // 固定 'Non-Hong Kong'
+  incorporationDate?: string;         // DD/MM/YYYY（成立 D/M/Y）
+  regFlat?: string; regBuilding?: string; regStreet?: string; regDistrict?: string;
+  email?: string;
+  phone?: string;
+  natPersons: Nn1NaturalInput[];
+  corpPersons: Nn1CorporateInput[];
+}
+
+export function buildNN1Summary(input: Nn1WritebackInput): WritebackSummaryItem[] {
+  const items: WritebackSummaryItem[] = [{ label: '建立非香港公司', detail: input.name }];
+  const push = (role: string, nameEn: string, nameZh: string, identity: string) => {
+    const n = nameEn || nameZh;
+    if (!n) return;
+    items.push({ label: `${ROLE_LABEL[role] || role}：${n}`, detail: identity === 'corporate' ? '法人' : '' });
+  };
+  for (const p of input.natPersons || []) {
+    push(p.role, [p.surname, p.otherNames].filter(Boolean).join(' ').trim(), p.nameChinese || '', 'natural');
+  }
+  for (const c of input.corpPersons || []) {
+    push(c.role, c.nameEnglish || '', c.nameChinese || '', 'corporate');
+  }
+  return items;
+}
+
+/**
+ * NN1 寫回：ensureCompany 建非香港公司行（jurisdiction 'Non-Hong-Kong'，成立日期=表單成立 D/M/Y，地址=PPB）
+ * → 自然人人員（HKID 拼 A123456(7) 全格式才參與去重）→ upsertRole（director/secretary/authorized_representative，
+ *   isAlternate→is_reserve、alternateTo→notes）→ *_appoint 事件（authorized_rep_appoint 已加入 EVENT_FORM_MAP，related 'NN1'）
+ * → 法人同型（identity corporate、companyNumberRef=brNumber）
+ */
+export async function writebackNN1(input: Nn1WritebackInput): Promise<string[]> {
+  const labels: string[] = [];
+  const d = todayDDMMYYYY();
+  try {
+    const companyId = await ensureCompany({
+      name: input.name,
+      chineseName: input.chineseName,
+      jurisdiction: input.jurisdiction || 'Non-Hong Kong',
+      incorporationDate: input.incorporationDate || '',
+      reg_flat: input.regFlat || '',
+      reg_building: input.regBuilding || '',
+      reg_street: input.regStreet || '',
+      reg_district: input.regDistrict || '',
+      email: input.email || '',
+      phone: input.phone || '',
+    });
+    labels.push(`已建立公司：${input.name}`);
+
+    for (const p of input.natPersons || []) {
+      const nameEn = [p.surname, p.otherNames].filter(Boolean).join(' ').trim();
+      const nameZh = (p.nameChinese || '').trim();
+      if (!nameEn && !nameZh) continue;
+      const hkid = p.hkidMain && p.hkidCheck ? `${p.hkidMain}(${p.hkidCheck})` : '';
+      try {
+        const personId = await upsertPersonFromForm({
+          identity: 'natural',
+          nameEnglish: nameEn,
+          nameChinese: nameZh,
+          idNumber: hkid,
+          addr_flat: p.addrFlat, addr_building: p.addrBuilding, addr_street: p.addrStreet,
+          addr_district: p.addrDistrict, addr_region: p.addrRegion,
+          email: p.email,
+          passportCountry: p.passportCountry,
+          passportNumber: p.passportNumber,
+          previousNameChinese: p.prevNameChinese,
+          previousNameEnglish: p.prevNameEnglish,
+          aliasChinese: p.aliasChinese,
+          aliasEnglish: p.aliasEnglish,
+        });
+        const stored = p.role === 'director' && p.isReserve
+          ? { role: 'director' as const, isReserve: true }
+          : { role: p.role, isReserve: false };
+        await upsertRole({
+          personId, companyId, role: stored.role, dateAppointed: d,
+          isReserve: stored.isReserve, notes: p.isReserve ? (p.alternateTo || '') : '',
+        });
+        await recordFormEvent({
+          companyId,
+          eventType: p.role === 'director' && p.isReserve ? 'reserve_director_appoint' : `${p.role}_appoint`,
+          personId, role: stored.role,
+          changeDate: d, relatedFormType: 'NN1',
+          newValue: { name: nameEn || nameZh },
+        });
+        labels.push(`已寫入${ROLE_LABEL[p.role] || p.role}：${nameEn || nameZh}`);
+      } catch (e: any) {
+        labels.push(`⚠ ${ROLE_LABEL[p.role] || p.role}「${nameEn || nameZh}」寫回失敗：${errText(e)}`);
+      }
+    }
+
+    for (const c of input.corpPersons || []) {
+      const nameEn = (c.nameEnglish || '').trim();
+      const nameZh = (c.nameChinese || '').trim();
+      if (!nameEn && !nameZh) continue;
+      try {
+        const personId = await upsertPersonFromForm({
+          identity: 'corporate',
+          nameEnglish: nameEn,
+          nameChinese: nameZh,
+          companyNumberRef: c.brNumber,
+          addr_flat: c.addrFlat, addr_building: c.addrBuilding, addr_street: c.addrStreet,
+          addr_district: c.addrDistrict, addr_region: c.addrRegion,
+          email: c.email,
+        });
+        await upsertRole({
+          personId, companyId, role: c.role, dateAppointed: d,
+          isReserve: c.role === 'director' && !!c.isReserve,
+          notes: c.role === 'director' && c.isReserve ? (c.alternateTo || '') : '',
+        });
+        await recordFormEvent({
+          companyId,
+          eventType: c.role === 'director' && c.isReserve ? 'reserve_director_appoint' : `${c.role}_appoint`,
+          personId, role: c.role,
+          changeDate: d, relatedFormType: 'NN1',
+          newValue: { name: nameEn || nameZh },
+        });
+        labels.push(`已寫入${ROLE_LABEL[c.role] || c.role}：${nameEn || nameZh}`);
+      } catch (e: any) {
+        labels.push(`⚠ ${ROLE_LABEL[c.role] || c.role}「${nameEn || nameZh}」寫回失敗：${errText(e)}`);
+      }
+    }
+  } catch (e: any) {
+    labels.push(`⚠ 非香港公司寫回失敗：${errText(e)}`);
+  }
+  return labels;
+}

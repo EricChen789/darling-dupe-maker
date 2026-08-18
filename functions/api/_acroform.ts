@@ -103,6 +103,9 @@ export function collectFormFields(
 
 export function detachWidget(widget: any, field: any) {
   if (widget === field) return;
+  // Already detached (no /Parent) — do NOT re-rename, otherwise the /T
+  // gets concatenated again (e.g. fill_31_P.2 → fill_31_P.fill_31_P.2)
+  if (!widget.get(PDFName.of("Parent"))) return;
   try {
     const parentName = decodePdfText(field.get(PDFName.of("T")));
     const widgetName = decodePdfText(widget.get(PDFName.of("T")));

@@ -123,6 +123,28 @@ function createFormHelpers(pdfDoc: PDFDocument) {
     }
   };
 
+  // 清 Comb 位（Ff bit24）：comb 格按 PDF 规范忽略 /Q，字符左→右逐格分布。
+  // ND2A 模板 HKID 字段是 comb 格（Ff=0x1C00000, MaxLen=5），
+  // 4位部分號碼要右对齐必须先清 comb 位（setText 的 Q=2 才会渲染生效）。
+  const disableComb = (fieldName: string): boolean => {
+    const target = fields.get(fieldName);
+    if (!target) {
+      console.warn(`⚠ Missing field: ${fieldName}`);
+      return false;
+    }
+    try {
+      detachWidget(target.widget, target.field);
+      const ff = target.widget.get(PDFName.of("Ff"));
+      if (ff && typeof ff.asNumber === "function") {
+        target.widget.set(PDFName.of("Ff"), pdfDoc.context.obj(ff.asNumber() & ~(1 << 24)));
+      }
+      return true;
+    } catch (e) {
+      console.warn(`⚠ disableComb failed for ${fieldName}:`, e);
+      return false;
+    }
+  };
+
   const check = (fieldName: string, shouldCheck: boolean): boolean => {
     if (!shouldCheck) return false;
     const target = fields.get(fieldName);
@@ -282,7 +304,7 @@ function createFormHelpers(pdfDoc: PDFDocument) {
     return null;
   };
 
-  return { fields, setText, check, selectDropdown, getWidgetRect, recollect };
+  return { fields, setText, disableComb, check, selectDropdown, getWidgetRect, recollect };
 }
 
 // ============================================================================
@@ -316,16 +338,20 @@ interface SheetSpec {
   texts: Array<{ name: string; value: string; align?: 'left' | 'center' | 'right' }>;
   checks: string[];
   dropdowns: Array<{ name: string; target: string }>;
+  /** HKID 等 comb 格（Ff bit24）——comb 忽略 /Q，右对齐需先清 comb 位 */
+  combClear?: string[];
 }
 
 type ApplyFn = {
   setText: (name: string, value: string, align?: 'left' | 'center' | 'right') => boolean;
   check: (name: string, shouldCheck: boolean) => boolean;
   selectDropdown: (name: string, target: string) => boolean;
+  disableComb: (name: string) => boolean;
 };
 
 function applySpec(spec: SheetSpec, h: ApplyFn) {
   for (const t of spec.texts) h.setText(t.name, t.value, t.align);
+  for (const n of spec.combClear || []) h.disableComb(n);
   for (const c of spec.checks) h.check(c, true);
   for (const d of spec.dropdowns) h.selectDropdown(d.name, d.target);
 }
@@ -362,7 +388,7 @@ function roleChecks(officer: OfficerChange, p: number): string[] {
 
 // ── 停任页 spec：p=1 第2項 / p=4 續頁A（动态续页沿用 P.4 布局） ──
 function cessSpec(officer: OfficerChange, p: 1 | 4, br8: string): SheetSpec {
-  const spec: SheetSpec = { texts: [], checks: [], dropdowns: [] };
+  const spec: SheetSpec = { texts: [], checks: [], dropdowns: [], combClear: [] };
   if (br8) spec.texts.push({ name: `fill_1_P.${p}`, value: br8 });
   const { surname, other } = parseOfficerName(officer);
   const chinese = officer.nameChinese || '';
@@ -376,6 +402,7 @@ function cessSpec(officer: OfficerChange, p: 1 | 4, br8: string): SheetSpec {
       spec.texts.push({ name: 'fill_6_P.1', value: other });
       spec.texts.push({ name: 'fill_7_P.1', value: hkidPartial4(officer.idNumber || ''), align: 'right' });
       spec.texts.push({ name: 'fill_8_P.1', value: officer.passportNumber ? parsePassportPartial(officer.passportNumber) : '' });
+      spec.combClear.push('fill_7_P.1'); // comb 格忽略 /Q，清位后右对齐才生效
     } else {
       spec.texts.push({ name: 'fill_9_P.1', value: officer.nameChinese || '' });
       spec.texts.push({ name: 'fill_10_P.1', value: officer.companyName || officer.nameEnglish || '' });
@@ -401,6 +428,7 @@ function cessSpec(officer: OfficerChange, p: 1 | 4, br8: string): SheetSpec {
       spec.texts.push({ name: 'fill_5_P.4', value: other });
       spec.texts.push({ name: 'fill_6_P.4', value: hkidPartial4(officer.idNumber || ''), align: 'right' });
       spec.texts.push({ name: 'fill_7_P.4', value: officer.passportNumber ? parsePassportPartial(officer.passportNumber) : '' });
+      spec.combClear.push('fill_6_P.4'); // comb 格忽略 /Q，清位后右对齐才生效
     } else {
       spec.texts.push({ name: 'fill_8_P.4', value: officer.nameChinese || '' });
       spec.texts.push({ name: 'fill_9_P.4', value: officer.companyName || officer.nameEnglish || '' });
@@ -423,7 +451,7 @@ function cessSpec(officer: OfficerChange, p: 1 | 4, br8: string): SheetSpec {
 
 // ── 委任自然人页 spec：p=2 第3項 / p=5 續頁B（动态续页沿用 P.5 布局） ──
 function natApptSpec(officer: OfficerChange, p: 2 | 5, br8: string): SheetSpec {
-  const spec: SheetSpec = { texts: [], checks: [], dropdowns: [] };
+  const spec: SheetSpec = { texts: [], checks: [], dropdowns: [], combClear: [] };
   if (br8) spec.texts.push({ name: `fill_1_P.${p}`, value: br8 });
   const { surname, other } = parseOfficerName(officer);
   const chinese = officer.nameChinese || '';
@@ -445,6 +473,7 @@ function natApptSpec(officer: OfficerChange, p: 2 | 5, br8: string): SheetSpec {
     spec.texts.push({ name: `fill_10_P.${p}`, value: officer.address });
   }
   spec.texts.push({ name: `fill_16_P.${p}`, value: hkidPartial4(officer.idNumber || ''), align: 'right' });
+  spec.combClear.push(`fill_16_P.${p}`); // comb 格忽略 /Q，清位后右对齐才生效
   spec.texts.push({ name: `fill_17_P.${p}`, value: officer.passportCountry || '' });
   spec.texts.push({ name: `fill_18_P.${p}`, value: officer.passportNumber ? parsePassportPartial(officer.passportNumber) : '' });
   const dp = datePartsOf(officer.type === 'appointment' ? officer.dateAppointed : officer.dateCeased);
@@ -622,7 +651,8 @@ interface DynSheet {
 }
 
 function fillND2A(pdfDoc: PDFDocument, data: ND2AData) {
-  const { setText, check, selectDropdown, recollect } = createFormHelpers(pdfDoc);
+  const { setText, disableComb, check, selectDropdown, recollect } = createFormHelpers(pdfDoc);
+  const base: ApplyFn = { setText, disableComb, check, selectDropdown };
   const br8 = (data.brNumber || "").replace(/[^0-9A-Za-z]/g, "").slice(0, 8);
 
   // ===== Officer routing =====
@@ -650,12 +680,12 @@ function fillND2A(pdfDoc: PDFDocument, data: ND2AData) {
   setText("fill_2_P.1", data.companyName);
 
   // Static fills: first 2 of each kind
-  if (cessations[0]) applySpec(cessSpec(cessations[0], 1, br8), { setText, check, selectDropdown });
-  if (cessations[1]) applySpec(cessSpec(cessations[1], 4, br8), { setText, check, selectDropdown });
-  if (natAppts[0]) applySpec(natApptSpec(natAppts[0], 2, br8), { setText, check, selectDropdown });
-  if (natAppts[1]) applySpec(natApptSpec(natAppts[1], 5, br8), { setText, check, selectDropdown });
-  if (corpAppts[0]) applySpec(corpApptSpec(corpAppts[0], 3, data, br8), { setText, check, selectDropdown });
-  if (corpAppts[1]) applySpec(corpApptSpec(corpAppts[1], 6, data, br8), { setText, check, selectDropdown });
+  if (cessations[0]) applySpec(cessSpec(cessations[0], 1, br8), base);
+  if (cessations[1]) applySpec(cessSpec(cessations[1], 4, br8), base);
+  if (natAppts[0]) applySpec(natApptSpec(natAppts[0], 2, br8), base);
+  if (natAppts[1]) applySpec(natApptSpec(natAppts[1], 5, br8), base);
+  if (corpAppts[0]) applySpec(corpApptSpec(corpAppts[0], 3, data, br8), base);
+  if (corpAppts[1]) applySpec(corpApptSpec(corpAppts[1], 6, data, br8), base);
 
   // ===== P.1: Presenter info =====
   const pName = data.presentorName || DEFAULT_PRESENTER.name;
@@ -726,10 +756,10 @@ function fillND2A(pdfDoc: PDFDocument, data: ND2AData) {
     if (sheets.length === 0) return;
     const wrap = (suffix: string): ApplyFn => ({
       setText: (n, v, a) => setText(`${n}_${suffix}`, v, a),
+      disableComb: (n) => disableComb(`${n}_${suffix}`),
       check: (n, s) => check(`${n}_${suffix}`, s),
       selectDropdown: (n, t) => selectDropdown(`${n}_${suffix}`, t),
     });
-    const base: ApplyFn = { setText, check, selectDropdown };
     cessOver.forEach((o, i) => applySpec(cessSpec(o, 4, br8), wrap(`C${i + 1}`)));
     natOver.forEach((o, i) => applySpec(natApptSpec(o, 5, br8), wrap(`N${i + 1}`)));
     corpOver.forEach((o, i) => applySpec(corpApptSpec(o, 6, data, br8), wrap(`B${i + 1}`)));
@@ -739,7 +769,7 @@ function fillND2A(pdfDoc: PDFDocument, data: ND2AData) {
   };
 
   // 6) PI-ND2A 受保護資料页（P.7）：第一名自然人填静态页
-  if (naturals[0]) applySpec(piSpec(naturals[0], 'P.7', br8), { setText, check, selectDropdown });
+  if (naturals[0]) applySpec(piSpec(naturals[0], 'P.7', br8), base);
 
   // 7) P.3 底部续页计数器（fill_18=续页A停任, fill_19=续页B自然人, fill_20=续页C法人, fill_21=PI页数）
   // 数值 = 该类续页总页数（含动态页）；无续页则留空

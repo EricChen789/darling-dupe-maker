@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -13,6 +14,8 @@ import { downloadBase64Pdf } from '@/lib/downloadPdf';
 import PresenterSelector from './PresenterSelector';
 import type { Presenter } from '@/hooks/usePresenters';
 import AddressQuickPick from './AddressQuickPick';
+import ConfirmWritebackDialog from './ConfirmWritebackDialog';
+import { resolveCompanyId, buildNN7Summary, writebackNN7, type WritebackSummaryItem } from '@/lib/formWriteback';
 
 // ── 香港 18 區（繁體，用於下拉選單） ──
 const HK_DISTRICTS = [
@@ -105,6 +108,7 @@ interface NN7GeneratorFormProps {
 export default function NN7GeneratorForm({ onBack, prefillPerson, initialCompanyId }: NN7GeneratorFormProps) {
   const { data: allCompanies = [] } = useCompanies();
   const { mutate: saveFormHistory } = useSaveFormHistory();
+  const queryClient = useQueryClient();
 
   const companies = prefillPerson?.companies?.length
     ? allCompanies.filter(c => prefillPerson.companies.some(pc => pc.id === c.id))
@@ -112,6 +116,8 @@ export default function NN7GeneratorForm({ onBack, prefillPerson, initialCompany
 
   const [selectedCompanyId, setSelectedCompanyId] = useState('');
   const [generating, setGenerating] = useState(false);
+  // 寫回確認框：生成前彈出（含公司解析結果與摘要）
+  const [pendingWriteback, setPendingWriteback] = useState<{ title: string; summary: WritebackSummaryItem[]; companyId: string | null } | null>(null);
 
   const today = new Date();
   const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
@@ -213,7 +219,22 @@ export default function NN7GeneratorForm({ onBack, prefillPerson, initialCompany
     if (data.selectedCompanyId) setSelectedCompanyId(data.selectedCompanyId);
   };
 
-  const handleGenerate = async () => {
+  // ── PDF 成功後寫回資料庫 + 刷新查詢 + 結果 toast ──
+  const runWriteback = async (companyId: string) => {
+    try {
+      const labels = await writebackNN7(companyId, formData as any);
+      queryClient.invalidateQueries({ queryKey: ['companies'] });
+      queryClient.invalidateQueries({ queryKey: ['persons-list'] });
+      const warns = labels.filter(l => l.startsWith('⚠'));
+      if (labels.length > 0) toast({ title: '已同步資料庫', description: labels.join('；') });
+      if (warns.length > 0) toast({ title: '部分寫回未完成', description: warns.join('；'), variant: 'destructive' });
+    } catch (e: any) {
+      toast({ title: '資料庫寫回失敗', description: e?.message || String(e), variant: 'destructive' });
+    }
+  };
+
+  // ── 生成主體：PDF 成功下載後才寫回資料庫 ──
+  const doGenerate = async (writebackCompanyId?: string | null) => {
     if (!formData.brNumber || !formData.companyName) {
       toast({ title: '錯誤', description: '請填寫公司名稱和商業登記號碼', variant: 'destructive' });
       return;
@@ -246,11 +267,34 @@ export default function NN7GeneratorForm({ onBack, prefillPerson, initialCompany
         }
       );
       toast({ title: '生成成功', description: 'NN7 表格已下載' });
+
+      // 寫回資料庫（PDF 成功才寫，避免半寫狀態）
+      if (writebackCompanyId) {
+        await runWriteback(writebackCompanyId);
+      }
     } catch (err: any) {
       toast({ title: '生成失敗', description: err.message, variant: 'destructive' });
     } finally {
       setGenerating(false);
     }
+  };
+
+  // ── 生成入口：先彈寫回確認框，確認後 doGenerate ──
+  const handleGenerate = async () => {
+    if (!formData.brNumber || !formData.companyName) {
+      toast({ title: '錯誤', description: '請填寫公司名稱和商業登記號碼', variant: 'destructive' });
+      return;
+    }
+    if (!formData.nameEnglish && !formData.nameChinese && !formData.nameSurname && !formData.nameOtherNames) {
+      toast({ title: '錯誤', description: '請填寫人員姓名', variant: 'destructive' });
+      return;
+    }
+    const companyId = await resolveCompanyId(formData.brNumber, selectedCompanyId || undefined);
+    setPendingWriteback({
+      title: 'NN7 生成確認',
+      summary: buildNN7Summary(formData as any),
+      companyId,
+    });
   };
 
   return (
@@ -498,6 +542,19 @@ export default function NN7GeneratorForm({ onBack, prefillPerson, initialCompany
           </Button>
         </div>
       </div>
+
+      <ConfirmWritebackDialog
+        open={pendingWriteback !== null}
+        title={pendingWriteback?.title || ''}
+        summary={pendingWriteback?.summary || []}
+        canWrite={!!pendingWriteback?.companyId}
+        onCancel={() => setPendingWriteback(null)}
+        onConfirm={() => {
+          const p = pendingWriteback;
+          setPendingWriteback(null);
+          if (p) doGenerate(p.companyId);
+        }}
+      />
     </div>
   );
 }

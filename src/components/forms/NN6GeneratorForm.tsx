@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -12,6 +13,8 @@ import { downloadBase64Pdf } from '@/lib/downloadPdf';
 import PresenterSelector from './PresenterSelector';
 import AddressQuickPick from './AddressQuickPick';
 import type { Presenter } from '@/hooks/usePresenters';
+import ConfirmWritebackDialog from './ConfirmWritebackDialog';
+import { resolveCompanyId, buildNN6Summary, writebackNN6, type WritebackSummaryItem } from '@/lib/formWriteback';
 
 // ── 香港 18 區（繁體，用於下拉選單） ──
 const HK_DISTRICTS = [
@@ -138,10 +141,13 @@ interface NN6GeneratorFormProps {
 export default function NN6GeneratorForm({ onBack, initialCompanyId }: NN6GeneratorFormProps) {
   const { data: companies = [] } = useCompanies();
   const { mutate: saveFormHistory } = useSaveFormHistory();
+  const queryClient = useQueryClient();
 
   const [selectedCompanyId, setSelectedCompanyId] = useState('');
   const [selectedPersonId, setSelectedPersonId] = useState('');
   const [generating, setGenerating] = useState(false);
+  // 寫回確認框：生成前彈出（含公司解析結果與摘要）
+  const [pendingWriteback, setPendingWriteback] = useState<{ title: string; summary: WritebackSummaryItem[]; companyId: string | null } | null>(null);
 
   // 公司基本資料
   const [brNumber, setBrNumber] = useState('');
@@ -295,8 +301,22 @@ export default function NN6GeneratorForm({ onBack, initialCompanyId }: NN6Genera
     }
   };
 
-  // ── 生成 PDF ──
-  const handleGenerate = async () => {
+  // ── PDF 成功後寫回資料庫 + 刷新查詢 + 結果 toast ──
+  const runWriteback = async (companyId: string) => {
+    try {
+      const labels = await writebackNN6(companyId, officers as any);
+      queryClient.invalidateQueries({ queryKey: ['companies'] });
+      queryClient.invalidateQueries({ queryKey: ['persons-list'] });
+      const warns = labels.filter(l => l.startsWith('⚠'));
+      if (labels.length > 0) toast({ title: '已同步資料庫', description: labels.join('；') });
+      if (warns.length > 0) toast({ title: '部分寫回未完成', description: warns.join('；'), variant: 'destructive' });
+    } catch (e: any) {
+      toast({ title: '資料庫寫回失敗', description: e?.message || String(e), variant: 'destructive' });
+    }
+  };
+
+  // ── 生成主體：postJson 成功下載後才寫回資料庫 ──
+  const doGenerate = async (writebackCompanyId?: string | null) => {
     if (!brNumber || !companyName) {
       toast({ title: '錯誤', description: '請填寫公司名稱和商業登記號碼', variant: 'destructive' });
       return;
@@ -349,11 +369,30 @@ export default function NN6GeneratorForm({ onBack, initialCompanyId }: NN6Genera
         },
       );
       toast({ title: '生成成功', description: 'NN6 表格已下載' });
+
+      // 寫回資料庫（PDF 成功才寫，避免半寫狀態）
+      if (writebackCompanyId) {
+        await runWriteback(writebackCompanyId);
+      }
     } catch (err: any) {
       toast({ title: '生成失敗', description: err.message, variant: 'destructive' });
     } finally {
       setGenerating(false);
     }
+  };
+
+  // ── 生成入口：先彈寫回確認框，確認後 doGenerate ──
+  const handleGenerate = async () => {
+    if (!brNumber || !companyName) {
+      toast({ title: '錯誤', description: '請填寫公司名稱和商業登記號碼', variant: 'destructive' });
+      return;
+    }
+    const companyId = await resolveCompanyId(brNumber, selectedCompanyId || undefined);
+    setPendingWriteback({
+      title: 'NN6 生成確認',
+      summary: buildNN6Summary(officers),
+      companyId,
+    });
   };
 
   return (
@@ -1181,6 +1220,19 @@ export default function NN6GeneratorForm({ onBack, initialCompanyId }: NN6Genera
           </Button>
         </div>
       </div>
+
+      <ConfirmWritebackDialog
+        open={pendingWriteback !== null}
+        title={pendingWriteback?.title || ''}
+        summary={pendingWriteback?.summary || []}
+        canWrite={!!pendingWriteback?.companyId}
+        onCancel={() => setPendingWriteback(null)}
+        onConfirm={() => {
+          const p = pendingWriteback;
+          setPendingWriteback(null);
+          if (p) doGenerate(p.companyId);
+        }}
+      />
     </div>
   );
 }

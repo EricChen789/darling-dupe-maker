@@ -147,7 +147,7 @@ export function useUpsertShareTransaction() {
 }
 
 // ── 由姓名解析 persons.id（picker 未帶 person id，存庫交易只有姓名）──
-async function resolvePersonId(name: string, personId?: string | null): Promise<string | null> {
+export async function resolvePersonId(name: string, personId?: string | null): Promise<string | null> {
   if (personId) return personId;
   const n = String(name || '').trim();
   if (!n) return null;
@@ -163,7 +163,7 @@ async function resolvePersonId(name: string, personId?: string | null): Promise<
 }
 
 // ── 更新 person_company_roles 持股：delta>0 加股（受讓人）、delta<0 減股（轉讓人）──
-async function applyShareChange(
+export async function applyShareChange(
   companyId: string, personId: string, delta: number, tx: Partial<ShareTransaction>,
 ): Promise<void> {
   const { data: rows } = await supabase.from('person_company_roles')

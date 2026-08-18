@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, memo } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -14,7 +15,8 @@ import { downloadBase64Pdf } from '@/lib/downloadPdf';
 import PresenterSelector from './PresenterSelector';
 import type { Presenter } from '@/hooks/usePresenters';
 import AddressQuickPick from './AddressQuickPick';
-import { recordChangeEvent } from '@/lib/changeEvents';
+import ConfirmWritebackDialog from './ConfirmWritebackDialog';
+import { resolveCompanyId, roleRowByRoleId, buildND2BSummary, writebackND2B, type WritebackSummaryItem, type Nd2bChange } from '@/lib/formWriteback';
 
 // ── 香港 18 區（繁體，用於下拉選單） ──
 const HK_DISTRICTS = [
@@ -147,6 +149,9 @@ export default function ND2BGeneratorForm({ onBack, prefillPerson, prefillNewAdd
   const [selectedCompanyId, setSelectedCompanyId] = useState('');
   const [selectedPersonId, setSelectedPersonId] = useState(prefillPerson?.id || '');
   const [generating, setGenerating] = useState(false);
+  const queryClient = useQueryClient();
+  // 寫回確認框：生成前彈出（含公司解析結果與摘要）
+  const [pendingWriteback, setPendingWriteback] = useState<{ title: string; summary: WritebackSummaryItem[]; companyId: string | null } | null>(null);
 
   const today = new Date();
   const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
@@ -352,7 +357,38 @@ export default function ND2BGeneratorForm({ onBack, prefillPerson, prefillNewAdd
     if (data.selectedPersonId) setSelectedPersonId(data.selectedPersonId);
   };
 
-  const handleGenerate = async (debug = false) => {
+  // ── 依 changeTypes 組寫回變更清單 ──
+  const buildChanges = (): Nd2bChange[] => formData.changeTypes
+    .map((ct: string) => {
+      const newValue = getChangeValue(ct, formData);
+      return newValue ? { type: ct as Nd2bChange['type'], patch: newValue, newValue } : null;
+    })
+    .filter((c): c is Nd2bChange => c !== null);
+
+  // ── PDF 成功後寫回資料庫：role 行 id → persons.id（修 person_id bug）+ 日期歸一（修 change_date bug） ──
+  const runWriteback = async (companyId: string) => {
+    try {
+      const row = await roleRowByRoleId(selectedPersonId);
+      // prefillPerson 路徑的 selectedPersonId 本身就是 persons.id；companyPeople 路徑是 role 行 id
+      const personId = row?.person_id || selectedPersonId;
+      const labels = await writebackND2B({
+        companyId,
+        personId,
+        role: formData.role,
+        changes: buildChanges(),
+        changeDate: formData.effectiveDate,
+      });
+      queryClient.invalidateQueries({ queryKey: ['companies'] });
+      queryClient.invalidateQueries({ queryKey: ['persons-list'] });
+      const warns = labels.filter(l => l.startsWith('⚠'));
+      if (labels.length > 0) toast({ title: '已同步資料庫', description: labels.join('；') });
+      if (warns.length > 0) toast({ title: '部分寫回未完成', description: warns.join('；'), variant: 'destructive' });
+    } catch (e: any) {
+      toast({ title: '資料庫寫回失敗', description: e?.message || String(e), variant: 'destructive' });
+    }
+  };
+
+  const doGenerate = async (debug = false, writebackCompanyId?: string | null) => {
     if (!formData.brNumber || !formData.companyName) {
       toast({ title: '錯誤', description: '請填寫公司名稱和商業登記號碼', variant: 'destructive' });
       return;
@@ -381,28 +417,9 @@ export default function ND2BGeneratorForm({ onBack, prefillPerson, prefillNewAdd
       downloadBase64Pdf(result.pdf, `ND2B-${formData.companyName || 'form'}.pdf`);
       saveFormHistory({ formType: 'ND2B', formData: { formData, selectedCompanyId, selectedPersonId } });
 
-      // Record change events to Supabase (fire-and-forget)
-      if (selectedCompanyId && selectedPersonId && formData.changeTypes.length > 0) {
-        for (const ct of formData.changeTypes) {
-          const eventType = {
-            address: 'person_address_change',
-            name: 'person_name_change',
-            id: 'person_id_change',
-            contact: 'person_contact_change',
-          }[ct];
-          const newValue = getChangeValue(ct, formData);
-          if (eventType && newValue) {
-            recordChangeEvent({
-              company_id: selectedCompanyId,
-              person_id: selectedPersonId,
-              event_type: eventType,
-              role: formData.role,
-              new_value: newValue,
-              related_form_type: 'ND2B',
-              change_date: formData.effectiveDate,
-            });
-          }
-        }
+      // 寫回資料庫（PDF 成功才寫；含 persons 更新 + 事件，person_id 用 persons.id、change_date 用 DD/MM/YYYY）
+      if (writebackCompanyId) {
+        await runWriteback(writebackCompanyId);
       }
 
       const changeCount = formData.changeTypes.length;
@@ -415,6 +432,30 @@ export default function ND2BGeneratorForm({ onBack, prefillPerson, prefillNewAdd
     } finally {
       setGenerating(false);
     }
+  };
+
+  // ── 生成入口：先彈寫回確認框，確認後 doGenerate；debug 模式直出（不寫回） ──
+  const handleGenerate = async (debug = false) => {
+    if (debug) {
+      await doGenerate(true, null);
+      return;
+    }
+    if (!formData.brNumber || !formData.companyName) {
+      toast({ title: '錯誤', description: '請填寫公司名稱和商業登記號碼', variant: 'destructive' });
+      return;
+    }
+    if (!formData.nameSurname && !formData.nameChinese) {
+      toast({ title: '錯誤', description: '請填寫人員姓名', variant: 'destructive' });
+      return;
+    }
+    const companyId = await resolveCompanyId(formData.brNumber, selectedCompanyId || undefined);
+    const person = companyPeople.find(p => p.id === selectedPersonId);
+    const personLabel = person ? (person.nameEnglish || person.nameChinese || '') : (formData.nameSurname || formData.nameChinese);
+    setPendingWriteback({
+      title: 'ND2B 生成確認',
+      summary: buildND2BSummary(personLabel, buildChanges()),
+      companyId,
+    });
   };
 
   return (
@@ -640,6 +681,19 @@ export default function ND2BGeneratorForm({ onBack, prefillPerson, prefillNewAdd
           <Button variant="outline" onClick={() => handleGenerate(true)} disabled={generating}>生成測試 PDF（Debug）</Button>
         </div>
       </div>
+
+      <ConfirmWritebackDialog
+        open={pendingWriteback !== null}
+        title={pendingWriteback?.title || ''}
+        summary={pendingWriteback?.summary || []}
+        canWrite={!!pendingWriteback?.companyId}
+        onCancel={() => setPendingWriteback(null)}
+        onConfirm={() => {
+          const p = pendingWriteback;
+          setPendingWriteback(null);
+          if (p) doGenerate(false, p.companyId);
+        }}
+      />
     </div>
   );
 }

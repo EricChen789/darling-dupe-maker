@@ -309,7 +309,7 @@ export function useDeleteCompany() {
  * Dedup priority: id_number > (normalized name_english + name_chinese).
  * Returns the person_id.
  */
-async function findOrCreatePerson(input: {
+export async function findOrCreatePerson(input: {
   identity?: string;
   nameEnglish: string;
   nameChinese?: string;

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -16,6 +17,8 @@ import { useCompanies } from '@/hooks/useCompanies';
 import { downloadBase64Pdf } from '@/lib/downloadPdf';
 import { postJson, sleep, safeFileName, parseEnglishName, parseDateParts } from '@/lib/formGen';
 import RelatedFormsPrompt from './RelatedFormsPrompt';
+import ConfirmWritebackDialog from './ConfirmWritebackDialog';
+import { resolveCompanyId, buildND2ASummary, writebackND2A, type WritebackSummaryItem } from '@/lib/formWriteback';
 
 interface OfficerEntry {
   type: 'appointment' | 'cessation';
@@ -88,8 +91,11 @@ interface ND2AGeneratorFormProps {
 export default function ND2AGeneratorForm({ onBack, initialCompanyId, onNavigate }: ND2AGeneratorFormProps) {
   const { data: companies = [] } = useCompanies();
   const { mutate: saveFormHistory } = useSaveFormHistory();
+  const queryClient = useQueryClient();
   const [selectedCompanyId, setSelectedCompanyId] = useState('');
   const [generating, setGenerating] = useState(false);
+  // 寫回確認框：生成前彈出（含公司解析結果與摘要）
+  const [pendingWriteback, setPendingWriteback] = useState<{ title: string; summary: WritebackSummaryItem[]; companyId: string | null } | null>(null);
   // 頂部勾選：生成 ND2A 時是否一併生成 ND4（有停任人時生效，默認勾選）
   const [generateNd4Together, setGenerateNd4Together] = useState(true);
   const [brNumber, setBrNumber] = useState('');
@@ -216,11 +222,26 @@ export default function ND2AGeneratorForm({ onBack, initialCompanyId, onNavigate
     return payload;
   };
 
-  const handleGenerate = async (debug = false) => {
+  // ── PDF 成功後寫回資料庫 + 刷新查詢 + 結果 toast ──
+  const runWriteback = async (companyId: string, list: OfficerEntry[]) => {
+    try {
+      const labels = await writebackND2A(companyId, list as any);
+      queryClient.invalidateQueries({ queryKey: ['companies'] });
+      queryClient.invalidateQueries({ queryKey: ['persons-list'] });
+      const warns = labels.filter(l => l.startsWith('⚠'));
+      if (labels.length > 0) toast({ title: '已同步資料庫', description: labels.join('；') });
+      if (warns.length > 0) toast({ title: '部分寫回未完成', description: warns.join('；'), variant: 'destructive' });
+    } catch (e: any) {
+      toast({ title: '資料庫寫回失敗', description: e?.message || String(e), variant: 'destructive' });
+    }
+  };
+
+  // ── 生成主體（原名 handleGenerate）：postJson 成功下載後才寫回資料庫 ──
+  const doGenerate = async (debug = false, writebackCompanyId?: string | null) => {
     // 頂部勾選「同時生成 ND4」且存在停任人 → 生成 ND2A 時一併生成 ND4
     const cessations = officers.filter(o => o.type === 'cessation');
     if (!debug && generateNd4Together && cessations.length > 0) {
-      await handleGenerateBoth();
+      await doGenerateBoth(writebackCompanyId);
       return;
     }
     if (!brNumber || !companyName) {
@@ -236,6 +257,11 @@ export default function ND2AGeneratorForm({ onBack, initialCompanyId, onNavigate
       downloadBase64Pdf(result.pdf, `ND2A_${brNumber}_${companyName.replace(/\s+/g, '_')}.pdf`);
       saveFormHistory({ formType: 'ND2A', formData: { brNumber, companyName, selectedCompanyId, officers, signerId, signerName, signerCapacity, signDate, presentorName, presentorAddress, presentorPhone, presentorFax, presentorEmail, presentorReference } });
       toast({ title: '生成成功', description: 'ND2A 表格已下載' });
+
+      // 寫回資料庫（PDF 成功才寫，避免半寫狀態）
+      if (writebackCompanyId) {
+        await runWriteback(writebackCompanyId, officers);
+      }
 
       // Phase 5: Check for related forms (ND2A→ND4 conditional: only if cessation exists)
       const hasCessation = officers.some(o => o.type === 'cessation');
@@ -258,8 +284,8 @@ export default function ND2AGeneratorForm({ onBack, initialCompanyId, onNavigate
     }
   };
 
-  // ── 一併生成：ND2A（分份）→ 間隔 2.5s → ND4 每位辭任人一份 ──
-  const handleGenerateBoth = async () => {
+  // ── 一併生成：ND2A（單份動態續頁）→ 間隔 2.5s → ND4 每位辭任人一份 ──
+  const doGenerateBoth = async (writebackCompanyId?: string | null) => {
     if (!brNumber || !companyName) {
       toast({ title: '錯誤', description: '請填寫公司名稱和商業登記號碼', variant: 'destructive' });
       return;
@@ -301,13 +327,38 @@ export default function ND2AGeneratorForm({ onBack, initialCompanyId, onNavigate
 
       toast({
         title: '✅ PDF 已生成',
-        description: `ND2A ${chunks.length} 份 ＋ ND4 ${cessations.length} 份（${officers.length} 位人士）下載完成`,
+        description: `ND2A 1 份 ＋ ND4 ${cessations.length} 份（${officers.length} 位人士）下載完成`,
       });
+
+      // 寫回資料庫：委任 + 停任一起（ND2A 停任寫回即含 ND4 停任效果）
+      if (writebackCompanyId) {
+        await runWriteback(writebackCompanyId, officers);
+      }
     } catch (err: any) {
       toast({ title: '生成失敗', description: err.message, variant: 'destructive' });
     } finally {
       setGenerating(false);
     }
+  };
+
+  // ── 生成入口：先彈寫回確認框，確認後 doGenerate；debug 模式直出（不寫回） ──
+  const handleGenerate = async (debug = false) => {
+    if (debug) {
+      await doGenerate(true, null);
+      return;
+    }
+    if (!brNumber || !companyName) {
+      toast({ title: '錯誤', description: '請填寫公司名稱和商業登記號碼', variant: 'destructive' });
+      return;
+    }
+    const cessations = officers.filter(o => o.type === 'cessation');
+    const generateBoth = generateNd4Together && cessations.length > 0;
+    const companyId = await resolveCompanyId(brNumber, selectedCompanyId || undefined);
+    setPendingWriteback({
+      title: generateBoth ? 'ND2A ＋ ND4 生成確認' : 'ND2A 生成確認',
+      summary: buildND2ASummary(officers),
+      companyId,
+    });
   };
 
   const cessationOfficers = officers.filter(o => o.type === 'cessation');
@@ -653,6 +704,19 @@ export default function ND2AGeneratorForm({ onBack, initialCompanyId, onNavigate
           <Button variant="outline" onClick={() => handleGenerate(true)} disabled={generating}>生成測試 PDF（Debug）</Button>
         </div>
       </div>
+
+      <ConfirmWritebackDialog
+        open={pendingWriteback !== null}
+        title={pendingWriteback?.title || ''}
+        summary={pendingWriteback?.summary || []}
+        canWrite={!!pendingWriteback?.companyId}
+        onCancel={() => setPendingWriteback(null)}
+        onConfirm={() => {
+          const p = pendingWriteback;
+          setPendingWriteback(null);
+          if (p) doGenerate(false, p.companyId);
+        }}
+      />
 
       <RelatedFormsPrompt
         open={showRelatedPrompt}

@@ -8,10 +8,16 @@ import { toast } from '@/hooks/use-toast';
 import { useCompanies } from '@/hooks/useCompanies';
 import { downloadBase64Pdf } from '@/lib/downloadPdf';
 import { useSaveFormHistory } from '@/hooks/useFormHistory';
+import { useQueryClient } from '@tanstack/react-query';
 import FormHistorySelector from './FormHistorySelector';
 import PresenterSelector from './PresenterSelector';
+import ConfirmWritebackDialog from './ConfirmWritebackDialog';
 import type { Presenter } from '@/hooks/usePresenters';
 import { usePresenterList } from '@/hooks/usePresenters';
+import {
+  resolveCompanyId, buildNSC1Summary, writebackNSC1, errText,
+  dmyToDDMMYYYY, type Nsc1AllotteeInput, type WritebackSummaryItem,
+} from '@/lib/formWriteback';
 
 interface NSC1GeneratorFormProps { onBack: () => void; initialCompanyId?: string; }
 
@@ -39,7 +45,9 @@ export default function NSC1GeneratorForm({ onBack, initialCompanyId }: NSC1Gene
   const { data: presenters = [] } = usePresenterList();
   const [selectedCompanyId, setSelectedCompanyId] = useState('');
   const [generating, setGenerating] = useState(false);
+  const [pendingWriteback, setPendingWriteback] = useState<{ title: string; summary: WritebackSummaryItem[]; companyId: string | null } | null>(null);
   const { mutate: saveFormHistory } = useSaveFormHistory();
+  const queryClient = useQueryClient();
 
   const today = new Date();
   const dd = String(today.getDate()).padStart(2, '0');
@@ -325,10 +333,43 @@ export default function NSC1GeneratorForm({ onBack, initialCompanyId }: NSC1Gene
     if (data.selectedCompanyId) setSelectedCompanyId(data.selectedCompanyId);
   };
 
+  // 寫回獲配人輸入（與 PDF allottees 同一過濾：有英文或中文姓名）
+  const buildAllotteeInputs = (): Nsc1AllotteeInput[] =>
+    allotments
+      .filter(x => (x.allotteeName || '').trim() || (x.allotteeNameZh || '').trim())
+      .map(x => ({
+        nameEn: x.allotteeName || '',
+        nameZh: x.allotteeNameZh || '',
+        surname: x.allotteeSurname || '',
+        otherNames: x.allotteeOtherNames || '',
+        flat: x.allotteeFlat || '',
+        building: x.allotteeBuilding || '',
+        street: x.allotteeStreet || '',
+        district: x.allotteeDistrict || '',
+        country: x.allotteeCountry || 'Hong Kong',
+        shares: x.numberOfShares || '',
+        class: x.class || '',
+        currency: x.currency || '',
+        amountPaid: x.amountPaid || '',
+        amountUnpaid: x.amountUnpaid || '',
+        jointlyHeld: !!x.allotteeJointlyHeld,
+        remarks: x.allotteeRemarks || '',
+      }));
+
+  // NSC1 確認框入口
   const handleGenerate = async () => {
     if (!formData.brNumber || !formData.companyName) {
       toast({ title: '錯誤', description: '請選擇公司', variant: 'destructive' }); return;
     }
+    const companyId = await resolveCompanyId(formData.brNumber, selectedCompanyId || undefined);
+    setPendingWriteback({
+      title: 'NSC1 生成確認',
+      summary: buildNSC1Summary(buildAllotteeInputs(), dmyToDDMMYYYY(formData.allotmentFromDay, formData.allotmentFromMonth, formData.allotmentFromYear)),
+      companyId,
+    });
+  };
+
+  const doGenerate = async (writebackCompanyId?: string | null) => {
     setGenerating(true);
     try {
       const token = localStorage.getItem("secretary_jwt") || "";
@@ -463,6 +504,20 @@ export default function NSC1GeneratorForm({ onBack, initialCompanyId }: NSC1Gene
       downloadBase64Pdf(result.pdf, `NSC1_股份配發申報書_${formData.companyName}.pdf`);
       toast({ title: '生成成功', description: 'NSC1 表格已下載' });
       saveFormHistory({ formType: 'NSC1', formData: { formData, selectedCompanyId } });
+
+      // 寫回資料庫（PDF 成功才寫；放在「生成成功」toast 之後，TOAST_LIMIT=1 順序一致）
+      if (writebackCompanyId) {
+        try {
+          const labels = await writebackNSC1(writebackCompanyId, buildAllotteeInputs(),
+            dmyToDDMMYYYY(formData.allotmentFromDay, formData.allotmentFromMonth, formData.allotmentFromYear));
+          queryClient.invalidateQueries({ queryKey: ['companies'] });
+          const warns = labels.filter(l => l.startsWith('⚠'));
+          if (labels.length > 0) toast({ title: '已同步資料庫', description: labels.join('；') });
+          if (warns.length > 0) toast({ title: '部分寫回未完成', description: warns.join('；'), variant: 'destructive' });
+        } catch (e: any) {
+          toast({ title: '資料庫寫回失敗', description: errText(e), variant: 'destructive' });
+        }
+      }
     } catch (err: any) {
       toast({ title: '生成失敗', description: err.message, variant: 'destructive' });
     } finally { setGenerating(false); }
@@ -760,6 +815,19 @@ export default function NSC1GeneratorForm({ onBack, initialCompanyId }: NSC1Gene
           </span>
         </div>
       </div>
+
+      <ConfirmWritebackDialog
+        open={!!pendingWriteback}
+        title={pendingWriteback?.title || ''}
+        summary={pendingWriteback?.summary || []}
+        canWrite={!!pendingWriteback?.companyId}
+        onConfirm={() => {
+          const companyId = pendingWriteback?.companyId || null;
+          setPendingWriteback(null);
+          doGenerate(companyId);
+        }}
+        onCancel={() => setPendingWriteback(null)}
+      />
     </div>
   );
 }

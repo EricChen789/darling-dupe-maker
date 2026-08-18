@@ -6,7 +6,7 @@
 
 import { supabase } from '@/integrations/supabase/client';
 import { findOrCreatePerson } from '@/hooks/useCompanies';
-import { resolvePersonId } from '@/hooks/useShareTransactions';
+import { resolvePersonId, applyShareChange } from '@/hooks/useShareTransactions';
 import { recordChangeEvent, EVENT_FORM_MAP } from './changeEvents';
 
 // ══════════════════════════════ 日期工具 ══════════════════════════════
@@ -1022,4 +1022,136 @@ export async function writebackNNC2(companyId: string, fd: Nnc2FormInput): Promi
     newValue: { name: patch.name ?? row.name, chinese_name: patch.chinese_name ?? row.chinese_name ?? '' },
   });
   return [`已更新公司名稱：${patch.name ?? patch.chinese_name}`];
+}
+
+// ── NSC1 ──
+
+export interface Nsc1AllotteeInput {
+  nameEn?: string; nameZh?: string; surname?: string; otherNames?: string;
+  flat?: string; building?: string; street?: string; district?: string; country?: string;
+  shares?: string; class?: string; currency?: string;
+  amountPaid?: string; amountUnpaid?: string;
+  jointlyHeld?: boolean; remarks?: string;
+}
+
+/** 獲配人英文姓名：姓氏+名字拼合，否則取整欄（HK 慣例 surname 在前） */
+export function allotteeNameEn(a: Nsc1AllotteeInput): string {
+  return [a.surname, a.otherNames].filter(Boolean).join(' ').trim() || (a.nameEn || '').trim();
+}
+
+export function buildNSC1Summary(allottees: Nsc1AllotteeInput[], allotDate?: string): WritebackSummaryItem[] {
+  const items: WritebackSummaryItem[] = [];
+  const d = allotDate || '今天';
+  for (const a of allottees) {
+    const name = allotteeNameEn(a) || (a.nameZh || '').trim();
+    if (!name) continue;
+    const shares = Math.floor(Number(a.shares) || 0);
+    items.push({ label: `新增獲配人：${name}`, detail: `${shares} 股 · ${d}` });
+  }
+  if (items.length === 0) items.push({ label: '沒有可寫入的獲配人', detail: '僅生成 PDF' });
+  return items;
+}
+
+/**
+ * NSC1 寫回：每個獲配人 →
+ * upsertPersonFromForm → 股東角色行（無活躍行才建；有則補 metadata，不動 date_appointed）
+ * → applyShareChange（delta=股數，復權/增量）→ share_transactions INSERT（type='allotment'）
+ * → share_allotment 事件 + 新股東行 shareholder_add 事件（related 'NSC1'，change_date=配發日期）
+ */
+export async function writebackNSC1(
+  companyId: string,
+  allottees: Nsc1AllotteeInput[],
+  txDate?: string, // DD/MM/YYYY 配發日期
+): Promise<string[]> {
+  const labels: string[] = [];
+  const d = txDate || todayDDMMYYYY();
+  for (const a of allottees) {
+    const nameEn = allotteeNameEn(a);
+    const nameZh = (a.nameZh || '').trim();
+    if (!nameEn && !nameZh) continue;
+    const shares = Math.floor(Number(a.shares) || 0);
+    if (shares <= 0) { labels.push(`⚠ 獲配人「${nameEn || nameZh}」股數無效，已跳過`); continue; }
+    const amountPaid = parseFloat(String(a.amountPaid ?? '')) || 0;
+    const amountUnpaid = parseFloat(String(a.amountUnpaid ?? '')) || 0;
+    const pricePerShare = String(amountPaid + amountUnpaid);
+    const notes = a.jointlyHeld ? `聯名持有${a.remarks ? ` ${a.remarks}` : ''}` : (a.remarks || '');
+    try {
+      const personId = await upsertPersonFromForm({
+        identity: 'natural',
+        nameEnglish: nameEn,
+        nameChinese: nameZh,
+        addr_flat: a.flat, addr_building: a.building, addr_street: a.street,
+        addr_district: a.district, addr_region: a.country,
+      });
+      // 股東角色行：已有活躍行只補 metadata（股份增量交給 applyShareChange，避免雙重計數）
+      const { data: rows } = await supabase.from('person_company_roles')
+        .select('id, date_ceased').eq('person_id', personId).eq('company_id', companyId).eq('role', 'shareholder');
+      const activeRow = (rows as any[])?.find(r => !r.date_ceased);
+      let created = false;
+      if (!activeRow) {
+        await upsertRole({
+          personId, companyId, role: 'shareholder', dateAppointed: d, notes,
+          shareType: a.class || '', currency: a.currency || 'HKD',
+          issuePrice: pricePerShare,
+          paidUp: String(amountPaid * shares), unpaid: String(amountUnpaid * shares),
+        });
+        created = true;
+      } else {
+        await supabase.from('person_company_roles').update({
+          share_type: a.class || activeRow.share_type || '',
+          currency: a.currency || activeRow.currency || 'HKD',
+          issue_price: pricePerShare || activeRow.issue_price || '',
+          paid_up: String(amountPaid * shares),
+          unpaid: String(amountUnpaid * shares),
+          notes: notes || activeRow.notes || '',
+        }).eq('id', activeRow.id);
+      }
+      await applyShareChange(companyId, personId, shares, {
+        transaction_date: d,
+        share_type: a.class || '',
+        currency: a.currency || 'HKD',
+        price_per_share: pricePerShare,
+      } as any);
+      // 交易行（type='allotment'；consideration = 已繳總額）
+      await supabase.from('share_transactions').insert({
+        company_id: companyId,
+        transaction_date: d,
+        transaction_type: 'allotment',
+        from_person_id: null,
+        from_name: '',
+        to_person_id: personId,
+        to_name: nameEn || nameZh,
+        shares,
+        share_type: a.class || '',
+        currency: a.currency || 'HKD',
+        price_per_share: pricePerShare,
+        total_consideration: String(amountPaid * shares),
+        instrument_number: '',
+        notes,
+      } as any);
+      await recordFormEvent({
+        companyId, eventType: 'share_allotment', personId, role: 'shareholder',
+        changeDate: d, relatedFormType: 'NSC1',
+        newValue: {
+          transaction_type: 'allotment', from_person_id: '', from_name: '',
+          to_person_id: personId, to_name: nameEn || nameZh, shares,
+          share_type: a.class || '', price_per_share: pricePerShare,
+          total_consideration: String(amountPaid * shares),
+          currency: a.currency || 'HKD', instrument_number: '', transaction_date: d,
+        },
+      });
+      if (created) {
+        await recordFormEvent({
+          companyId, eventType: 'shareholder_add', personId, role: 'shareholder',
+          changeDate: d, relatedFormType: 'NSC1',
+          newValue: { name: nameEn || nameZh, shares },
+        });
+      }
+      labels.push(`已寫入獲配人：${nameEn || nameZh}（${shares} 股）`);
+    } catch (e: any) {
+      labels.push(`⚠ 獲配人「${nameEn || nameZh}」寫回失敗：${errText(e)}`);
+    }
+  }
+  if (labels.length === 0) labels.push('⚠ 沒有可寫入的獲配人');
+  return labels;
 }

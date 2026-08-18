@@ -12,9 +12,12 @@ import { useSaveResolution } from '@/hooks/useResolutions';
 import { downloadGenericFormPdf } from '@/lib/genericFormPdf';
 import { downloadBase64Pdf, downloadBase64File } from '@/lib/downloadPdf';
 import { useSaveFormHistory } from '@/hooks/useFormHistory';
+import { useQueryClient } from '@tanstack/react-query';
 import FormHistorySelector from './FormHistorySelector';
 import PresenterSelector from './PresenterSelector';
 import AddressQuickPick from './AddressQuickPick';
+import ConfirmWritebackDialog from './ConfirmWritebackDialog';
+import { buildNNC2Summary, writebackNNC2, errText, type WritebackSummaryItem } from '@/lib/formWriteback';
 
 type ResolutionType = 'sole_director' | 'members';
 
@@ -43,7 +46,9 @@ export default function RenameCompanyForm({ onBack, initialCompanyId }: Props) {
   const [resolutionDone, setResolutionDone] = useState(false);
   const [resolutionId, setResolutionId] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [pendingWriteback, setPendingWriteback] = useState<{ title: string; summary: WritebackSummaryItem[]; companyId: string | null } | null>(null);
   const { mutate: saveFormHistory } = useSaveFormHistory();
+  const queryClient = useQueryClient();
   // 決議書類型
   const [resolutionType, setResolutionType] = useState<ResolutionType | 'auto'>('auto');
   const [includeConsent, setIncludeConsent] = useState(false);
@@ -267,11 +272,24 @@ We, being all the Members of the Company entitled to attend and vote at the Gene
     }
   };
 
+  // NNC2 確認框入口（決議書路徑不寫庫，計劃既定）
   const handleGenerateNNC2 = async () => {
     if (!company || !newName.trim()) {
       toast({ title: '請選擇公司並填寫新公司名稱', variant: 'destructive' });
       return;
     }
+    setPendingWriteback({
+      title: 'NNC2 生成確認',
+      summary: buildNNC2Summary({
+        newName, newChineseName,
+        oldName: oldName || company.name,
+        oldChineseName: oldChineseName,
+      }),
+      companyId,
+    });
+  };
+
+  const doGenerateNNC2 = async (writebackCompanyId?: string | null) => {
     setGenerating(true);
     try {
       const token = localStorage.getItem("secretary_jwt") || "";
@@ -310,6 +328,23 @@ We, being all the Members of the Company entitled to attend and vote at the Gene
       downloadBase64Pdf(result.pdf, 'NNC2-form.pdf');
       toast({ title: 'NNC2 表格已生成', description: '使用官方模板填寫' });
       saveFormHistory({ formType: 'NNC2', formData: { formData: { oldName, newName, oldChineseName, newChineseName, resolutionDate, effectiveDate, signers, presNameCn, presNameEn, presAddress, presPhone, presFax, presEmail, presRef, step, resolutionType, includeConsent }, selectedCompanyId: companyId } });
+
+      // 寫回資料庫（PDF 成功才寫；放在「已生成」toast 之後，TOAST_LIMIT=1 順序一致）
+      if (writebackCompanyId) {
+        try {
+          const labels = await writebackNNC2(writebackCompanyId, {
+            newName, newChineseName,
+            oldName: oldName || company.name,
+            oldChineseName: oldChineseName,
+          });
+          queryClient.invalidateQueries({ queryKey: ['companies'] });
+          const warns = labels.filter(l => l.startsWith('⚠'));
+          if (labels.length > 0) toast({ title: '已同步資料庫', description: labels.join('；') });
+          if (warns.length > 0) toast({ title: '部分寫回未完成', description: warns.join('；'), variant: 'destructive' });
+        } catch (e: any) {
+          toast({ title: '資料庫寫回失敗', description: errText(e), variant: 'destructive' });
+        }
+      }
     } catch (err: any) {
       toast({ title: '生成失敗', description: err.message, variant: 'destructive' });
     } finally {
@@ -478,6 +513,19 @@ We, being all the Members of the Company entitled to attend and vote at the Gene
           </Button>
         </div>
       </div>
+
+      <ConfirmWritebackDialog
+        open={!!pendingWriteback}
+        title={pendingWriteback?.title || ''}
+        summary={pendingWriteback?.summary || []}
+        canWrite={!!pendingWriteback?.companyId}
+        onConfirm={() => {
+          const companyId = pendingWriteback?.companyId || null;
+          setPendingWriteback(null);
+          doGenerateNNC2(companyId);
+        }}
+        onCancel={() => setPendingWriteback(null)}
+      />
     </div>
   );
 }

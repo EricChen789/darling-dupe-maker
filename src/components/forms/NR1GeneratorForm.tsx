@@ -9,12 +9,15 @@ import { useCompanies } from '@/hooks/useCompanies';
 import { Company } from '@/types';
 import { downloadBase64Pdf } from '@/lib/downloadPdf';
 import { useSaveFormHistory } from '@/hooks/useFormHistory';
+import { useQueryClient } from '@tanstack/react-query';
 import FormHistorySelector from './FormHistorySelector';
 import PresenterSelector from './PresenterSelector';
 import AddressQuickPick from './AddressQuickPick';
 import RelatedFormsPrompt from './RelatedFormsPrompt';
+import ConfirmWritebackDialog from './ConfirmWritebackDialog';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import type { Presenter } from '@/hooks/usePresenters';
+import { resolveCompanyId, buildNR1Summary, writebackNR1, errText, type WritebackSummaryItem } from '@/lib/formWriteback';
 
 interface NR1GeneratorFormProps {
   onBack: () => void;
@@ -32,7 +35,9 @@ export default function NR1GeneratorForm({ onBack, initialCompanyId }: NR1Genera
   const [generating, setGenerating] = useState(false);
   const [showRelatedPrompt, setShowRelatedPrompt] = useState(false);
   const [relatedLinkages, setRelatedLinkages] = useState<any[]>([]);
+  const [pendingWriteback, setPendingWriteback] = useState<{ title: string; summary: WritebackSummaryItem[]; companyId: string | null } | null>(null);
   const { mutate: saveFormHistory } = useSaveFormHistory();
+  const queryClient = useQueryClient();
 
   const today = new Date();
   const dd = String(today.getDate()).padStart(2, '0');
@@ -98,11 +103,20 @@ export default function NR1GeneratorForm({ onBack, initialCompanyId }: NR1Genera
     if (data.selectedCompanyId) setSelectedCompanyId(data.selectedCompanyId);
   };
 
-  const handleGenerate = async (debug = false) => {
+  const handleGenerate = async () => {
     if (!formData.brNumber || !formData.companyName) {
       toast({ title: '錯誤', description: '請填寫公司名稱和商業登記號碼', variant: 'destructive' });
       return;
     }
+    const companyId = await resolveCompanyId(formData.brNumber, selectedCompanyId || undefined);
+    setPendingWriteback({
+      title: 'NR1 生成確認',
+      summary: buildNR1Summary(formData as any),
+      companyId,
+    });
+  };
+
+  const doGenerate = async (debug = false, writebackCompanyId?: string | null) => {
     setGenerating(true);
     try {
       const token = localStorage.getItem("secretary_jwt") || "";
@@ -129,6 +143,19 @@ export default function NR1GeneratorForm({ onBack, initialCompanyId }: NR1Genera
           setShowRelatedPrompt(true);
         }
       } catch (_) { /* linkage check is non-critical */ }
+
+      // 寫回資料庫（PDF 成功才寫；放在「生成成功」toast 之後，TOAST_LIMIT=1 順序與人事表單一致）
+      if (writebackCompanyId) {
+        try {
+          const labels = await writebackNR1(writebackCompanyId, formData as any);
+          queryClient.invalidateQueries({ queryKey: ['companies'] });
+          const warns = labels.filter(l => l.startsWith('⚠'));
+          if (labels.length > 0) toast({ title: '已同步資料庫', description: labels.join('；') });
+          if (warns.length > 0) toast({ title: '部分寫回未完成', description: warns.join('；'), variant: 'destructive' });
+        } catch (e: any) {
+          toast({ title: '資料庫寫回失敗', description: errText(e), variant: 'destructive' });
+        }
+      }
     } catch (err: any) {
       toast({ title: '生成失敗', description: err.message, variant: 'destructive' });
     } finally {
@@ -315,14 +342,27 @@ export default function NR1GeneratorForm({ onBack, initialCompanyId }: NR1Genera
 
         {/* Actions */}
         <div className="flex items-center gap-3 pt-4 border-t border-border">
-          <Button onClick={() => handleGenerate(false)} disabled={generating} className="bg-primary text-primary-foreground">
+          <Button onClick={handleGenerate} disabled={generating} className="bg-primary text-primary-foreground">
             {generating ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />生成中...</> : <><Download className="h-4 w-4 mr-2" />生成 NR1 PDF</>}
           </Button>
-          <Button variant="outline" onClick={() => handleGenerate(true)} disabled={generating}>
+          <Button variant="outline" onClick={() => doGenerate(true)} disabled={generating}>
             生成測試 PDF（Debug）
           </Button>
         </div>
       </div>
+
+      <ConfirmWritebackDialog
+        open={!!pendingWriteback}
+        title={pendingWriteback?.title || ''}
+        summary={pendingWriteback?.summary || []}
+        canWrite={!!pendingWriteback?.companyId}
+        onConfirm={() => {
+          const companyId = pendingWriteback?.companyId || null;
+          setPendingWriteback(null);
+          doGenerate(false, companyId);
+        }}
+        onCancel={() => setPendingWriteback(null)}
+      />
 
       <RelatedFormsPrompt
         open={showRelatedPrompt}

@@ -829,3 +829,197 @@ export async function writebackNN7(companyId: string, fd: Nn7FormInput): Promise
   labels.push(`已更新人員${TYPE_LABEL[fd.changeType]}：${fullName || fd.nameChinese}`);
   return labels;
 }
+
+// ══════════════════════════════ 公司資料（NR1 / NN9 / NNC2）══════════════════════════════
+
+export interface CompanyAddressFormInput {
+  flat?: string; building?: string; street?: string; district?: string; region?: string;
+  email?: string; phone?: string;
+  addressDate?: string;   // DD/MM/YYYY 或 ''
+  emailDate?: string;
+  phoneDate?: string;
+  relatedFormType: 'NR1' | 'NN9';
+}
+
+/** 共用：按變更寫回 companies 註冊地址/電郵/電話（僅非空且與現值不同才寫）+ 對應事件 */
+async function writebackCompanyChanges(companyId: string, fd: CompanyAddressFormInput): Promise<string[]> {
+  const labels: string[] = [];
+  const { data } = await supabase.from('companies')
+    .select('reg_flat, reg_building, reg_street, reg_district, reg_region, email, phone')
+    .eq('id', companyId).limit(1);
+  const row = (data as any[])?.[0] || null;
+  if (!row) return ['⚠ 找不到公司，資料庫未更新'];
+
+  const ADDR_KEYS: Array<[keyof CompanyAddressFormInput, string]> = [
+    ['flat', 'reg_flat'], ['building', 'reg_building'], ['street', 'reg_street'],
+    ['district', 'reg_district'], ['region', 'reg_region'],
+  ];
+  const addrPatch: Record<string, any> = {};
+  for (const [fk, ck] of ADDR_KEYS) {
+    const v = String(fd[fk] ?? '').trim();
+    if (v && v !== String(row[ck] ?? '')) addrPatch[ck] = v;
+  }
+  if (Object.keys(addrPatch).length > 0) {
+    const { error } = await supabase.from('companies').update(addrPatch).eq('id', companyId);
+    if (error) {
+      labels.push(`⚠ 地址更新失敗：${error.message}`);
+    } else {
+      await recordFormEvent({
+        companyId, eventType: 'address_change', changeDate: fd.addressDate,
+        relatedFormType: fd.relatedFormType,
+        oldValue: {
+          reg_flat: row.reg_flat, reg_building: row.reg_building, reg_street: row.reg_street,
+          reg_district: row.reg_district, reg_region: row.reg_region,
+        },
+        newValue: {
+          reg_flat: addrPatch.reg_flat ?? row.reg_flat, reg_building: addrPatch.reg_building ?? row.reg_building,
+          reg_street: addrPatch.reg_street ?? row.reg_street, reg_district: addrPatch.reg_district ?? row.reg_district,
+          reg_region: addrPatch.reg_region ?? row.reg_region,
+        },
+      });
+      labels.push('已更新公司註冊地址');
+    }
+  }
+
+  const email = String(fd.email ?? '').trim();
+  if (email && email !== String(row.email ?? '')) {
+    const { error } = await supabase.from('companies').update({ email }).eq('id', companyId);
+    if (error) {
+      labels.push(`⚠ 電郵更新失敗：${error.message}`);
+    } else {
+      await recordFormEvent({
+        companyId, eventType: 'company_email_change', changeDate: fd.emailDate,
+        relatedFormType: fd.relatedFormType,
+        oldValue: { email: row.email ?? '' }, newValue: { email },
+      });
+      labels.push('已更新公司電郵');
+    }
+  }
+
+  const phone = String(fd.phone ?? '').trim();
+  if (phone && phone !== String(row.phone ?? '')) {
+    const { error } = await supabase.from('companies').update({ phone }).eq('id', companyId);
+    if (error) {
+      labels.push(`⚠ 電話更新失敗：${error.message}`);
+    } else {
+      await recordFormEvent({
+        companyId, eventType: 'company_phone_change', changeDate: fd.phoneDate,
+        relatedFormType: fd.relatedFormType,
+        oldValue: { phone: row.phone ?? '' }, newValue: { phone },
+      });
+      labels.push('已更新公司電話');
+    }
+  }
+
+  if (labels.length === 0) labels.push('⚠ 沒有可寫入的變更內容');
+  return labels;
+}
+
+// ── NR1 ──
+
+export interface Nr1FormInput {
+  flat?: string; building?: string; street?: string; district?: string; region?: string;
+  email?: string; phone?: string;
+  addressEffectiveDay?: string; addressEffectiveMonth?: string; addressEffectiveYear?: string;
+  emailEffectiveDay?: string; emailEffectiveMonth?: string; emailEffectiveYear?: string;
+  phoneEffectiveDay?: string; phoneEffectiveMonth?: string; phoneEffectiveYear?: string;
+}
+
+export function buildNR1Summary(fd: Nr1FormInput): WritebackSummaryItem[] {
+  const items: WritebackSummaryItem[] = [];
+  const addrFilled = [fd.flat, fd.building, fd.street, fd.district, fd.region].some(v => String(v ?? '').trim());
+  if (addrFilled) {
+    items.push({ label: '更新公司註冊地址', detail: dmyToDDMMYYYY(fd.addressEffectiveDay, fd.addressEffectiveMonth, fd.addressEffectiveYear) || '今天' });
+  }
+  const email = String(fd.email ?? '').trim();
+  if (email) {
+    items.push({ label: '更新公司電郵', detail: `${email} · ${dmyToDDMMYYYY(fd.emailEffectiveDay, fd.emailEffectiveMonth, fd.emailEffectiveYear) || '今天'}` });
+  }
+  const phone = String(fd.phone ?? '').trim();
+  if (phone) {
+    items.push({ label: '更新公司電話', detail: `${phone} · ${dmyToDDMMYYYY(fd.phoneEffectiveDay, fd.phoneEffectiveMonth, fd.phoneEffectiveYear) || '今天'}` });
+  }
+  if (items.length === 0) items.push({ label: '沒有可寫入的變更內容', detail: '僅生成 PDF' });
+  return items;
+}
+
+/** NR1 寫回：companies reg_* 5 欄 + email/phone（僅非空且變化才寫）+ 對應事件（related 'NR1'） */
+export async function writebackNR1(companyId: string, fd: Nr1FormInput): Promise<string[]> {
+  return writebackCompanyChanges(companyId, {
+    flat: fd.flat, building: fd.building, street: fd.street, district: fd.district, region: fd.region,
+    email: fd.email, phone: fd.phone,
+    addressDate: dmyToDDMMYYYY(fd.addressEffectiveDay, fd.addressEffectiveMonth, fd.addressEffectiveYear),
+    emailDate: dmyToDDMMYYYY(fd.emailEffectiveDay, fd.emailEffectiveMonth, fd.emailEffectiveYear),
+    phoneDate: dmyToDDMMYYYY(fd.phoneEffectiveDay, fd.phoneEffectiveMonth, fd.phoneEffectiveYear),
+    relatedFormType: 'NR1',
+  });
+}
+
+// ── NN9 ──
+
+export interface Nn9FormInput {
+  flat?: string; building?: string; street?: string; district?: string; region?: string;
+  newEmail?: string; newPhone?: string;
+  changeDay?: string; changeMonth?: string; changeYear?: string;
+}
+
+export function buildNN9Summary(fd: Nn9FormInput): WritebackSummaryItem[] {
+  const items: WritebackSummaryItem[] = [];
+  const d = dmyToDDMMYYYY(fd.changeDay, fd.changeMonth, fd.changeYear) || '今天';
+  const addrFilled = [fd.flat, fd.building, fd.street, fd.district, fd.region].some(v => String(v ?? '').trim());
+  if (addrFilled) items.push({ label: '更新公司註冊地址', detail: d });
+  const email = String(fd.newEmail ?? '').trim();
+  if (email) items.push({ label: '更新公司電郵', detail: `${email} · ${d}` });
+  const phone = String(fd.newPhone ?? '').trim();
+  if (phone) items.push({ label: '更新公司電話', detail: `${phone} · ${d}` });
+  if (items.length === 0) items.push({ label: '沒有可寫入的變更內容', detail: '僅生成 PDF' });
+  return items;
+}
+
+/** NN9 寫回：同 NR1 但生效日期共用 change D/M/Y、related 顯式 'NN9' */
+export async function writebackNN9(companyId: string, fd: Nn9FormInput): Promise<string[]> {
+  const d = dmyToDDMMYYYY(fd.changeDay, fd.changeMonth, fd.changeYear);
+  return writebackCompanyChanges(companyId, {
+    flat: fd.flat, building: fd.building, street: fd.street, district: fd.district, region: fd.region,
+    email: fd.newEmail, phone: fd.newPhone,
+    addressDate: d, emailDate: d, phoneDate: d,
+    relatedFormType: 'NN9',
+  });
+}
+
+// ── NNC2 ──
+
+export interface Nnc2FormInput {
+  newName?: string; newChineseName?: string;
+  oldName?: string; oldChineseName?: string;   // 舊值快照（表單自動填）
+}
+
+export function buildNNC2Summary(fd: Nnc2FormInput): WritebackSummaryItem[] {
+  const newName = String(fd.newName ?? '').trim();
+  const newCn = String(fd.newChineseName ?? '').trim();
+  if (!newName && !newCn) return [{ label: '沒有可寫入的變更內容', detail: '僅生成 PDF' }];
+  const old = [fd.oldName, fd.oldChineseName].filter(Boolean).join(' / ') || '(未填)';
+  const next = [newName, newCn].filter(Boolean).join(' / ');
+  return [{ label: `更改公司名稱：${old} → ${next}`, detail: '今天' }];
+}
+
+/** NNC2 寫回：companies.name/chinese_name（僅非空且變化才寫）+ name_change 事件（related 'NNC2'，change_date=今天） */
+export async function writebackNNC2(companyId: string, fd: Nnc2FormInput): Promise<string[]> {
+  const { data } = await supabase.from('companies').select('name, chinese_name').eq('id', companyId).limit(1);
+  const row = (data as any[])?.[0] || null;
+  if (!row) return ['⚠ 找不到公司，資料庫未更新'];
+  const newName = String(fd.newName ?? '').trim();
+  const newCn = String(fd.newChineseName ?? '').trim();
+  const patch: Record<string, any> = {};
+  if (newName && newName !== row.name) patch.name = newName;
+  if (newCn && newCn !== String(row.chinese_name ?? '')) patch.chinese_name = newCn;
+  if (Object.keys(patch).length === 0) return ['⚠ 沒有可寫入的變更內容'];
+  const { error } = await supabase.from('companies').update(patch).eq('id', companyId);
+  if (error) return [`⚠ 公司名稱更新失敗：${error.message}`];
+  await recordFormEvent({
+    companyId, eventType: 'name_change', relatedFormType: 'NNC2',
+    oldValue: { name: fd.oldName || row.name, chinese_name: fd.oldChineseName || row.chinese_name || '' },
+    newValue: { name: patch.name ?? row.name, chinese_name: patch.chinese_name ?? row.chinese_name ?? '' },
+  });
+  return [`已更新公司名稱：${patch.name ?? patch.chinese_name}`];
+}

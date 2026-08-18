@@ -8,11 +8,14 @@ import { toast } from '@/hooks/use-toast';
 import { useCompanies } from '@/hooks/useCompanies';
 import { downloadBase64Pdf } from '@/lib/downloadPdf';
 import { useSaveFormHistory } from '@/hooks/useFormHistory';
+import { useQueryClient } from '@tanstack/react-query';
 import FormHistorySelector from './FormHistorySelector';
 import PresenterSelector from './PresenterSelector';
 import AddressQuickPick from './AddressQuickPick';
 import RelatedFormsPrompt from './RelatedFormsPrompt';
+import ConfirmWritebackDialog from './ConfirmWritebackDialog';
 import type { Presenter } from '@/hooks/usePresenters';
+import { resolveCompanyId, buildNN9Summary, writebackNN9, errText, type WritebackSummaryItem } from '@/lib/formWriteback';
 
 interface NN9GeneratorFormProps { onBack: () => void; initialCompanyId?: string; }
 
@@ -29,7 +32,9 @@ export default function NN9GeneratorForm({ onBack, initialCompanyId }: NN9Genera
   const [generating, setGenerating] = useState(false);
   const [showRelatedPrompt, setShowRelatedPrompt] = useState(false);
   const [relatedLinkages, setRelatedLinkages] = useState<any[]>([]);
+  const [pendingWriteback, setPendingWriteback] = useState<{ title: string; summary: WritebackSummaryItem[]; companyId: string | null } | null>(null);
   const { mutate: saveFormHistory } = useSaveFormHistory();
+  const queryClient = useQueryClient();
 
   const today = new Date();
   const dd = String(today.getDate()).padStart(2, '0');
@@ -82,6 +87,15 @@ export default function NN9GeneratorForm({ onBack, initialCompanyId }: NN9Genera
   const handleGenerate = async () => {
     if (!formData.brNumber || !formData.companyName) { toast({ title: '錯誤', description: '請選擇公司', variant: 'destructive' }); return; }
     if (!formData.flat && !formData.building && !formData.street) { toast({ title: '錯誤', description: '請填寫新地址', variant: 'destructive' }); return; }
+    const companyId = await resolveCompanyId(formData.brNumber, selectedCompanyId || undefined);
+    setPendingWriteback({
+      title: 'NN9 生成確認',
+      summary: buildNN9Summary(formData as any),
+      companyId,
+    });
+  };
+
+  const doGenerate = async (writebackCompanyId?: string | null) => {
     setGenerating(true);
     try {
       const token = localStorage.getItem("secretary_jwt") || "";
@@ -167,6 +181,19 @@ export default function NN9GeneratorForm({ onBack, initialCompanyId }: NN9Genera
           setShowRelatedPrompt(true);
         }
       } catch (_) { /* linkage check is non-critical */ }
+
+      // 寫回資料庫（PDF 成功才寫；放在「生成成功」toast 之後，TOAST_LIMIT=1 順序與人事表單一致）
+      if (writebackCompanyId) {
+        try {
+          const labels = await writebackNN9(writebackCompanyId, formData as any);
+          queryClient.invalidateQueries({ queryKey: ['companies'] });
+          const warns = labels.filter(l => l.startsWith('⚠'));
+          if (labels.length > 0) toast({ title: '已同步資料庫', description: labels.join('；') });
+          if (warns.length > 0) toast({ title: '部分寫回未完成', description: warns.join('；'), variant: 'destructive' });
+        } catch (e: any) {
+          toast({ title: '資料庫寫回失敗', description: errText(e), variant: 'destructive' });
+        }
+      }
     } catch (err: any) { toast({ title: '生成失敗', description: err.message, variant: 'destructive' }); }
     finally { setGenerating(false); }
   };
@@ -292,6 +319,19 @@ export default function NN9GeneratorForm({ onBack, initialCompanyId }: NN9Genera
           </Button>
         </div>
       </div>
+
+      <ConfirmWritebackDialog
+        open={!!pendingWriteback}
+        title={pendingWriteback?.title || ''}
+        summary={pendingWriteback?.summary || []}
+        canWrite={!!pendingWriteback?.companyId}
+        onConfirm={() => {
+          const companyId = pendingWriteback?.companyId || null;
+          setPendingWriteback(null);
+          doGenerate(companyId);
+        }}
+        onCancel={() => setPendingWriteback(null)}
+      />
 
       <RelatedFormsPrompt
         open={showRelatedPrompt}

@@ -293,7 +293,28 @@ export async function ensureCompany(input: EnsureCompanyInput): Promise<string> 
     } as any)
     .select('id').single();
   if (error) throw error;
-  return created.id;
+
+  // d1Api 的 insert().select().single() 靠 GET /api/{table}/{id} 回讀，但 POST 回的是 D1 rowid
+  // （GET rowid → 404）→ created.id 會殘留 rowid，直接拿去當 company_id 會觸發 FK 約束失敗。
+  const newId = String(created?.id || '');
+  if (UUID_RE.test(newId)) return newId;
+  const real = await resolveRealCompanyId(name, zh, jurisdiction);
+  if (real) return real;
+  throw new Error(`公司已建立但無法取得真實 id（rowid=${newId}）`);
+}
+
+/** 由名稱重新解析 companies.id（真 UUID）——INSERT 回 rowid 時兜底 */
+async function resolveRealCompanyId(name: string, zh: string, jurisdiction: string): Promise<string | null> {
+  try {
+    const { data } = await supabase.from('companies')
+      .select('id').eq('name', name).eq('chinese_name', zh).eq('jurisdiction', jurisdiction).limit(1);
+    if ((data as any[])?.length) return (data as any[])[0].id;
+    const { data: byName } = await supabase.from('companies').select('id').eq('name', name).limit(1);
+    if ((byName as any[])?.length) return (byName as any[])[0].id;
+  } catch (e: any) {
+    console.warn('[formWriteback] resolveRealCompanyId failed:', e?.message || e);
+  }
+  return null;
 }
 
 // ══════════════════════════════ 事件 ══════════════════════════════════

@@ -218,6 +218,11 @@ export interface FormHelpers {
     alignOrFontSize?: "left" | "center" | "right" | number,
     align?: "left" | "center" | "right"
   ) => boolean;
+  /** Clear the Comb flag (Ff bit 24) so /Q alignment takes effect.
+   *  Comb fields distribute chars into fixed cells left→right and ignore /Q;
+   *  ND2B template HKID fields are comb (Ff=0x1C00000, MaxLen=5) — the 4-char
+   *  partial number must be right-aligned, so call this before/after setText(..., 'right'). */
+  disableComb: (fieldName: string) => boolean;
   check: (fieldName: string, shouldCheck: boolean) => boolean;
   selectDropdown: (fieldName: string, targetValue: string) => boolean;
 }
@@ -288,6 +293,25 @@ export function createFormHelpers(pdfDoc: PDFDocument): FormHelpers {
       return true;
     } catch (e) {
       console.warn(`⚠ setText failed for ${fieldName}:`, e);
+      return false;
+    }
+  };
+
+  const disableComb = (fieldName: string): boolean => {
+    const target = fields.get(fieldName);
+    if (!target) {
+      console.warn(`⚠ Missing field: ${fieldName}`);
+      return false;
+    }
+    try {
+      detachWidget(target.widget, target.field);
+      const ff = target.widget.get(PDFName.of("Ff"));
+      if (ff && typeof ff.asNumber === "function") {
+        target.widget.set(PDFName.of("Ff"), pdfDoc.context.obj(ff.asNumber() & ~(1 << 24)));
+      }
+      return true;
+    } catch (e) {
+      console.warn(`⚠ disableComb failed for ${fieldName}:`, e);
       return false;
     }
   };
@@ -377,7 +401,7 @@ export function createFormHelpers(pdfDoc: PDFDocument): FormHelpers {
     }
   };
 
-  return { fields, setText, check, selectDropdown };
+  return { fields, setText, disableComb, check, selectDropdown };
 }
 
 // ═══ HK-specific helpers ═══

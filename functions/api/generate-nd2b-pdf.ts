@@ -21,6 +21,8 @@ import {
   createFormHelpers,
   rebuildAcroFormFields,
   enableNeedAppearances,
+  parseHkidPartial,
+  parsePassportPartial,
 } from "./_acroform";
 
 const TEMPLATE = "ND2B-template.pdf";
@@ -45,7 +47,14 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
     const pdfDoc = await PDFDocument.load(await templateObj.arrayBuffer());
 
     // Use low-level AcroForm helpers (no CJK font embedding → no CPU timeout)
-    const { setText, check } = createFormHelpers(pdfDoc);
+    const { setText, check, disableComb } = createFormHelpers(pdfDoc);
+
+    // 非PI页 HKID：只填部分號碼（字母+首3數字，4位）并靠右对齐。
+    // 模板 HKID 字段是 comb 格（Ff bit24）——comb 忽略 /Q，必须先清 comb 位右对齐才生效。
+    const setHkid = (name: string, idNumber: string) => {
+      setText(name, parseHkidPartial(idNumber), 'right');
+      disableComb(name);
+    };
 
     const br8 = (data.brNumber || "").replace(/[^0-9A-Za-z]/g, "").slice(0, 8);
 
@@ -123,10 +132,10 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
       setText("fill_3_P.1", data.nameChinese);
       setText("fill_4_P.1", surname);
       setText("fill_5_P.1", otherNames);
-      // 身分識別：fill_6=香港身分證部分號碼，fill_7=護照部分號碼（模板坐标实测）
-      setText("fill_6_P.1", (data.idNumber || '').replace(/[()\-\s]/g, '').toUpperCase().slice(0, 4), 'right');
+      // 身分識別：fill_6=香港身分證部分號碼（4位右对齐），fill_7=護照部分號碼（首半，模板坐标实测）
+      setHkid("fill_6_P.1", data.idNumber || '');
       if (data.passportNumber) {
-        setText("fill_7_P.1", (data.passportNumber || '').slice(0, 8), 'right');
+        setText("fill_7_P.1", parsePassportPartial(data.passportNumber || ''), 'right');
       }
 
       // ── P.2: Change details (multi-type support) ──
@@ -165,17 +174,17 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
         fillDateTriple('fill_28_P.2', 'fill_29_P.2', 'fill_30_P.2');
       }
 
-      // (g) 證件號碼更改 — HKID 部分號碼 + 護照
+      // (g) 證件號碼更改 — HKID 部分號碼（4位右对齐）+ 護照部分號碼（首半）
       if (changeTypes.includes('id')) {
         if (data.newIdNumber) {
-          setText("fill_31_P.2", (data.newIdNumber || '').replace(/[()\-\s]/g, ''), 'right');
+          setHkid("fill_31_P.2", data.newIdNumber);
           fillDateTriple('fill_32_P.2', 'fill_33_P.2', 'fill_34_P.2');
         }
         if (data.passportPlaceOfIssue || data.passportCountry) {
           setText("fill_35_P.2", data.passportPlaceOfIssue || data.passportCountry);
         }
         if (data.passportNumber) {
-          setText("fill_36_P.2", (data.passportNumber || '').slice(0, 8));
+          setText("fill_36_P.2", parsePassportPartial(data.passportNumber || ''));
         }
         if (data.passportNumber || data.passportPlaceOfIssue || data.passportCountry) {
           fillDateTriple('fill_37_P.2', 'fill_38_P.2', 'fill_39_P.2');
@@ -240,9 +249,9 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
       setText("fill_2_P.4", data.nameChinese);
       setText("fill_3_P.4", surname);
       setText("fill_4_P.4", otherNames);
-      setText("fill_5_P.4", (data.idNumber || '').replace(/[()\-\s]/g, '').toUpperCase().slice(0, 4), 'right');
+      setHkid("fill_5_P.4", data.idNumber || '');
       if (data.passportNumber) {
-        setText("fill_6_P.4", (data.passportNumber || '').slice(0, 8), 'right');
+        setText("fill_6_P.4", parsePassportPartial(data.passportNumber || ''), 'right');
       }
 
       // ═══ Section B: Change details (mirror P.2) ═══
@@ -279,18 +288,18 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
         fillDateTriple('fill_33_P.4', 'fill_34_P.4', 'fill_35_P.4');
       }
 
-      // (g) 證件號碼更改 — HKID 部分號碼
+      // (g) 證件號碼更改 — HKID 部分號碼（4位右对齐）
       if (changeTypes.includes('id') && data.newIdNumber) {
-        setText("fill_36_P.4", (data.newIdNumber || '').replace(/[()\-\s]/g, ''), 'right');
+        setHkid("fill_36_P.4", data.newIdNumber);
         fillDateTriple('fill_37_P.4', 'fill_38_P.4', 'fill_39_P.4');
       }
-      // (h) 護照 — 簽發國家/地區 + 部分號碼
+      // (h) 護照 — 簽發國家/地區 + 部分號碼（首半）
       if (changeTypes.includes('id') && (data.passportNumber || data.passportPlaceOfIssue || data.passportCountry)) {
         if (data.passportPlaceOfIssue || data.passportCountry) {
           setText("fill_40_P.4", data.passportPlaceOfIssue || data.passportCountry);
         }
         if (data.passportNumber) {
-          setText("fill_41_P.4", (data.passportNumber || '').slice(0, 8));
+          setText("fill_41_P.4", parsePassportPartial(data.passportNumber || ''));
         }
         fillDateTriple('fill_42_P.4', 'fill_43_P.4', 'fill_44_P.4');
       }

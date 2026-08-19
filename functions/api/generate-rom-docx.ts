@@ -243,7 +243,23 @@ function fillBlock(blockXml: string, sh: RomShareholder): string {
     set("REMARKS", r ? r.remarks : "");
     set("ENTRYBY", "");
   }
-  let out = blockXml;
+  // 🔴 Word 只把段落级 rPr 用在段落标记上，不会下放给 run 里的文字。
+  // 模板里转让半边的占位 run（DEED/CERT2/FROM2/TO2/SHARES2/MONEY2）只有段落级
+  // rPr，Word 打开时这些格会回退到样式默认 Times New Roman 小四，整行比其他
+  // 填入值（Arial 小五 sz=18）大一圈。LibreOffice 会下放段落级 rPr，所以转换
+  // 渲染量字号完全看不出差异 —— 只能以 Word 的实际表现为准（用户 2026-08-19 报）。
+  // 给所有缺 run 级 rPr 的占位 run 统一补上与其他格一致的 Arial 小五。
+  let out = blockXml.replace(
+    /<w:r(?:\s[^>]*)?>(?:(?!<\/w:r>)[\s\S])*?<\/w:r>/g,
+    (run) => {
+      if (!run.includes('{{') || run.includes('<w:rPr')) return run;
+      return run.replace(
+        /<w:r(?:\s[^>]*)?>/,
+        (tag) => tag + '<w:rPr><w:rFonts w:ascii="Arial" w:eastAsia="PMingLiU" w:hAnsi="Arial" w:cs="Arial"/>'
+          + '<w:sz w:val="18"/><w:szCs w:val="18"/><w:lang w:eastAsia="zh-TW"/></w:rPr>'
+      );
+    }
+  );
   for (const [k, val] of Object.entries(v)) {
     out = out.replaceAll(`{{${k}}}`, escXml(val));
   }

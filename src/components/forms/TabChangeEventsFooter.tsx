@@ -5,9 +5,10 @@ import { useState, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { useChangeEvents, EVENT_TYPE_LABELS, type ChangeEvent } from '@/hooks/useChangeEvents';
+import { useChangeEvents, EVENT_TYPE_LABELS, dayKeyOf, type ChangeEvent } from '@/hooks/useChangeEvents';
 import { QuickFormDialog } from '@/components/forms/QuickFormDialog';
-import { FileOutput, ChevronDown, ChevronRight, History, Clock } from 'lucide-react';
+import { FileOutput, ChevronDown, ChevronRight, ChevronUp, History, CalendarDays, Package } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 // ── Map change_events.event_type → QuickFormDialog's event.type ──
 const EVENT_TYPE_TO_QF_TYPE: Record<string, string> = {
@@ -51,18 +52,37 @@ const PERSONNEL_EVENT_TYPES = new Set<string>([
   'reserve_director_appoint', 'reserve_director_cease',
 ]);
 
-// ── Normalise change_date (DD/MM/YYYY | YYYY-MM-DD | DDMMYYYY) → YYYYMMDD ──
-function dayKeyOf(dateStr?: string): string {
-  if (!dateStr) return '';
-  const t = String(dateStr).trim();
-  let d = '', m = '', y = '';
-  if (/^\d{8}$/.test(t)) { d = t.slice(0, 2); m = t.slice(2, 4); y = t.slice(4, 8); }
-  else if (/^\d{4}-\d{2}-\d{2}/.test(t)) { y = t.slice(0, 4); m = t.slice(5, 7); d = t.slice(8, 10); }
-  else if (/^\d{1,2}\/\d{1,2}\/\d{4}/.test(t)) {
-    const [dd, mm, yy] = t.split('/'); d = dd.padStart(2, '0'); m = mm.padStart(2, '0'); y = yy;
-  } else return '';
-  return `${y}${m}${d}`;
+// ── 狀態型事件：新值取代舊值，「最新」視圖每個 (類型＋人) 只留最新一條 ──
+// 未列入者為發生型（委任／辭任／股東進出／股份交易）——各自是獨立的歷史事實，
+// 不會被後來的同類事件取代，一條都不能去（否則股份交易帳冊會被壓成 1 筆）。
+const STATEFUL_EVENT_TYPES = new Set<string>([
+  'address_change', 'name_change', 'company_email_change', 'company_phone_change',
+  'person_address_change', 'person_name_change', 'person_id_change', 'person_contact_change',
+]);
+
+// ── YYYYMMDD → DD/MM/YYYY（顯示用）──
+function dayLabelOf(dayKey: string): string {
+  if (!/^\d{8}$/.test(dayKey)) return '日期不詳';
+  return `${dayKey.slice(6, 8)}/${dayKey.slice(4, 6)}/${dayKey.slice(0, 4)}`;
 }
+
+// ── 按日期分組（輸入已按 change_date 倒序）──
+interface DayGroup { dayKey: string; dayLabel: string; events: ChangeEvent[]; }
+function groupByDay(events: ChangeEvent[]): DayGroup[] {
+  const map = new Map<string, ChangeEvent[]>();
+  for (const ev of events) {
+    const k = dayKeyOf(ev.change_date);
+    if (!map.has(k)) map.set(k, []);
+    map.get(k)!.push(ev);
+  }
+  // dayKey 倒序；解析不出日期的（''）排最後
+  return [...map.entries()]
+    .sort((a, b) => (b[0] || '').localeCompare(a[0] || ''))
+    .map(([dayKey, evs]) => ({ dayKey, dayLabel: dayLabelOf(dayKey), events: evs }));
+}
+
+/** 每組預設先顯示幾條（超出需點日期展開）*/
+const PREVIEW_PER_DAY = 2;
 
 // ── Parse a change_event into QuickFormDialog-compatible format ──
 function changeEventToQfEvent(ev: ChangeEvent) {
@@ -216,24 +236,50 @@ interface TabChangeEventsFooterProps {
 
 export function TabChangeEventsFooter({ companyId, company, eventTypes, label }: TabChangeEventsFooterProps) {
   const [expanded, setExpanded] = useState(true); // 默认展开；用户可手动点击收起
+  const [view, setView] = useState<'latest' | 'all'>('latest');
+  const [openDates, setOpenDates] = useState<Set<string>>(new Set()); // 已展開全部的日期
   const [qfOpen, setQfOpen] = useState(false);
   const [qfEvents, setQfEvents] = useState<any[]>([]);
 
   const { data: allEvents = [], isLoading } = useChangeEvents(companyId);
 
-  // Filter to only this tab's event types + only QF-supported types (for generation button)
+  // Filter to only this tab's event types
   const filtered = useMemo(() => {
     return (allEvents || []).filter(ev =>
       eventTypes.includes(ev.event_type)
     );
   }, [allEvents, eventTypes]);
 
-  const withForm = useMemo(() => {
-    return filtered.filter(ev => QF_SUPPORTED_TYPES.has(ev.event_type));
+  // 「最新」視圖：狀態型事件每個 (類型＋人) 只留最新一條；發生型全留。
+  // allEvents 已按 change_date 倒序（useChangeEvents）→ 首次出現即最新。
+  const latest = useMemo(() => {
+    const seen = new Set<string>();
+    return filtered.filter(ev => {
+      if (!STATEFUL_EVENT_TYPES.has(ev.event_type)) return true;
+      const key = `${ev.event_type}|${ev.person_id || ''}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
   }, [filtered]);
+
+  const source = view === 'latest' ? latest : filtered;
+  const groups = useMemo(() => groupByDay(source), [source]);
+
+  const withForm = useMemo(() => {
+    return source.filter(ev => QF_SUPPORTED_TYPES.has(ev.event_type));
+  }, [source]);
 
   if (isLoading) return null;
   if (filtered.length === 0) return null;
+
+  const toggleDate = (dayKey: string) => {
+    setOpenDates(prev => {
+      const next = new Set(prev);
+      next.has(dayKey) ? next.delete(dayKey) : next.add(dayKey);
+      return next;
+    });
+  };
 
   // ── 生成表格：同一天的全部人事事件（委任＋辭任）一併打包 ──
   // 從 allEvents（全公司）分組，不限本 tab 過濾 — 董事 tab 也能帶上同日秘書變更
@@ -247,58 +293,162 @@ export function TabChangeEventsFooter({ companyId, company, eventTypes, label }:
     setQfOpen(true);
   };
 
+  // ── 一起生成：把該日全部可生成事件打包（人事事件仍走全公司同日撈取）──
+  const handleGenerateDay = (group: DayGroup) => {
+    const genable = group.events.filter(e => QF_SUPPORTED_TYPES.has(e.event_type));
+    if (genable.length === 0) return;
+    const hasPersonnel = genable.some(e => PERSONNEL_EVENT_TYPES.has(e.event_type));
+    let pack: ChangeEvent[] = genable;
+    if (hasPersonnel && group.dayKey) {
+      // 人事事件用全公司同日集合替換（與單條「生成表格」語義一致），
+      // 再併上該日其餘非人事事件，用 id 去重
+      const personnelSameDay = allEvents.filter(
+        e => PERSONNEL_EVENT_TYPES.has(e.event_type) && dayKeyOf(e.change_date) === group.dayKey
+      );
+      const byId = new Map<string, ChangeEvent>();
+      for (const e of [...personnelSameDay, ...genable]) byId.set(e.id, e);
+      pack = [...byId.values()];
+    }
+    setQfEvents(pack.map(e => changeEventToQfEvent(e)));
+    setQfOpen(true);
+  };
+
   const sectionLabel = label || '變更記錄';
   const canGenerateCount = withForm.length;
 
   return (
     <>
       <div className="mt-4 border-t border-border pt-3">
-        <button
-          type="button"
-          className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors w-full text-left"
-          onClick={() => setExpanded(e => !e)}
-        >
-          {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-          <History className="h-3.5 w-3.5" />
-          <span className="font-medium">{sectionLabel}</span>
-          <Badge variant="secondary" className="text-[10px] h-4 px-1">{filtered.length}</Badge>
-          {canGenerateCount > 0 && (
-            <span className="text-[10px] text-muted-foreground/70 ml-1">
-              ({canGenerateCount} 可生成表格)
-            </span>
+        <div className="flex items-center justify-between gap-2">
+          <button
+            type="button"
+            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors min-w-0 flex-1 text-left"
+            onClick={() => setExpanded(e => !e)}
+          >
+            {expanded ? <ChevronDown className="h-3.5 w-3.5 shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0" />}
+            <History className="h-3.5 w-3.5 shrink-0" />
+            <span className="font-medium">{sectionLabel}</span>
+            <Badge variant="secondary" className="text-[10px] h-4 px-1">{filtered.length}</Badge>
+            {canGenerateCount > 0 && (
+              <span className="text-[10px] text-muted-foreground/70 ml-1">
+                ({canGenerateCount} 可生成表格)
+              </span>
+            )}
+          </button>
+
+          {/* 子頁籤：最新（狀態型只留最新一條）／全部記錄 */}
+          {expanded && (
+            <div className="flex items-center gap-0.5 rounded-md border border-border/60 p-0.5 shrink-0">
+              <button
+                type="button"
+                className={cn(
+                  'rounded px-1.5 py-0.5 text-[10px] transition-colors',
+                  view === 'latest'
+                    ? 'bg-muted font-medium text-foreground'
+                    : 'text-muted-foreground hover:text-foreground'
+                )}
+                onClick={() => setView('latest')}
+              >
+                最新 {latest.length}
+              </button>
+              <button
+                type="button"
+                className={cn(
+                  'rounded px-1.5 py-0.5 text-[10px] transition-colors',
+                  view === 'all'
+                    ? 'bg-muted font-medium text-foreground'
+                    : 'text-muted-foreground hover:text-foreground'
+                )}
+                onClick={() => setView('all')}
+              >
+                全部記錄 {filtered.length}
+              </button>
+            </div>
           )}
-        </button>
+        </div>
 
         {expanded && (
-          <div className="mt-2 space-y-1.5 pl-5 border-l-2 border-border/50 ml-1.5">
-            {filtered.map(ev => {
-              const canGen = QF_SUPPORTED_TYPES.has(ev.event_type);
-              const label = EVENT_TYPE_LABELS[ev.event_type] || ev.event_type;
-              const personName = extractPersonName(ev);
-              const txDesc = extractTxDesc(ev);
+          <div className="mt-2 space-y-2 pl-5 border-l-2 border-border/50 ml-1.5">
+            {groups.map(group => {
+              const isOpen = openDates.has(group.dayKey);
+              const shown = isOpen ? group.events : group.events.slice(0, PREVIEW_PER_DAY);
+              const hiddenCount = group.events.length - shown.length;
+              const dayGenCount = group.events.filter(e => QF_SUPPORTED_TYPES.has(e.event_type)).length;
 
               return (
-                <div key={ev.id} className="flex items-center justify-between gap-2 rounded-sm py-1 text-xs group">
-                  <div className="flex items-center gap-2 min-w-0 flex-1">
-                    <Clock className="h-3 w-3 text-muted-foreground/50 shrink-0" />
-                    <span className="text-muted-foreground font-mono text-[10px] shrink-0">
-                      {ev.change_date || ev.created_at?.slice(0, 10) || '—'}
-                    </span>
-                    <Badge variant="outline" className="text-[10px] py-0 shrink-0">{label}</Badge>
-                    <span className="truncate text-muted-foreground">
-                      {txDesc || personName || '—'}
-                    </span>
-                  </div>
-                  {canGen && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 px-1.5 text-[10px] opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-                      onClick={(e) => { e.stopPropagation(); handleGenerate(ev); }}
+                <div key={group.dayKey || '__unknown__'}>
+                  {/* 日期組頭 */}
+                  <div className="flex items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      className="flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors min-w-0 flex-1 text-left"
+                      onClick={() => toggleDate(group.dayKey)}
                     >
-                      <FileOutput className="h-3 w-3 mr-0.5" /> 生成表格
-                    </Button>
-                  )}
+                      <CalendarDays className="h-3 w-3 shrink-0" />
+                      <span className="font-mono">{group.dayLabel}</span>
+                      <Badge variant="secondary" className="text-[10px] h-4 px-1">{group.events.length}</Badge>
+                    </button>
+                    {dayGenCount >= 2 && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 px-1.5 text-[10px] shrink-0"
+                        onClick={(e) => { e.stopPropagation(); handleGenerateDay(group); }}
+                      >
+                        <Package className="h-3 w-3 mr-0.5" /> 一起生成
+                      </Button>
+                    )}
+                  </div>
+
+                  {/* 組內事件（單行不再重複顯示日期）*/}
+                  <div className="mt-0.5 space-y-0.5 pl-4">
+                    {shown.map(ev => {
+                      const canGen = QF_SUPPORTED_TYPES.has(ev.event_type);
+                      const typeLabel = EVENT_TYPE_LABELS[ev.event_type] || ev.event_type;
+                      const personName = extractPersonName(ev);
+                      const txDesc = extractTxDesc(ev);
+
+                      return (
+                        <div key={ev.id} className="flex items-center justify-between gap-2 rounded-sm py-0.5 text-xs group">
+                          <div className="flex items-center gap-2 min-w-0 flex-1">
+                            <Badge variant="outline" className="text-[10px] py-0 shrink-0">{typeLabel}</Badge>
+                            <span className="truncate text-muted-foreground">
+                              {txDesc || personName || '—'}
+                            </span>
+                          </div>
+                          {canGen && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 px-1.5 text-[10px] opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                              onClick={(e) => { e.stopPropagation(); handleGenerate(ev); }}
+                            >
+                              <FileOutput className="h-3 w-3 mr-0.5" /> 生成表格
+                            </Button>
+                          )}
+                        </div>
+                      );
+                    })}
+
+                    {hiddenCount > 0 && (
+                      <button
+                        type="button"
+                        className="flex items-center gap-0.5 text-[10px] text-muted-foreground/70 hover:text-foreground transition-colors"
+                        onClick={() => toggleDate(group.dayKey)}
+                      >
+                        還有 {hiddenCount} 條 <ChevronDown className="h-3 w-3" />
+                      </button>
+                    )}
+                    {isOpen && group.events.length > PREVIEW_PER_DAY && (
+                      <button
+                        type="button"
+                        className="flex items-center gap-0.5 text-[10px] text-muted-foreground/70 hover:text-foreground transition-colors"
+                        onClick={() => toggleDate(group.dayKey)}
+                      >
+                        收起 <ChevronUp className="h-3 w-3" />
+                      </button>
+                    )}
+                  </div>
                 </div>
               );
             })}

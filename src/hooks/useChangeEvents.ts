@@ -20,6 +20,21 @@ export interface ChangeEvent {
   person?: any;
 }
 
+/** Normalise a date string (DD/MM/YYYY | YYYY-MM-DD | DDMMYYYY) → YYYYMMDD.
+ *  Returns '' when unparseable — those sort last and group under「日期不詳」.
+ *  Shared by useChangeEvents' sort and TabChangeEventsFooter's date grouping. */
+export function dayKeyOf(dateStr?: string): string {
+  if (!dateStr) return '';
+  const t = String(dateStr).trim();
+  let d = '', m = '', y = '';
+  if (/^\d{8}$/.test(t)) { d = t.slice(0, 2); m = t.slice(2, 4); y = t.slice(4, 8); }
+  else if (/^\d{4}-\d{2}-\d{2}/.test(t)) { y = t.slice(0, 4); m = t.slice(5, 7); d = t.slice(8, 10); }
+  else if (/^\d{1,2}\/\d{1,2}\/\d{4}/.test(t)) {
+    const [dd, mm, yy] = t.split('/'); d = dd.padStart(2, '0'); m = mm.padStart(2, '0'); y = yy;
+  } else return '';
+  return `${y}${m}${d}`;
+}
+
 /** Get all change events for a company, ordered by change_date descending.
  *  Enriches each event with person_name (from persons via person_id) so
  *  footers can show names even when old/new_value has no name fields. */
@@ -37,14 +52,10 @@ export function useChangeEvents(companyId: string | undefined) {
       const events = (data || []) as unknown as ChangeEvent[];
       // 客户端排序：change_date（DD/MM/YYYY → YYYYMMDD 可比键）倒序，
       // 同日多个事件再按 created_at 倒序，最新在前
-      const dateKey = (s?: string) => {
-        const t = String(s || '').trim();
-        const m = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-        if (!m) return t;
-        return `${m[3]}${m[2].padStart(2, '0')}${m[1].padStart(2, '0')}`;
-      };
+      // ⚠️ change_events.created_at 在 D1 是 TEXT DEFAULT '' 且前端从不写入，
+      //    多数为空 → 同日内部顺序实际上不可靠（跨日期排序正常）
       events.sort((a, b) => {
-        const dc = dateKey(b.change_date).localeCompare(dateKey(a.change_date));
+        const dc = dayKeyOf(b.change_date).localeCompare(dayKeyOf(a.change_date));
         if (dc !== 0) return dc;
         return String(b.created_at || '').localeCompare(String(a.created_at || ''));
       });

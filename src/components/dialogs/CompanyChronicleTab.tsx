@@ -19,6 +19,7 @@ import {
   ArrowUp, ArrowDown, ArrowRight, Plus, Camera, History, FileText,
   Loader2, Pencil, Trash2, Save, X, Filter, Coins, Users, GitBranch,
   UserPlus, UserMinus, TrendingUp, FileOutput, Download,
+  CalendarDays, ChevronDown, ChevronRight,
 } from 'lucide-react';
 import { QuickFormDialog, type QuickFormEvent } from '@/components/forms/QuickFormDialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -301,6 +302,37 @@ export function CompanyChronicleTab({ company }: { company: Company }) {
     [allEvents, filter],
   );
 
+  // ── 按日期分組（sortDate 已是 YYYYMMDD 數值且 list 已倒序，直接當 dayKey）──
+  // 公司誌日期多，日期組預設全部收起，點日期展開該日全部事變。
+  const [openChronicleDates, setOpenChronicleDates] = useState<Set<string>>(new Set());
+
+  const toggleChronicleDate = (dayKey: string) => {
+    setOpenChronicleDates(prev => {
+      const next = new Set(prev);
+      next.has(dayKey) ? next.delete(dayKey) : next.add(dayKey);
+      return next;
+    });
+  };
+
+  const chronicleGroups = useMemo(() => {
+    const map = new Map<string, ChronicleEvent[]>();
+    for (const e of filteredEvents) {
+      const k = e.sortDate ? String(e.sortDate) : '';
+      if (!map.has(k)) map.set(k, []);
+      map.get(k)!.push(e);
+    }
+    // dayKey 倒序；解析不出日期的（''）排最後
+    return [...map.entries()]
+      .sort((a, b) => (b[0] || '').localeCompare(a[0] || ''))
+      .map(([dayKey, events]) => ({
+        dayKey,
+        dateLabel: /^\d{8}$/.test(dayKey)
+          ? `${dayKey.slice(6, 8)}/${dayKey.slice(4, 6)}/${dayKey.slice(0, 4)}`
+          : '日期不詳',
+        events,
+      }));
+  }, [filteredEvents]);
+
   // ── 篩選計數 ──
   const counts = useMemo(() => {
     const c: Record<string, number> = { all: allEvents.length };
@@ -531,198 +563,228 @@ export function CompanyChronicleTab({ company }: { company: Company }) {
           {/* 縱向連線 */}
           <div className="absolute left-[9px] top-1 bottom-1 w-px bg-border" aria-hidden />
 
-          <div className="space-y-2">
-            {filteredEvents.map(event => {
-              const isVersion = event.category === 'version';
-              const isShare = event.category === 'share';
-              const isShareTx = isShare && event.type !== 'shareholder_add' && event.type !== 'shareholder_remove';
-              const isVersionSelected = isVersion && compareMode && compareIds.includes(event.id);
-              const isVersionExpanded = isVersion && expandedVersion === event.id;
+          <div className="space-y-3">
+            {chronicleGroups.map(group => {
+              const isDayOpen = openChronicleDates.has(group.dayKey);
 
               return (
-                <div key={event.id} className="relative">
-                  {/* 時間線節點 */}
-                  <span className={`absolute -left-6 top-2 flex h-[18px] w-[18px] items-center justify-center rounded-full ring-2 ring-background ${event.dotColor}/15`}>
-                    {event.icon}
+                <div key={group.dayKey || '__unknown__'} className="relative">
+                  {/* 日期節點 */}
+                  <span className="absolute -left-6 top-1 flex h-[18px] w-[18px] items-center justify-center rounded-full ring-2 ring-background bg-muted">
+                    <CalendarDays className="h-3 w-3 text-muted-foreground" />
                   </span>
 
-                  {/* 事變卡片 */}
-                  <div
-                    className={`rounded-md border p-3 text-sm transition-colors ${
-                      isVersionSelected
-                        ? 'border-primary bg-primary/10'
-                        : isVersion && compareMode
-                          ? 'border-border bg-muted/30 hover:bg-muted/60 cursor-pointer'
-                          : 'border-border bg-muted/30'
-                    }`}
-                    onClick={isVersion && compareMode ? () => toggleCompare(event.id) : undefined}
-                    role={isVersion && compareMode ? 'button' : undefined}
+                  {/* 日期組頭（點擊展開／收起該日全部事變）*/}
+                  <button
+                    type="button"
+                    className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors w-full text-left"
+                    onClick={() => toggleChronicleDate(group.dayKey)}
                   >
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <Badge
-                          variant={event.category === 'personnel' ? (event.type === 'appoint' ? 'default' : 'destructive') : 'outline'}
-                          className={`text-xs shrink-0 ${event.category === 'personnel' && event.type === 'appoint' ? 'bg-green-600 hover:bg-green-600' : ''}`}
-                        >
-                          {CATEGORY_LABELS[event.category]}
-                        </Badge>
-                        <Badge variant="secondary" className="text-xs shrink-0">
-                          {event.category === 'personnel'
-                            ? (event.type === 'appoint' ? '委任' : '辭任')
-                            : event.category === 'share' && (event.type === 'shareholder_add' || event.type === 'shareholder_remove')
-                              ? TYPE_LABEL[event.type]
-                              : event.category === 'share'
-                                ? TX_TYPE_LABEL[event.type] || event.type
-                                : event.category === 'version'
-                                  ? `v${event.raw.version_no}`
-                                  : DOC_TYPE_LABEL[event.raw.doc_type] || event.raw.doc_type || '文件'
-                          }
-                        </Badge>
-                        <span className="font-medium truncate">{event.title}</span>
-                      </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <span className="text-xs font-mono text-muted-foreground">{fmtDate(event.date)}</span>
-                        {compareMode && isVersion && (
-                          <span className={`flex h-4 w-4 items-center justify-center rounded border text-[10px] shrink-0 ${
-                            isVersionSelected ? 'bg-primary border-primary text-primary-foreground' : 'border-muted-foreground/40'
-                          }`}>
-                            {isVersionSelected && '✓'}
-                          </span>
-                        )}
-                      </div>
-                    </div>
+                    {isDayOpen
+                      ? <ChevronDown className="h-3.5 w-3.5 shrink-0" />
+                      : <ChevronRight className="h-3.5 w-3.5 shrink-0" />}
+                    <span className="font-mono font-medium">{group.dateLabel}</span>
+                    <Badge variant="secondary" className="text-[10px] h-4 px-1">{group.events.length}</Badge>
+                  </button>
 
-                    {/* 副標題 */}
-                    {event.subtitle && (
-                      <div className="text-xs text-muted-foreground mt-1">{event.subtitle}</div>
-                    )}
+                  {isDayOpen && (
+                    <div className="mt-2 space-y-2">
+                      {group.events.map(event => {
+                        const isVersion = event.category === 'version';
+                        const isShare = event.category === 'share';
+                        const isShareTx = isShare && event.type !== 'shareholder_add' && event.type !== 'shareholder_remove';
+                        const isVersionSelected = isVersion && compareMode && compareIds.includes(event.id);
+                        const isVersionExpanded = isVersion && expandedVersion === event.id;
 
-                    {/* 附加信息 */}
-                    {isShareTx && event.raw.notes && (
-                      <div className="text-xs text-muted-foreground mt-1">備註：{event.raw.notes}</div>
-                    )}
-                    {isShareTx && event.raw.instrument_number && (
-                      <div className="text-xs text-muted-foreground mt-1">文件編號：{event.raw.instrument_number}</div>
-                    )}
-                    {isShareTx && event.raw.total_consideration && (
-                      <div className="text-xs text-muted-foreground mt-1">
-                        總代價：{event.raw.currency || 'HKD'} {event.raw.total_consideration}
-                      </div>
-                    )}
+                        return (
+                          <div key={event.id} className="relative">
+                            {/* 時間線節點 */}
+                            <span className={`absolute -left-6 top-2 flex h-[18px] w-[18px] items-center justify-center rounded-full ring-2 ring-background ${event.dotColor}/15`}>
+                              {event.icon}
+                            </span>
 
-                    {/* 版本：展開詳情 */}
-                    {isVersion && isVersionExpanded && !compareMode && (
-                      <div className="mt-2 rounded border border-border bg-background p-2">
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-sm">
-                          {Object.entries(event.raw.snapshot as Record<string, string>).map(([k, val]) => (
-                            <div key={k}>
-                              <span className="text-muted-foreground text-xs">{versionFieldLabel(k)}</span>
-                              <p className={`font-medium mt-0.5 break-words text-xs ${(event.raw.changed_fields as string[]).includes(k) ? 'text-primary' : ''}`}>
-                                {val || '—'}
-                              </p>
+                            {/* 事變卡片 */}
+                            <div
+                              className={`rounded-md border p-3 text-sm transition-colors ${
+                                isVersionSelected
+                                  ? 'border-primary bg-primary/10'
+                                  : isVersion && compareMode
+                                    ? 'border-border bg-muted/30 hover:bg-muted/60 cursor-pointer'
+                                    : 'border-border bg-muted/30'
+                              }`}
+                              onClick={isVersion && compareMode ? () => toggleCompare(event.id) : undefined}
+                              role={isVersion && compareMode ? 'button' : undefined}
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <Badge
+                                    variant={event.category === 'personnel' ? (event.type === 'appoint' ? 'default' : 'destructive') : 'outline'}
+                                    className={`text-xs shrink-0 ${event.category === 'personnel' && event.type === 'appoint' ? 'bg-green-600 hover:bg-green-600' : ''}`}
+                                  >
+                                    {CATEGORY_LABELS[event.category]}
+                                  </Badge>
+                                  <Badge variant="secondary" className="text-xs shrink-0">
+                                    {event.category === 'personnel'
+                                      ? (event.type === 'appoint' ? '委任' : '辭任')
+                                      : event.category === 'share' && (event.type === 'shareholder_add' || event.type === 'shareholder_remove')
+                                        ? TYPE_LABEL[event.type]
+                                        : event.category === 'share'
+                                          ? TX_TYPE_LABEL[event.type] || event.type
+                                          : event.category === 'version'
+                                            ? `v${event.raw.version_no}`
+                                            : DOC_TYPE_LABEL[event.raw.doc_type] || event.raw.doc_type || '文件'
+                                    }
+                                  </Badge>
+                                  <span className="font-medium truncate">{event.title}</span>
+                                </div>
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <span className="text-xs font-mono text-muted-foreground">{fmtDate(event.date)}</span>
+                                  {compareMode && isVersion && (
+                                    <span className={`flex h-4 w-4 items-center justify-center rounded border text-[10px] shrink-0 ${
+                                      isVersionSelected ? 'bg-primary border-primary text-primary-foreground' : 'border-muted-foreground/40'
+                                    }`}>
+                                      {isVersionSelected && '✓'}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* 副標題 */}
+                              {event.subtitle && (
+                                <div className="text-xs text-muted-foreground mt-1">{event.subtitle}</div>
+                              )}
+
+                              {/* 附加信息 */}
+                              {isShareTx && event.raw.notes && (
+                                <div className="text-xs text-muted-foreground mt-1">備註：{event.raw.notes}</div>
+                              )}
+                              {isShareTx && event.raw.instrument_number && (
+                                <div className="text-xs text-muted-foreground mt-1">文件編號：{event.raw.instrument_number}</div>
+                              )}
+                              {isShareTx && event.raw.total_consideration && (
+                                <div className="text-xs text-muted-foreground mt-1">
+                                  總代價：{event.raw.currency || 'HKD'} {event.raw.total_consideration}
+                                </div>
+                              )}
+
+                              {/* 版本：展開詳情 */}
+                              {isVersion && isVersionExpanded && !compareMode && (
+                                <div className="mt-2 rounded border border-border bg-background p-2">
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-sm">
+                                    {Object.entries(event.raw.snapshot as Record<string, string>).map(([k, val]) => (
+                                      <div key={k}>
+                                        <span className="text-muted-foreground text-xs">{versionFieldLabel(k)}</span>
+                                        <p className={`font-medium mt-0.5 break-words text-xs ${(event.raw.changed_fields as string[]).includes(k) ? 'text-primary' : ''}`}>
+                                          {val || '—'}
+                                        </p>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* 版本：變更欄位標籤 */}
+                              {isVersion && event.raw.changed_fields?.length > 0 && (
+                                <div className="flex flex-wrap gap-1 mt-1.5">
+                                  {event.raw.changed_fields.map((f: string) => (
+                                    <Badge key={f} variant="outline" className="text-[10px] py-0">{versionFieldLabel(f)}</Badge>
+                                  ))}
+                                </div>
+                              )}
+
+                              {/* 文件：檔案名 & 備註 */}
+                              {event.category === 'file' && event.raw.original_filename && (
+                                <div className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
+                                  <FileText className="h-3 w-3 shrink-0" />
+                                  <span className="truncate">{event.raw.original_filename}</span>
+                                </div>
+                              )}
+                              {event.category === 'file' && event.raw.notes && !event.raw.original_filename && (
+                                <div className="text-xs text-muted-foreground mt-1">{event.raw.notes}</div>
+                              )}
+
+                              {/* 操作按鈕 */}
+                              <div className="flex gap-1 mt-2 pt-2 border-t border-border/50">
+                                {/* 生成表單按鈕 (Phase 3.3) — for personnel & share events */}
+                                {(event.type === 'appoint' || event.type === 'cease' ||
+                                  event.type === 'transfer' || event.type === 'allotment' ||
+                                  event.type === 'shareholder_add' || event.type === 'shareholder_remove') && (
+                                  <Button variant="outline" size="sm" className="h-6 px-1.5 text-xs"
+                                    onClick={e => {
+                                      e.stopPropagation();
+                                      handleQuickForm(event);
+                                    }}>
+                                    <FileOutput className="h-3 w-3 mr-1" /> 生成表格
+                                  </Button>
+                                )}
+                                {isShareTx && (
+                                  <>
+                                    <DropdownMenu>
+                                      <DropdownMenuTrigger asChild>
+                                        <Button variant="ghost" size="sm" className="h-6 px-1.5 text-xs"
+                                          onClick={e => e.stopPropagation()}>
+                                          <FileText className="h-3 w-3 mr-0.5" /> 憑證
+                                        </Button>
+                                      </DropdownMenuTrigger>
+                                      <DropdownMenuContent align="start" className="min-w-[180px]">
+                                        <DropdownMenuItem onClick={e => { e.stopPropagation(); genCert(event.raw as ShareTransaction, 'bought_sold_note'); }}>
+                                          <Download className="h-3.5 w-3.5 mr-2" /> 買賣票據
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem onClick={e => { e.stopPropagation(); genCert(event.raw as ShareTransaction, 'instrument_of_transfer'); }}>
+                                          <Download className="h-3.5 w-3.5 mr-2" /> 轉讓文書
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem onClick={e => { e.stopPropagation(); genCert(event.raw as ShareTransaction, 'share_certificate'); }}>
+                                          <Download className="h-3.5 w-3.5 mr-2" /> 股票證書
+                                        </DropdownMenuItem>
+                                      </DropdownMenuContent>
+                                    </DropdownMenu>
+                                    <Button variant="ghost" size="sm" className="h-6 px-1.5 text-xs"
+                                      onClick={e => { e.stopPropagation(); setEditingTx(event.raw as ShareTransaction); }}>
+                                      <Pencil className="h-3 w-3 mr-1" /> 編輯
+                                    </Button>
+                                    <Button variant="ghost" size="sm" className="h-6 px-1.5 text-xs text-destructive"
+                                      onClick={e => {
+                                        e.stopPropagation();
+                                        if (confirm('確定刪除此交易記錄？')) {
+                                          const txRaw = event.raw;
+                                          const delDesc = txRaw.transaction_type === 'capital_increase'
+                                            ? `增資 ${(txRaw.shares || 0).toLocaleString()} 股`
+                                            : `${txRaw.from_name || '（新發行）'} → ${txRaw.to_name || '—'}，${(txRaw.shares || 0).toLocaleString()} 股`;
+                                          delTx.mutate({ id: event.id, companyId: company.id }, {
+                                            onSuccess: () => {
+                                              createLog.mutate({
+                                                company_id: company.id,
+                                                company_name_hint: company.name,
+                                                doc_type: 'SHARE_TX',
+                                                doc_date: new Date().toISOString().slice(0, 10),
+                                                source_folder: '公司誌',
+                                                notes: `已刪除股份交易：${delDesc}`,
+                                                html_content: `<p>已刪除股份交易</p><p>${delDesc}</p><p>原交易日期：${txRaw.transaction_date || '—'}</p>`,
+                                              });
+                                            },
+                                          });
+                                        }
+                                      }}>
+                                      <Trash2 className="h-3 w-3 mr-1" /> 刪除
+                                    </Button>
+                                  </>
+                                )}
+                                {isVersion && !compareMode && (
+                                  <Button variant="ghost" size="sm" className="h-6 px-1.5 text-xs"
+                                    onClick={e => {
+                                      e.stopPropagation();
+                                      setExpandedVersion(isVersionExpanded ? null : event.id);
+                                    }}>
+                                    {isVersionExpanded ? '收起詳情' : '查看快照'}
+                                  </Button>
+                                )}
+                              </div>
                             </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* 版本：變更欄位標籤 */}
-                    {isVersion && event.raw.changed_fields?.length > 0 && (
-                      <div className="flex flex-wrap gap-1 mt-1.5">
-                        {event.raw.changed_fields.map((f: string) => (
-                          <Badge key={f} variant="outline" className="text-[10px] py-0">{versionFieldLabel(f)}</Badge>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* 文件：檔案名 & 備註 */}
-                    {event.category === 'file' && event.raw.original_filename && (
-                      <div className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
-                        <FileText className="h-3 w-3 shrink-0" />
-                        <span className="truncate">{event.raw.original_filename}</span>
-                      </div>
-                    )}
-                    {event.category === 'file' && event.raw.notes && !event.raw.original_filename && (
-                      <div className="text-xs text-muted-foreground mt-1">{event.raw.notes}</div>
-                    )}
-
-                    {/* 操作按鈕 */}
-                    <div className="flex gap-1 mt-2 pt-2 border-t border-border/50">
-                      {/* 生成表單按鈕 (Phase 3.3) — for personnel & share events */}
-                      {(event.type === 'appoint' || event.type === 'cease' ||
-                        event.type === 'transfer' || event.type === 'allotment' ||
-                        event.type === 'shareholder_add' || event.type === 'shareholder_remove') && (
-                        <Button variant="outline" size="sm" className="h-6 px-1.5 text-xs"
-                          onClick={e => {
-                            e.stopPropagation();
-                            handleQuickForm(event);
-                          }}>
-                          <FileOutput className="h-3 w-3 mr-1" /> 生成表格
-                        </Button>
-                      )}
-                      {isShareTx && (
-                        <>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="sm" className="h-6 px-1.5 text-xs"
-                                onClick={e => e.stopPropagation()}>
-                                <FileText className="h-3 w-3 mr-0.5" /> 憑證
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="start" className="min-w-[180px]">
-                              <DropdownMenuItem onClick={e => { e.stopPropagation(); genCert(event.raw as ShareTransaction, 'bought_sold_note'); }}>
-                                <Download className="h-3.5 w-3.5 mr-2" /> 買賣票據
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={e => { e.stopPropagation(); genCert(event.raw as ShareTransaction, 'instrument_of_transfer'); }}>
-                                <Download className="h-3.5 w-3.5 mr-2" /> 轉讓文書
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={e => { e.stopPropagation(); genCert(event.raw as ShareTransaction, 'share_certificate'); }}>
-                                <Download className="h-3.5 w-3.5 mr-2" /> 股票證書
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                          <Button variant="ghost" size="sm" className="h-6 px-1.5 text-xs"
-                            onClick={e => { e.stopPropagation(); setEditingTx(event.raw as ShareTransaction); }}>
-                            <Pencil className="h-3 w-3 mr-1" /> 編輯
-                          </Button>
-                          <Button variant="ghost" size="sm" className="h-6 px-1.5 text-xs text-destructive"
-                            onClick={e => {
-                              e.stopPropagation();
-                              if (confirm('確定刪除此交易記錄？')) {
-                                const txRaw = event.raw;
-                                const delDesc = txRaw.transaction_type === 'capital_increase'
-                                  ? `增資 ${(txRaw.shares || 0).toLocaleString()} 股`
-                                  : `${txRaw.from_name || '（新發行）'} → ${txRaw.to_name || '—'}，${(txRaw.shares || 0).toLocaleString()} 股`;
-                                delTx.mutate({ id: event.id, companyId: company.id }, {
-                                  onSuccess: () => {
-                                    createLog.mutate({
-                                      company_id: company.id,
-                                      company_name_hint: company.name,
-                                      doc_type: 'SHARE_TX',
-                                      doc_date: new Date().toISOString().slice(0, 10),
-                                      source_folder: '公司誌',
-                                      notes: `已刪除股份交易：${delDesc}`,
-                                      html_content: `<p>已刪除股份交易</p><p>${delDesc}</p><p>原交易日期：${txRaw.transaction_date || '—'}</p>`,
-                                    });
-                                  },
-                                });
-                              }
-                            }}>
-                            <Trash2 className="h-3 w-3 mr-1" /> 刪除
-                          </Button>
-                        </>
-                      )}
-                      {isVersion && !compareMode && (
-                        <Button variant="ghost" size="sm" className="h-6 px-1.5 text-xs"
-                          onClick={e => {
-                            e.stopPropagation();
-                            setExpandedVersion(isVersionExpanded ? null : event.id);
-                          }}>
-                          {isVersionExpanded ? '收起詳情' : '查看快照'}
-                        </Button>
-                      )}
+                          </div>
+                        );
+                      })}
                     </div>
-                  </div>
+                  )}
                 </div>
               );
             })}

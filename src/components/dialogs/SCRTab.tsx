@@ -8,11 +8,12 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Separator } from '@/components/ui/separator';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { SearchableSelect, type MultiSelectOption } from '@/components/ui/searchable-multiselect';
-import { Plus, Edit, Trash2, Save, X, ShieldCheck, UserCheck, UserPlus } from 'lucide-react';
+import { Plus, Edit, Trash2, Save, X, ShieldCheck, UserCheck, UserPlus, Loader2 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 
 import { Company, SignificantController } from '@/types';
 import { useSCRByCompany, useUpsertSCR, useDeleteSCR } from '@/hooks/useSCR';
+import { isHkidLike } from '@/lib/hkid';
 
 const empty = (companyId: string, regAddr: string): Partial<SignificantController> => ({
   companyId,
@@ -24,6 +25,19 @@ const empty = (companyId: string, regAddr: string): Partial<SignificantControlle
   natureInfluence: false, natureTrust: false, natureOther: '',
   isDesignatedRep: false, designatedRepName: '', designatedRepContact: '',
 });
+
+/**
+ * 是否必須指定代表：法人（無身份證）或非香港人（證件號不是 HKID）。
+ * 用戶規則 2026-08-19：判斷香港人 = 有沒有香港身份證。
+ */
+export function needsDesignatedRep(s: Partial<SignificantController>): boolean {
+  return s.identity !== 'natural' || !isHkidLike(s.idNumber || '');
+}
+
+/** 是否已滿足指定代表：本人即為代表，或填了代表姓名 */
+export function hasDesignatedRep(s: Partial<SignificantController>): boolean {
+  return !!s.isDesignatedRep || (s.designatedRepName || '').trim() !== '';
+}
 
 export function SCRTab({ company }: { company: Company }) {
   const { data: scrs = [], isLoading } = useSCRByCompany(company.id);
@@ -198,6 +212,9 @@ export function SCRTab({ company }: { company: Company }) {
                   {s.nameEnglish && s.nameChinese && <span className="ml-2 text-muted-foreground">{s.nameChinese}</span>}
                   {s.isDesignatedRep && <Badge variant="default" className="ml-2 text-xs">指定代表</Badge>}
                   <Badge variant="outline" className="ml-2 text-xs">{s.identity === 'natural' ? '自然人' : '法人'}</Badge>
+                  {needsDesignatedRep(s) && !hasDesignatedRep(s) && (
+                    <Badge variant="destructive" className="ml-2 text-xs">⚠ 需指定代表（非香港人）</Badge>
+                  )}
                 </div>
                 <div className="hidden group-hover:flex gap-1">
                   <Button variant="ghost" size="sm" className="h-6 px-1.5" onClick={() => setEditing(s)}>
@@ -210,7 +227,7 @@ export function SCRTab({ company }: { company: Company }) {
                 </div>
               </div>
               <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                <div>身份證/編號: {s.idNumber || '-'}</div>
+                <div>身份證/編號: {s.idNumber || '-'}{s.identity === 'natural' && isHkidLike(s.idNumber || '') ? '（香港身份證）' : ''}</div>
                 <div>成為控制人: {s.dateBecame || '-'}</div>
                 <div className="col-span-2">居住/註冊地址: {s.address || '-'}</div>
                 <div className="col-span-2">控制性質: {[
@@ -221,6 +238,13 @@ export function SCRTab({ company }: { company: Company }) {
                   s.natureTrust && '信託',
                   s.natureOther,
                 ].filter(Boolean).join('、') || '-'}</div>
+                {hasDesignatedRep(s) && (
+                  <div className="col-span-2 flex items-center gap-1">
+                    <UserCheck className="h-3 w-3 text-primary shrink-0" />
+                    指定代表: {s.isDesignatedRep ? '本人' : s.designatedRepName}
+                    {!s.isDesignatedRep && s.designatedRepContact ? `（${s.designatedRepContact}）` : ''}
+                  </div>
+                )}
               </div>
             </div>
           ))}
@@ -252,7 +276,11 @@ function SCREditor({ value, setValue, regAddr, onSave, onCancel, saving }: {
             </SelectContent>
           </Select>
         </div>
-        <div className="space-y-1"><Label className="text-xs">身份證/護照/公司編號</Label><Input value={value.idNumber || ''} onChange={e => set('idNumber', e.target.value)} /></div>
+        <div className="space-y-1">
+          <Label className="text-xs">身份證/護照/公司編號</Label>
+          <Input value={value.idNumber || ''} onChange={e => set('idNumber', e.target.value)} />
+          <HkBadge value={value} />
+        </div>
         <div className="space-y-1"><Label className="text-xs">英文名稱</Label><Input value={value.nameEnglish || ''} onChange={e => set('nameEnglish', e.target.value)} /></div>
         <div className="space-y-1"><Label className="text-xs">中文名稱</Label><Input value={value.nameChinese || ''} onChange={e => set('nameChinese', e.target.value)} /></div>
         <div className="space-y-1"><Label className="text-xs">成為控制人日期</Label><Input value={value.dateBecame || ''} onChange={e => set('dateBecame', e.target.value)} placeholder="DD/MM/YYYY" /></div>
@@ -289,11 +317,15 @@ function SCREditor({ value, setValue, regAddr, onSave, onCancel, saving }: {
 
       <div className="space-y-2">
         <CB id="dr" label="此人為公司的指定代表 (Designated Representative)" checked={!!value.isDesignatedRep} onChange={(v) => set('isDesignatedRep', v)} />
-        {value.isDesignatedRep && (
+        {/* 非港人/法人的代表不必是本人：顯示輸入框讓用戶填外部代表（如公司秘書） */}
+        {(value.isDesignatedRep || needsDesignatedRep(value)) && (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pl-6">
             <div className="space-y-1"><Label className="text-xs">指定代表姓名</Label><Input value={value.designatedRepName || ''} onChange={e => set('designatedRepName', e.target.value)} /></div>
             <div className="space-y-1"><Label className="text-xs">聯絡資訊</Label><Input value={value.designatedRepContact || ''} onChange={e => set('designatedRepContact', e.target.value)} placeholder="電話 / 電郵" /></div>
           </div>
+        )}
+        {needsDesignatedRep(value) && !hasDesignatedRep(value) && (
+          <p className="text-xs text-amber-600">此控制人非香港人，須指定代表（可勾選「本人」或填寫代表姓名）</p>
         )}
       </div>
 
@@ -305,6 +337,16 @@ function SCREditor({ value, setValue, regAddr, onSave, onCancel, saving }: {
       </div>
     </div>
   );
+}
+
+/** 編輯器裡實時顯示香港人判定徽章（證件號輸入下方） */
+function HkBadge({ value }: { value: Partial<SignificantController> }) {
+  if (value.identity === 'corporate') return <p className="text-xs text-amber-600">🟠 法人（必須指定代表）</p>;
+  const id = (value.idNumber || '').trim();
+  if (!id) return null;
+  return isHkidLike(id)
+    ? <p className="text-xs text-emerald-600">🟢 香港人（可免指定代表）</p>
+    : <p className="text-xs text-amber-600">🟠 非香港人（必須指定代表）</p>;
 }
 
 function CB({ id, label, checked, onChange }: { id: string; label: string; checked: boolean; onChange: (v: boolean) => void }) {

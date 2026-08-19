@@ -46,43 +46,139 @@ const FORM_CONFIGS: Record<string, { label: string; endpoint: string; icon: stri
   nnc2: { label: 'NNC2 更改公司名稱通知書', endpoint: '/api/generate-nnc2-pdf', icon: '📋' },
 };
 
-function getFormOptions(events: QuickFormEvent[]): { key: string; config: typeof FORM_CONFIGS[string] }[] {
-  const opts: { key: string; config: typeof FORM_CONFIGS[string] }[] = [];
+// ── 人事事件（委任／辭任）— 同一天全部人士併入同一份 ND2A ──
+const PERSONNEL_QF_TYPES = new Set(['appoint', 'cease']);
+
+// ── 股份交易類事件：同一事件對應「多種」可選文件（買賣票據／轉讓文書／股票證書…），
+//    無法替用戶決定要哪一種 → 不納入「一起生成」，只留手動按鈕，並在提示裡點名 ──
+const SHARE_QF_TYPE_LABELS: Record<string, string> = {
+  transfer: '股份轉讓（買賣票據／轉讓文書／股票證書，三選一或多選）',
+  allotment: '股份配發（NSC1／股票證書）',
+  shareholder_add: '新增股東（NSC1／股票證書）',
+  shareholder_remove: '股東退出（買賣票據）',
+  repurchase: '股份回購（買賣票據／股票證書）',
+  capital_increase: '增加股本（NSC1／股票證書）',
+};
+
+// ── 表格 → 它能吃的事件類型（單獨點按鈕時用來挑對事件；舊版一律用 events[0]，
+//    同一天有多種事件時會拿錯事件去填表）──
+const FORM_KEY_EVENT_TYPES: Record<string, string[]> = {
+  bought_sold_note: ['transfer', 'shareholder_remove', 'repurchase'],
+  instrument_of_transfer: ['transfer'],
+  share_certificate: ['transfer', 'allotment', 'shareholder_add', 'repurchase', 'capital_increase'],
+  nsc1: ['allotment', 'shareholder_add', 'capital_increase'],
+  nd2b_change: ['nd2b_change'],
+  nr1: ['nr1'],
+  nnc2: ['nnc2'],
+};
+
+export function getFormOptions(events: QuickFormEvent[]): { key: string; config: typeof FORM_CONFIGS[string] }[] {
+  const keys: string[] = [];
+  const push = (k: string) => { if (FORM_CONFIGS[k] && !keys.includes(k)) keys.push(k); };
 
   // ── 人事事件（委任＋辭任）— 同一天多位人士一併處理 ──
-  const personnel = events.filter(e => e.type === 'appoint' || e.type === 'cease');
+  const personnel = events.filter(e => PERSONNEL_QF_TYPES.has(e.type));
   if (personnel.length > 0) {
     // ND2A 一份可含委任＋停任（模板容量 2 停任 + 2 自然人 + 2 法人，超出自動分多份）
-    opts.push({ key: 'nd2a_appoint', config: FORM_CONFIGS.nd2a_appoint });
+    push('nd2a_appoint');
     if (personnel.some(e => e.type === 'cease')) {
       // ND4 是辭任人本人遞交的通知書 — 按需生成（每位辭任人一份），
       // 默認「一起生成」只出 1 份 ND2A（辭任已併入其停任區塊）
-      opts.push({ key: 'nd4_cease', config: FORM_CONFIGS.nd4_cease });
+      push('nd4_cease');
     }
   }
 
-  const eventType = events[0]?.type || '';
-  if (eventType === 'transfer') {
-    opts.push({ key: 'bought_sold_note', config: FORM_CONFIGS.bought_sold_note });
-    opts.push({ key: 'instrument_of_transfer', config: FORM_CONFIGS.instrument_of_transfer });
-    opts.push({ key: 'share_certificate', config: FORM_CONFIGS.share_certificate });
-  } else if (eventType === 'allotment' || eventType === 'shareholder_add' || eventType === 'capital_increase') {
-    opts.push({ key: 'nsc1', config: FORM_CONFIGS.nsc1 });
-    opts.push({ key: 'share_certificate', config: FORM_CONFIGS.share_certificate });
-  } else if (eventType === 'shareholder_remove') {
-    opts.push({ key: 'bought_sold_note', config: FORM_CONFIGS.bought_sold_note });
-  } else if (eventType === 'repurchase') {
-    opts.push({ key: 'bought_sold_note', config: FORM_CONFIGS.bought_sold_note });
-    opts.push({ key: 'share_certificate', config: FORM_CONFIGS.share_certificate });
-  } else if (eventType === 'nd2b_change') {
-    opts.push({ key: 'nd2b_change', config: FORM_CONFIGS.nd2b_change });
-  } else if (eventType === 'nr1') {
-    opts.push({ key: 'nr1', config: FORM_CONFIGS.nr1 });
-  } else if (eventType === 'nnc2') {
-    opts.push({ key: 'nnc2', config: FORM_CONFIGS.nnc2 });
+  // 🔴 逐個事件取並集 —— 舊版只看 events[0]，同一天有多種事件時
+  //    （例如公司改名 + 改註冊地址）後面那些表格的按鈕整個消失
+  for (const ev of events) {
+    switch (ev.type) {
+      case 'transfer':
+        push('bought_sold_note'); push('instrument_of_transfer'); push('share_certificate'); break;
+      case 'allotment': case 'shareholder_add': case 'capital_increase':
+        push('nsc1'); push('share_certificate'); break;
+      case 'shareholder_remove':
+        push('bought_sold_note'); break;
+      case 'repurchase':
+        push('bought_sold_note'); push('share_certificate'); break;
+      case 'nd2b_change': push('nd2b_change'); break;
+      case 'nr1': push('nr1'); break;
+      case 'nnc2': push('nnc2'); break;
+    }
   }
 
-  return opts;
+  return keys.map(key => ({ key, config: FORM_CONFIGS[key] }));
+}
+
+/** 挑出某張表格對應的事件；挑不到就退回全部（兼容公司誌那種只傳單一事件的調用方）*/
+export function pickEventsForForm(formKey: string, events: QuickFormEvent[]): QuickFormEvent[] {
+  const want = FORM_KEY_EVENT_TYPES[formKey];
+  if (!want) return events;
+  const hit = events.filter(e => want.includes(e.type));
+  return hit.length ? hit : events;
+}
+
+/** 同一人的識別鍵：優先 person_id（改名事件的 raw 姓名是**新名**，按名字分組會把同一人拆成兩個）*/
+export function personKeyOf(ev: QuickFormEvent): string {
+  const raw = ev.raw || {};
+  const pid = raw._person_id || raw.person_id || raw.personId || '';
+  if (pid) return `id:${pid}`;
+  const en = (rget(raw, 'nameEnglish', 'name_english') || '').trim().toUpperCase();
+  const cn = (rget(raw, 'nameChinese', 'name_chinese') || '').trim();
+  return (en || cn) ? `name:${en}|${cn}` : `title:${ev.title}`;
+}
+
+/** ND2B 按鈕／提示上顯示的人名 */
+function personLabelOf(ev: QuickFormEvent): string {
+  const raw = ev.raw || {};
+  const en = rget(raw, 'nameEnglish', 'name_english');
+  const cn = rget(raw, 'nameChinese', 'name_chinese');
+  if (en || cn) return cn ? `${en} (${cn})` : en;
+  const t = ev.title || '';
+  return t.includes('：') ? t.split('：').pop()!.trim() : t;
+}
+
+/** 一次「一起生成」要產出的一份文件；fileTag 進檔名（同種表出多份時避免重名覆蓋）*/
+interface PlanItem { key: string; label: string; events: QuickFormEvent[]; fileTag?: string; }
+
+/**
+ * 「一起生成」的清單：ND2A（同日全部人事，1 份）＋ 每人一份 ND2B ＋ 每筆一份 NR1／NNC2。
+ * 股份交易類**不入清單**（一個事件有多種文件可選，得由用戶自己挑），
+ * 但會由 skippedShareLabels() 在完成提示裡點名，避免用戶以為已經全生成了。
+ */
+export function buildGenerationPlan(events: QuickFormEvent[]): PlanItem[] {
+  const plan: PlanItem[] = [];
+
+  const personnel = events.filter(e => PERSONNEL_QF_TYPES.has(e.type));
+  if (personnel.length > 0) {
+    plan.push({ key: 'nd2a_appoint', label: `ND2A（同日 ${personnel.length} 人）`, events: personnel });
+  }
+
+  // ND2B：同一人同日的多項變更合併成**一份**（後端 changeTypes[] 支援多項同時勾選）
+  const byPerson = new Map<string, QuickFormEvent[]>();
+  for (const e of events.filter(e => e.type === 'nd2b_change')) {
+    const k = personKeyOf(e);
+    if (!byPerson.has(k)) byPerson.set(k, []);
+    byPerson.get(k)!.push(e);
+  }
+  for (const evs of byPerson.values()) {
+    const who = personLabelOf(evs[0]);
+    plan.push({ key: 'nd2b_change', label: `ND2B（${who}）`, events: evs, fileTag: who });
+  }
+
+  for (const e of events.filter(e => e.type === 'nr1')) plan.push({ key: 'nr1', label: 'NR1', events: [e] });
+  for (const e of events.filter(e => e.type === 'nnc2')) plan.push({ key: 'nnc2', label: 'NNC2', events: [e] });
+
+  return plan;
+}
+
+/** 「一起生成」沒帶上的股份交易事件（要在提示裡明確列出來）*/
+export function skippedShareLabels(events: QuickFormEvent[]): string[] {
+  const out: string[] = [];
+  for (const e of events) {
+    const label = SHARE_QF_TYPE_LABELS[e.type];
+    if (label && !out.includes(label)) out.push(label);
+  }
+  return out;
 }
 
 // ── Simple role mapper: Chinese/English role → canonical ──
@@ -587,6 +683,41 @@ function buildFormPayload(
   }
 }
 
+// ── ND2B：同一人同日多項變更合併成一份 ──
+// 官方 ND2B 一份表可同時申報姓名／地址／證件／聯絡方式的變更（後端讀 changeTypes[]），
+// 所以同一人不該出多份表。
+const ND2B_NEW_FIELDS_BY_TYPE: Record<string, string[]> = {
+  address: ['newFlat', 'newBuilding', 'newStreet', 'newDistrict', 'newRegion', 'newAddress'],
+  name: ['newNameSurname', 'newNameOtherNames', 'newNameChinese'],
+  id: ['newIdNumber', 'passportNumber'],
+  contact: ['newEmail'],
+};
+
+export function buildNd2bMergedPayload(
+  company: QuickFormDialogProps['company'], evs: QuickFormEvent[]
+): any {
+  // 基礎資料（「現時詳情」欄）優先取**非改名**事件 —— 改名事件的 raw.name_english
+  // 是改**後**的名字，拿它當現時姓名會讓表格前後兩欄填成同一個名。
+  const ordered = [...evs].sort((a, b) =>
+    Number(a.raw?._event_type === 'person_name_change') - Number(b.raw?._event_type === 'person_name_change'));
+
+  const merged = buildFormPayload('nd2b_change', company, [ordered[0]]);
+  const types = new Set<string>(merged.changeTypes || []);
+
+  for (const ev of ordered.slice(1)) {
+    const p = buildFormPayload('nd2b_change', company, [ev]);
+    const ct = (p.changeTypes || [])[0];
+    // 同一人同日同一類型只取第一條（事件已按時間倒序＝最新在前）
+    if (!ct || types.has(ct)) continue;
+    types.add(ct);
+    for (const f of ND2B_NEW_FIELDS_BY_TYPE[ct] || []) {
+      if (p[f] !== undefined && p[f] !== '') merged[f] = p[f];
+    }
+  }
+  merged.changeTypes = [...types];
+  return merged;
+}
+
 async function downloadRtf(base64: string, filename: string) {
   const byteChars = atob(base64);
   const bytes = new Uint8Array(byteChars.length);
@@ -609,8 +740,19 @@ export function QuickFormDialog({ open, onOpenChange, company, events }: QuickFo
   const formOptions = getFormOptions(events);
   if (formOptions.length === 0) return null;
 
-  const personnelEvents = events.filter(e => e.type === 'appoint' || e.type === 'cease');
+  const personnelEvents = events.filter(e => PERSONNEL_QF_TYPES.has(e.type));
   const resigners = personnelEvents.filter(e => e.type === 'cease');
+  const plan = buildGenerationPlan(events);
+  const skipped = skippedShareLabels(events);
+  const nd2bItems = plan.filter(p => p.key === 'nd2b_change');
+  // 「ND2A 1 份 · ND2B 2 份 · NR1 1 份」
+  const planSummary = [...new Map(plan.map(p => [p.key, p.key])).keys()]
+    .map(k => {
+      const n = plan.filter(p => p.key === k).length;
+      const short = k === 'nd2a_appoint' ? 'ND2A' : k === 'nd2b_change' ? 'ND2B' : k.toUpperCase();
+      return `${short} ${n} 份`;
+    })
+    .join(' · ');
 
   const handleGenerate = async (formKey: string) => {
     setLoading(formKey);
@@ -656,18 +798,70 @@ export function QuickFormDialog({ open, onOpenChange, company, events }: QuickFo
         return done;
       };
 
-      // ── 一起生成：全部委任＋辭任 → 單一份 ND2A（官方表格一份可含多人委任＋停任，
-      //    後端動態續頁；不再自動生成每人一份 ND4 — 用戶需要辭任人本人簽署的
-      //    ND4 時可點下方 ND4 按鈕單獨生成）──
+      // ── 產出計劃裡的一份文件 ──
+      // 委任＋辭任 → 單一份 ND2A（官方表格一份可含多人委任＋停任，後端動態續頁；
+      // 不自動生成每人一份 ND4 — 需要辭任人本人簽署的 ND4 時點下方按鈕單獨生成）
+      const runItem = async (item: PlanItem, suffix = ''): Promise<void> => {
+        if (item.key === 'nd2a_appoint') { await generateNd2a(); return; }
+        const cfg = FORM_CONFIGS[item.key];
+        if (!cfg) throw new Error(`未知表格類型 ${item.key}`);
+        const payload = item.key === 'nd2b_change'
+          ? buildNd2bMergedPayload(company, item.events)
+          : buildFormPayload(item.key, company, item.events);
+        const result = await postJson(cfg.endpoint, payload);
+        const stem = `${cfg.label.replace(/\s/g, '_')}_${safeName}${suffix}`;
+        if (result.pdf) {
+          await downloadBase64Pdf(result.pdf, `${stem}.pdf`);
+        } else if (result.rtf) {
+          downloadRtf(result.rtf, result.filename || `${stem}.rtf`);
+        } else {
+          throw new Error('No data in response');
+        }
+      };
+
+      // 多份之间留间隔，避免连续请求复用同一 isolate 触发 1102
+      const runItems = async (items: PlanItem[]) => {
+        const done: string[] = [];
+        const failed: string[] = [];
+        // 同一種表格出多份時加後綴（ND2B 用人名，其餘用「_第N份」），避免下載重名覆蓋
+        const total = new Map<string, number>();
+        for (const it of items) total.set(it.key, (total.get(it.key) || 0) + 1);
+        const idx = new Map<string, number>();
+        for (let i = 0; i < items.length; i++) {
+          const it = items[i];
+          const n = (idx.get(it.key) || 0) + 1;
+          idx.set(it.key, n);
+          const suffix = (total.get(it.key) || 1) > 1
+            ? (it.fileTag ? `_${safeFileName(it.fileTag)}` : `_第${n}份`)
+            : '';
+          try {
+            await runItem(it, suffix);
+            done.push(it.label);
+          } catch (err: any) {
+            // 一份失敗不中斷其餘 —— 否則用戶要從頭再點一次
+            console.error('[QuickForm] item failed:', it.label, err);
+            failed.push(`${it.label}（${err.message || '未知錯誤'}）`);
+          }
+          if (i < items.length - 1) await new Promise(r => setTimeout(r, 2500));
+        }
+        return { done, failed };
+      };
+
+      // ── 一起生成：計劃裡的全部文件 ──
       if (formKey === 'both') {
-        await generateNd2a();
-        const nAppoint = personnelEvents.filter(e => e.type === 'appoint').length;
-        const nCease = personnelEvents.filter(e => e.type === 'cease').length;
+        const { done, failed } = await runItems(plan);
+        const lines: string[] = [];
+        if (done.length) lines.push(`已生成 ${done.length} 份：${done.join('、')}`);
+        if (failed.length) lines.push(`❌ 失敗 ${failed.length} 份：${failed.join('；')}`);
+        if (skipped.length) {
+          lines.push(`⚠️ 未自動生成（同一事件有多種文件可選，請在下方按鈕自行挑選）：${skipped.join('、')}`);
+        }
         toast({
-          title: '✅ PDF 已生成',
-          description: `ND2A 1 份（同日 ${nAppoint} 人委任 ＋ ${nCease} 人辭任，全部併入同一表格）下載完成`,
+          title: failed.length ? '⚠️ 部分生成失敗' : '✅ 已生成',
+          description: lines.join('\n'),
+          variant: failed.length ? 'destructive' : undefined,
         });
-        onOpenChange(false);
+        if (!failed.length) onOpenChange(false);
         return;
       }
 
@@ -695,22 +889,24 @@ export function QuickFormDialog({ open, onOpenChange, company, events }: QuickFo
         return;
       }
 
-      // ── 其他表格（股份交易等）— 單事件 ──
-      const payload = buildFormPayload(formKey, company, events);
-      const result = await postJson(config.endpoint, payload);
-      if (result.pdf) {
-        const filename = `${config.label.replace(/\s/g, '_')}_${safeName}.pdf`;
-        await downloadBase64Pdf(result.pdf, filename);
-        toast({ title: '✅ PDF 已生成', description: `${config.label} 下載完成` });
-        onOpenChange(false);
-      } else if (result.rtf) {
-        const filename = result.filename || `${config.label.replace(/\s/g, '_')}_${safeName}.rtf`;
-        downloadRtf(result.rtf, filename);
-        toast({ title: '✅ RTF 已生成', description: `${config.label} 下載完成` });
-        onOpenChange(false);
-      } else {
-        throw new Error('No data in response');
+      // ── 其他表格（ND2B／NR1／NNC2／股份交易）──
+      // 🔴 必須挑**對應這張表**的事件：舊版一律用 events[0]，同一天既有改名又有
+      //    改地址時，點 NR1 會拿改名事件去填地址表。
+      const targets = pickEventsForForm(formKey, events);
+      const items: PlanItem[] = formKey === 'nd2b_change'
+        ? plan.filter(p => p.key === 'nd2b_change')          // 每人一份（同人多項變更已合併）
+        : targets.map(e => ({ key: formKey, label: config.label, events: [e] }));
+      const { done, failed } = await runItems(items);
+      if (failed.length) {
+        throw new Error(failed.join('；') + (done.length ? `（已下載 ${done.length} 份）` : ''));
       }
+      toast({
+        title: '✅ 已生成',
+        description: done.length > 1
+          ? `${config.label} 共 ${done.length} 份下載完成：${done.join('、')}`
+          : `${config.label} 下載完成`,
+      });
+      onOpenChange(false);
     } catch (err: any) {
       console.error('[QuickForm] Generation failed:', err);
       toast({ title: '❌ 生成失敗', description: err.message || '未知錯誤', variant: 'destructive' });
@@ -719,11 +915,16 @@ export function QuickFormDialog({ open, onOpenChange, company, events }: QuickFo
     }
   };
 
-  const eventTypeLabel = personnelEvents.length > 0
-    ? (personnelEvents.some(e => e.type === 'appoint') && personnelEvents.some(e => e.type === 'cease')
-      ? '委任＋辭任'
-      : personnelEvents[0].type === 'appoint' ? '委任' : '辭任')
-    : (events[0]?.type || '');
+  // 同一天可能同時有多種事件（例如改名＋改地址）→ 標籤要把全部類型列出來
+  const QF_TYPE_LABELS: Record<string, string> = {
+    appoint: '委任', cease: '辭任', nd2b_change: '董事／秘書詳情變更',
+    nr1: '註冊地址變更', nnc2: '公司改名', transfer: '股份轉讓',
+    allotment: '股份配發', shareholder_add: '新增股東',
+    shareholder_remove: '股東退出', repurchase: '股份回購', capital_increase: '增加股本',
+  };
+  const eventTypeLabel = [...new Set(events.map(e => e.type))]
+    .map(t => QF_TYPE_LABELS[t] || t)
+    .join('＋');
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -734,9 +935,11 @@ export function QuickFormDialog({ open, onOpenChange, company, events }: QuickFo
             生成相關表格
           </DialogTitle>
           <DialogDescription>
-            {personnelEvents.length > 1
-              ? `同一天共有 ${personnelEvents.length} 位人士的委任／辭任記錄，可一併生成表格`
-              : `基於公司誌事件「${events[0]?.title || ''}」自動生成對應的政府表格`}
+            {plan.length > 1
+              ? `同一天共有 ${events.length} 項可生成表格的記錄，可一併生成 ${plan.length} 份表格`
+              : personnelEvents.length > 1
+                ? `同一天共有 ${personnelEvents.length} 位人士的委任／辭任記錄，可一併生成表格`
+                : `基於公司誌事件「${events[0]?.title || ''}」自動生成對應的政府表格`}
           </DialogDescription>
         </DialogHeader>
 
@@ -752,13 +955,16 @@ export function QuickFormDialog({ open, onOpenChange, company, events }: QuickFo
             )}
           </div>
 
-          {/* 同一天人士清單 */}
-          {personnelEvents.length > 0 && (
+          {/* 同一天全部記錄清單（不再只列人事事件 —— 改名／改地址那些也要看得見） */}
+          {events.length > 1 && (
             <div className="rounded-md border border-border bg-muted/30 p-2 space-y-1 max-h-32 overflow-y-auto">
-              {personnelEvents.map((e, i) => (
+              {events.map((e, i) => (
                 <div key={i} className="text-xs flex items-center gap-2 min-w-0">
-                  <Badge variant={e.type === 'appoint' ? 'default' : 'destructive'} className="h-4 px-1 text-[10px] shrink-0">
-                    {e.type === 'appoint' ? '委任' : '辭任'}
+                  <Badge
+                    variant={e.type === 'appoint' ? 'default' : e.type === 'cease' ? 'destructive' : 'secondary'}
+                    className="h-4 px-1 text-[10px] shrink-0"
+                  >
+                    {QF_TYPE_LABELS[e.type] || e.type}
                   </Badge>
                   <span className="truncate">{e.title}</span>
                 </div>
@@ -768,32 +974,40 @@ export function QuickFormDialog({ open, onOpenChange, company, events }: QuickFo
 
           <div className="space-y-2 pt-2">
             <p className="text-sm font-medium">選擇要生成的表格：</p>
-            {/* 一起生成：同日多位人士（委任＋辭任）→ 單一份 ND2A（一份表可含多人委任＋停任） */}
-            {personnelEvents.length > 1 && (
+            {/* 一起生成：計劃裡的全部文件（ND2A 1 份含同日全部人事 ＋ 每人一份 ND2B ＋ NR1／NNC2） */}
+            {plan.length > 1 && (
               <Button
                 variant="default"
-                className="w-full"
+                className="w-full h-auto py-2 whitespace-normal text-left"
                 disabled={loading !== null}
                 onClick={() => handleGenerate('both')}
               >
                 {loading === 'both' ? (
-                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  <Loader2 className="h-4 w-4 animate-spin mr-2 shrink-0" />
                 ) : (
-                  <span className="mr-2">📦</span>
+                  <span className="mr-2 shrink-0">📦</span>
                 )}
-                一起生成：ND2A 1 份（含同日 {personnelEvents.length} 人：{personnelEvents.filter(e => e.type === 'appoint').length} 委任 ＋ {personnelEvents.filter(e => e.type === 'cease').length} 辭任）
+                <span>一起生成：共 {plan.length} 份（{planSummary}）</span>
               </Button>
+            )}
+            {/* 股份交易類不自動生成 —— 這行不能綁在「一起生成」按鈕裡：
+                只有 1 份可自動生成時按鈕不顯示，用戶就完全看不到這個提醒了 */}
+            {skipped.length > 0 && (
+              <p className="text-xs text-amber-600 dark:text-amber-500">
+                ⚠️ 不自動生成：{skipped.join('、')} — 這類事件有多種文件可選，請在下方按鈕自行挑選
+              </p>
             )}
             {formOptions.map(opt => {
               const isNd2a = opt.key === 'nd2a_appoint';
               const isNd4 = opt.key === 'nd4_cease';
-              // 主按鈕已覆蓋多人的 ND2A 場景，outline 版只在單人時顯示
-              if (isNd2a && personnelEvents.length > 1) return null;
+              const isNd2b = opt.key === 'nd2b_change';
               const label = isNd2a
                 ? `${opt.config.label}（同日 ${personnelEvents.length} 人）`
                 : isNd4 && resigners.length > 1
                   ? `${opt.config.label}（${resigners.length} 份，每位辭任人一份）`
-                  : opt.config.label;
+                  : isNd2b && nd2bItems.length > 1
+                    ? `${opt.config.label}（${nd2bItems.length} 份，每人一份）`
+                    : opt.config.label;
               return (
                 <div key={opt.key} className="space-y-1">
                   <Button
@@ -822,6 +1036,12 @@ export function QuickFormDialog({ open, onOpenChange, company, events }: QuickFo
                   {isNd4 && (
                     <p className="text-xs text-muted-foreground">
                       💡 ND4 為辭任人本人遞交的通知書，每位辭任人一份，按需生成
+                    </p>
+                  )}
+                  {/* ND2B 提示：同一人的多項變更併入同一份表（官方表可同時申報姓名／地址／證件／聯絡） */}
+                  {isNd2b && nd2bItems.length > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      💡 同一人當日的多項變更會併入同一份 ND2B：{nd2bItems.map(p => p.label.replace(/^ND2B（|）$/g, '')).join('、')}
                     </p>
                   )}
                 </div>

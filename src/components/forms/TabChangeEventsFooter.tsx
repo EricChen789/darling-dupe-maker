@@ -85,7 +85,7 @@ function groupByDay(events: ChangeEvent[]): DayGroup[] {
 const PREVIEW_PER_DAY = 2;
 
 // ── Parse a change_event into QuickFormDialog-compatible format ──
-function changeEventToQfEvent(ev: ChangeEvent) {
+export function changeEventToQfEvent(ev: ChangeEvent) {
   const qfType = EVENT_TYPE_TO_QF_TYPE[ev.event_type] || '';
   const explicitRole = EVENT_TYPE_TO_ROLE[ev.event_type] || '';
 
@@ -142,6 +142,9 @@ function changeEventToQfEvent(ev: ChangeEvent) {
   // can determine which change type (address/name/id/contact) to use.
   if (qfType === 'nd2b_change') {
     raw._event_type = ev.event_type;
+    // 同一人同日的多項變更要合併成一份 ND2B → QuickFormDialog 需要穩定的人員標識。
+    // 不能靠姓名分組：改名事件的 new_value 帶的是**新名**，會把同一人拆成兩個。
+    raw._person_id = ev.person_id || '';
     // person_*_change 事件的 new_value 只有更改后的字段，没有现时资料
     // （姓名/HKID/護照/職位）→ 从 persons 表 enrich 的 ev.person 补齐。
     // 只补缺失字段：person_name_change/person_id_change 的 new_value

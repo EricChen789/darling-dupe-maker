@@ -1,4 +1,5 @@
 import { verifyAuthRequest, type Env as AuthEnv } from './_auth';
+import { sortRolesByAppointment, certNoOf } from './_shareholder-seq';
 
 type Env = AuthEnv & {
   DB: D1Database;
@@ -265,17 +266,10 @@ export async function onRequest(context: { request: Request; env: Env }) {
     let seqNo = transaction?.id ? seqIds.indexOf(transaction.id) + 1 : 0;
     if (seqNo <= 0) seqNo = seqIds.length + 1;
 
-    // ── Auto-generate certificate number if missing (for share_certificate docType) ──
-    if (docType === "share_certificate" && transaction && !transaction.instrument_number) {
-      transaction.instrument_number = String(seqNo);
-      if (transaction.id) {
-        try {
-          await env.DB.prepare(
-            "UPDATE share_transactions SET instrument_number = ? WHERE id = ?"
-          ).bind(String(seqNo), transaction.id).run();
-        } catch { /* non-critical */ }
-      }
-    }
+    // 註：舊版會在生成股票證書時把證書號回寫 share_transactions.instrument_number。
+    // 那一欄是**轉讓文書編號**（ROM 的 Deed 欄、轉讓文書都讀它），把證書號寫進去
+    // 會污染登記冊；且證書號現已改按「股東成立時序」算（見下方 certNo），
+    // 與交易序號無關 → 回寫整段移除。
 
     // ── Resolve the effective transaction (used for names + dates below) ──
     const tx = transaction || (allTransactions.length > 0 ? allTransactions[0] : {});
@@ -314,6 +308,24 @@ export async function onRequest(context: { request: Request; env: Env }) {
         .bind(buyerId).first();
     } else if (tx.to_name) {
       buyerPerson = await findPersonByName(tx.to_name, companyId);
+    }
+
+    // ── 股票證書編號：受讓人在「成為股東的時序」中的名次（與 ROM 登記冊同一個號）──
+    // 一位股東一個號；某股東轉股給新人 → 新股東排到隊尾拿下一個號，這筆交易開出的
+    // 證書用的就是他的號。買賣票據／轉讓文書仍用**交易發生序號**（既有需求，不動）。
+    let certNo = tx.instrument_number || String(seqNo);
+    if (docType === "share_certificate") {
+      const shRes = await env.DB.prepare(
+        `SELECT person_id, date_appointed, created_at, certificate_number
+         FROM person_company_roles WHERE company_id = ? AND role = 'shareholder'`
+      ).bind(companyId).all();
+      const ordered = sortRolesByAppointment((shRes.results || []) as any[]);
+      const holderId = String(buyerPerson?.id || buyerId || "");
+      const idx = holderId
+        ? ordered.findIndex((r: any) => String(r.person_id) === holderId)
+        : -1;
+      // 認不出受讓人（受讓人還沒建成股東角色）才退回交易序號
+      if (idx >= 0) certNo = certNoOf(ordered[idx], idx + 1);
     }
 
     // ── Read RTF template from R2 ──
@@ -376,8 +388,8 @@ export async function onRequest(context: { request: Request; env: Env }) {
     vars["{{COMPANY_NUMBER}}"] = (company as any).company_number || "";
     vars["{{INCORP_DATE}}"] = fmtDateSlash((company as any).incorporation_date);
 
-    // Certificate number（無手填編號時用發生順序編號 1、2、3…）
-    vars["{{CERT_NO}}"] = tx.instrument_number || String(seqNo);
+    // Certificate number（股票證書＝受讓人的股東序號；其餘文件＝交易發生序號）
+    vars["{{CERT_NO}}"] = certNo;
 
     // Registered office address (4 lines)
     const regAddr = buildCompanyAddress(company);
@@ -413,7 +425,9 @@ export async function onRequest(context: { request: Request; env: Env }) {
       share_certificate: "ShareCertificate",
     };
     const label = docLabel[docType] || "Document";
-    const refNo = tx.instrument_number || String(seqNo);
+    const refNo = docType === "share_certificate"
+      ? certNo
+      : (tx.instrument_number || String(seqNo));
     const filename = `${label}_${coNum}_${refNo}.rtf`;
 
     // ── Return base64-encoded RTF ──

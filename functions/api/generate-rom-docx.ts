@@ -11,6 +11,7 @@
 // Block B (rows 14-23) is cloned for 3+ shareholders.
 import { verifyAuthRequest, type Env } from './_auth';
 import ROM_TEMPLATE from './_template_rom_lungshun_template';
+import { sortRolesByAppointment, certNoOf, buildSeqByName, dateSortKey } from './_shareholder-seq';
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -227,9 +228,12 @@ function fillBlock(blockXml: string, sh: RomShareholder): string {
       set("SHARES", r.shares); set("MONEY", r.money);
       for (const f of TX_XFER_FIELDS) set(f, "");
     } else if (r && r.side === "transferred") {
-      // 转让半边：Deed/Cert2/From2/To2/Shares2/Consid2；购入半边与 Date 留空（与 PDF 端点一致）
-      set("DATE", "");
+      // 转让半边：Deed/Cert2/From2/To2/Shares2/Consid2；购入半边留空
+      // ⚠️ Date 是整行共用的第一栏（不属于购入半边），转让行同样要有日期。
+      //    必须在清空循环**之后**再写 —— TX_ACQ_FIELDS 头一项就是 DATE，
+      //    先写会被循环二次清空（这正是转让行日期一直是空的原因）。
       for (const f of TX_ACQ_FIELDS) set(f, "");
+      set("DATE", r.date);
       set("DEED", r.deed); set("CERT2", r.cert); set("FROM2", r.cert); set("TO2", r.cert);
       set("SHARES2", r.shares); set("MONEY2", r.money);
     } else {
@@ -292,8 +296,20 @@ export async function onRequest(context: { request: Request; env: Env }) {
 
     if (!company) throw new Error("Company not found");
 
-    const roles = (rolesResult.results || []) as any[];
-    const transactions = (txResult.results || []) as any[];
+    // 股東按「成為股東的時間」排序 —— SQL 端沒有 ORDER BY（date_appointed 混用
+    // ISO/DD-MM-YYYY/DDMMYYYY 三種格式，字符串排序會排錯），統一在 TS 歸一化後排。
+    // 排序同時決定證書編號：第 i 位股東 = 編號 i+1。
+    const roles = sortRolesByAppointment((rolesResult.results || []) as any[]);
+    // transaction_date 同樣混用三種格式，SQL 的字符串 ORDER BY 排不對 → TS 再排一次
+    // （逐行記帳的結餘欄依賴這個順序）
+    const transactions = ((txResult.results || []) as any[])
+      .map((t, i) => ({ t, i, k: dateSortKey(t?.transaction_date) }))
+      .sort((a, b) => {
+        if (!a.k !== !b.k) return a.k ? -1 : 1;
+        if (a.k !== b.k) return a.k < b.k ? -1 : 1;
+        return a.i - b.i;
+      })
+      .map(x => x.t);
 
     // Map persons
     const personIds = roles.map((r: any) => r.person_id).filter(Boolean);
@@ -306,15 +322,23 @@ export async function onRequest(context: { request: Request; env: Env }) {
       (result.results || []).forEach((p: any) => personMap.set(p.id, p));
     }
 
-    // Build tx_by_name map (key = from_name || to_name, matched against person English name)
+    // Build tx_by_name map，**買賣雙方都要索引**（key 比對 person 英文名）。
+    // 舊版 key = from_name || to_name：轉讓交易 from_name 一填，這筆就只掛在轉讓方
+    // 名下，受讓人永遠看不到自己的「Transfer In」行（會被誤記成 Subscription）。
     const txByName = new Map<string, any[]>();
     for (const t of transactions) {
-      const key = (rget(t, 'from_name') || rget(t, 'to_name') || '').trim().toUpperCase();
-      if (key) {
+      const seen = new Set<string>();
+      for (const side of ['from_name', 'to_name']) {
+        const key = rget(t, side).trim().toUpperCase();
+        if (!key || seen.has(key)) continue;   // 同一人自轉自不重複記兩行
+        seen.add(key);
         if (!txByName.has(key)) txByName.set(key, []);
         txByName.get(key)!.push(t);
       }
     }
+
+    // 姓名 → 股東編號（轉讓行要記「受讓人」的號）
+    const seqByName = buildSeqByName(roles, (id) => personMap.get(id));
 
     // ── Company data ──
     const coNameEn = rget(company, 'name').slice(0, 40);
@@ -326,7 +350,7 @@ export async function onRequest(context: { request: Request; env: Env }) {
     // 后续 = 交易：Allotment/Transfer In → 购入半边；Transfer Out → 转让半边
     // Total Shares Held = 累计结余；Entry Made By 留空
     const shareholders: RomShareholder[] = [];
-    for (const role of roles) {
+    roles.forEach((role: any, roleIdx: number) => {
       const p = personMap.get(role.person_id) || {};
       const nameEn = (rget(p, 'name_english') || rget(p, 'name_chinese') || '(unnamed)').slice(0, 40);
       const nameZh = rget(p, 'name_chinese').slice(0, 12);
@@ -348,11 +372,29 @@ export async function onRequest(context: { request: Request; env: Env }) {
       const dateApp = dateAppRaw ? fmtDateRom(dateAppRaw) : '-';
       const dateCeaRaw = rget(role, 'date_ceased');
       const dateCea = dateCeaRaw ? fmtDateRom(dateCeaRaw) : '';
-      const shares0 = parseInt(rget(role, 'shares') || '0', 10) || 0;
-      const certNo = (rget(role, 'certificate_number') || '-').slice(0, 20);
+      const heldShares = parseInt(rget(role, 'shares') || '0', 10) || 0;
+      // 證書編號 = 這位股東在時序中的名次（手填值優先，目前全庫皆空）
+      const certNo = certNoOf(role, roleIdx + 1).slice(0, 20);
       const currency = rget(role, 'currency') || 'HKD';
       const issuePrice = Number(rget(role, 'issue_price') || 0);
-      const personNameKey = nameEn.trim().toUpperCase();
+      // 姓名鍵用**未截斷**的原始英文名，才對得上 txByName 的 from_name/to_name
+      const personNameKey = (rget(p, 'name_english') || rget(p, 'name_chinese')).trim().toUpperCase();
+
+      // 先把這位股東的交易分類一次（下面算初始認購數和逐行記帳共用）
+      const myTx = (txByName.get(personNameKey) || [])
+        .map((tx: any) => {
+          const n = parseInt(rget(tx, 'shares') || '0', 10) || 0;
+          const isAllot = rget(tx, 'transaction_type').toLowerCase().includes('allot');
+          const isOut = !isAllot && rget(tx, 'from_name').trim().toUpperCase() === personNameKey;
+          return { tx, n, isAllot, isOut };
+        })
+        .filter((x: any) => x.n > 0);
+
+      // ⚠️ role.shares 是「當前持股結餘」不是初始認購數（實測：轉出 100 股後
+      // 該欄已由 1000 減成 900）。把交易造成的增減扣回去才是首行認購數，
+      // 否則結餘欄會一路算錯（舊版：認購 900 → 轉出 100 → 結餘 800，實際持有 900）。
+      const netFromTx = myTx.reduce((s: number, x: any) => s + (x.isOut ? -x.n : x.n), 0);
+      const shares0 = Math.max(0, heldShares - netFromTx);
 
       const rows: RomTxRow[] = [];
       let balance = shares0;
@@ -365,10 +407,8 @@ export async function onRequest(context: { request: Request; env: Env }) {
           total: balance, remarks: 'Subscription',
         });
       }
-      for (const tx of (txByName.get(personNameKey) || [])) {
+      for (const { tx, n: txShares, isAllot, isOut } of myTx) {
         if (rows.length >= MAX_TX_ROWS) break;
-        const txShares = parseInt(rget(tx, 'shares') || '0', 10) || 0;
-        if (!txShares) continue;
         const cur = rget(tx, 'currency') || currency;
         const totalConsid = Number(rget(tx, 'total_consideration') || 0);
         const priceEach = Number(String(rget(tx, 'price_per_share') || '').replace(/,/g, ''));
@@ -378,13 +418,14 @@ export async function onRequest(context: { request: Request; env: Env }) {
         const date = fmtDateRom(rget(tx, 'transaction_date'));
         const deed = rget(tx, 'instrument_number').slice(0, 20);
 
-        const isAllot = rget(tx, 'transaction_type').toLowerCase().includes('allot');
-        const isIn = !isAllot && rget(tx, 'to_name').trim().toUpperCase() === personNameKey;
-        const isOut = !isAllot && rget(tx, 'from_name').trim().toUpperCase() === personNameKey;
         if (isOut) {
           balance -= txShares;
+          // 轉讓半邊記的是**受讓人**的證書號 —— 這筆轉讓開出的新證書是給受讓人的
+          // （用戶原話：轉 100 股出去那行編號應該是 4，因為第四個股東因這筆轉讓出現）
+          const toSeq = seqByName.get(rget(tx, 'to_name').trim().toUpperCase());
           rows.push({
-            side: 'transferred', date, cert: certNo, shares: String(txShares),
+            side: 'transferred', date, cert: toSeq ? String(toSeq) : certNo,
+            shares: String(txShares),
             money, deed,
             total: balance, remarks: 'Transfer Out',
           });
@@ -399,7 +440,7 @@ export async function onRequest(context: { request: Request; env: Env }) {
       }
 
       shareholders.push({ fullName, occupation, dateApp, addr, dateCea, rows });
-    }
+    });
 
     // ── Get template ──
     const template = ROM_TEMPLATE;

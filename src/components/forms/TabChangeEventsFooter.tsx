@@ -52,7 +52,7 @@ const PERSONNEL_EVENT_TYPES = new Set<string>([
   'reserve_director_appoint', 'reserve_director_cease',
 ]);
 
-// ── 狀態型事件：新值取代舊值，「最新」視圖每個 (類型＋人) 只留最新一條 ──
+// ── 狀態型事件：新值取代舊值，「最新」視圖在每個日期內每個 (類型＋人) 只留最新一條 ──
 // 未列入者為發生型（委任／辭任／股東進出／股份交易）——各自是獨立的歷史事實，
 // 不會被後來的同類事件取代，一條都不能去（否則股份交易帳冊會被壓成 1 筆）。
 const STATEFUL_EVENT_TYPES = new Set<string>([
@@ -250,13 +250,15 @@ export function TabChangeEventsFooter({ companyId, company, eventTypes, label }:
     );
   }, [allEvents, eventTypes]);
 
-  // 「最新」視圖：狀態型事件每個 (類型＋人) 只留最新一條；發生型全留。
-  // allEvents 已按 change_date 倒序（useChangeEvents）→ 首次出現即最新。
+  // 「最新」視圖：狀態型事件在**每個日期內**按 (類型＋人) 只留最新一條；發生型全留。
+  // 去重範圍是單日而非全局 —— 全局去重會讓整個日期消失（公司改了 5 次地址橫跨
+  // 兩天時，舊那天會被整個抹掉），日期軸必須完整。
+  // allEvents 已按 change_date 倒序（useChangeEvents）→ 每組首次出現即該日最新。
   const latest = useMemo(() => {
     const seen = new Set<string>();
     return filtered.filter(ev => {
       if (!STATEFUL_EVENT_TYPES.has(ev.event_type)) return true;
-      const key = `${ev.event_type}|${ev.person_id || ''}`;
+      const key = `${dayKeyOf(ev.change_date)}|${ev.event_type}|${ev.person_id || ''}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;

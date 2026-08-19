@@ -165,8 +165,18 @@ export function buildGenerationPlan(events: QuickFormEvent[]): PlanItem[] {
     plan.push({ key: 'nd2b_change', label: `ND2B（${who}）`, events: evs, fileTag: who });
   }
 
-  for (const e of events.filter(e => e.type === 'nr1')) plan.push({ key: 'nr1', label: 'NR1', events: [e] });
-  for (const e of events.filter(e => e.type === 'nnc2')) plan.push({ key: 'nnc2', label: 'NNC2', events: [e] });
+  // NR1／NNC2 是**狀態型**變更（新值取代舊值）：同一天改了 9 次地址也只需交 1 份表，
+  // 報的是那天的最終狀態。🔴 不去重的話，在「全部記錄」視圖點一起生成會出 9 份 NR1 ＋ 9 份 NNC2。
+  // 取每個日期的第一條 —— 列表已按 change_date 倒序，與面板「最新」視圖顯示的是同一條。
+  for (const key of ['nr1', 'nnc2'] as const) {
+    const seenDay = new Set<string>();
+    for (const e of events.filter(e => e.type === key)) {
+      const day = normalizeDate(e.raw?.change_date || '') || '__nodate__';
+      if (seenDay.has(day)) continue;
+      seenDay.add(day);
+      plan.push({ key, label: key.toUpperCase(), events: [e] });
+    }
+  }
 
   return plan;
 }
@@ -892,10 +902,12 @@ export function QuickFormDialog({ open, onOpenChange, company, events }: QuickFo
       // ── 其他表格（ND2B／NR1／NNC2／股份交易）──
       // 🔴 必須挑**對應這張表**的事件：舊版一律用 events[0]，同一天既有改名又有
       //    改地址時，點 NR1 會拿改名事件去填地址表。
-      const targets = pickEventsForForm(formKey, events);
-      const items: PlanItem[] = formKey === 'nd2b_change'
-        ? plan.filter(p => p.key === 'nd2b_change')          // 每人一份（同人多項變更已合併）
-        : targets.map(e => ({ key: formKey, label: config.label, events: [e] }));
+      // ND2B／NR1／NNC2 直接復用計劃（已按人合併、按日期去重），
+      // 否則同一天 9 條 address_change 會發 9 次請求
+      const inPlan = plan.filter(p => p.key === formKey);
+      const items: PlanItem[] = inPlan.length
+        ? inPlan
+        : pickEventsForForm(formKey, events).map(e => ({ key: formKey, label: config.label, events: [e] }));
       const { done, failed } = await runItems(items);
       if (failed.length) {
         throw new Error(failed.join('；') + (done.length ? `（已下載 ${done.length} 份）` : ''));

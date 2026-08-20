@@ -12443,6 +12443,36 @@ def form_linkages():
     return jsonify({'linkages': linkages})
 
 
+@app.route('/api/share-capital-options', methods=['GET'])
+def share_capital_options():
+    """聚合全系統用過的股份類別 / 貨幣（供編輯時下拉建議，手動輸入保存後下次可選）。"""
+    db = get_db()
+
+    def _uniq(sql):
+        try:
+            return [str(r[0]).strip() for r in db.execute(sql).fetchall()
+                    if r[0] is not None and str(r[0]).strip()]
+        except Exception:
+            return []  # 表/列不存在時靜默回退（僅默認選項）
+
+    def _dedup(vals):
+        seen, out = set(), []
+        for v in vals:
+            if v not in seen:
+                seen.add(v)
+                out.append(v)
+        return out
+
+    share_types = _dedup(
+        _uniq('SELECT DISTINCT share_type FROM share_transactions') +
+        _uniq('SELECT DISTINCT share_type FROM person_company_roles'))
+    currencies = _dedup(
+        _uniq('SELECT DISTINCT currency FROM share_transactions') +
+        _uniq('SELECT DISTINCT currency FROM person_company_roles'))
+
+    return jsonify({'share_types': share_types, 'currencies': currencies})
+
+
 # ─── IRC3111A PDF 生成（Phase 5.4: 税務局更改業務地址通知）───
 
 def _build_irc3111a_pdf(data):

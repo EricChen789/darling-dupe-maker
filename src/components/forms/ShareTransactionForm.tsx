@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useId } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Save, X, ArrowRight, UserPlus } from 'lucide-react';
 import PersonQuickPick, { type PersonQuickPickData } from '@/components/forms/PersonQuickPick';
 import { computeConsideration, type ShareTransaction } from '@/hooks/useShareTransactions';
+import { useShareTypeOptions, useCurrencyOptions } from '@/hooks/useShareCapitalOptions';
 
 export interface ShareholderInfo {
   id: string;
@@ -38,6 +39,12 @@ const TX_TYPE_LABELS: Record<string, { label: string; fromHint: string; toHint: 
 export function ShareTransactionForm({ tx, onChange, onSave, onCancel, saving, companyId, shareholders }: ShareTransactionFormProps) {
   const [fromManual, setFromManual] = useState(false);
   const [toManual, setToManual] = useState(false);
+
+  // 股份類別 / 貨幣下拉建議（默認 ∪ 歷史用過的值，仍可自由輸入）
+  const shareTypeListId = useId();
+  const currencyListId = useId();
+  const shareTypeOptions = useShareTypeOptions();
+  const currencyOptions = useCurrencyOptions();
 
   const txType = tx.transaction_type || 'transfer';
   const typeInfo = TX_TYPE_LABELS[txType] || TX_TYPE_LABELS.transfer;
@@ -230,13 +237,21 @@ export function ShareTransactionForm({ tx, onChange, onSave, onCancel, saving, c
         </div>
         <div className="space-y-1">
           <Label className="text-xs">股份類別</Label>
-          <Input value={tx.share_type || ''} placeholder="Ordinary"
+          <Input value={tx.share_type || ''} list={shareTypeListId}
+            placeholder="輸入或選擇股份類別"
             onChange={e => onChange({ ...tx, share_type: e.target.value })} />
+          <datalist id={shareTypeListId}>
+            {shareTypeOptions.map(o => <option key={o} value={o} />)}
+          </datalist>
         </div>
         <div className="space-y-1">
           <Label className="text-xs">貨幣</Label>
-          <Input value={tx.currency || 'HKD'}
+          <Input value={tx.currency || 'HKD'} list={currencyListId}
+            placeholder="輸入或選擇貨幣"
             onChange={e => onChange({ ...tx, currency: e.target.value })} />
+          <datalist id={currencyListId}>
+            {currencyOptions.map(o => <option key={o} value={o} />)}
+          </datalist>
         </div>
       </div>
 

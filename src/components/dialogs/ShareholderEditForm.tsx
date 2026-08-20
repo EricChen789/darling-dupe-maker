@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useId } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Save, X } from 'lucide-react';
 import PersonQuickPick, { type PersonQuickPickData } from '@/components/forms/PersonQuickPick';
 import AddressQuickPick, { type AddressQuickPickData } from '@/components/forms/AddressQuickPick';
+import { useShareTypeOptions, useCurrencyOptions } from '@/hooks/useShareCapitalOptions';
 
 // ── Types ──
 export type ShFormType = {
@@ -89,6 +90,12 @@ export function ShareholderEditForm({
     ...initialData,
     serviceAddress: initialData?.serviceAddress || defaultServiceAddress || '',
   }));
+
+  // 股份類別 / 貨幣下拉建議（默認 ∪ 歷史用過的值，仍可自由輸入）
+  const shareTypeListId = useId();
+  const currencyListId = useId();
+  const shareTypeOptions = useShareTypeOptions();
+  const currencyOptions = useCurrencyOptions();
 
   // Sync when initialData changes (e.g. selecting a different shareholder)
   useEffect(() => {
@@ -280,15 +287,21 @@ export function ShareholderEditForm({
             </div>
             <div className="space-y-1">
               <Label className="text-xs">股份類別</Label>
-              <Input value={form.shareType}
+              <Input value={form.shareType} list={shareTypeListId}
                 onChange={e => setForm({ ...form, shareType: e.target.value })}
-                placeholder="e.g. Ordinary 普通股" />
+                placeholder="輸入或選擇股份類別" />
+              <datalist id={shareTypeListId}>
+                {shareTypeOptions.map(o => <option key={o} value={o} />)}
+              </datalist>
             </div>
             <div className="space-y-1">
               <Label className="text-xs">貨幣</Label>
-              <Input value={form.currency}
+              <Input value={form.currency} list={currencyListId}
                 onChange={e => setForm({ ...form, currency: e.target.value })}
-                placeholder="HKD" />
+                placeholder="輸入或選擇貨幣" />
+              <datalist id={currencyListId}>
+                {currencyOptions.map(o => <option key={o} value={o} />)}
+              </datalist>
             </div>
             <div className="space-y-1">
               <Label className="text-xs">每股發行價</Label>

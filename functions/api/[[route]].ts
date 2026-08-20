@@ -1199,6 +1199,28 @@ addRoute("GET", "/api/form-linkages", async (req, env, user) => {
   }
 });
 
+// ─── Share Capital Options ───
+// 聚合全系統用過的股份類別 / 貨幣（供編輯時下拉建議，手動輸入保存後下次可選）
+addRoute("GET", "/api/share-capital-options", async (req, env, user) => {
+  try {
+    const q = (sql: string) => env.DB.prepare(sql).all();
+    const [txTypes, txCur, roleTypes, roleCur] = await Promise.all([
+      q("SELECT DISTINCT share_type AS v FROM share_transactions WHERE share_type IS NOT NULL AND share_type != ''"),
+      q("SELECT DISTINCT currency AS v FROM share_transactions WHERE currency IS NOT NULL AND currency != ''"),
+      q("SELECT DISTINCT share_type AS v FROM person_company_roles WHERE share_type IS NOT NULL AND share_type != ''"),
+      q("SELECT DISTINCT currency AS v FROM person_company_roles WHERE currency IS NOT NULL AND currency != ''"),
+    ]);
+    const uniq = (rows: any[]) =>
+      Array.from(new Set(rows.map(r => String(r.v ?? '').trim()).filter(Boolean)));
+    return json({
+      share_types: uniq([...(txTypes.results || []), ...(roleTypes.results || [])]),
+      currencies: uniq([...(txCur.results || []), ...(roleCur.results || [])]),
+    });
+  } catch (e: any) {
+    return json({ share_types: [], currencies: [] });
+  }
+});
+
 // Helper: auto-assign unassigned change_events to NAR1 periods
 async function autoAssignNAR1Changes(env: Env, companyId: string) {
   const unassigned = await env.DB.prepare(

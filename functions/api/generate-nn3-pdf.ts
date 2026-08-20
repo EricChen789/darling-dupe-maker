@@ -1075,7 +1075,7 @@ export async function onRequest(context: { request: Request; env: Env }): Promis
       return jsonResp({ error: "authorizedReps must be an array" }, 400);
     if (data.returnDate && !isValidIsoDate(data.returnDate))
       return jsonResp({ error: "returnDate must be YYYY-MM-DD" }, 400);
-    if (!data.returnDate && data.registrationDate && !isValidIsoDate(data.registrationDate))
+    if (data.registrationDate && !isValidIsoDate(data.registrationDate))
       return jsonResp({ error: "registrationDate must be YYYY-MM-DD" }, 400);
     if (!data.returnDate && !data.registrationDate)
       return jsonResp({ error: "returnDate or registrationDate required" }, 400);

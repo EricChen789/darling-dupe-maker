@@ -363,9 +363,9 @@ export async function onRequest(context: { request: Request; env: Env }) {
     vars["{{CONSIDERATION}}"] = consideration > 0 ? fmtMoney(consideration, tx.currency) : "";
 
     // Dates (transaction date → signature/dating lines)
-    // 買賣票據日期不預填：留空由用家自行填寫（2026-08-20 需求「日期也不要先，等他们自己写」）
+    // 買賣票據／股票證書日期不預填：留空由用家自行填寫（2026-08-20 需求「日期也不要先，等他们自己写」）
     vars["{{TX_DATE}}"] = docType === "bought_sold_note" ? "" : fmtDateSlash(tx.transaction_date);
-    vars["{{SIGN_DATE}}"] = fmtDateSlash(tx.transaction_date);
+    vars["{{SIGN_DATE}}"] = docType === "share_certificate" ? "" : fmtDateSlash(tx.transaction_date);
 
     // Names
     vars["{{SELLER_NAME}}"] = tx.from_name || "";

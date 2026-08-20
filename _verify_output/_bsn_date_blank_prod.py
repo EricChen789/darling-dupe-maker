@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""生产验证：買賣票據日期不預填（2026-08-20）。
-1. 轮询部署上线：选一条有日期的生产交易生成 BSN，旧版 RTF 含 "Dated 10/06/2026"，新版 Dated 后直接 \par
-2. 断言：BSN 无日期、转让文书无占位符、股票證書 SIGN_DATE 仍填
+"""生产验证：買賣票據／股票證書日期不預填（2026-08-20）。
+1. 轮询部署上线：选一条有日期的生产交易生成证书，旧版 RTF 含 "Association on 10/06/2026"，新版 on 后直接 \par
+2. 断言：BSN 无日期、转让文书无占位符、股票證書 SIGN_DATE 留空（INCORP_DATE 公司成立日仍填）
 纯只读（transactionId 路径），不建不删任何数据。"""
 import sys, io, json, time, base64, re
 from pathlib import Path
@@ -53,22 +53,22 @@ elif re.match(r'^\d{2}/\d{2}/\d{4}$', TX_DATE):
     exp_ddmm = TX_DATE
 print('  expected DD/MM/YYYY:', exp_ddmm)
 
-# ── 1. 轮询部署：BSN 的 "Dated" 后不再有日期 ──
+# ── 1. 轮询部署：证书 "Association on" 后不再有日期（本次改动的行为信号） ──
 print('polling deploy (generate-share-transfer-rtf)...')
 live = False
 bsn = None
 for attempt in range(1, 49):
     try:
+        cert_probe = gen('share_certificate')
         b = gen('bought_sold_note')
-        if b is None:
+        if cert_probe is None or b is None:
             print('  attempt %d: endpoint error' % attempt)
         else:
-            c = compact(b)
-            old_marker = ('Dated' + (exp_ddmm or '')).replace('/', '')
-            if 'Dated\\par' in c:
+            c = compact(cert_probe)
+            if 'Associationon\\par' in c:
                 print('  LIVE at attempt %d' % attempt); live = True; bsn = b
                 break
-            print('  attempt %d: still old (Dated %s present)' % (attempt, exp_ddmm))
+            print('  attempt %d: still old (cert date %s present)' % (attempt, exp_ddmm))
     except Exception as e:
         print('  attempt %d: %s' % (attempt, str(e)[:100]))
     time.sleep(10)
@@ -93,13 +93,14 @@ if iot:
     chk('无未填充占位符', '{{' not in iot)
     chk('代价已填', 'HK$' in compact(iot))
 
-# ── 4. share_certificate：SIGN_DATE 仍填 ──
+# ── 4. share_certificate：SIGN_DATE 留空（INCORP_DATE 公司成立日仍填） ──
 print('\n=== 4. share_certificate 断言 ===')
 cert = gen('share_certificate')
 if cert:
     chk('无未填充占位符', '{{' not in cert)
+    chk('SIGN_DATE 留空（on 后直接 \\par）', 'Associationon\\par' in compact(cert))
     if exp_ddmm:
-        chk('SIGN_DATE 仍填 %s' % exp_ddmm, exp_ddmm in cert)
+        chk('无预填日期 %s' % exp_ddmm, exp_ddmm not in cert)
 
 print('\nTOTAL: %d pass / %d fail' % (P, F))
 sys.exit(1 if F else 0)

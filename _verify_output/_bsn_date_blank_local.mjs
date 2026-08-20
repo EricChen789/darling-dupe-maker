@@ -1,5 +1,5 @@
-// 本地跑真实 generate-share-transfer-rtf 端点：買賣票據日期不預填（留空由用家自填），
-// 轉讓文書（模板本来无日期占位符）与股票證書（SIGN_DATE）不受影响。
+// 本地跑真实 generate-share-transfer-rtf 端点：買賣票據／股票證書日期不預填（留空由用家自填），
+// 轉讓文書模板本来无日期占位符（不受影响）。證書 INCORP_DATE（公司成立日）仍填。
 import { build } from 'esbuild';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -133,13 +133,14 @@ console.log('\n=== B. instrument_of_transfer：无日期占位符 ===');
   chk('代价已填 HK$1,000.00', rtf.includes('HK$1,000.00'));
 }
 
-// ── C. 股票證書：SIGN_DATE 仍填 ──
-console.log('\n=== C. share_certificate：日期不受影响 ===');
+// ── C. 股票證書：SIGN_DATE 留空（INCORP_DATE 公司成立日仍填） ──
+console.log('\n=== C. share_certificate：签署日期不預填 ===');
 {
   const rtf = await gen({ companyId: 'c1', documentType: 'share_certificate', transaction: txData });
   chk('全文无未填充占位符 {{', !rtf.includes('{{'));
-  chk('SIGN_DATE 仍填 15/08/2026', rtf.includes('on 15/08/2026'));
-  chk('INCORP_DATE 已填 15/01/2026', rtf.includes('15/01/2026'));
+  chk('SIGN_DATE 留空（on 后直接 \\par）', /on \r?\n\\par/.test(rtf), 'no "on <date>" blank line');
+  chk('没有预填日期 15/08/2026', !rtf.includes('15/08/2026'));
+  chk('INCORP_DATE 仍填 15/01/2026', rtf.includes('15/01/2026'));
   chk('持有人姓名已填', rtf.includes('Wong Siu Ming'));
 }
 

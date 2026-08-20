@@ -124,7 +124,8 @@ function computeReturnDate(incorporationDate?: string): string {
       const dd = String(d.getDate()).padStart(2, '0');
       let targetYear = currentYear;
       const candidate = new Date(targetYear, d.getMonth(), d.getDate());
-      if (candidate < today) targetYear = currentYear + 1;
+      // 年度申報：預設結算日 = 最近一個已過的公司成立週年日（與 NAR1Generator 同步）
+      if (candidate > today) targetYear = currentYear - 1;
       return `${targetYear}-${mm}-${dd}`;
     }
   }

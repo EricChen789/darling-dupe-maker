@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { format } from 'date-fns';
 import { Calendar as CalendarIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -18,7 +18,7 @@ import {
 } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 import { FileText, Download, Loader2, Plus, Trash2 } from 'lucide-react';
-import { Company, Person } from '@/types';
+import { Company, Person, Shareholder } from '@/types';
 import { toast } from '@/hooks/use-toast';
 import { useSaveFormHistory } from '@/hooks/useFormHistory';
 import { downloadBase64Pdf } from '@/lib/downloadPdf';
@@ -27,6 +27,7 @@ import PresenterSelector from '@/components/forms/PresenterSelector';
 import { usePresenterList, type Presenter } from '@/hooks/usePresenters';
 import AddressQuickPick from '@/components/forms/AddressQuickPick';
 import PersonQuickPick from '@/components/forms/PersonQuickPick';
+import { NAR1YearChangesPanel } from './NAR1YearChangesPanel';
 
 // ── Types ──
 
@@ -181,7 +182,9 @@ const computeReturnDate = (incorporationDate?: string): string => {
       const dd = String(d.getDate()).padStart(2, '0');
       let targetYear = currentYear;
       const candidate = new Date(targetYear, d.getMonth(), d.getDate());
-      if (candidate < today) targetYear = currentYear + 1;
+      // 年度申報：預設結算日 = 最近一個已過的公司成立週年日
+      // （例：6/1 成立的公司今天應生成 2026-06-01 結算的申報，而非下一個週年日）
+      if (candidate > today) targetYear = currentYear - 1;
       return `${targetYear}-${mm}-${dd}`;
     }
   }
@@ -389,17 +392,55 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
     sched1: Math.max(0, Math.ceil(shareholders.length / 2)), // P.8 填附表一总页数（与 generate-nar1-pdf.ts 一致）
   }), [natSecs.length, corpSecs.length, natDirs.length, corpDirs.length, shareholders.length]);
 
+  // ── 年度快選：公司成立週年日往回 5 個（未來的週年日無意義——申報不可能以未來為結算日）──
+  const yearChips = useMemo(() => {
+    const inc = company?.incorporationDate;
+    if (!inc) return [] as string[];
+    const iso = inc.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    const dmy = inc.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+    const yy = iso ? iso[1] : dmy ? dmy[3] : null;
+    const mm = iso ? iso[2] : dmy ? dmy[2] : null;
+    const dd = iso ? iso[3] : dmy ? dmy[1] : null;
+    if (!yy || !mm || !dd) return [] as string[];
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const chips: string[] = [];
+    for (let y = today.getFullYear(); chips.length < 5 && y >= Number(yy); y--) {
+      const candidate = new Date(y, Number(mm) - 1, Number(dd));
+      if (!isNaN(candidate.getTime()) && candidate <= today) {
+        chips.push(`${y}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`);
+      }
+    }
+    return chips;
+  }, [company?.incorporationDate]);
+
   // ── 頂部勾選：自動填入公司所有人員（董事／秘書／股東），默認勾選 ──
   const [autoFillPeople, setAutoFillPeople] = useState(true);
 
-  // ── 自動填入公司所有人員：董事／秘書／股東 + 簽署人自動 ──
-  const applyPeopleAutoFill = () => {
+  // ── NAR1 快照（按結算日期還原 as-of 人員／持股 + 本年度變動清單）──
+  const [snapshotPeriod, setSnapshotPeriod] = useState<{ start: string; end: string } | null>(null);
+  const [snapshotChanges, setSnapshotChanges] = useState<any[]>([]);
+  const [snapshotLoading, setSnapshotLoading] = useState(false);
+  const [snapshotFailed, setSnapshotFailed] = useState(false);
+  // 歷史載入守護：handleLoadHistory 之後不讓快照 refetch 覆蓋已載入的資料
+  const suppressSnapshotRef = useRef(false);
+
+  // ── 自動填入來源：公司當前值 或 /api/nar1-snapshot 的 as-of 快照（同形）──
+  interface PeopleSource {
+    secretaries: Person[];
+    directors: Person[];
+    shareholders: Shareholder[];
+  }
+
+  // ── 自動填入人員：董事／秘書／股東 + 簽署人自動 ──
+  // 簽署人仍用 resolveEffectiveSigner(company)：簽署人是「申報時」在任者，不是截止日。
+  const applyPeopleFromSource = (src: PeopleSource) => {
     if (!company) return;
 
     // Load secretaries
     const natSecArr: NatSecEntry[] = [];
     const corpSecArr: CorpSecEntry[] = [];
-    for (const s of company.secretaries) {
+    for (const s of src.secretaries) {
       if (s.identity === 'corporate') {
         corpSecArr.push({
           id: uid(),
@@ -431,7 +472,7 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
     // Load directors
     const natDirArr: NatDirEntry[] = [];
     const corpDirArr: CorpDirEntry[] = [];
-    for (const d of company.directors) {
+    for (const d of src.directors) {
       if (d.identity === 'corporate') {
         corpDirArr.push({
           id: uid(), isAlternate: false, alternateTo: '',
@@ -459,7 +500,7 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
     setCorpDirs(corpDirArr);
 
     // Load shareholders (auto-fill from existing share capital data)
-    const shArr: ShareholderEntry[] = company.shareholders.map(sh => ({
+    const shArr: ShareholderEntry[] = src.shareholders.map(sh => ({
       id: uid(),
       nameChinese: sh.nameChinese || sh.name || '', nameEnglish: sh.nameEnglish || '',
       identity: sh.identity || 'natural',
@@ -473,6 +514,16 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
 
     // Signer — auto-pick: explicit signerRoleId → first secretary → first director
     setSignerRole(resolveEffectiveSigner(company).role);
+  };
+
+  // ── fallback：公司當前值整批填入（快照端點不可用時）──
+  const applyPeopleAutoFill = () => {
+    if (!company) return;
+    applyPeopleFromSource({
+      secretaries: company.secretaries,
+      directors: company.directors,
+      shareholders: company.shareholders,
+    });
   };
 
   // ── 勾選開關：ON=自動填人；OFF=清空人員列表（手動填寫）──
@@ -536,6 +587,57 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
 
   }, [company, open]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── 快照自動化：按結算日期取 as-of 人員／持股 + 本年度變動 ──
+  // 失敗時 fallback 回整批自動填入（公司當前值）並提示。
+  useEffect(() => {
+    if (!open || !company || !autoFillPeople || suppressSnapshotRef.current) return;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(returnDate)) return;
+    let cancelled = false;
+    setSnapshotLoading(true);
+    const token = localStorage.getItem('secretary_jwt') || '';
+    fetch('/api/nar1-snapshot', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ companyId: company.id, returnDate }),
+    })
+      .then(async (resp) => {
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        return resp.json();
+      })
+      .then((snap) => {
+        if (cancelled || suppressSnapshotRef.current) return;
+        // 快照的 reserveDirectors 併入 directors（映射體用 isReserve 標記候補董事）
+        applyPeopleFromSource({
+          secretaries: snap.officers?.secretaries || [],
+          directors: [
+            ...(snap.officers?.directors || []),
+            ...(snap.officers?.reserveDirectors || []).map((r: Person) => ({ ...r, isReserve: true })),
+          ],
+          shareholders: snap.shareholders || [],
+        });
+        setSnapshotPeriod(snap.period || null);
+        setSnapshotChanges(snap.changes || []);
+        setSnapshotFailed(false);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.warn('NAR1 snapshot failed, falling back to bulk autofill:', err);
+        applyPeopleAutoFill();
+        setSnapshotPeriod(null);
+        setSnapshotChanges([]);
+        setSnapshotFailed(true);
+        toast({
+          title: '自動化快照不可用',
+          description: '已改用公司當前資料整批填入。',
+        });
+      })
+      .finally(() => {
+        if (!cancelled) setSnapshotLoading(false);
+      });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, company?.id, autoFillPeople, returnDate]);
+
   // Auto-fill preferred presenter once the presenters list loads (won't clobber user edits)
   useEffect(() => {
     if (!open || !company?.preferredPresenterId) return;
@@ -553,6 +655,8 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
 
   // ── Load history ──
   const handleLoadHistory = (data: any) => {
+    // 載入歷史表單後不讓快照 effect refetch 覆蓋（點年度 chips 時才解除）
+    suppressSnapshotRef.current = true;
     const fd = data.formData || data;
     if (fd.returnDate) setReturnDate(fd.returnDate);
     if (fd.companyType) setCompanyType(fd.companyType);
@@ -702,6 +806,7 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
           : (natSecs[0] ? `${natSecs[0].surname} ${natSecs[0].otherNames}`.trim() || natSecs[0].nameChinese : corpSecs[0]?.nameEnglish || presenterNameEn));
 
       const payload = {
+        company_id: company.id, // 觸發後端 autoAssignNAR1ChangesForCloud：變動事件歸入 nar1_filings 期間
         name: company.name,
         chineseName: company.chineseName || '',
         brNumber: company.brNumber,
@@ -817,6 +922,16 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
           <span className="text-xs text-muted-foreground">Auto-fill all officers &amp; shareholders — 取消勾選可自行手動填寫</span>
         </label>
 
+        {/* ═══ 本年度變動面板（快照端點載入，只讀）═══ */}
+        {autoFillPeople && (
+          <NAR1YearChangesPanel
+            loading={snapshotLoading}
+            failed={snapshotFailed}
+            period={snapshotPeriod}
+            changes={snapshotChanges}
+          />
+        )}
+
         <div className="space-y-6 py-4">
 
           {/* ═══ Form History ═══ */}
@@ -874,6 +989,23 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
                   if (day && month && year) setReturnDate(`${year}-${month}-${day}`);
                 }} />
             </div>
+            {yearChips.length > 0 && (
+              <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                <span className="text-xs text-muted-foreground">年度快選：</span>
+                {yearChips.map(d => (
+                  <button key={d} type="button"
+                    className={cn('px-2 py-0.5 rounded text-xs border transition-colors',
+                      returnDate === d ? 'bg-blue-600 text-white border-blue-600' : 'bg-background border-border hover:bg-accent')}
+                    onClick={() => {
+                      // 明確切年度 = 重新按該年 as-of 填入
+                      suppressSnapshotRef.current = false;
+                      setReturnDate(d);
+                    }}>
+                    {d}
+                  </button>
+                ))}
+              </div>
+            )}
             <Separator className="my-3" />
             <h4 className="text-sm font-medium mb-2">在香港的註冊辦事處地址 Registered Office Address in HK</h4>
             <AddressQuickPick companyId={company.id} includeAllCompanies

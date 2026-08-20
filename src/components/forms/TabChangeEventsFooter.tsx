@@ -61,14 +61,14 @@ const STATEFUL_EVENT_TYPES = new Set<string>([
 ]);
 
 // ── YYYYMMDD → DD/MM/YYYY（顯示用）──
-function dayLabelOf(dayKey: string): string {
+export function dayLabelOf(dayKey: string): string {
   if (!/^\d{8}$/.test(dayKey)) return '日期不詳';
   return `${dayKey.slice(6, 8)}/${dayKey.slice(4, 6)}/${dayKey.slice(0, 4)}`;
 }
 
 // ── 按日期分組（輸入已按 change_date 倒序）──
-interface DayGroup { dayKey: string; dayLabel: string; events: ChangeEvent[]; }
-function groupByDay(events: ChangeEvent[]): DayGroup[] {
+export interface DayGroup { dayKey: string; dayLabel: string; events: ChangeEvent[]; }
+export function groupByDay(events: ChangeEvent[]): DayGroup[] {
   const map = new Map<string, ChangeEvent[]>();
   for (const ev of events) {
     const k = dayKeyOf(ev.change_date);

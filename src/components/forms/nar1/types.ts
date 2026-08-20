@@ -90,7 +90,7 @@ export interface NAR1Shareholder {
 export function createEmptyFormData(incorporationDate?: string): NAR1FormData {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  // 結算日期 = 成立日期的月/日 + 今年；若今年已過則自動變為下一年。若沒成立日期則用今天
+  // 結算日期 = 最近一個已過的公司成立週年日；若沒成立日期則用今天
   let returnDay = String(today.getDate()).padStart(2, '0');
   let returnMonth = String(today.getMonth() + 1).padStart(2, '0');
   let returnYear = today.getFullYear();
@@ -109,9 +109,9 @@ export function createEmptyFormData(incorporationDate?: string): NAR1FormData {
       // 今年年份 + 成立月日
       returnYear = today.getFullYear();
       const candidate = new Date(returnYear, d.getMonth(), d.getDate());
-      // 若今年的周年日已過，自動變成下一年
-      if (candidate < today) {
-        returnYear = today.getFullYear() + 1;
+      // 年度申報：預設結算日 = 最近一個已過的公司成立週年日（與 NAR1Generator 同步）
+      if (candidate > today) {
+        returnYear = today.getFullYear() - 1;
       }
     }
   }

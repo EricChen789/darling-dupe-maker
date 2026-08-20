@@ -357,17 +357,25 @@ export async function onRequest(context: { request: Request; env: Env }) {
     // 姓名 → 股東編號（轉讓行要記「受讓人」的號）
     const seqByName = buildSeqByName(roles, (id) => personMap.get(id));
 
-    // ── Distinctive Nos 分配（用户 2026-08-20 规则）──
-    // From 从 0 起；每笔「获得」（Subscription/Allotment）占区间 [counter, counter+股数]，
-    // 下一笔 From = 上一笔 To + 1（用户原话「0-1000 然后 1001-2000…不是到1999」）。
-    // 转让：编号跟股份走 —— FIFO 从转出方获得段队列划出 [segFrom, segFrom+n]，
-    // 受让人 Transfer In 行用同一段；段剩余起点 = segFrom+n+1。
-    interface Seg { from: number; to: number; }
+    // ── Distinctive Nos 分配（用户 2026-08-20 规则，二次修正）──
+    // 每笔「获得」（Subscription/Allotment）：**首笔 [0, 股数]**（含 0 号，用户坚持 0-1000），
+    // 之后 From = 上一笔 To + 1、To = From + 股数 − 1（闭区间）
+    // （用户例：0-1000、1001-2000、2001-4000；dawda：Shea [0,1000]、Zhao [1001,3000]、PEAK [3001,4800]）
+    // 转让：编号跟股份走 —— 从转出方持有区间**末端**割让 n 股 [t−n+1, t]，剩余末端变 t−n；
+    // 转出行 From2/To2 显示末端变迁（用户例：Shea 转 100 股 → From2=1000、To2=900）；
+    // 受让人 Transfer In 行 = 割让区间 [t−n+1, t]。
+    interface Seg { from: number; to: number; shares: number; }
     const segsByKey = new Map<string, Seg[]>();
-    let globalNext = 0;
+    let globalCursor = 0;
     const distOf = (shares: number): Seg => {
-      const s = { from: globalNext, to: globalNext + shares };
-      globalNext = s.to + 1;
+      if (globalCursor === 0) {
+        // 首笔：0 ~ 股数（含 0 号在内，号数比股数多 1）
+        const s = { from: 0, to: shares, shares };
+        globalCursor = shares + 1;
+        return s;
+      }
+      const s = { from: globalCursor, to: globalCursor + shares - 1, shares };
+      globalCursor += shares;
       return s;
     };
     const pushSeg = (key: string, s: Seg) => {
@@ -377,6 +385,8 @@ export async function onRequest(context: { request: Request; env: Env }) {
     const subSegByKey = new Map<string, Seg>();
     const allotSegByTx = new Map<any, Seg>();
     const xferSegByTx = new Map<any, Seg>();
+    // 转出行末端变迁（before = 割让前持有末端，after = 割让后持有末端）
+    const xferEndsByTx = new Map<any, { before: number; after: number }>();
     // 轉出方單價表（姓名鍵 → 該股東 issue_price）：轉讓價按轉出方持有單價算
     // （用户例：2 塊錢的股票 1000 股，轉 100 股 = 100×2）
     const fromPriceByKey = new Map<string, number>();
@@ -406,7 +416,7 @@ export async function onRequest(context: { request: Request; env: Env }) {
     });
 
     // Phase B：Sub 事件與交易合併成單一時間線（同日 Sub 在前），
-    // Allotment 開全局新段；轉讓 FIFO 從轉出方段隊列劃出（可跨段，合併顯示為一個區間）
+    // Allotment 開全局新段；轉讓從轉出方段隊列**隊尾**割讓（可跨段）
     let si = 0, ti = 0;
     const txKeys = transactions.map((t: any) => dateSortKey(t?.transaction_date));
     while (si < subEvs.length || ti < transactions.length) {
@@ -415,9 +425,9 @@ export async function onRequest(context: { request: Request; env: Env }) {
       const tk = ti < transactions.length ? (txKeys[ti] || '99999999') : null;
       if (sub && (tk === null || sub.k <= tk)) {
         const seg = distOf(sub.shares0);
-        // 🔴 行級快照存副本：seg 對象推入隊列後會被 FIFO 劃出 mutate（seg.from 前移），
-        // 共享引用會讓已填的 Subscription 行顯示「劃出後殘段」
-        subSegByKey.set(sub.key, { from: seg.from, to: seg.to });
+        // 🔴 行級快照存副本：seg 對象推入隊列後會被轉讓割讓 mutate（to 前移），
+        // 共享引用會讓已填的 Subscription 行顯示「割讓後殘段」
+        subSegByKey.set(sub.key, { from: seg.from, to: seg.to, shares: seg.shares });
         pushSeg(sub.key, seg);
         si++;
         continue;
@@ -429,32 +439,38 @@ export async function onRequest(context: { request: Request; env: Env }) {
         const toKey = rget(tx, 'to_name').trim().toUpperCase();
         if (isAllot) {
           const seg = distOf(n);
-          allotSegByTx.set(tx, { from: seg.from, to: seg.to });
+          allotSegByTx.set(tx, { from: seg.from, to: seg.to, shares: seg.shares });
           pushSeg(toKey, seg);
         } else {
           const fromKey = rget(tx, 'from_name').trim().toUpperCase();
           const q = segsByKey.get(fromKey);
           if (q && q.length > 0) {   // 段隊列為空（數據缺失）→ 該行編號留空
+            // 從隊尾逐段割讓（unshift 保證 carved[0] 是最小編號段）
             let remain = n;
-            const parts: Seg[] = [];
+            const carved: Seg[] = [];
             while (remain > 0 && q.length > 0) {
-              const seg = q[0];
-              const avail = seg.to - seg.from;    // 段內名義可用股數
-              if (avail > remain) {
-                parts.push({ from: seg.from, to: seg.from + remain });
-                seg.from = seg.from + remain + 1;
+              const seg = q[q.length - 1];
+              if (seg.shares > remain) {
+                carved.unshift({ from: seg.to - remain + 1, to: seg.to, shares: remain });
+                seg.to -= remain;
+                seg.shares -= remain;
                 remain = 0;
               } else {
-                parts.push({ from: seg.from, to: seg.to });
-                remain -= avail;
-                q.shift();
+                carved.unshift({ from: seg.from, to: seg.to, shares: seg.shares });
+                remain -= seg.shares;
+                q.pop();
               }
             }
-            if (remain === 0 && parts.length > 0) {
-              const xs = { from: parts[0].from, to: parts[parts.length - 1].to };
+            if (remain === 0 && carved.length > 0) {
+              const xs = { from: carved[0].from, to: carved[carved.length - 1].to, shares: n };
               xferSegByTx.set(tx, xs);
+              // 轉出行末端變遷：割讓前 = 原隊尾段 to；割讓後 = 剩餘隊尾段 to（無剩 → 0）
+              xferEndsByTx.set(tx, {
+                before: carved[carved.length - 1].to,
+                after: q.length > 0 ? q[q.length - 1].to : 0,
+              });
               // 隊列裡推副本：受讓人日後再轉出時 mutate 的是隊列對象，不動行快照
-              pushSeg(toKey, { from: xs.from, to: xs.to });
+              pushSeg(toKey, { from: xs.from, to: xs.to, shares: xs.shares });
             }
           }
         }
@@ -563,13 +579,14 @@ export async function onRequest(context: { request: Request; env: Env }) {
           // 轉讓半邊記的是**受讓人**的證書號 —— 這筆轉讓開出的新證書是給受讓人的
           // （用戶原話：轉 100 股出去那行編號應該是 4，因為第四個股東因這筆轉讓出現）
           const toSeq = seqByName.get(rget(tx, 'to_name').trim().toUpperCase());
-          const xs = xferSegByTx.get(tx);
+          // From2/To2 = 持有末端變遷（用户 2026-08-20 二修：Shea 轉 100 股 → 1000 / 900）
+          const ends = xferEndsByTx.get(tx);
           rows.push({
             side: 'transferred', date, cert: toSeq ? String(toSeq) : certNo,
             shares: String(txShares),
             money: xferMoney(tx, txShares), deed,
-            from: xs ? String(xs.from) : '',
-            to: xs ? String(xs.to) : '',
+            from: ends ? String(ends.before) : '',
+            to: ends ? String(ends.after) : '',
             total: balance, remarks: 'Transfer Out',
           });
         } else {

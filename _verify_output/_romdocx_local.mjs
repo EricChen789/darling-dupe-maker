@@ -171,27 +171,27 @@ chk('Zhao 编号=2', !!zhao && zhao[1] === '2', 'got=' + (zhao && zhao[1]));
 chk('PEAK 编号=3', !!peak && peak[1] === '3', 'got=' + (peak && peak[1]));
 chk('全表再无 "-" 编号', !nonEmpty.some(r => r[1] === '-' || r[7] === '-'));
 
-// ── 新规则断言（2026-08-20）：Distinctive Nos 区间 + 默认全额缴费 + 转让价=转出方单价 ──
-// 预期时间线：Shea Sub(16/06) [0,1000] → Zhao Sub(30/06) [1001,3001] → PEAK Sub(05/07) [3002,4802]
-// → 转让 16/08 Shea→Chan 100：FIFO 划出 [0,100]，Chan In 同段，Shea 剩 [101,1000]
-chk('Shea 认购 From=0 To=1000', !!shea0 && shea0[2] === '0' && shea0[3] === '1000',
+// ── 新规则断言（2026-08-20 二修）：首笔 [0,股数]、之后闭区间；转让从末端割让、转出行=末端变迁 ──
+// 预期时间线：Shea Sub(16/06) [0,1000]（首笔含 0 号）→ Zhao Sub(30/06) [1001,3000] → PEAK Sub(05/07) [3001,4800]
+// → 转让 16/08 Shea→Chan 100：末端割让 [901,1000]，转出行 From2=1000 To2=900，Chan In 同段
+chk('Shea 认购 From=0 To=1000（首笔）', !!shea0 && shea0[2] === '0' && shea0[3] === '1000',
     'got=' + (shea0 && `${shea0[2]}~${shea0[3]}`));
 chk('Shea 认购 Consid=HKD 2000.00（1000×单价2）', !!shea0 && shea0[5] === 'HKD 2000.00',
     'got=' + (shea0 && shea0[5]));
-chk('Zhao 认购 From=1001 To=3001', !!zhao && zhao[2] === '1001' && zhao[3] === '3001',
+chk('Zhao 认购 From=1001 To=3000（闭区间 2000 股）', !!zhao && zhao[2] === '1001' && zhao[3] === '3000',
     'got=' + (zhao && `${zhao[2]}~${zhao[3]}`));
 chk('Zhao 认购 Consid=HKD 2000.00（2000×单价1）', !!zhao && zhao[5] === 'HKD 2000.00',
     'got=' + (zhao && zhao[5]));
-chk('PEAK 认购 From=3002 To=4802', !!peak && peak[2] === '3002' && peak[3] === '4802',
+chk('PEAK 认购 From=3001 To=4800（闭区间 1800 股）', !!peak && peak[2] === '3001' && peak[3] === '4800',
     'got=' + (peak && `${peak[2]}~${peak[3]}`));
 chk('PEAK 无价默认 HKD 1 全额 = HKD 1800.00', !!peak && peak[5] === 'HKD 1800.00',
     'got=' + (peak && peak[5]));
-chk('转让行 From2=0 To2=100（FIFO 划出）', !!out_ && out_[8] === '0' && out_[9] === '100',
+chk('转让行 From2=1000 To2=900（末端变迁）', !!out_ && out_[8] === '1000' && out_[9] === '900',
     'got=' + (out_ && `${out_[8]}~${out_[9]}`));
 chk('转让行 Consid2=HKD 200.00（转出方单价2×100，忽略 tx 4.50）',
     !!out_ && out_[11] === 'HKD 200.00', 'got=' + (out_ && out_[11]));
-chk('Transfer In From=0 To=100（与转出同段，编号跟股份走）',
-    !!in_ && in_[2] === '0' && in_[3] === '100', 'got=' + (in_ && `${in_[2]}~${in_[3]}`));
+chk('Transfer In From=901 To=1000（割让区间，编号跟股份走）',
+    !!in_ && in_[2] === '901' && in_[3] === '1000', 'got=' + (in_ && `${in_[2]}~${in_[3]}`));
 chk('Transfer In Consid=HKD 200.00（同笔价值）', !!in_ && in_[5] === 'HKD 200.00',
     'got=' + (in_ && in_[5]));
 

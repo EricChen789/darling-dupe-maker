@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useId } from 'react';
+import { useState, useEffect, useCallback, useId, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -31,6 +31,14 @@ export const calcUnpaid = (shares: number, issuePrice: string, paidUp: string) =
   const paid = parseFloat(paidUp) || 0;
   const unpaid = price * shares - paid;
   return unpaid > 0 ? unpaid.toFixed(2) : '0.00';
+};
+
+// 已繳默認全額繳清 = 每股發行價 × 股數（paidUp 為空或 0 時）
+const defaultPaidUp = (shares: number, issuePrice: string, paidUp: string) => {
+  if (parseFloat(paidUp)) return paidUp; // 有實數（部分繳付）→ 保留
+  const price = parseFloat(issuePrice) || 0;
+  const total = price * (shares || 0);
+  return total > 0 ? total.toFixed(2) : '';
 };
 
 const computeShMoney = <T extends { shares: number; issuePrice: string; paidUp: string; unpaid: string }>(f: T) => ({
@@ -85,11 +93,20 @@ export function ShareholderEditForm({
   defaultServiceAddress,
   saveLabel,
 }: ShareholderEditFormProps) {
-  const [form, setForm] = useState<ShFormType>(() => ({
-    ...emptyShForm(),
-    ...initialData,
-    serviceAddress: initialData?.serviceAddress || defaultServiceAddress || '',
-  }));
+  // 已繳默認全額（= 每股發行價 × 股數）；用戶手動改過 paidUp 後不再自動跟隨
+  const paidUpTouchedRef = useRef(false);
+
+  const buildInitial = (init: Partial<ShFormType> | undefined) => {
+    const merged = {
+      ...emptyShForm(),
+      ...init,
+      serviceAddress: init?.serviceAddress || defaultServiceAddress || '',
+      paidUp: defaultPaidUp(init?.shares || 0, init?.issuePrice || '', init?.paidUp || ''),
+    };
+    return { ...merged, unpaid: calcUnpaid(merged.shares, merged.issuePrice, merged.paidUp) };
+  };
+
+  const [form, setForm] = useState<ShFormType>(() => buildInitial(initialData));
 
   // 股份類別 / 貨幣下拉建議（默認 ∪ 歷史用過的值，仍可自由輸入）
   const shareTypeListId = useId();
@@ -100,11 +117,8 @@ export function ShareholderEditForm({
   // Sync when initialData changes (e.g. selecting a different shareholder)
   useEffect(() => {
     if (initialData) {
-      setForm(prev => ({
-        ...emptyShForm(),
-        ...initialData,
-        serviceAddress: initialData.serviceAddress || defaultServiceAddress || prev.serviceAddress,
-      }));
+      paidUpTouchedRef.current = false;
+      setForm(buildInitial(initialData));
     }
   }, [initialData?.nameEnglish, initialData?.nameChinese, initialData?.shares, initialData?.identity,
       initialData?.idNumber, initialData?.address, initialData?.email, initialData?.shareType,
@@ -281,7 +295,11 @@ export function ShareholderEditForm({
               <Input type="number" value={form.shares}
                 onChange={e => {
                   const s = parseInt(e.target.value) || 0;
-                  setForm({ ...form, shares: s, unpaid: calcUnpaid(s, form.issuePrice, form.paidUp) });
+                  setForm(prev => {
+                    // 未手動改過已繳 → 已繳自動跟隨為全額（股價 × 股數）
+                    const paidUp = paidUpTouchedRef.current ? prev.paidUp : defaultPaidUp(s, prev.issuePrice, '');
+                    return { ...prev, shares: s, paidUp, unpaid: calcUnpaid(s, prev.issuePrice, paidUp) };
+                  });
                 }}
                 onBlur={handleFinancialBlur} />
             </div>
@@ -306,14 +324,21 @@ export function ShareholderEditForm({
             <div className="space-y-1">
               <Label className="text-xs">每股發行價</Label>
               <Input value={form.issuePrice}
-                onChange={e => setForm({ ...form, issuePrice: e.target.value })}
+                onChange={e => setForm(prev => {
+                  // 未手動改過已繳 → 已繳自動跟隨為全額（股價 × 股數）
+                  const paidUp = paidUpTouchedRef.current ? prev.paidUp : defaultPaidUp(prev.shares, e.target.value, '');
+                  return { ...prev, issuePrice: e.target.value, paidUp, unpaid: calcUnpaid(prev.shares, e.target.value, paidUp) };
+                })}
                 onBlur={handleFinancialBlur}
                 placeholder="e.g. 1.00" />
             </div>
             <div className="space-y-1">
               <Label className="text-xs">已繳或視作已繳的總款額</Label>
               <Input value={form.paidUp}
-                onChange={e => setForm({ ...form, paidUp: e.target.value })}
+                onChange={e => {
+                  paidUpTouchedRef.current = true; // 手動改過 → 之後股價/股數不再自動跟隨
+                  setForm(prev => ({ ...prev, paidUp: e.target.value, unpaid: calcUnpaid(prev.shares, prev.issuePrice, e.target.value) }));
+                }}
                 onBlur={handleFinancialBlur}
                 placeholder="Amount paid up" />
             </div>

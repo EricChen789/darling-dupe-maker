@@ -282,11 +282,44 @@ function buildScrControllerRows(docXml: string, controllers: ScrController[]): s
 // REP2_* in Table[5] (page 2) = 2nd+ designated reps
 // Clones REP2 template row for 3rd+ reps.
 
+// ── 无指定代表时整段删除 ──
+// 2026-08-20 用户要求：没有指定代表时不要留空框，把「指定代表」标题段 + 表格一起删掉。
+// 标题段（Designated Representative 指定代表）在表格之前的独立 <w:p>，
+// 模板里「指定代表」四字只出现在两处标题，不落在表格内 → 可安全定位。
+function removeRepSection(docXml: string, marker: string): string {
+  const idx = docXml.indexOf(marker);
+  if (idx < 0) return docXml;
+  const tblStart = docXml.lastIndexOf('<w:tbl>', idx);
+  const tblEnd = docXml.indexOf('</w:tbl>', idx);
+  if (tblStart < 0 || tblEnd < 0) return docXml;
+  const tblEndX = tblEnd + '</w:tbl>'.length;
+  // 标题段：表格前最近的 <w:t>Designated Representative</w:t>
+  // 🔴 用 ASCII 键不用中文键：Node 本地 atob 是 latin-1，docXml 里中文是 mojibake，
+  //    中文搜索键永远匹配不到（生产 Workers atob 是 UTF-8 感知所以看不出差异）
+  const titleIdx = docXml.lastIndexOf('<w:t>Designated Representative</w:t>', tblStart);
+  if (titleIdx >= 0) {
+    const pStart = Math.max(
+      docXml.lastIndexOf('<w:p ', titleIdx),
+      docXml.lastIndexOf('<w:p>', titleIdx));
+    const pEnd = docXml.indexOf('</w:p>', titleIdx);
+    if (pStart >= 0 && pEnd >= 0) {
+      return docXml.substring(0, pStart) + docXml.substring(tblEndX);
+    }
+  }
+  return docXml.substring(0, tblStart) + docXml.substring(tblEndX);
+}
+
 function buildScrRepRows(docXml: string, reps: ScrRep[]): string {
   const rep1Marker = "{{REP1_ENTRY_DATE}}";
   const rep1Idx = docXml.indexOf(rep1Marker);
   const rep2Marker = "{{REP2_ENTRY_DATE}}";
   const rep2Idx = docXml.indexOf(rep2Marker);
+
+  // ── 0. 无任何指定代表 → 删除第1页的整段（标题 + 表格），不留空框 ──
+  // 第2页的指定代表段由主流程处理：≤2 控制人时整页删除；>2 控制人时单独删除该段。
+  if (reps.length === 0) {
+    return removeRepSection(docXml, rep1Marker);
+  }
 
   // ── Helper: fill one template row ──
   function fillRepRow(templateRow: string, rep: ScrRep, prefix: string): string {
@@ -544,6 +577,9 @@ export async function onRequest(context: { request: Request; env: Env }) {
     // 无溢出内容时删除第2页（重要控制人≤2 全部在第1页；指定代表≤1 在第1页）
     if (controllers.length <= 2 && reps.length <= 1) {
       docXml = removeScrPage2(docXml);
+    } else if (reps.length === 0) {
+      // 第2页因 SCR 溢出保留，但没有任何指定代表 → 删第2页的指定代表段（标题 + 表格）
+      docXml = removeRepSection(docXml, "{{REP2_ENTRY_DATE}}");
     }
 
     // LO 转换时表尾空白 spacer 会被挤到第 2 页 → 删除（Word 版面不变）

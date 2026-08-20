@@ -363,6 +363,7 @@ export default function NN3GeneratorForm({ onBack, initialCompanyId }: NN3Genera
   // 歷史載入守護：handleLoadHistory 之後不讓快照 refetch 覆蓋已載入的資料
   const suppressSnapshotRef = useRef(false);
   const signerDateTouchedRef = useRef(false);   // 用戶手改簽署日期後不再跟隨申報日期
+  const signerTouchedRef = useRef(false);       // 用戶手改簽署人（姓名/身份）後不再跟隨首名董事
 
   // ── 續頁計數（只讀展示，後端會重算）──
   const continuationCounts = useMemo(() => ({
@@ -497,13 +498,13 @@ export default function NN3GeneratorForm({ onBack, initialCompanyId }: NN3Genera
     setNatDirs(natDirArr);
     setCorpDirs(corpDirArr);
 
-    // 簽署人自動：第一個自然人董事（用戶已填則不覆蓋）
+    // 簽署人自動：第一個自然人董事（用戶手改後不再跟隨；快照重載會同步重設，避免董事清空後殘留舊簽署人）
     const firstDirName = natDirArr[0]
       ? `${natDirArr[0].surname} ${natDirArr[0].otherNames}`.trim() || natDirArr[0].nameChinese
       : '';
-    if (firstDirName) {
-      setSignerName(prev => prev || firstDirName);
-      setSignerCapacity(prev => prev || 'director');
+    if (!signerTouchedRef.current) {
+      setSignerName(firstDirName);
+      setSignerCapacity(firstDirName ? 'director' : '');
     }
   };
 
@@ -658,8 +659,8 @@ export default function NN3GeneratorForm({ onBack, initialCompanyId }: NN3Genera
     if (fd.accFrom) setAccFrom(fd.accFrom);
     if (fd.accTo) setAccTo(fd.accTo);
     if (fd.notDeliveredReason) setNotDeliveredReason(fd.notDeliveredReason);
-    if (fd.signerName !== undefined) setSignerName(fd.signerName);
-    if (fd.signerCapacity !== undefined) setSignerCapacity(fd.signerCapacity);
+    if (fd.signerName !== undefined) { setSignerName(fd.signerName); signerTouchedRef.current = true; }
+    if (fd.signerCapacity !== undefined) { setSignerCapacity(fd.signerCapacity); signerTouchedRef.current = true; }
     if (fd.signerDate !== undefined) { setSignerDate(fd.signerDate); signerDateTouchedRef.current = true; }
 
     // 提交人（新格式 presenter* 或舊格式 presentor*）
@@ -1421,7 +1422,7 @@ export default function NN3GeneratorForm({ onBack, initialCompanyId }: NN3Genera
 
           <h3 className="font-semibold mb-3">簽署人 Signer（P.8）</h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-3">
-            <div className="max-w-md"><Label>簽署人姓名 Name of Signer</Label><Input className="mt-1" value={signerName} onChange={e => setSignerName(e.target.value)} placeholder="e.g. Chan Tai Man, David" /></div>
+            <div className="max-w-md"><Label>簽署人姓名 Name of Signer</Label><Input className="mt-1" value={signerName} onChange={e => { setSignerName(e.target.value); signerTouchedRef.current = true; }} placeholder="e.g. Chan Tai Man, David" /></div>
             <div className="max-w-xs">
               <DatePickerInput label="簽署日期 Date of Signing"
                 day={signerDate ? signerDate.split('-')[2] : ''}
@@ -1442,7 +1443,7 @@ export default function NN3GeneratorForm({ onBack, initialCompanyId }: NN3Genera
             ]).map(opt => (
               <label key={opt.key} className="flex items-center gap-1.5 cursor-pointer">
                 <input type="radio" name="nn3-signer-capacity" checked={signerCapacity === opt.key}
-                  onChange={() => setSignerCapacity(opt.key)} className="h-3.5 w-3.5" />
+                  onChange={() => { setSignerCapacity(opt.key); signerTouchedRef.current = true; }} className="h-3.5 w-3.5" />
                 <span className="text-xs">{opt.label}</span>
               </label>
             ))}

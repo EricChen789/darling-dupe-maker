@@ -362,6 +362,7 @@ export default function NN3GeneratorForm({ onBack, initialCompanyId }: NN3Genera
   const [snapshotFailed, setSnapshotFailed] = useState(false);
   // 歷史載入守護：handleLoadHistory 之後不讓快照 refetch 覆蓋已載入的資料
   const suppressSnapshotRef = useRef(false);
+  const signerDateTouchedRef = useRef(false);   // 用戶手改簽署日期後不再跟隨申報日期
 
   // ── 續頁計數（只讀展示，後端會重算）──
   const continuationCounts = useMemo(() => ({
@@ -567,15 +568,14 @@ export default function NN3GeneratorForm({ onBack, initialCompanyId }: NN3Genera
       })
       .catch((err) => {
         if (cancelled) return;
-        console.warn('NN3 snapshot failed, falling back to bulk autofill:', err);
-        const company = companies.find(c => c.id === selectedCompanyId);
-        if (company) applyPeopleFromCompany(company);
+        console.warn('NN3 snapshot failed, keeping current entries:', err);
+        // 不覆蓋已填入的人員：handleCompanySelect 已填公司當前值；快照重載失敗保留現有數據
         setSnapshotPeriod(null);
         setSnapshotChanges([]);
         setSnapshotFailed(true);
         toast({
           title: '自動化快照不可用',
-          description: '已改用公司當前資料整批填入。',
+          description: '已保留目前填入的人員資料。',
         });
       })
       .finally(() => {
@@ -595,9 +595,9 @@ export default function NN3GeneratorForm({ onBack, initialCompanyId }: NN3Genera
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [regDay, regMonth, regYear]);
 
-  // ── 簽署日期默認 = 申報日期（用戶可改）──
+  // ── 簽署日期默認 = 申報日期（用戶手改後不再跟隨）──
   useEffect(() => {
-    if (!signerDate && returnDate) setSignerDate(returnDate);
+    if (!signerDateTouchedRef.current && returnDate) setSignerDate(returnDate);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [returnDate]);
 
@@ -660,7 +660,7 @@ export default function NN3GeneratorForm({ onBack, initialCompanyId }: NN3Genera
     if (fd.notDeliveredReason) setNotDeliveredReason(fd.notDeliveredReason);
     if (fd.signerName !== undefined) setSignerName(fd.signerName);
     if (fd.signerCapacity !== undefined) setSignerCapacity(fd.signerCapacity);
-    if (fd.signerDate !== undefined) setSignerDate(fd.signerDate);
+    if (fd.signerDate !== undefined) { setSignerDate(fd.signerDate); signerDateTouchedRef.current = true; }
 
     // 提交人（新格式 presenter* 或舊格式 presentor*）
     if (fd.presenterName !== undefined) {
@@ -1428,8 +1428,8 @@ export default function NN3GeneratorForm({ onBack, initialCompanyId }: NN3Genera
                 month={signerDate ? signerDate.split('-')[1] : ''}
                 year={signerDate ? signerDate.split('-')[0] : ''}
                 onChange={({ day, month, year }) => {
-                  if (day && month && year) setSignerDate(`${year}-${month}-${day}`);
-                  else setSignerDate('');
+                  if (day && month && year) { setSignerDate(`${year}-${month}-${day}`); signerDateTouchedRef.current = true; }
+                  else { setSignerDate(''); signerDateTouchedRef.current = false; }
                 }} />
             </div>
           </div>

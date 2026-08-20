@@ -146,6 +146,9 @@ scenarios = [
 
 print('\n=== 1. 10 场景生成 ===')
 for name, payload, pages in scenarios:
+    if RERUN and (OUT / f'{name}.pdf').exists():
+        print(f'  SKIP {name}: 已有 PDF，跳过 API')
+        continue
     st, j = gen(name, payload)
     chk(f'{name}: status 200', st == 200, f'got {st} {json.dumps(j)[:120]}')
     chk(f'{name}: filename NN3_F0012345.pdf', st == 200 and j.get('filename') == 'NN3_F0012345.pdf', str(j.get('filename')))
@@ -219,8 +222,8 @@ doc = opendoc('s05_corpdir2_sheetD')
 if doc:
     p8, last = doc[7], doc[8]   # 9 页 = P.1-8 + 1 张续页D（2 法人董事 = P.7 留 1 + ceil(1/2)=1 页）
     chk('s05 P.8 續頁D計數=1', wval(p8, 'fill_11_P.8') == '1', wval(p8, 'fill_11_P.8'))
-    chk('s05 P.7 法人董事#1', wval(doc[5], 'fill_3_P.7') == '環球控股有限公司' and wval(doc[5], 'cb_1_P.7') == 'On', wval(doc[5], 'fill_3_P.7'))
-    chk('s05 續頁D 槽1', wval(last, 'fill_5_P') == '華投有限公司' and wval(last, 'fill_6_P') == 'SINO INVEST LIMITED' and wval(last, 'fill_14_P') == 'BR7654321')
+    chk('s05 P.7 法人董事#1', wval(doc[6], 'fill_3_P.7') == '環球控股有限公司' and wval(doc[6], 'cb_1_P.7') == 'On', wval(doc[6], 'fill_3_P.7'))
+    chk('s05 續頁D 槽1', wval(last, 'fill_6_P') == '華投有限公司' and wval(last, 'fill_7_P') == 'SINO INVEST LIMITED' and wval(last, 'fill_14_P') == 'BR7654321')
     doc.close()
 
 doc = opendoc('s06_alt_dir')
@@ -250,20 +253,23 @@ if doc:
 
 # ═══ 4. 错误路径 ═══
 print('\n=== 4. 错误路径 ===')
-for ename, ebody, eauth, eexp in [
-    ('e1', {**BASE_P, 'returnDate': None, 'registrationDate': None}, True, 400),
-    ('e2', {**BASE_P, 'returnDate': '01-06-2026'}, True, 400),
-    ('e3', {**BASE_P, 'registrationDate': '2021/06/01'}, True, 400),
-    ('e4', {**BASE_P, 'directors': 'Chan'}, True, 400),
-    ('e5', {**BASE_P, 'accounts': {'mode': 'notDelivered', 'notDeliveredReason': 9}}, True, 400),
-    ('e6', {**BASE_P}, False, 401),
-]:
-    st, j = gen(ename, ebody, auth=eauth)
-    if st == 503:
-        skip(f'{ename}: 重试后仍 503（CF flake，无法判定）')
-    else:
-        chk(f'{ename} → {eexp}', st == eexp, f'got {st}')
-    time.sleep(8)
+if RERUN:
+    print('  RERUN_MISSING: 跳过错误路径（本轮已验证）')
+else:
+    for ename, ebody, eauth, eexp in [
+        ('e1', {**BASE_P, 'returnDate': None, 'registrationDate': None}, True, 400),
+        ('e2', {**BASE_P, 'returnDate': '01-06-2026'}, True, 400),
+        ('e3', {**BASE_P, 'registrationDate': '2021/06/01'}, True, 400),
+        ('e4', {**BASE_P, 'directors': 'Chan'}, True, 400),
+        ('e5', {**BASE_P, 'accounts': {'mode': 'notDelivered', 'notDeliveredReason': 9}}, True, 400),
+        ('e6', {**BASE_P}, False, 401),
+    ]:
+        st, j = gen(ename, ebody, auth=eauth)
+        if st == 503:
+            skip(f'{ename}: 重试后仍 503（CF flake，无法判定）')
+        else:
+            chk(f'{ename} → {eexp}', st == eexp, f'got {st}')
+        time.sleep(8)
 
 # ═══ 5. 渲染关键页供千问 ═══
 print('\n=== 5. 渲染 ===')

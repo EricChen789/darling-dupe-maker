@@ -100,6 +100,23 @@ opened = evaljs("""(() => {
 chk('打开公司详情对话框', opened == 'clicked', opened)
 wait_js(f"{D} && {D}.innerText.includes('文件生成')", '对话框出现文件生成 tab')
 
+# 表单无公司 BR 输入框（brNumber 由公司选择带入 payload）→ 趁还在「基本資料」tab（切 tab 后内容被卸载）从对话框字段直接读
+_br_txt = evaljs("""(() => {
+  const d = %s;
+  const leaf = [...d.querySelectorAll('*')].find(e => e.children.length === 0 && e.textContent.trim() === '商業登記號碼');
+  return leaf ? leaf.parentElement.textContent.trim() : '';
+})()""" % D)
+_m = re.search(r'\d{8}', _br_txt or '')
+EXPECT_BR = _m.group(0) if _m else ''
+if not EXPECT_BR:
+    resp = requests.get(DEPLOY + '/api/companies', headers={'Authorization': 'Bearer ' + JWT}, timeout=60)
+    _jl = resp.json() if resp.status_code == 200 else {}
+    _items = _jl.get('companies') if isinstance(_jl, dict) else _jl
+    _pt = [c for c in (_items or []) if (c.get('name') or '').upper().startswith('PAUL TANG')]
+    EXPECT_BR = _pt[0].get('brNumber', '') if _pt else ''
+print('  期望 BR:', EXPECT_BR or '(未读到)')
+chk('对话框读到公司 BR', bool(EXPECT_BR), _br_txt or 'not found')
+
 # ═══ 2. 文件生成 tab → NN3 ═══
 # 对话框数据异步加载会重渲染 tab 按钮（节点失效）→ 循环点击直到列表出现
 try:
@@ -147,14 +164,19 @@ vals = wait_js(f"(() => {{ const d = {D}; return d && [...d.querySelectorAll('in
 chk('公司英文名自动填入 PAUL TANG', bool(vals), str(vals))
 all_vals = input_vals()
 chk('提交人姓名 = 公司名', 'PAUL TANG AND COMPANY LIMITED' in all_vals, str([v for v in all_vals if 'PAUL' in v]))
-# 表单无公司 BR 输入框（brNumber 由公司选择带入 payload）→ 从 API 取期望值，PDF 断言处核对
-resp = requests.get(DEPLOY + '/api/companies', headers={'Authorization': 'Bearer ' + JWT}, timeout=60)
-_jl = resp.json() if resp.status_code == 200 else {}
-_items = _jl.get('companies') if isinstance(_jl, dict) else _jl
-_pt = [c for c in (_items or []) if c.get('name') == 'PAUL TANG AND COMPANY LIMITED']
-EXPECT_BR = _pt[0].get('brNumber', '') if _pt else ''
-print('  期望 BR:', EXPECT_BR or '(未查到)')
-chk('API 查到 PAUL TANG 的 brNumber', bool(EXPECT_BR), f'resp {resp.status_code}')
+# 成立地方是手填字段（公司选择不自动填）→ 模拟用户填 Hong Kong（受控 input 用 native setter + input 事件）
+poi = evaljs("""(() => {
+  const d = %s;
+  const h3 = [...d.querySelectorAll('h3')].find(x => x.textContent.trim().startsWith('4. 成立為法團所在地方'));
+  if (!h3) return 'no h3';
+  const inp = [...h3.parentElement.querySelectorAll('input')].find(i => (i.placeholder || '').includes('英屬維爾京群島'));
+  if (!inp) return 'no input';
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+  setter.call(inp, 'Hong Kong');
+  inp.dispatchEvent(new Event('input', { bubbles: true }));
+  return 'filled';
+})()""" % D)
+chk('填成立地方 Hong Kong', poi == 'filled', poi)
 auto_cb = evaljs("""(() => {
   const d = %s;
   const label = [...d.querySelectorAll('label')].find(l => l.textContent.includes('自動填入公司所有人員'));
@@ -293,15 +315,23 @@ chk('快照 as-of 2026-06-01 → 自然人董事 2 名', snap_ok and dir_card_co
 vals = input_vals()
 chk('含董事 Tang Siu Fan（input）', 'Tang Siu Fan' in vals, str([v for v in vals if 'Tang' in v or 'Chan' in v]))
 chk('含 18/06 才辞的 Chan Ho Yin（as-of 在任）', 'Chan Ho Yin' in vals, str([v for v in vals if 'Chan' in v]))
-# 首名自然人董事姓名（供 PDF 断言用）
-first_dir_name = evaljs("""(() => {
+# 首名自然人董事姓名（供 PDF 断言用）：span 在卡片 header div 内，名字输入在 header 的兄弟 grid → parentElement 到卡片容器
+_first_dir = evaljs("""(() => {
   const d = %s;
   const span = [...d.querySelectorAll('span')].find(s => s.textContent.trim() === '#1 — P.5');
-  if (!span) return '';
-  const card = span.closest('div');
-  const inp = [...card.querySelectorAll('input')].find(i => (i.placeholder || '').includes('英文') || (i.placeholder || '').includes('English'));
-  return inp ? (inp.value || '').trim() : '';
+  if (!span) return {sur: '', other: ''};
+  const card = span.closest('div').parentElement;
+  const gv = (ph) => {
+    const inp = [...card.querySelectorAll('input')].find(i => (i.placeholder || '').trim() === ph);
+    return inp ? (inp.value || '').trim() : '';
+  };
+  return {sur: gv('英文姓氏 Surname'), other: gv('英文名字 Other Names')};
 })()""" % D)
+if isinstance(_first_dir, str):
+    _first_dir = {'sur': _first_dir, 'other': ''}
+first_dir_surname = _first_dir.get('sur', '')
+first_dir_other = _first_dir.get('other', '')
+first_dir_name = (first_dir_surname + ' ' + first_dir_other).strip()
 print('  首名董事姓名（自动签署人）:', first_dir_name or '(未取得)')
 
 # ═══ 6. chip 切年度 2025-06-01 → 快照重载 ═══
@@ -314,15 +344,22 @@ wait_js("""(() => {
   return [...h3.parentElement.querySelectorAll('button')].some(b => b.textContent.includes('2025-06-01'));
 })()""" % D, 'returnDate 切换 2025-06-01', 20)
 chk('returnDate 已切 2025-06-01', True)
-try:
-    wait_js("""(() => {
-      const d = %s;
-      const c = [...d.querySelectorAll('span')].filter(s => /^#\\d+ — (P\\.5|P\\.6|續頁C)/.test(s.textContent.trim())).length;
-      return c >= 2 && d.innerText.includes('本年度變動') && !d.innerText.includes('載入中');
-    })()""" % D, '快照 as-of 2025-06-01 重载', 60)
-    chk('as-of 2025-06-01 仍 2 名董事（Chan 未辞）', dir_card_count() == 2, f'cards={dir_card_count()}')
-except TimeoutError:
-    chk('as-of 2025-06-01 仍 2 名董事（Chan 未辞）', False, '快照重载超时（CF flake?）')
+snap25_ok = False
+for attempt in range(3):
+    try:
+        wait_js("""(() => {
+          const d = %s;
+          const c = [...d.querySelectorAll('span')].filter(s => /^#\\d+ — (P\\.5|P\\.6|續頁C)/.test(s.textContent.trim())).length;
+          return c === 0 && d.innerText.includes('本年度變動') && !d.innerText.includes('載入中');
+        })()""" % D, '快照 as-of 2025-06-01 重载', 50)
+        snap25_ok = True
+        break
+    except TimeoutError:
+        if attempt < 2:
+            print('  2025 快照超时，chip 切 2026 再切回重试…')
+            click_chip('2026-06-01'); time.sleep(3)
+            click_chip('2025-06-01'); time.sleep(3)
+chk('as-of 2025-06-01 董事清空（Chan/Tang 均 2026-04 才上任）', snap25_ok and dir_card_count() == 0, f'cards={dir_card_count()} snap25_ok={snap25_ok}')
 chips_after = evaljs("""(() => {
   const d = %s;
   const label = [...d.querySelectorAll('span')].find(s => s.textContent.trim() === '年度快選：');
@@ -335,6 +372,33 @@ sel = evaljs("""(() => {
   return b ? b.className : '';
 })()""" % D)
 chk('chip 2025-06-01 高亮', 'bg-blue-600' in (sel or ''), sel or 'no chip')
+
+# ═══ 6b. 切回 2026-06-01 → 快照恢复 2 董事（生成完整 PDF 验证）═══
+r = click_chip('2026-06-01')
+chk('点 chip 切回 2026-06-01', r == 'ok', r)
+wait_js("""(() => {
+  const d = %s;
+  const h3 = [...d.querySelectorAll('h3')].find(x => x.textContent.trim().startsWith('2. 本申報表的日期'));
+  if (!h3) return false;
+  return [...h3.parentElement.querySelectorAll('button')].some(b => b.textContent.includes('2026-06-01'));
+})()""" % D, 'returnDate 切回 2026-06-01', 20)
+chk('returnDate 已切回 2026-06-01', True)
+snap26_ok = False
+for attempt in range(3):
+    try:
+        wait_js("""(() => {
+          const d = %s;
+          const c = [...d.querySelectorAll('span')].filter(s => /^#\\d+ — (P\\.5|P\\.6|續頁C)/.test(s.textContent.trim())).length;
+          return c >= 2 && d.innerText.includes('本年度變動') && !d.innerText.includes('載入中');
+        })()""" % D, '快照切回 2026-06-01 重载', 50)
+        snap26_ok = True
+        break
+    except TimeoutError:
+        if attempt < 2:
+            print('  2026 恢复超时，chip 切 2025 再切回重试…')
+            click_chip('2025-06-01'); time.sleep(3)
+            click_chip('2026-06-01'); time.sleep(3)
+chk('切回 2026-06-01 → 董事恢复 2 名', snap26_ok and dir_card_count() == 2, f'cards={dir_card_count()} snap26_ok={snap26_ok}')
 
 # ═══ 7. 生成 PDF → 捕获响应（503 重試點擊）═══
 def click_generate():
@@ -396,7 +460,7 @@ if pdf_b64:
     import fitz
     doc = fitz.open(str(OUT_PDF))
     print('  页数:', doc.page_count)
-    chk('页数 ≥ 7', doc.page_count >= 7, str(doc.page_count))
+    chk('页数 = 8（2 自然人董事无续页）', doc.page_count == 8, str(doc.page_count))
     notes = [pi + 1 for pi in range(doc.page_count) if '填表須知' in doc[pi].get_text()]
     chk('无填表須知页', not notes, str(notes))
     def wval(page, prefix):
@@ -405,13 +469,19 @@ if pdf_b64:
     p1, p5, p6, p8 = doc[0], doc[4], doc[5], doc[doc.page_count - 1]
     chk('P.1 BR = 公司 brNumber（07281051）', wval(p1, 'fill_1_P.1') == EXPECT_BR, f"{wval(p1, 'fill_1_P.1')} vs {EXPECT_BR}")
     chk('P.1 公司名', 'PAUL TANG AND COMPANY LIMITED' in (wval(p1, 'fill_2_P.1') or ''), wval(p1, 'fill_2_P.1'))
-    chk('P.1 申報日期 = 01/06/2025', (wval(p1, 'fill_3_P.1'), wval(p1, 'fill_4_P.1'), wval(p1, 'fill_5_P.1')) == ('01', '06', '2025'), str((wval(p1, 'fill_3_P.1'), wval(p1, 'fill_4_P.1'), wval(p1, 'fill_5_P.1'))))
+    chk('P.1 申報日期 = 01/06/2026', (wval(p1, 'fill_3_P.1'), wval(p1, 'fill_4_P.1'), wval(p1, 'fill_5_P.1')) == ('01', '06', '2026'), str((wval(p1, 'fill_3_P.1'), wval(p1, 'fill_4_P.1'), wval(p1, 'fill_5_P.1'))))
     chk('P.1 註冊日期 = 01/06/2021', (wval(p1, 'fill_6_P.1'), wval(p1, 'fill_7_P.1'), wval(p1, 'fill_8_P.1')) == ('01', '06', '2021'))
-    chk('P.5 董事#1（姓 Tang）', wval(p5, 'fill_4_P.5') == (first_dir_name.split(' ')[0] if first_dir_name else ''), f"{wval(p5, 'fill_4_P.5')} vs {first_dir_name}")
+    chk('P.1 成立地方 = Hong Kong', wval(p1, 'fill_9_P.1') == 'Hong Kong', wval(p1, 'fill_9_P.1'))
+    # 后端 parseEnglishName 把 nameEnglish 按 HK 惯例拆姓（首词）/名（余下）→ 脚本本地同法拆分
+    _parts = first_dir_name.split(' ') if first_dir_name else []
+    _exp_sur = _parts[0] if _parts else ''
+    _exp_other = ' '.join(_parts[1:]) if len(_parts) > 1 else ''
+    chk(f'P.5 董事#1（姓 {_exp_sur or "?"}）', wval(p5, 'fill_4_P.5') == _exp_sur, f"{wval(p5, 'fill_4_P.5')} vs {_exp_sur}")
+    chk('P.5 董事#1（名）', wval(p5, 'fill_5_P.5') == _exp_other, f"{wval(p5, 'fill_5_P.5')} vs {_exp_other}")
     chk('P.5 董事勾選', wval(p5, 'cb_1_P.5') == 'On' and wval(p5, 'cb_2_P.5') == '')
     chk('P.6 董事#2 存在', bool((wval(p6, 'fill_3_P.6') or '') or (wval(p6, 'fill_4_P.6') or '')), f"{wval(p6, 'fill_3_P.6')}/{wval(p6, 'fill_4_P.6')}")
     chk('P.8 簽署人 = 首名董事', wval(p8, 'fill_12_P.8') == (first_dir_name or ''), f"{wval(p8, 'fill_12_P.8')} vs {first_dir_name}")
-    chk('P.8 簽署日期 = 01/06/2025', wval(p8, 'fill_13_P.8') == '01/06/2025', wval(p8, 'fill_13_P.8'))
+    chk('P.8 簽署日期 = 01/06/2026（跟随申报日期）', wval(p8, 'fill_13_P.8') == '01/06/2026', wval(p8, 'fill_13_P.8'))
     dd = {}
     for w in doc[doc.page_count - 1].widgets():
         if w.field_name.startswith('Dropdown'):

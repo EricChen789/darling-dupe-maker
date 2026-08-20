@@ -198,6 +198,7 @@ const TX_XFER_FIELDS = ["DEED", "CERT2", "FROM2", "TO2", "SHARES2", "MONEY2"];
 interface RomTxRow {
   side: 'acquired' | 'transferred';
   date: string; cert: string; shares: string; money: string; deed: string;
+  from: string; to: string;   // Distinctive Nos 区间（用户 2026-08-20：From 从 0 起、To=From+股数）
   total: number; remarks: string;
 }
 
@@ -224,7 +225,7 @@ function fillBlock(blockXml: string, sh: RomShareholder): string {
     const set = (f: string, val: string) => { v[p(f)] = val; };
     if (r && r.side === "acquired") {
       // 购入半边：Date/Cert/From/To（=证书号）/Shares/Consideration；转让半边留空
-      set("DATE", r.date); set("CERT", r.cert); set("FROM", r.cert); set("TO", r.cert);
+      set("DATE", r.date); set("CERT", r.cert); set("FROM", r.from); set("TO", r.to);
       set("SHARES", r.shares); set("MONEY", r.money);
       for (const f of TX_XFER_FIELDS) set(f, "");
     } else if (r && r.side === "transferred") {
@@ -234,7 +235,7 @@ function fillBlock(blockXml: string, sh: RomShareholder): string {
       //    先写会被循环二次清空（这正是转让行日期一直是空的原因）。
       for (const f of TX_ACQ_FIELDS) set(f, "");
       set("DATE", r.date);
-      set("DEED", r.deed); set("CERT2", r.cert); set("FROM2", r.cert); set("TO2", r.cert);
+      set("DEED", r.deed); set("CERT2", r.cert); set("FROM2", r.from); set("TO2", r.to);
       set("SHARES2", r.shares); set("MONEY2", r.money);
     } else {
       for (const f of [...TX_ACQ_FIELDS, ...TX_XFER_FIELDS]) set(f, "");
@@ -356,13 +357,138 @@ export async function onRequest(context: { request: Request; env: Env }) {
     // 姓名 → 股東編號（轉讓行要記「受讓人」的號）
     const seqByName = buildSeqByName(roles, (id) => personMap.get(id));
 
+    // ── Distinctive Nos 分配（用户 2026-08-20 规则）──
+    // From 从 0 起；每笔「获得」（Subscription/Allotment）占区间 [counter, counter+股数]，
+    // 下一笔 From = 上一笔 To + 1（用户原话「0-1000 然后 1001-2000…不是到1999」）。
+    // 转让：编号跟股份走 —— FIFO 从转出方获得段队列划出 [segFrom, segFrom+n]，
+    // 受让人 Transfer In 行用同一段；段剩余起点 = segFrom+n+1。
+    interface Seg { from: number; to: number; }
+    const segsByKey = new Map<string, Seg[]>();
+    let globalNext = 0;
+    const distOf = (shares: number): Seg => {
+      const s = { from: globalNext, to: globalNext + shares };
+      globalNext = s.to + 1;
+      return s;
+    };
+    const pushSeg = (key: string, s: Seg) => {
+      const q = segsByKey.get(key);
+      if (q) q.push(s); else segsByKey.set(key, [s]);
+    };
+    const subSegByKey = new Map<string, Seg>();
+    const allotSegByTx = new Map<any, Seg>();
+    const xferSegByTx = new Map<any, Seg>();
+    // 轉出方單價表（姓名鍵 → 該股東 issue_price）：轉讓價按轉出方持有單價算
+    // （用户例：2 塊錢的股票 1000 股，轉 100 股 = 100×2）
+    const fromPriceByKey = new Map<string, number>();
+
+    // Phase A：每人的初始認購（Subscription）事件 + 轉出方單價表。
+    // roles 已按成為股東時間排好 → subEvs 天然按任命日期排序。
+    const subEvs: { k: string; key: string; shares0: number }[] = [];
+    roles.forEach((role: any) => {
+      const p = personMap.get(role.person_id) || {};
+      const personNameKey = (rget(p, 'name_english') || rget(p, 'name_chinese')).trim().toUpperCase();
+      const heldShares = parseInt(rget(role, 'shares') || '0', 10) || 0;
+      const issuePrice = Number(rget(role, 'issue_price') || 0);
+      fromPriceByKey.set(personNameKey, issuePrice);
+      const myTx = (txByName.get(personNameKey) || [])
+        .map((tx: any) => {
+          const n = parseInt(rget(tx, 'shares') || '0', 10) || 0;
+          const isAllot = rget(tx, 'transaction_type').toLowerCase().includes('allot');
+          const isOut = !isAllot && rget(tx, 'from_name').trim().toUpperCase() === personNameKey;
+          return { n, isOut };
+        })
+        .filter((x: any) => x.n > 0);
+      const netFromTx = myTx.reduce((s: number, x: any) => s + (x.isOut ? -x.n : x.n), 0);
+      const shares0 = Math.max(0, heldShares - netFromTx);
+      if (shares0 > 0) {
+        subEvs.push({ k: dateSortKey(role.date_appointed), key: personNameKey, shares0 });
+      }
+    });
+
+    // Phase B：Sub 事件與交易合併成單一時間線（同日 Sub 在前），
+    // Allotment 開全局新段；轉讓 FIFO 從轉出方段隊列劃出（可跨段，合併顯示為一個區間）
+    let si = 0, ti = 0;
+    const txKeys = transactions.map((t: any) => dateSortKey(t?.transaction_date));
+    while (si < subEvs.length || ti < transactions.length) {
+      const sub = subEvs[si];
+      // 空日期交易按「最後發生」處理（transactions 排序同款：空 key 排末尾）
+      const tk = ti < transactions.length ? (txKeys[ti] || '99999999') : null;
+      if (sub && (tk === null || sub.k <= tk)) {
+        const seg = distOf(sub.shares0);
+        // 🔴 行級快照存副本：seg 對象推入隊列後會被 FIFO 劃出 mutate（seg.from 前移），
+        // 共享引用會讓已填的 Subscription 行顯示「劃出後殘段」
+        subSegByKey.set(sub.key, { from: seg.from, to: seg.to });
+        pushSeg(sub.key, seg);
+        si++;
+        continue;
+      }
+      const tx = transactions[ti];
+      const n = parseInt(rget(tx, 'shares') || '0', 10) || 0;
+      if (n > 0) {
+        const isAllot = rget(tx, 'transaction_type').toLowerCase().includes('allot');
+        const toKey = rget(tx, 'to_name').trim().toUpperCase();
+        if (isAllot) {
+          const seg = distOf(n);
+          allotSegByTx.set(tx, { from: seg.from, to: seg.to });
+          pushSeg(toKey, seg);
+        } else {
+          const fromKey = rget(tx, 'from_name').trim().toUpperCase();
+          const q = segsByKey.get(fromKey);
+          if (q && q.length > 0) {   // 段隊列為空（數據缺失）→ 該行編號留空
+            let remain = n;
+            const parts: Seg[] = [];
+            while (remain > 0 && q.length > 0) {
+              const seg = q[0];
+              const avail = seg.to - seg.from;    // 段內名義可用股數
+              if (avail > remain) {
+                parts.push({ from: seg.from, to: seg.from + remain });
+                seg.from = seg.from + remain + 1;
+                remain = 0;
+              } else {
+                parts.push({ from: seg.from, to: seg.to });
+                remain -= avail;
+                q.shift();
+              }
+            }
+            if (remain === 0 && parts.length > 0) {
+              const xs = { from: parts[0].from, to: parts[parts.length - 1].to };
+              xferSegByTx.set(tx, xs);
+              // 隊列裡推副本：受讓人日後再轉出時 mutate 的是隊列對象，不動行快照
+              pushSeg(toKey, { from: xs.from, to: xs.to });
+            }
+          }
+        }
+      }
+      ti++;
+    }
+
+    // 考慮金助手：Sub 默認每股 HKD 1 全額（用户「基本默认全部缴费」）；
+    // 轉讓 = 股數×轉出方單價（issue_price → tx 單價 → tx 總價/股數 → 1）
+    const priceOf = (tx: any) => Number(String(rget(tx, 'price_per_share') || '').replace(/,/g, ''));
+    const xferMoney = (tx: any, n: number): string => {
+      const fromPrice = fromPriceByKey.get(rget(tx, 'from_name').trim().toUpperCase()) || 0;
+      const totalConsid = Number(rget(tx, 'total_consideration') || 0);
+      const unit = fromPrice > 0 ? fromPrice
+        : priceOf(tx) > 0 ? priceOf(tx)
+        : totalConsid > 0 ? totalConsid / n
+        : 1;
+      return fmtMoney(rget(tx, 'currency') || 'HKD', n * unit);
+    };
+    const allotMoney = (tx: any, n: number): string => {
+      const totalConsid = Number(rget(tx, 'total_consideration') || 0);
+      return priceOf(tx) > 0 ? fmtMoney(rget(tx, 'currency') || 'HKD', n * priceOf(tx))
+        : totalConsid > 0 ? fmtMoney(rget(tx, 'currency') || 'HKD', totalConsid)
+        : fmtMoney(rget(tx, 'currency') || 'HKD', n);
+    };
+
     // ── Company data ──
     const coNameEn = rget(company, 'name').slice(0, 40);
     const coNameZh = (rget(company, 'chinese_name') || rget(company, 'name_chinese') || '').slice(0, 18);
     const coBr = rget(company, 'company_number').slice(0, 15);
 
     // ── Build shareholder list（样本语义与 PDF 端点一致）──
-    // 行0 = 初始 Subscription（date=入册日、cert/from/to=证书号、shares、HKD 代价、total、Remarks=Subscription）
+    // 行0 = 初始 Subscription（date=入册日、cert=证书号、from/to=Distinctive Nos 区间、
+    // shares、Consideration、total、Remarks=Subscription）
     // 后续 = 交易：Allotment/Transfer In → 购入半边；Transfer Out → 转让半边
     // Total Shares Held = 累计结余；Entry Made By 留空
     const shareholders: RomShareholder[] = [];
@@ -415,22 +541,20 @@ export async function onRequest(context: { request: Request; env: Env }) {
       const rows: RomTxRow[] = [];
       let balance = shares0;
       if (shares0 > 0) {
+        const subSeg = subSegByKey.get(personNameKey);
         rows.push({
           side: 'acquired',
           date: dateApp, cert: certNo, shares: String(shares0),
-          money: issuePrice > 0 ? fmtMoney(currency, shares0 * issuePrice) : '',
+          // 無發行價默認每股 HKD 1 全額繳付（用户「基本默认全部缴费」）
+          money: fmtMoney(currency, shares0 * (issuePrice > 0 ? issuePrice : 1)),
           deed: '',
+          from: subSeg ? String(subSeg.from) : '',
+          to: subSeg ? String(subSeg.to) : '',
           total: balance, remarks: 'Subscription',
         });
       }
       for (const { tx, n: txShares, isAllot, isOut } of myTx) {
         if (rows.length >= MAX_TX_ROWS) break;
-        const cur = rget(tx, 'currency') || currency;
-        const totalConsid = Number(rget(tx, 'total_consideration') || 0);
-        const priceEach = Number(String(rget(tx, 'price_per_share') || '').replace(/,/g, ''));
-        // Consideration = 股數 × 每股股價（自動計算；股價未填才回退存庫總代價）
-        const money = priceEach > 0 ? fmtMoney(cur, txShares * priceEach)
-          : totalConsid > 0 ? fmtMoney(cur, totalConsid) : '';
         const date = fmtDateRom(rget(tx, 'transaction_date'));
         const deed = rget(tx, 'instrument_number').slice(0, 20);
 
@@ -439,17 +563,24 @@ export async function onRequest(context: { request: Request; env: Env }) {
           // 轉讓半邊記的是**受讓人**的證書號 —— 這筆轉讓開出的新證書是給受讓人的
           // （用戶原話：轉 100 股出去那行編號應該是 4，因為第四個股東因這筆轉讓出現）
           const toSeq = seqByName.get(rget(tx, 'to_name').trim().toUpperCase());
+          const xs = xferSegByTx.get(tx);
           rows.push({
             side: 'transferred', date, cert: toSeq ? String(toSeq) : certNo,
             shares: String(txShares),
-            money, deed,
+            money: xferMoney(tx, txShares), deed,
+            from: xs ? String(xs.from) : '',
+            to: xs ? String(xs.to) : '',
             total: balance, remarks: 'Transfer Out',
           });
         } else {
           balance += txShares;
+          const seg = isAllot ? allotSegByTx.get(tx) : xferSegByTx.get(tx);
           rows.push({
             side: 'acquired', date, cert: certNo, shares: String(txShares),
-            money, deed: '',
+            money: isAllot ? allotMoney(tx, txShares) : xferMoney(tx, txShares),
+            deed: '',
+            from: seg ? String(seg.from) : '',
+            to: seg ? String(seg.to) : '',
             total: balance, remarks: isAllot ? 'Allotment' : 'Transfer In',
           });
         }

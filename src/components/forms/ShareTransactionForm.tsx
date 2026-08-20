@@ -17,6 +17,7 @@ export interface ShareholderInfo {
   shares?: number;
   shareType?: string;
   currency?: string;
+  issuePrice?: string;
 }
 
 interface ShareTransactionFormProps {
@@ -75,6 +76,9 @@ export function ShareTransactionForm({ tx, onChange, onSave, onCancel, saving, c
       updates.shares = sh.shares ?? tx.shares;
       updates.share_type = sh.shareType || tx.share_type;
       updates.currency = sh.currency || tx.currency;
+      // 轉讓價格默認 = 轉讓人的每股發行價（當時的股價）
+      updates.price_per_share = sh.issuePrice || tx.price_per_share;
+      updates.total_consideration = computeConsideration(updates.shares, updates.price_per_share);
     }
 
     onChange(updates);

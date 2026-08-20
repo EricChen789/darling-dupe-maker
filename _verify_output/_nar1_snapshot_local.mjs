@@ -36,6 +36,7 @@ const persons = {
   p_s3: { id: 'p_s3', name_english: 'Share Allot C', identity: 'natural' },
   p_s4: { id: 'p_s4', name_english: 'Share Sold D', identity: 'natural' },
   p_s5: { id: 'p_s5', name_english: 'Multi Row E', identity: 'natural' },
+  p_s6: { id: 'p_s6', name_english: 'Share Ceased Early', identity: 'natural' },
 };
 
 const roles = [
@@ -56,6 +57,7 @@ const roles = [
   { id: 'r_s4', person_id: 'p_s4', company_id: COMPANY_ID, role: 'shareholder', date_appointed: '2024-05-01', date_ceased: '2026-07-01', shares: 0, share_type: 'Ordinary', currency: 'HKD', issue_price: '1.00', paid_up: '', unpaid: '' }, // 截止日后全数转出 → 还原 500
   { id: 'r_s5a', person_id: 'p_s5', company_id: COMPANY_ID, role: 'shareholder', date_appointed: '2024-01-01', date_ceased: '', shares: 300, share_type: 'Ordinary', currency: 'HKD', issue_price: '1.00', paid_up: '', unpaid: '' },
   { id: 'r_s5b', person_id: 'p_s5', company_id: COMPANY_ID, role: 'shareholder', date_appointed: '2024-01-01', date_ceased: '', shares: 200, share_type: 'Preference', currency: 'HKD', issue_price: '1.00', paid_up: '', unpaid: '' },  // 多股类 → 两条
+  { id: 'r_s6', person_id: 'p_s6', company_id: COMPANY_ID, role: 'shareholder', date_appointed: '2024-01-01', date_ceased: '2025-12-31', shares: 750, share_type: 'Ordinary', currency: 'HKD', issue_price: '1.00', paid_up: '', unpaid: '' }, // 截止日前已全数辞任 → 剔除（生产 Lam 案例）
 ];
 
 const txs = [
@@ -145,6 +147,7 @@ console.log('=== A. 人员 as-of ===');
   chk('秘书为法人且 brNumber=company_number_ref', secs.length === 1 && secs[0].identity === 'corporate' && secs[0].brNumber === 'BR-999');
   chk('秘书 isReserve=false', secs[0].isReserve === false);
   chk('按委任日期升序（Ceased After 2024 首，Dir Old 2025 次）', dirs[0] && dirs[0].nameEnglish === 'Dir Ceased After' && dirs[1] && dirs[1].nameEnglish === 'Dir Old', names(dirs));
+  chk('董事 id 為 person UUID（非 role 行 id）', dirs.every(d => d.id.startsWith('p_') && !d.id.startsWith('r_')), JSON.stringify(dirs.map(d => d.id)));
 }
 
 // ═══ B. 持股反向回放 ═══
@@ -160,6 +163,8 @@ console.log('\n=== B. 持股反向回放 ===');
   chk('p_s5 两股类各一条（300 Ordinary + 200 Preference）', sh.filter(s => s.nameEnglish === 'Multi Row E').length === 2);
   const s5 = sh.filter(s => s.nameEnglish === 'Multi Row E');
   chk('p_s5 股数正确', s5.some(s => s.shareType.includes('Ordinary') && s.shares === 300) && s5.some(s => s.shareType.includes('Preference') && s.shares === 200));
+  chk('截止日前已全数辞任股东 p_s6 剔除', !('Share Ceased Early' in byName), JSON.stringify(byName));
+  chk('股東 id 為 person UUID（非 role 行 id）', sh.every(s => s.id.startsWith('p_')), JSON.stringify(sh.map(s => s.id)));
   chk('as-of 股数不含截止日前交易 t4 影响（p_s1 仍 1000）', byName['Share A'] === 1000);
 }
 

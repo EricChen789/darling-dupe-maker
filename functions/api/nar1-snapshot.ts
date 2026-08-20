@@ -119,7 +119,8 @@ function toPersonSnap(pcr: any, p: any): PersonSnap {
   // is_reserve 存在 '0'/'1' 字串：'0' 是 truthy，必須 Number 強制轉
   const isReserve = Number(rget(pcr, 'is_reserve', 0)) !== 0;
   return {
-    id: String(rget(pcr, 'id', '') || rget(p, 'id', '')),
+    // id = 人員 UUID（不是 role 行 id——前端按 person id 找卡片）
+    id: String(rget(p, 'id', '') || rget(pcr, 'person_id', '')),
     nameChinese: rget(p, 'name_chinese'),
     nameEnglish: rget(p, 'name_english'),
     email: rget(p, 'email'),
@@ -198,11 +199,12 @@ function replayShareholders(
 
     const asOfRows = group.filter((r) => {
       const ap = dateSortKey(r.date_appointed);
-      return ap === '' || ap <= cutoff;
+      const ce = dateSortKey(r.date_ceased);
+      // 截止日時仍在任：appointed ≤ cutoff 且（未辭任 或 辭任 > cutoff）
+      return (ap === '' || ap <= cutoff) && (ce === '' || ce > cutoff);
     });
-    // 候選行：活躍行優先（當前結餘錨）；全數 ceased 用 appointed 最大行（已清零結餘）
-    const live = group.filter((r) => dateSortKey(r.date_ceased) === '');
-    const anchorRows = live.length ? live : (asOfRows.length ? asOfRows : group);
+    // as-of 行 = appointed 最大者；全數 ceased ≤ 截止日 → 此人已非股東，剔除
+    // （生產實例：Lam Wai Keung 24/06/2026 辭任，as-of 2027-05-29 不應再列出）
     const asOfRow = [...asOfRows].sort((a, b) => {
       const ka = dateSortKey(a.date_appointed);
       const kb = dateSortKey(b.date_appointed);
@@ -210,6 +212,10 @@ function replayShareholders(
       return String(a.created_at ?? '') < String(b.created_at ?? '') ? 1 : -1;
     })[0];
     if (!asOfRow) continue;
+
+    // 錨：活躍行優先（當前結餘）；全數 ceased 用 asOfRow 的已清零結餘
+    const live = group.filter((r) => dateSortKey(r.date_ceased) === '');
+    const anchorRows = live.length ? live : [asOfRow];
 
     // 按股類分組算 as-of
     const byShareType = new Map<string, number>();
@@ -243,7 +249,7 @@ function replayShareholders(
       if (asOf <= 0) continue; // 截止日後才入場 → 還原為 0 剔除
 
       out.push({
-        id: String(rget(asOfRow, 'id', '') || personId),
+        id: personId,
         name: rget(person, 'name_english') || rget(person, 'name_chinese'),
         nameEnglish: rget(person, 'name_english'),
         nameChinese: rget(person, 'name_chinese'),

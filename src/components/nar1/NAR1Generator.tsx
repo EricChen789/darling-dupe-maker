@@ -392,24 +392,40 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
     sched1: Math.max(0, Math.ceil(shareholders.length / 2)), // P.8 填附表一总页数（与 generate-nar1-pdf.ts 一致）
   }), [natSecs.length, corpSecs.length, natDirs.length, corpDirs.length, shareholders.length]);
 
-  // ── 年度快選：公司成立週年日往回 5 個（未來的週年日無意義——申報不可能以未來為結算日）──
-  const yearChips = useMemo(() => {
+  // ── 年度快選：公司成立週年日往回 5 個可申報年度（結算日已過），
+  //    加上「當前進行中的申報期」置灰（結算日在未來，法例上還不能申報）──
+  type YearChip = { date: string; label: string; disabled?: boolean; hint?: string };
+  const yearChips = useMemo<YearChip[]>(() => {
     const inc = company?.incorporationDate;
-    if (!inc) return [] as string[];
+    if (!inc) return [];
     const iso = inc.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
     const dmy = inc.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
     const yy = iso ? iso[1] : dmy ? dmy[3] : null;
     const mm = iso ? iso[2] : dmy ? dmy[2] : null;
     const dd = iso ? iso[3] : dmy ? dmy[1] : null;
-    if (!yy || !mm || !dd) return [] as string[];
+    if (!yy || !mm || !dd) return [];
+    const yyN = Number(yy), mmN = Number(mm), ddN = Number(dd);
+    const pad2 = (s: string) => String(s).padStart(2, '0');
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const chips: string[] = [];
-    for (let y = today.getFullYear(); chips.length < 5 && y >= Number(yy); y--) {
-      const candidate = new Date(y, Number(mm) - 1, Number(dd));
+    const chips: YearChip[] = [];
+    // 已過周年日（成立日不算周年日）→ 標籤「期初年-期末年/月/日」
+    for (let y = today.getFullYear(); chips.length < 5 && y > yyN; y--) {
+      const candidate = new Date(y, mmN - 1, ddN);
       if (!isNaN(candidate.getTime()) && candidate <= today) {
-        chips.push(`${y}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`);
+        chips.push({ date: `${y}-${pad2(mm)}-${pad2(dd)}`, label: `${y - 1}-${y}/${pad2(mm)}/${pad2(dd)}` });
       }
+    }
+    // 當前進行中的申報期（期末 = 下一個周年日，未來）→ 置灰不可選
+    const curEndY = chips.length ? Number(chips[0].date.slice(0, 4)) + 1 : yyN + 1;
+    const curEnd = new Date(curEndY, mmN - 1, ddN);
+    if (!isNaN(curEnd.getTime())) {
+      chips.unshift({
+        date: `${curEndY}-${pad2(mm)}-${pad2(dd)}`,
+        label: `${curEndY - 1}-${curEndY}/${pad2(mm)}/${pad2(dd)}`,
+        disabled: true,
+        hint: `進行中，${curEndY}/${mm}/${dd} 後可申報`,
+      });
     }
     return chips;
   }, [company?.incorporationDate]);
@@ -993,15 +1009,16 @@ export const NAR1Generator = ({ open, onOpenChange, company }: NAR1GeneratorProp
               <div className="flex items-center gap-1.5 mt-2 flex-wrap">
                 <span className="text-xs text-muted-foreground">年度快選：</span>
                 {yearChips.map(d => (
-                  <button key={d} type="button"
+                  <button key={d.date} type="button" disabled={d.disabled} title={d.hint}
                     className={cn('px-2 py-0.5 rounded text-xs border transition-colors',
-                      returnDate === d ? 'bg-blue-600 text-white border-blue-600' : 'bg-background border-border hover:bg-accent')}
+                      d.disabled ? 'bg-muted/50 text-muted-foreground border-border cursor-not-allowed'
+                        : returnDate === d.date ? 'bg-blue-600 text-white border-blue-600' : 'bg-background border-border hover:bg-accent')}
                     onClick={() => {
                       // 明確切年度 = 重新按該年 as-of 填入
                       suppressSnapshotRef.current = false;
-                      setReturnDate(d);
+                      setReturnDate(d.date);
                     }}>
-                    {d}
+                    {d.label}{d.disabled && d.hint ? `（${d.hint}）` : ''}
                   </button>
                 ))}
               </div>

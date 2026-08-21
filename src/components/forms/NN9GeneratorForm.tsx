@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowLeft, Download, Loader2, Building2 } from 'lucide-react';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { ArrowLeft, Download, Loader2, Building2, Bug } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { useCompanies } from '@/hooks/useCompanies';
 import { downloadBase64Pdf } from '@/lib/downloadPdf';
@@ -26,9 +27,51 @@ const HK_DISTRICTS = [
   '北區', '大埔', '沙田', '西貢', '離島',
 ];
 
+const todayStr = () => {
+  const t = new Date();
+  return {
+    dd: String(t.getDate()).padStart(2, '0'),
+    mm: String(t.getMonth() + 1).padStart(2, '0'),
+    yyyy: String(t.getFullYear()),
+  };
+};
+
+/** 日/月/年 三元组输入（NN9 日期均为 D/M/Y 分格） */
+function DateTriple({ dayKey, monthKey, yearKey, values, onChange }: {
+  dayKey: string; monthKey: string; yearKey: string;
+  values: Record<string, string>; onChange: (f: string, v: string) => void;
+}) {
+  return (
+    <div className="grid grid-cols-3 gap-2">
+      <div><Label className="text-xs">日 DD</Label><Input value={values[dayKey] ?? ''} onChange={e => onChange(dayKey, e.target.value)} className="mt-1" /></div>
+      <div><Label className="text-xs">月 MM</Label><Input value={values[monthKey] ?? ''} onChange={e => onChange(monthKey, e.target.value)} className="mt-1" /></div>
+      <div><Label className="text-xs">年 YYYY</Label><Input value={values[yearKey] ?? ''} onChange={e => onChange(yearKey, e.target.value)} className="mt-1" /></div>
+    </div>
+  );
+}
+
+/** 5 行地址输入（室/大廈/街道/區/國家） */
+function AddressRows({ prefix, values, onChange }: {
+  prefix: string; values: Record<string, string>; onChange: (f: string, v: string) => void;
+}) {
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <div><Label className="text-xs text-muted-foreground">室／樓／座 Flat/Block</Label><Input value={values[`${prefix}Flat`] ?? ''} onChange={e => onChange(`${prefix}Flat`, e.target.value)} placeholder="Room 1001, 10/F" className="mt-1" /></div>
+      <div><Label className="text-xs text-muted-foreground">大廈／屋苑 Building/Estate</Label><Input value={values[`${prefix}Building`] ?? ''} onChange={e => onChange(`${prefix}Building`, e.target.value)} placeholder="ABC Building" className="mt-1" /></div>
+      <div className="col-span-2"><Label className="text-xs text-muted-foreground">街道／地段 Street</Label><Input value={values[`${prefix}Street`] ?? ''} onChange={e => onChange(`${prefix}Street`, e.target.value)} placeholder="1 Queensway" className="mt-1" /></div>
+      <div><Label className="text-xs text-muted-foreground">區 District</Label><Input value={values[`${prefix}District`] ?? ''} onChange={e => onChange(`${prefix}District`, e.target.value)} placeholder="e.g. Central" className="mt-1" /></div>
+      <div><Label className="text-xs text-muted-foreground">國家／地區 Country</Label><Input value={values[`${prefix}Country`] ?? ''} onChange={e => onChange(`${prefix}Country`, e.target.value)} placeholder="e.g. Japan" className="mt-1" /></div>
+    </div>
+  );
+}
+
 export default function NN9GeneratorForm({ onBack, initialCompanyId }: NN9GeneratorFormProps) {
   const { data: companies = [] } = useCompanies();
   const [selectedCompanyId, setSelectedCompanyId] = useState('');
+  const selectedCompany = useMemo(
+    () => companies.find(c => c.id === selectedCompanyId),
+    [companies, selectedCompanyId]
+  );
   const [generating, setGenerating] = useState(false);
   const [showRelatedPrompt, setShowRelatedPrompt] = useState(false);
   const [relatedLinkages, setRelatedLinkages] = useState<any[]>([]);
@@ -36,24 +79,27 @@ export default function NN9GeneratorForm({ onBack, initialCompanyId }: NN9Genera
   const { mutate: saveFormHistory } = useSaveFormHistory();
   const queryClient = useQueryClient();
 
-  const today = new Date();
-  const dd = String(today.getDate()).padStart(2, '0');
-  const mm = String(today.getMonth() + 1).padStart(2, '0');
-  const yyyy = String(today.getFullYear());
-
-  const [formData, setFormData] = useState({
+  const t = todayStr();
+  const [formData, setFormData] = useState<Record<string, string>>({
     brNumber: '', companyName: '',
-    // 新地址
+    // P.1 2(a) 在香港的主要營業地點新地址
     flat: '', building: '', street: '', district: '', region: '',
-    // 新電話 / 新電郵
-    newPhone: '', newEmail: '',
-    // 更改生效日期
-    changeDay: dd, changeMonth: mm, changeYear: yyyy,
-    // 決議日期
-    resolutionDay: dd, resolutionMonth: mm, resolutionYear: yyyy,
+    addressDay: t.dd, addressMonth: t.mm, addressYear: t.yyyy,
+    // P.1 2(b) 新電郵
+    newEmail: '', emailDay: '', emailMonth: '', emailYear: '',
+    // P.1 2(c) 新香港電話
+    newPhone: '', phoneDay: '', phoneMonth: '', phoneYear: '',
+    // P.2 3(a) 成立地註冊辦事處新地址
+    regFlat: '', regBuilding: '', regStreet: '', regDistrict: '', regCountry: '',
+    regDay: '', regMonth: '', regYear: '',
+    // P.2 3(b) 成立地主要營業地點新地址
+    bizFlat: '', bizBuilding: '', bizStreet: '', bizDistrict: '', bizCountry: '',
+    bizDay: '', bizMonth: '', bizYear: '',
+    // P.2 3(c) 新電郵
+    ovEmail: '', ovDay: '', ovMonth: '', ovYear: '',
     // 簽署
-    signerName: '', signerCapacity: 'Director',
-    signDateDay: dd, signDateMonth: mm, signDateYear: yyyy,
+    signerName: '', signerCapacity: 'director',
+    signDateDay: t.dd, signDateMonth: t.mm, signDateYear: t.yyyy,
     // 提交人
     presentorName: '', presentorAddress: '',
     presentorPhone: '', presentorFax: '', presentorEmail: '', presentorReference: '',
@@ -80,13 +126,27 @@ export default function NN9GeneratorForm({ onBack, initialCompanyId }: NN9Genera
   const update = (f: string, v: string) => setFormData(prev => ({ ...prev, [f]: v }));
 
   const handleLoadHistory = (data: any) => {
-    if (data.formData) setFormData((prev: any) => ({ ...prev, ...data.formData }));
+    if (data.formData) {
+      // 舊版 history 兼容：changeDay→addressDay、resolutionDay→emailDay
+      setFormData((prev: any) => ({
+        ...prev, ...data.formData,
+        addressDay: data.formData.addressDay ?? data.formData.changeDay ?? prev.addressDay,
+        addressMonth: data.formData.addressMonth ?? data.formData.changeMonth ?? prev.addressMonth,
+        addressYear: data.formData.addressYear ?? data.formData.changeYear ?? prev.addressYear,
+        emailDay: data.formData.emailDay ?? data.formData.resolutionDay ?? prev.emailDay,
+        emailMonth: data.formData.emailMonth ?? data.formData.resolutionMonth ?? prev.emailMonth,
+        emailYear: data.formData.emailYear ?? data.formData.resolutionYear ?? prev.emailYear,
+      }));
+    }
     if (data.selectedCompanyId) setSelectedCompanyId(data.selectedCompanyId);
   };
 
   const handleGenerate = async () => {
     if (!formData.brNumber || !formData.companyName) { toast({ title: '錯誤', description: '請選擇公司', variant: 'destructive' }); return; }
-    if (!formData.flat && !formData.building && !formData.street) { toast({ title: '錯誤', description: '請填寫新地址', variant: 'destructive' }); return; }
+    const hkAddr = [formData.flat, formData.building, formData.street].some(v => String(v ?? '').trim());
+    const regAddr = [formData.regFlat, formData.regBuilding, formData.regStreet].some(v => String(v ?? '').trim());
+    const bizAddr = [formData.bizFlat, formData.bizBuilding, formData.bizStreet].some(v => String(v ?? '').trim());
+    if (!hkAddr && !regAddr && !bizAddr) { toast({ title: '錯誤', description: '請填寫新地址（香港或成立地）', variant: 'destructive' }); return; }
     const companyId = await resolveCompanyId(formData.brNumber, selectedCompanyId || undefined);
     setPendingWriteback({
       title: 'NN9 生成確認',
@@ -95,74 +155,14 @@ export default function NN9GeneratorForm({ onBack, initialCompanyId }: NN9Genera
     });
   };
 
-  const doGenerate = async (writebackCompanyId?: string | null) => {
+  const doGenerate = async (debug = false, writebackCompanyId?: string | null) => {
     setGenerating(true);
     try {
       const token = localStorage.getItem("secretary_jwt") || "";
-      const fields: Record<string, string> = {
-        'fill_1_P.1': formData.brNumber,
-        'fill_2_P.1': formData.companyName,
-        // 新地址 (P.1)
-        'fill_3_P.1': formData.flat || '',
-        'fill_4_P.1': formData.building || '',
-        'fill_5_P.1': formData.street || '',
-        'fill_6_P.1': formData.district || '',
-        // 更改生效日期 (P.1, fill_7/8/9 at y=458.8)
-        'fill_7_P.1': formData.changeDay,
-        'fill_8_P.1': formData.changeMonth,
-        'fill_9_P.1': formData.changeYear,
-        // (b) 新電郵地址 (P.1, fill_10 at y=504)
-        'fill_10_P.1': formData.newEmail || '',
-        // 電郵生效日期 (P.1, fill_11/12/13 at y=539.5)
-        'fill_11_P.1': formData.resolutionDay,
-        'fill_12_P.1': formData.resolutionMonth,
-        'fill_13_P.1': formData.resolutionYear,
-        // (c) 新香港聯絡電話號碼 (P.1, fill_14 at y=591, 旁有 +852)
-        'fill_14_P.1': formData.newPhone || '',
-        // 電話生效日期 (P.1, fill_15/16/17 at y=633)
-        'fill_15_P.1': formData.signDateDay,
-        'fill_16_P.1': formData.signDateMonth,
-        'fill_17_P.1': formData.signDateYear,
-        // 提交人 (P.1 bottom, y=685~795)
-        'fill_18_P.1': formData.presentorName || '',
-        'fill_19_P.1': formData.presentorAddress || '',
-        'fill_20_P.1': formData.presentorPhone || '',
-        'fill_21_P.1': formData.presentorFax || '',
-        'fill_22_P.1': formData.presentorEmail || '',
-        'fill_23_P.1': formData.presentorReference || '',
-        // 簽署人 (P.2, y=646: fill_22=Name, fill_23=Date)
-        'fill_22_P.2': formData.signerName || '',
-        'fill_23_P.2': formData.signerName ? `${formData.signDateDay}/${formData.signDateMonth}/${formData.signDateYear}` : '',
-      };
-      // signerCapacity goes as overlay on P.2 (near signer name)
-      const overlays: Array<{page: number; text: string; x: number; y: number; fontsize: number}> = [];
-      if (formData.signerCapacity) {
-        overlays.push({ page: 2, text: formData.signerCapacity, x: 395, y: 635, fontsize: 9 });
-      }
-      // Debug: log submitter field mapping
-      console.log('NN9 submitter fields:', {
-        'fill_18': formData.presentorName,
-        'fill_19': formData.presentorAddress,
-        'fill_20': formData.presentorPhone,
-        'fill_21': formData.presentorFax,
-        'fill_22': formData.presentorEmail || formData.newEmail,
-        'fill_23': formData.presentorReference,
-      });
-      const resp = await fetch(`/api/generate-template-pdf`, {
+      const resp = await fetch(`/api/generate-nn9-pdf`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          template: 'NN9-template.pdf',
-          fields,
-          brNumber: formData.brNumber,
-          brFields: ['fill_1_P.1', 'fill_1_P.2'],
-          keepWidgets: true,
-          alignCenterFields: ['fill_10_P.1'],
-          alignVCenterFields: ['fill_10_P.1'],
-          fieldMinFontSize: { 'fill_19_P.1': 10 },
-          forceWidgetAp: ['fill_4_P.1', 'fill_5_P.1', 'fill_10_P.1'],
-          overlays,
-        }),
+        body: JSON.stringify({ ...formData, debug }),
       });
       const result = await resp.json();
       if (!resp.ok) throw new Error(result.error || 'Unknown error');
@@ -223,7 +223,7 @@ export default function NN9GeneratorForm({ onBack, initialCompanyId }: NN9Genera
           </div>
         </div>
 
-        <div><h3 className="font-semibold mb-3">新地址</h3>
+        <div><h3 className="font-semibold mb-3">2(a) 在香港的主要營業地點的新地址 New Address of Principal Place of Business in Hong Kong</h3>
           {selectedCompanyId && (
             <div className="mb-3">
               <AddressQuickPick companyId={selectedCompanyId}
@@ -249,46 +249,116 @@ export default function NN9GeneratorForm({ onBack, initialCompanyId }: NN9Genera
                 </SelectContent>
               </Select>
             </div>
-            <div><Label className="text-xs text-muted-foreground">國家／地區 Country／Region</Label>
-              <Input value={formData.region} onChange={e => update('region', e.target.value)} placeholder="e.g. 香港" className="mt-1" />
+            <div><Label className="text-xs text-muted-foreground">生效日期 Effective Date</Label>
+              <DateTriple dayKey="addressDay" monthKey="addressMonth" yearKey="addressYear" values={formData} onChange={update} />
             </div>
           </div>
         </div>
 
-        <div><h3 className="font-semibold mb-3">新聯絡資料</h3>
+        <div><h3 className="font-semibold mb-3">2(b) 新電郵地址 New Email Address（如適用）</h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div><Label>新香港電話 New HK Tel</Label><Input value={formData.newPhone} onChange={e => update('newPhone', e.target.value)} placeholder="+852 1234 5678" className="mt-1" /></div>
-            <div><Label>新電郵地址 New Email</Label><Input value={formData.newEmail} onChange={e => update('newEmail', e.target.value)} placeholder="info@company.com" className="mt-1" /></div>
+            <div><Label>電郵地址</Label><Input value={formData.newEmail} onChange={e => update('newEmail', e.target.value)} placeholder="如無變更可留空" className="mt-1" /></div>
+            {String(formData.newEmail ?? '').trim() && (
+              <div><Label className="text-xs">生效日期 Effective Date</Label>
+                <DateTriple dayKey="emailDay" monthKey="emailMonth" yearKey="emailYear" values={formData} onChange={update} />
+              </div>
+            )}
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-          <div><h3 className="font-semibold mb-3">更改生效日期</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-              <div><Label className="text-xs">日 DD</Label><Input value={formData.changeDay} onChange={e => update('changeDay', e.target.value)} className="mt-1" /></div>
-              <div><Label className="text-xs">月 MM</Label><Input value={formData.changeMonth} onChange={e => update('changeMonth', e.target.value)} className="mt-1" /></div>
-              <div><Label className="text-xs">年 YYYY</Label><Input value={formData.changeYear} onChange={e => update('changeYear', e.target.value)} className="mt-1" /></div>
-            </div>
+        <div><h3 className="font-semibold mb-3">2(c) 新香港聯絡電話號碼 New Hong Kong Telephone Number（如適用）</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div><Label>電話號碼</Label><Input value={formData.newPhone} onChange={e => update('newPhone', e.target.value)} placeholder="如無變更可留空" className="mt-1" /></div>
+            {String(formData.newPhone ?? '').trim() && (
+              <div><Label className="text-xs">生效日期 Effective Date</Label>
+                <DateTriple dayKey="phoneDay" monthKey="phoneMonth" yearKey="phoneYear" values={formData} onChange={update} />
+              </div>
+            )}
           </div>
-          <div><h3 className="font-semibold mb-3">決議日期</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-              <div><Label className="text-xs">日 DD</Label><Input value={formData.resolutionDay} onChange={e => update('resolutionDay', e.target.value)} className="mt-1" /></div>
-              <div><Label className="text-xs">月 MM</Label><Input value={formData.resolutionMonth} onChange={e => update('resolutionMonth', e.target.value)} className="mt-1" /></div>
-              <div><Label className="text-xs">年 YYYY</Label><Input value={formData.resolutionYear} onChange={e => update('resolutionYear', e.target.value)} className="mt-1" /></div>
-            </div>
+        </div>
+
+        <div><h3 className="font-semibold mb-3">3(a) 在成立為法團的地方的註冊辦事處的新地址 New Address of Registered Office in Place of Incorporation</h3>
+          <AddressRows prefix="reg" values={formData} onChange={update} />
+          <div className="mt-3 sm:max-w-xs"><Label className="text-xs">生效日期 Effective Date</Label>
+            <DateTriple dayKey="regDay" monthKey="regMonth" yearKey="regYear" values={formData} onChange={update} />
+          </div>
+        </div>
+
+        <div><h3 className="font-semibold mb-3">3(b) 在成立為法團的地方的主要營業地點的新地址 New Address of Principal Place of Business in Place of Incorporation</h3>
+          <AddressRows prefix="biz" values={formData} onChange={update} />
+          <div className="mt-3 sm:max-w-xs"><Label className="text-xs">生效日期 Effective Date</Label>
+            <DateTriple dayKey="bizDay" monthKey="bizMonth" yearKey="bizYear" values={formData} onChange={update} />
+          </div>
+        </div>
+
+        <div><h3 className="font-semibold mb-3">3(c) 新電郵地址 New Email Address（成立地，如適用）</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div><Label>電郵地址</Label><Input value={formData.ovEmail} onChange={e => update('ovEmail', e.target.value)} placeholder="如無變更可留空" className="mt-1" /></div>
+            {String(formData.ovEmail ?? '').trim() && (
+              <div><Label className="text-xs">生效日期 Effective Date</Label>
+                <DateTriple dayKey="ovDay" monthKey="ovMonth" yearKey="ovYear" values={formData} onChange={update} />
+              </div>
+            )}
           </div>
         </div>
 
         <div><h3 className="font-semibold mb-3">簽署</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {selectedCompany && ((selectedCompany.directors?.length ?? 0) > 0 || (selectedCompany.secretaries?.length ?? 0) > 0) && (
+            <div className="mb-3">
+              <Select onValueChange={(id) => {
+                const allPeople = [
+                  ...(selectedCompany.directors || []).map(d => ({ ...d, _role: 'director' as const })),
+                  ...(selectedCompany.secretaries || []).map(s => ({ ...s, _role: 'secretary' as const })),
+                ];
+                const person = allPeople.find(p => p.id === id);
+                if (person) {
+                  update('signerName', person.nameEnglish || person.nameChinese || '');
+                  update('signerCapacity', person._role);
+                }
+              }}>
+                <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="從公司人員選擇簽署人..." /></SelectTrigger>
+                <SelectContent>
+                  {(selectedCompany.directors || []).map(d => (
+                    <SelectItem key={d.id} value={d.id}>{d.nameEnglish || d.nameChinese || '?'} — 董事</SelectItem>
+                  ))}
+                  {(selectedCompany.secretaries || []).map(s => (
+                    <SelectItem key={s.id} value={s.id}>{s.nameEnglish || s.nameChinese || '?'} — 公司秘書</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div><Label>簽署人姓名</Label><Input value={formData.signerName} onChange={e => update('signerName', e.target.value)} className="mt-1" /></div>
-            <div><Label>身份</Label><Input value={formData.signerCapacity} onChange={e => update('signerCapacity', e.target.value)} className="mt-1" /></div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-              <div><Label className="text-xs">日 DD</Label><Input value={formData.signDateDay} onChange={e => update('signDateDay', e.target.value)} className="mt-1" /></div>
-              <div><Label className="text-xs">月 MM</Label><Input value={formData.signDateMonth} onChange={e => update('signDateMonth', e.target.value)} className="mt-1" /></div>
-              <div><Label className="text-xs">年 YYYY</Label><Input value={formData.signDateYear} onChange={e => update('signDateYear', e.target.value)} className="mt-1" /></div>
+            <div><Label className="text-xs">簽署日期 Date of Signature</Label>
+              <DateTriple dayKey="signDateDay" monthKey="signDateMonth" yearKey="signDateYear" values={formData} onChange={update} />
             </div>
           </div>
+        </div>
+
+        <div><h3 className="font-semibold mb-3">簽署人身份（刪去不適用者）</h3>
+          <RadioGroup
+            value={formData.signerCapacity}
+            onValueChange={(v) => update('signerCapacity', v)}
+            className="flex flex-wrap gap-6"
+          >
+            <label className="flex items-center gap-2 cursor-pointer">
+              <RadioGroupItem value="director" />
+              <span>董事 Director</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <RadioGroupItem value="secretary" />
+              <span>公司秘書 Company Secretary</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <RadioGroupItem value="manager" />
+              <span>經理 Manager</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <RadioGroupItem value="authorizedRep" />
+              <span>獲授權代表 Authorized Representative</span>
+            </label>
+          </RadioGroup>
         </div>
 
         <div><h3 className="font-semibold mb-3">提交人資料</h3>
@@ -317,6 +387,9 @@ export default function NN9GeneratorForm({ onBack, initialCompanyId }: NN9Genera
           <Button onClick={handleGenerate} disabled={generating} className="bg-primary text-primary-foreground">
             {generating ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />生成中...</> : <><Download className="h-4 w-4 mr-2" />生成 NN9 PDF</>}
           </Button>
+          <Button variant="outline" onClick={() => doGenerate(true)} disabled={generating}>
+            <Bug className="h-4 w-4 mr-2" />生成測試 PDF（Debug）
+          </Button>
         </div>
       </div>
 
@@ -328,7 +401,7 @@ export default function NN9GeneratorForm({ onBack, initialCompanyId }: NN9Genera
         onConfirm={() => {
           const companyId = pendingWriteback?.companyId || null;
           setPendingWriteback(null);
-          doGenerate(companyId);
+          doGenerate(false, companyId);
         }}
         onCancel={() => setPendingWriteback(null)}
       />

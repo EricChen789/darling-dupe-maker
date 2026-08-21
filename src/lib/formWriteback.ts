@@ -1019,29 +1019,45 @@ export async function writebackNR1(companyId: string, fd: Nr1FormInput): Promise
 export interface Nn9FormInput {
   flat?: string; building?: string; street?: string; district?: string; region?: string;
   newEmail?: string; newPhone?: string;
+  // 新版：地址日期用 addressDay（舊 changeDay 兼容）；電郵/電話各自日期（舊版無）
+  addressDay?: string; addressMonth?: string; addressYear?: string;
   changeDay?: string; changeMonth?: string; changeYear?: string;
+  emailDay?: string; emailMonth?: string; emailYear?: string;
+  phoneDay?: string; phoneMonth?: string; phoneYear?: string;
 }
+
+/** 舊版 history 兼容：changeDay → addressDay */
+const nn9AddrDate = (fd: Nn9FormInput) =>
+  dmyToDDMMYYYY(fd.addressDay ?? fd.changeDay, fd.addressMonth ?? fd.changeMonth, fd.addressYear ?? fd.changeYear);
 
 export function buildNN9Summary(fd: Nn9FormInput): WritebackSummaryItem[] {
   const items: WritebackSummaryItem[] = [];
-  const d = dmyToDDMMYYYY(fd.changeDay, fd.changeMonth, fd.changeYear) || '今天';
+  const d = nn9AddrDate(fd) || '今天';
   const addrFilled = [fd.flat, fd.building, fd.street, fd.district, fd.region].some(v => String(v ?? '').trim());
   if (addrFilled) items.push({ label: '更新公司註冊地址', detail: d });
   const email = String(fd.newEmail ?? '').trim();
-  if (email) items.push({ label: '更新公司電郵', detail: `${email} · ${d}` });
+  if (email) {
+    const ed = dmyToDDMMYYYY(fd.emailDay, fd.emailMonth, fd.emailYear) || d;
+    items.push({ label: '更新公司電郵', detail: `${email} · ${ed}` });
+  }
   const phone = String(fd.newPhone ?? '').trim();
-  if (phone) items.push({ label: '更新公司電話', detail: `${phone} · ${d}` });
+  if (phone) {
+    const pd = dmyToDDMMYYYY(fd.phoneDay, fd.phoneMonth, fd.phoneYear) || d;
+    items.push({ label: '更新公司電話', detail: `${phone} · ${pd}` });
+  }
   if (items.length === 0) items.push({ label: '沒有可寫入的變更內容', detail: '僅生成 PDF' });
   return items;
 }
 
-/** NN9 寫回：同 NR1 但生效日期共用 change D/M/Y、related 顯式 'NN9' */
+/** NN9 寫回：同 NR1 但 P.1 2(b)/(c) 電郵/電話各自生效日（舊版 fallback 地址日期）、related 顯式 'NN9' */
 export async function writebackNN9(companyId: string, fd: Nn9FormInput): Promise<string[]> {
-  const d = dmyToDDMMYYYY(fd.changeDay, fd.changeMonth, fd.changeYear);
+  const d = nn9AddrDate(fd);
   return writebackCompanyChanges(companyId, {
     flat: fd.flat, building: fd.building, street: fd.street, district: fd.district, region: fd.region,
     email: fd.newEmail, phone: fd.newPhone,
-    addressDate: d, emailDate: d, phoneDate: d,
+    addressDate: d,
+    emailDate: dmyToDDMMYYYY(fd.emailDay, fd.emailMonth, fd.emailYear) || d,
+    phoneDate: dmyToDDMMYYYY(fd.phoneDay, fd.phoneMonth, fd.phoneYear) || d,
     relatedFormType: 'NN9',
   });
 }

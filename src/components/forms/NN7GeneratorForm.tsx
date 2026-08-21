@@ -1,12 +1,13 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, memo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Checkbox } from '@/components/ui/checkbox';
 import { useSaveFormHistory } from '@/hooks/useFormHistory';
 import FormHistorySelector from './FormHistorySelector';
-import { ArrowLeft, Download, Loader2, Building2 } from 'lucide-react';
+import { ArrowLeft, Download, Loader2, Building2, User2 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { useCompanies } from '@/hooks/useCompanies';
 import { Person } from '@/types';
@@ -26,9 +27,7 @@ const HK_DISTRICTS = [
   '西貢', '離島',
 ];
 
-const HK_REGIONS = ['香港', '九龍', '新界'];
-
-// ── 模組級別 AddressFields（memo 避免 re-render 失焦） ──
+// ── 地址欄位值型別 ──
 interface AddressValues {
   flat: string;
   building: string;
@@ -37,7 +36,8 @@ interface AddressValues {
   region: string;
 }
 
-function AddressFields({
+// ── 模組級別 AddressFields（避免 inline component 導致輸入失焦） ──
+const AddressFields = memo(function AddressFields({
   label,
   values,
   onChange,
@@ -96,7 +96,7 @@ function AddressFields({
       </div>
     </div>
   );
-}
+});
 
 // ── NN7GeneratorForm ──
 interface NN7GeneratorFormProps {
@@ -115,6 +115,7 @@ export default function NN7GeneratorForm({ onBack, prefillPerson, initialCompany
     : allCompanies;
 
   const [selectedCompanyId, setSelectedCompanyId] = useState('');
+  const [selectedPersonId, setSelectedPersonId] = useState(prefillPerson?.id || '');
   const [generating, setGenerating] = useState(false);
   // 寫回確認框：生成前彈出（含公司解析結果與摘要）
   const [pendingWriteback, setPendingWriteback] = useState<{ title: string; summary: WritebackSummaryItem[]; companyId: string | null } | null>(null);
@@ -125,7 +126,7 @@ export default function NN7GeneratorForm({ onBack, prefillPerson, initialCompany
   const [formData, setFormData] = useState({
     brNumber: '',
     companyName: '',
-    role: (prefillPerson?.role === 'secretary' ? 'secretary' : 'director') as 'secretary' | 'director',
+    role: (prefillPerson?.role === 'secretary' ? 'secretary' : prefillPerson?.role === 'alternate' ? 'alternate' : 'director') as 'secretary' | 'director' | 'alternate',
     identity: (prefillPerson?.identity || 'natural') as 'natural' | 'corporate',
     nameEnglish: prefillPerson?.nameEnglish || '',
     nameSurname: '',
@@ -133,6 +134,10 @@ export default function NN7GeneratorForm({ onBack, prefillPerson, initialCompany
     nameChinese: prefillPerson?.nameChinese || '',
     idNumber: prefillPerson?.idNumber || '',
     passportNumber: prefillPerson?.passportNumber || '',
+    // 法人現時資料
+    corpNameChinese: '',
+    corpNameEnglish: '',
+    corpBrNumber: '',
     // 現有通訊地址
     addrFlat: prefillPerson?.addrFlat || '',
     addrBlock: '',
@@ -140,13 +145,19 @@ export default function NN7GeneratorForm({ onBack, prefillPerson, initialCompany
     addrStreet: prefillPerson?.addrStreet || '',
     addrDistrict: prefillPerson?.addrDistrict || '',
     addrRegion: prefillPerson?.addrRegion || '',
-    // 變更類型
-    changeType: 'address' as 'address' | 'name' | 'id' | 'other',
+    // 變更類型（多選）
+    changeTypes: ([] as string[]),
     // 新名稱
-    newNameEnglish: '',
     newNameChinese: '',
+    newNameSurname: '',
+    newNameOtherNames: '',
+    newNameEnglish: '',
+    // 別名（Also Known As）
+    newAliasEnglish: '',
+    newAliasChinese: '',
     // 新證件
     newIdNumber: '',
+    passportPlaceOfIssue: '',
     // 新通訊地址
     newFlat: '',
     newBlock: '',
@@ -154,14 +165,14 @@ export default function NN7GeneratorForm({ onBack, prefillPerson, initialCompany
     newStreet: '',
     newDistrict: '',
     newRegion: '',
+    // 新聯絡資料
     newEmail: '',
-    newPhone: '',
-    passportPlaceOfIssue: '',
-    // 變更說明
+    // 變更說明（舊版 other 兼容）
     changeDescription: '',
     effectiveDate: todayStr,
     // 簽署及提交
     signerName: '',
+    signerCapacity: 'director' as 'director' | 'secretary' | 'manager' | 'authorizedRep',
     signDate: todayStr,
     presentorName: '',
     presentorAddress: '',
@@ -171,17 +182,34 @@ export default function NN7GeneratorForm({ onBack, prefillPerson, initialCompany
     presentorReference: '',
   });
 
-  // Stable address values for AddressFields (prevents focus loss from inline component)
-  const addrValues = useMemo<AddressValues>(() => ({
-    flat: formData.addrFlat,
-    building: formData.addrBuilding,
-    street: formData.addrStreet,
-    district: formData.addrDistrict,
-    region: formData.addrRegion,
-  }), [formData.addrFlat, formData.addrBuilding, formData.addrStreet, formData.addrDistrict, formData.addrRegion]);
+  const newAddrValues = useMemo<AddressValues>(() => ({
+    flat: formData.newFlat,
+    building: formData.newBuilding,
+    street: formData.newStreet,
+    district: formData.newDistrict,
+    region: formData.newRegion,
+  }), [formData.newFlat, formData.newBuilding, formData.newStreet, formData.newDistrict, formData.newRegion]);
+
+  const selectedCompany = useMemo(
+    () => companies.find(c => c.id === selectedCompanyId),
+    [companies, selectedCompanyId]
+  );
+
+  const companyPeople = useMemo(() => {
+    if (!selectedCompany) return [];
+    const people: (Person & { _label: string })[] = [];
+    for (const d of selectedCompany.directors || []) {
+      people.push({ ...d, _label: `${d.nameEnglish || d.nameChinese} — 董事 Director` });
+    }
+    for (const s of selectedCompany.secretaries || []) {
+      people.push({ ...s, _label: `${s.nameEnglish || s.nameChinese} — 公司秘書 Secretary` });
+    }
+    return people;
+  }, [selectedCompany]);
 
   const handleCompanySelect = (companyId: string) => {
     setSelectedCompanyId(companyId);
+    setSelectedPersonId('');
     const company = companies.find(c => c.id === companyId);
     if (company) {
       const regAddress = [company.regFlat, company.regBuilding, company.regStreet, company.regDistrict, company.regRegion]
@@ -196,10 +224,80 @@ export default function NN7GeneratorForm({ onBack, prefillPerson, initialCompany
     }
   };
 
+  const handlePersonSelect = (personId: string) => {
+    setSelectedPersonId(personId);
+    const person = companyPeople.find(p => p.id === personId);
+    if (person) {
+      const isCorp = person.identity === 'corporate';
+      const nameParts = (person.nameEnglish || '').trim().split(/\s+/);
+      const personSurname = nameParts[0] || '';
+      const personOtherNames = nameParts.slice(1).join(' ');
+      setFormData(prev => ({
+        ...prev,
+        role: person.role === 'secretary' ? 'secretary' : person.role === 'alternate' ? 'alternate' : 'director',
+        identity: isCorp ? 'corporate' : 'natural',
+        nameEnglish: person.nameEnglish || '',
+        nameChinese: person.nameChinese || '',
+        nameSurname: prev.nameSurname || personSurname,
+        nameOtherNames: prev.nameOtherNames || personOtherNames,
+        idNumber: person.idNumber || '',
+        passportNumber: person.passportNumber || '',
+        corpNameEnglish: isCorp ? person.nameEnglish || '' : prev.corpNameEnglish,
+        corpNameChinese: isCorp ? person.nameChinese || '' : prev.corpNameChinese,
+        addrFlat: person.addrFlat || '',
+        addrBlock: '',
+        addrBuilding: person.addrBuilding || '',
+        addrStreet: person.addrStreet || '',
+        addrDistrict: person.addrDistrict || '',
+        addrRegion: person.addrRegion || '',
+        newFlat: prev.newFlat || person.addrFlat || '',
+        newBuilding: prev.newBuilding || person.addrBuilding || '',
+        newStreet: prev.newStreet || person.addrStreet || '',
+        newDistrict: prev.newDistrict || person.addrDistrict || '',
+        newRegion: prev.newRegion || person.addrRegion || '',
+      }));
+    }
+  };
+
   useEffect(() => {
     if (initialCompanyId && companies.length && !selectedCompanyId) handleCompanySelect(initialCompanyId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialCompanyId, companies.length]);
+
+  // Apply prefillPerson if provided (from People page)
+  useEffect(() => {
+    if (prefillPerson && selectedPersonId !== prefillPerson.id) {
+      setSelectedPersonId(prefillPerson.id || '');
+      const isCorp = prefillPerson.identity === 'corporate';
+      const nameParts = (prefillPerson.nameEnglish || '').trim().split(/\s+/);
+      const personSurname = nameParts[0] || '';
+      const personOtherNames = nameParts.slice(1).join(' ');
+      setFormData(prev => ({
+        ...prev,
+        role: prefillPerson.role === 'secretary' ? 'secretary' : prefillPerson.role === 'alternate' ? 'alternate' : 'director',
+        identity: isCorp ? 'corporate' : 'natural',
+        nameEnglish: prefillPerson.nameEnglish || '',
+        nameChinese: prefillPerson.nameChinese || '',
+        nameSurname: prev.nameSurname || personSurname,
+        nameOtherNames: prev.nameOtherNames || personOtherNames,
+        idNumber: prefillPerson.idNumber || '',
+        passportNumber: prefillPerson.passportNumber || '',
+        corpNameEnglish: isCorp ? prefillPerson.nameEnglish || '' : prev.corpNameEnglish,
+        corpNameChinese: isCorp ? prefillPerson.nameChinese || '' : prev.corpNameChinese,
+        addrFlat: prefillPerson.addrFlat || '',
+        addrBlock: '',
+        addrBuilding: prefillPerson.addrBuilding || '',
+        addrStreet: prefillPerson.addrStreet || '',
+        addrDistrict: prefillPerson.addrDistrict || '',
+        addrRegion: prefillPerson.addrRegion || '',
+        newFlat: prev.newFlat || prefillPerson.addrFlat || '',
+        newBuilding: prev.newBuilding || prefillPerson.addrBuilding || '',
+        newStreet: prev.newStreet || prefillPerson.addrStreet || '',
+        newDistrict: prev.newDistrict || prefillPerson.addrDistrict || '',
+        newRegion: prev.newRegion || prefillPerson.addrRegion || '',
+      }));
+    }
+  }, [prefillPerson]);
 
   const update = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -207,16 +305,32 @@ export default function NN7GeneratorForm({ onBack, prefillPerson, initialCompany
 
   const handleLoadHistory = (data: any) => {
     if (data.formData) {
+      // Backward compat: old history had nameEnglish but not nameSurname
       const fd = { ...data.formData };
-      // 如果有 nameEnglish 但没有 surname/otherNames，自动拆分
-      if (fd.nameEnglish && !fd.nameSurname && !fd.nameOtherNames) {
+      if ((!fd.nameSurname && !fd.nameOtherNames) && fd.nameEnglish) {
         const parts = fd.nameEnglish.trim().split(/\s+/);
         fd.nameSurname = parts[0] || '';
         fd.nameOtherNames = parts.slice(1).join(' ');
       }
+      // Backward compat: old newNameEnglish → split into newNameSurname + newNameOtherNames
+      if (fd.newNameEnglish && !fd.newNameSurname && !fd.newNameOtherNames) {
+        const parts = fd.newNameEnglish.trim().split(/\s+/);
+        fd.newNameSurname = parts[0] || '';
+        fd.newNameOtherNames = parts.slice(1).join(' ');
+        delete fd.newNameEnglish;
+      }
+      // Backward compat: old changeType string → changeTypes array
+      if (typeof fd.changeType === 'string' && fd.changeType) {
+        fd.changeTypes = [fd.changeType === 'other' ? 'contact' : fd.changeType];
+        delete fd.changeType;
+      }
+      if (!Array.isArray(fd.changeTypes)) fd.changeTypes = [];
+      if (!fd.passportPlaceOfIssue) fd.passportPlaceOfIssue = '';
+      if (!fd.signerCapacity) fd.signerCapacity = 'director';
       setFormData(prev => ({ ...prev, ...fd }));
     }
     if (data.selectedCompanyId) setSelectedCompanyId(data.selectedCompanyId);
+    if (data.selectedPersonId) setSelectedPersonId(data.selectedPersonId);
   };
 
   // ── PDF 成功後寫回資料庫 + 刷新查詢 + 結果 toast ──
@@ -234,21 +348,31 @@ export default function NN7GeneratorForm({ onBack, prefillPerson, initialCompany
   };
 
   // ── 生成主體：PDF 成功下載後才寫回資料庫 ──
-  const doGenerate = async (writebackCompanyId?: string | null) => {
+  const doGenerate = async (debug = false, writebackCompanyId?: string | null) => {
     if (!formData.brNumber || !formData.companyName) {
       toast({ title: '錯誤', description: '請填寫公司名稱和商業登記號碼', variant: 'destructive' });
       return;
     }
-    if (!formData.nameEnglish && !formData.nameChinese && !formData.nameSurname && !formData.nameOtherNames) {
+    const hasName = formData.identity === 'corporate'
+      ? !!(formData.corpNameEnglish || formData.corpNameChinese || formData.nameEnglish || formData.nameChinese)
+      : !!(formData.nameSurname || formData.nameChinese || formData.nameOtherNames);
+    if (!hasName) {
       toast({ title: '錯誤', description: '請填寫人員姓名', variant: 'destructive' });
+      return;
+    }
+    if (formData.changeTypes.length === 0) {
+      toast({ title: '錯誤', description: '請至少勾選一項變更類型', variant: 'destructive' });
       return;
     }
     setGenerating(true);
     try {
       const token = localStorage.getItem("secretary_jwt") || "";
-      // 組合英文姓名: Surname + Other Names
-      const nameEnglish = [formData.nameSurname, formData.nameOtherNames].filter(Boolean).join(' ') || formData.nameEnglish;
-      const payload = { ...formData, nameEnglish };
+      const payload = {
+        ...formData,
+        companyId: selectedCompanyId,
+        personId: selectedPersonId,
+        debug,
+      };
       const resp = await fetch(`/api/generate-nn7-pdf`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -259,14 +383,19 @@ export default function NN7GeneratorForm({ onBack, prefillPerson, initialCompany
 
       downloadBase64Pdf(result.pdf, `NN7-${formData.companyName || 'form'}.pdf`);
       saveFormHistory(
-        { formType: 'NN7', formData: { formData, selectedCompanyId } },
+        { formType: 'NN7', formData: { formData, selectedCompanyId, selectedPersonId } },
         {
           onError: (err: any) => {
             toast({ title: '歷史儲存失敗', description: err.message, variant: 'destructive' });
           },
         }
       );
-      toast({ title: '生成成功', description: 'NN7 表格已下載' });
+
+      const changeCount = formData.changeTypes.length;
+      const changeDesc = changeCount > 0
+        ? `已記錄 ${changeCount} 項變更：${formData.changeTypes.map((t: string) => ({ address: '地址', name: '姓名', id: '證件', contact: '聯絡' }[t] || t)).join('、')}`
+        : '';
+      toast({ title: '生成成功', description: `NN7 表格已下載${changeDesc ? ' · ' + changeDesc : ''}` });
 
       // 寫回資料庫（PDF 成功才寫，避免半寫狀態）
       if (writebackCompanyId) {
@@ -279,14 +408,18 @@ export default function NN7GeneratorForm({ onBack, prefillPerson, initialCompany
     }
   };
 
-  // ── 生成入口：先彈寫回確認框，確認後 doGenerate ──
-  const handleGenerate = async () => {
+  // ── 生成入口：先彈寫回確認框，確認後 doGenerate；debug 模式直出（不寫回） ──
+  const handleGenerate = async (debug = false) => {
+    if (debug) {
+      await doGenerate(true, null);
+      return;
+    }
     if (!formData.brNumber || !formData.companyName) {
       toast({ title: '錯誤', description: '請填寫公司名稱和商業登記號碼', variant: 'destructive' });
       return;
     }
-    if (!formData.nameEnglish && !formData.nameChinese && !formData.nameSurname && !formData.nameOtherNames) {
-      toast({ title: '錯誤', description: '請填寫人員姓名', variant: 'destructive' });
+    if (formData.changeTypes.length === 0) {
+      toast({ title: '錯誤', description: '請至少勾選一項變更類型', variant: 'destructive' });
       return;
     }
     const companyId = await resolveCompanyId(formData.brNumber, selectedCompanyId || undefined);
@@ -296,6 +429,8 @@ export default function NN7GeneratorForm({ onBack, prefillPerson, initialCompany
       companyId,
     });
   };
+
+  const isCorp = formData.identity === 'corporate';
 
   return (
     <div>
@@ -325,6 +460,25 @@ export default function NN7GeneratorForm({ onBack, prefillPerson, initialCompany
         </Select>
       </div>
 
+      {/* Person selector */}
+      {selectedCompany && companyPeople.length > 0 && (
+        <div className="bg-card border border-border rounded-lg p-4 mb-4">
+          <div className="flex items-center gap-2 mb-2">
+            <User2 className="h-4 w-4 text-primary" />
+            <Label className="font-medium">選擇董事/秘書自動填入</Label>
+            <span className="text-xs text-muted-foreground">（從 {selectedCompany.name} 的人員中選取）</span>
+          </div>
+          <Select value={selectedPersonId} onValueChange={handlePersonSelect}>
+            <SelectTrigger><SelectValue placeholder="選擇人員..." /></SelectTrigger>
+            <SelectContent>
+              {companyPeople.map(p => (
+                <SelectItem key={p.id} value={p.id}>{p._label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
       <div className="bg-card border border-border rounded-lg p-6 space-y-6">
         {/* Company info */}
         <div>
@@ -335,10 +489,10 @@ export default function NN7GeneratorForm({ onBack, prefillPerson, initialCompany
           </div>
         </div>
 
-        {/* Person current info */}
+        {/* Officer current info */}
         <div>
           <h3 className="font-semibold mb-3">董事/秘書現有資料</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
             <div>
               <Label>職位</Label>
               <Select value={formData.role} onValueChange={v => update('role', v)}>
@@ -346,6 +500,7 @@ export default function NN7GeneratorForm({ onBack, prefillPerson, initialCompany
                 <SelectContent>
                   <SelectItem value="director">董事 Director</SelectItem>
                   <SelectItem value="secretary">公司秘書 Secretary</SelectItem>
+                  <SelectItem value="alternate">候補董事 Alternate Director</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -359,154 +514,127 @@ export default function NN7GeneratorForm({ onBack, prefillPerson, initialCompany
                 </SelectContent>
               </Select>
             </div>
-            <div><Label>英文姓氏 Surname</Label><Input value={formData.nameSurname} onChange={e => update('nameSurname', e.target.value)} placeholder="CHAN" className="mt-1" /></div>
-            <div><Label>英文名字 Other Names</Label><Input value={formData.nameOtherNames} onChange={e => update('nameOtherNames', e.target.value)} placeholder="Tai Man" className="mt-1" /></div>
-            <div><Label>中文姓名</Label><Input value={formData.nameChinese} onChange={e => update('nameChinese', e.target.value)} className="mt-1" /></div>
-            <div><Label>身份證號碼</Label><Input value={formData.idNumber} onChange={e => update('idNumber', e.target.value)} className="mt-1" /></div>
-            <div><Label>護照號碼</Label><Input value={formData.passportNumber} onChange={e => update('passportNumber', e.target.value)} className="mt-1" /></div>
           </div>
-          <div className="mt-4">
-            <AddressFields
-              label="現有通訊地址"
-              values={addrValues}
-              onChange={(field, value) => update(`addr${field.charAt(0).toUpperCase() + field.slice(1)}`, value)}
-            />
-          </div>
+
+          {isCorp ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div><Label>法人中文名稱</Label><Input value={formData.corpNameChinese} onChange={e => update('corpNameChinese', e.target.value)} className="mt-1" /></div>
+              <div><Label>法人英文名稱</Label><Input value={formData.corpNameEnglish} onChange={e => update('corpNameEnglish', e.target.value)} className="mt-1" /></div>
+              <div><Label>商業登記號碼</Label><Input value={formData.corpBrNumber} onChange={e => update('corpBrNumber', e.target.value)} className="mt-1" /></div>
+            </div>
+          ) : (
+            <>
+              <div className="mb-4">
+                <Label>中文姓名</Label>
+                <Input value={formData.nameChinese} onChange={e => update('nameChinese', e.target.value)} className="mt-1" />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                <div><Label>英文姓氏 Surname *</Label><Input value={formData.nameSurname} onChange={e => update('nameSurname', e.target.value)} className="mt-1" placeholder="e.g. CHAN" /></div>
+                <div><Label>英文名字 Other Names</Label><Input value={formData.nameOtherNames} onChange={e => update('nameOtherNames', e.target.value)} className="mt-1" placeholder="e.g. Tai Man" /></div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div><Label>身份證號碼</Label><Input value={formData.idNumber} onChange={e => update('idNumber', e.target.value)} className="mt-1" placeholder="e.g. A123456(7)" /></div>
+                <div><Label>護照號碼</Label><Input value={formData.passportNumber} onChange={e => update('passportNumber', e.target.value)} className="mt-1" placeholder="e.g. EL1234567" /></div>
+              </div>
+            </>
+          )}
         </div>
 
         {/* Change details */}
         <div>
           <h3 className="font-semibold mb-3">變更詳情</h3>
-          <div className="grid grid-cols-1 gap-4">
-            <div>
-              <Label>變更類型</Label>
-              <Select value={formData.changeType} onValueChange={v => update('changeType', v)}>
-                <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="address">住址更改 Change of Address</SelectItem>
-                  <SelectItem value="name">姓名更改 Change of Name</SelectItem>
-                  <SelectItem value="id">證件號碼更改 Change of ID Number</SelectItem>
-                  <SelectItem value="other">其他詳情更改 Other Change of Particulars</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
 
-            {formData.changeType === 'address' && (
-              <div>
-                <Label className="font-medium mb-2 block">更改後的新通訊地址 *</Label>
-                {selectedCompanyId && (
-                  <div className="mb-3">
-                    <AddressQuickPick companyId={selectedCompanyId}
-                      onPick={(d) => {
-                        if (d.flat) update('newFlat', d.flat);
-                        if (d.building) update('newBuilding', d.building);
-                        if (d.street) update('newStreet', d.street);
-                        if (d.district) update('newDistrict', d.district);
-                        if (d.country || d.region) update('newRegion', d.country || d.region || '');
-                      }}
-                    />
-                  </div>
-                )}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {/* P.2: fill_19=Flat+Block合并, fill_20=Building, fill_21=Street, fill_22=District, fill_23=Region */}
-                  <div>
-                    <Label className="text-xs text-muted-foreground">① 室／樓層／座 Flat／Room／Block</Label>
-                    <Input
-                      value={formData.newFlat}
-                      onChange={e => update('newFlat', e.target.value)}
-                      className="mt-1" placeholder="Flat / Room / Block"
-                    />
-                  </div>
-                  <div>
-                    <Label className="text-xs text-muted-foreground">② 大廈 Building</Label>
-                    <Input
-                      value={formData.newBuilding}
-                      onChange={e => update('newBuilding', e.target.value)}
-                      className="mt-1" placeholder="Building"
-                    />
-                  </div>
-                  <div>
-                    <Label className="text-xs text-muted-foreground">③ 街道／屋苑 Street／Estate</Label>
-                    <Input
-                      value={formData.newStreet}
-                      onChange={e => update('newStreet', e.target.value)}
-                      className="mt-1" placeholder="Street / Estate"
-                    />
-                  </div>
-                  <div>
-                    <Label className="text-xs text-muted-foreground">④ 區 District</Label>
-                    <Select value={formData.newDistrict} onValueChange={v => update('newDistrict', v)}>
-                      <SelectTrigger className="mt-1"><SelectValue placeholder="選擇地區..." /></SelectTrigger>
-                      <SelectContent>
-                        {HK_DISTRICTS.map(d => (
-                          <SelectItem key={d} value={d}>{d}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label className="text-xs text-muted-foreground">⑤ 國家／地區 Country／Region</Label>
-                    <Input
-                      value={formData.newRegion}
-                      onChange={e => update('newRegion', e.target.value)}
-                      className="mt-1" placeholder="e.g. 香港"
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
-                  <div>
-                    <Label className="text-xs text-muted-foreground">電郵地址 Email</Label>
-                    <Input
-                      value={formData.newEmail}
-                      onChange={e => update('newEmail', e.target.value)}
-                      className="mt-1" placeholder="new@example.com"
-                    />
-                  </div>
-                  <div>
-                    <Label className="text-xs text-muted-foreground">電話號碼 Phone</Label>
-                    <Input
-                      value={formData.newPhone}
-                      onChange={e => update('newPhone', e.target.value)}
-                      className="mt-1" placeholder="+852 XXXX XXXX"
-                    />
-                  </div>
-                  <div>
-                    <Label className="text-xs text-muted-foreground">護照簽發地區 Place of Issue</Label>
-                    <Input
-                      value={formData.passportPlaceOfIssue}
-                      onChange={e => update('passportPlaceOfIssue', e.target.value)}
-                      className="mt-1" placeholder="簽發地區"
-                    />
-                  </div>
-                  <div>
-                    <Label className="text-xs text-muted-foreground">護照號碼 Passport No.</Label>
-                    <Input
-                      value={formData.passportNumber}
-                      onChange={e => update('passportNumber', e.target.value)}
-                      className="mt-1" placeholder="護照號碼"
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {formData.changeType === 'name' && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div><Label>新英文姓名 *</Label><Input value={formData.newNameEnglish} onChange={e => update('newNameEnglish', e.target.value)} className="mt-1" placeholder="更改後的英文姓名" /></div>
-                <div><Label>新中文姓名</Label><Input value={formData.newNameChinese} onChange={e => update('newNameChinese', e.target.value)} className="mt-1" placeholder="更改後的中文姓名" /></div>
-              </div>
-            )}
-
-            {formData.changeType === 'id' && (
-              <div><Label>新證件號碼 *</Label><Input value={formData.newIdNumber} onChange={e => update('newIdNumber', e.target.value)} className="mt-1" placeholder="填入新證件號碼" /></div>
-            )}
-
-            {formData.changeType === 'other' && (
-              <div><Label>變更說明 *</Label><Input value={formData.changeDescription} onChange={e => update('changeDescription', e.target.value)} className="mt-1" placeholder="描述需要更改的詳情內容" /></div>
-            )}
-
-            <div><Label>生效日期</Label><Input type="date" value={formData.effectiveDate} onChange={e => update('effectiveDate', e.target.value)} className="mt-1" /></div>
+          {/* Checkbox 多選變更類型 */}
+          <div className="flex flex-wrap gap-x-6 gap-y-2 mb-4">
+            {([
+              { value: 'address', label: '住址更改' },
+              { value: 'name', label: '姓名更改' },
+              { value: 'id', label: '證件號碼更改' },
+              { value: 'contact', label: '聯絡資料更改' },
+            ]).map(item => (
+              <label key={item.value} className="flex items-center gap-2 cursor-pointer select-none">
+                <Checkbox
+                  checked={formData.changeTypes.includes(item.value)}
+                  onCheckedChange={() => {
+                    setFormData(prev => {
+                      const types = prev.changeTypes.includes(item.value)
+                        ? prev.changeTypes.filter(t => t !== item.value)
+                        : [...prev.changeTypes, item.value];
+                      return { ...prev, changeTypes: types };
+                    });
+                  }}
+                />
+                <span className="text-sm">{item.label}</span>
+              </label>
+            ))}
           </div>
+
+          <div className="space-y-4">
+            {formData.changeTypes.includes('address') && (
+              <div className="border border-border rounded-lg p-4">
+                <h4 className="font-medium text-sm mb-3 text-primary">住址更改</h4>
+                {selectedCompanyId && (
+                  <AddressQuickPick companyId={selectedCompanyId}
+                    onPick={(d) => {
+                      if (d.flat) update('newFlat', d.flat);
+                      if (d.building) update('newBuilding', d.building);
+                      if (d.street) update('newStreet', d.street);
+                      if (d.district) update('newDistrict', d.district);
+                      if (d.country || d.region) update('newRegion', d.country || d.region || '');
+                    }}
+                  />
+                )}
+                <AddressFields
+                  label="更改後的新通訊地址"
+                  values={newAddrValues}
+                  onChange={(field, value) => update(`new${field.charAt(0).toUpperCase() + field.slice(1)}`, value)}
+                />
+                {formData.role === 'director' && (
+                  <p className="text-xs text-muted-foreground mt-2">
+                    董事的通常住址更改：新住址將填入 PI-NN7 受保護資料頁，P.2 只填生效日期。
+                  </p>
+                )}
+              </div>
+            )}
+
+            {formData.changeTypes.includes('name') && (
+              <div className="border border-border rounded-lg p-4">
+                <h4 className="font-medium text-sm mb-3 text-primary">姓名更改</h4>
+                <div><Label>新中文姓名</Label><Input value={formData.newNameChinese} onChange={e => update('newNameChinese', e.target.value)} className="mt-1" placeholder="更改後的中文姓名" /></div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+                  <div><Label>新英文姓氏 Surname</Label><Input value={formData.newNameSurname} onChange={e => update('newNameSurname', e.target.value)} className="mt-1" placeholder="e.g. CHAN" /></div>
+                  <div><Label>新英文名字 Other Names</Label><Input value={formData.newNameOtherNames} onChange={e => update('newNameOtherNames', e.target.value)} className="mt-1" placeholder="e.g. Tai Man" /></div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4 pt-4 border-t border-border">
+                  <div><Label>英文別名（Also Known As）</Label><Input value={formData.newAliasEnglish} onChange={e => update('newAliasEnglish', e.target.value)} className="mt-1" placeholder="別名／前用名（英文）" /></div>
+                  <div><Label>中文別名</Label><Input value={formData.newAliasChinese} onChange={e => update('newAliasChinese', e.target.value)} className="mt-1" placeholder="別名／前用名（中文）" /></div>
+                </div>
+              </div>
+            )}
+
+            {formData.changeTypes.includes('id') && (
+              <div className="border border-border rounded-lg p-4">
+                <h4 className="font-medium text-sm mb-3 text-primary">證件號碼更改</h4>
+                <div className="mb-4"><Label>新證件號碼</Label><Input value={formData.newIdNumber} onChange={e => update('newIdNumber', e.target.value)} className="mt-1" placeholder="填入新證件號碼" /></div>
+                <div className="border-t border-border pt-4 mt-4">
+                  <h4 className="font-medium text-sm mb-3 text-muted-foreground">護照更改</h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div><Label>護照簽發國家／地區</Label><Input value={formData.passportPlaceOfIssue} onChange={e => update('passportPlaceOfIssue', e.target.value)} className="mt-1" placeholder="e.g. HKSAR / BNO" /></div>
+                    <div><Label>護照號碼</Label><Input value={formData.passportNumber} onChange={e => update('passportNumber', e.target.value)} className="mt-1" placeholder="e.g. EL1234567" /></div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {formData.changeTypes.includes('contact') && (
+              <div className="border border-border rounded-lg p-4">
+                <h4 className="font-medium text-sm mb-3 text-primary">聯絡資料更改</h4>
+                <div><Label>新電郵</Label><Input value={formData.newEmail} onChange={e => update('newEmail', e.target.value)} className="mt-1" placeholder="new@email.com" /></div>
+              </div>
+            )}
+          </div>
+
+          <div className="mt-4"><Label>生效日期</Label><Input type="date" value={formData.effectiveDate} onChange={e => update('effectiveDate', e.target.value)} className="mt-1" /></div>
         </div>
 
         {/* Signature & Presentor */}
@@ -525,21 +653,36 @@ export default function NN7GeneratorForm({ onBack, prefillPerson, initialCompany
           />
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div><Label>簽署人姓名</Label><Input value={formData.signerName} onChange={e => update('signerName', e.target.value)} className="mt-1" /></div>
+            <div>
+              <Label>簽署人身分（未選中的選項將劃線刪去）</Label>
+              <Select value={formData.signerCapacity} onValueChange={v => update('signerCapacity', v)}>
+                <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="director">董事 Director</SelectItem>
+                  <SelectItem value="secretary">公司秘書 Secretary</SelectItem>
+                  <SelectItem value="manager">經理 Manager</SelectItem>
+                  <SelectItem value="authorizedRep">獲授權代表 Authorized Representative</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             <div><Label>簽署日期</Label><Input type="date" value={formData.signDate} onChange={e => update('signDate', e.target.value)} className="mt-1" /></div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
             <div><Label>提交人名稱</Label><Input value={formData.presentorName} onChange={e => update('presentorName', e.target.value)} className="mt-1" /></div>
             <div><Label>提交人地址</Label><Input value={formData.presentorAddress} onChange={e => update('presentorAddress', e.target.value)} className="mt-1" /></div>
-            <div><Label>電話</Label><Input value={formData.presentorPhone} onChange={e => update('presentorPhone', e.target.value)} className="mt-1" /></div>
-            <div><Label>傳真</Label><Input value={formData.presentorFax} onChange={e => update('presentorFax', e.target.value)} className="mt-1" /></div>
-            <div><Label>電郵</Label><Input value={formData.presentorEmail} onChange={e => update('presentorEmail', e.target.value)} className="mt-1" /></div>
-            <div><Label>參考編號</Label><Input value={formData.presentorReference} onChange={e => update('presentorReference', e.target.value)} className="mt-1" /></div>
+            <div><Label>電話 Tel</Label><Input value={formData.presentorPhone} onChange={e => update('presentorPhone', e.target.value)} className="mt-1" /></div>
+            <div><Label>傳真 Fax</Label><Input value={formData.presentorFax} onChange={e => update('presentorFax', e.target.value)} className="mt-1" /></div>
+            <div><Label>電郵 Email</Label><Input value={formData.presentorEmail} onChange={e => update('presentorEmail', e.target.value)} className="mt-1" /></div>
+            <div><Label>參考編號 Ref</Label><Input value={formData.presentorReference} onChange={e => update('presentorReference', e.target.value)} className="mt-1" /></div>
           </div>
         </div>
 
         {/* Actions */}
         <div className="flex items-center gap-3 pt-4 border-t border-border">
-          <Button onClick={handleGenerate} disabled={generating} className="bg-primary text-primary-foreground">
+          <Button onClick={() => handleGenerate(false)} disabled={generating} className="bg-primary text-primary-foreground">
             {generating ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />生成中...</> : <><Download className="h-4 w-4 mr-2" />生成 NN7 PDF</>}
           </Button>
+          <Button variant="outline" onClick={() => handleGenerate(true)} disabled={generating}>生成測試 PDF（Debug）</Button>
         </div>
       </div>
 
@@ -552,7 +695,7 @@ export default function NN7GeneratorForm({ onBack, prefillPerson, initialCompany
         onConfirm={() => {
           const p = pendingWriteback;
           setPendingWriteback(null);
-          if (p) doGenerate(p.companyId);
+          if (p) doGenerate(false, p.companyId);
         }}
       />
     </div>

@@ -762,18 +762,30 @@ export async function writebackNN6(companyId: string, officers: Nn6OfficerInput[
 
 // ══════════════════════════════ NN7 ══════════════════════════════
 
+export interface Nn7Change {
+  type: 'address' | 'name' | 'id' | 'contact';
+  patch: Record<string, any>;      // persons 欄位
+  newValue: Record<string, any>;   // 事件 new_value
+}
+
 export interface Nn7FormInput {
   identity?: 'natural' | 'corporate';
-  role?: 'secretary' | 'director';
+  role?: 'secretary' | 'director' | 'alternate';
   nameEnglish?: string;
   nameSurname?: string;
   nameOtherNames?: string;
   nameChinese?: string;
   idNumber?: string;
   passportNumber?: string;
-  changeType: 'address' | 'name' | 'id' | 'other';
+  // 變更類型（多選；兼容舊版單一 changeType 字串）
+  changeTypes?: string[];
+  changeType?: 'address' | 'name' | 'id' | 'other' | 'contact';
   newNameEnglish?: string;
+  newNameSurname?: string;
+  newNameOtherNames?: string;
   newNameChinese?: string;
+  newAliasEnglish?: string;
+  newAliasChinese?: string;
   newIdNumber?: string;
   newFlat?: string;
   newBuilding?: string;
@@ -782,20 +794,72 @@ export interface Nn7FormInput {
   newRegion?: string;
   newEmail?: string;
   newPhone?: string;
+  passportPlaceOfIssue?: string;
   changeDescription?: string;
   effectiveDate?: string;  // ISO
 }
 
-export function buildNN7Summary(fd: Nn7FormInput): WritebackSummaryItem[] {
-  const name = [fd.nameSurname, fd.nameOtherNames].filter(Boolean).join(' ') || fd.nameEnglish || fd.nameChinese || '(未填姓名)';
-  const TYPE_LABEL: Record<string, string> = { address: '地址', name: '姓名', id: '證件號碼', other: '其他詳情' };
-  return [{ label: `更新${fd.role === 'secretary' ? '公司秘書' : '董事'}${TYPE_LABEL[fd.changeType]}：${name}`, detail: isoToDDMMYYYY(fd.effectiveDate) || '今天' }];
+export const NN7_CHANGE_LABEL: Record<string, string> = {
+  address: '地址', name: '姓名', id: '證件', contact: '聯絡資料',
+};
+const NN7_CHANGE_EVENT: Record<string, string> = {
+  address: 'person_address_change', name: 'person_name_change', id: 'person_id_change', contact: 'person_contact_change',
+};
+
+/** 依 changeTypes 組 NN7 寫回變更清單（ND2B 同款多選邏輯） */
+export function buildNn7Changes(fd: Nn7FormInput): Nn7Change[] {
+  const types = Array.isArray(fd.changeTypes) && fd.changeTypes.length > 0
+    ? fd.changeTypes
+    : (fd.changeType ? [fd.changeType] : []);
+  const changes: Nn7Change[] = [];
+  for (const t of types) {
+    if (t === 'address') {
+      const patch: Record<string, any> = {};
+      const newValue: Record<string, any> = {};
+      if (fd.newFlat) { patch.addr_flat = fd.newFlat; newValue.addr_flat = fd.newFlat; }
+      if (fd.newBuilding) { patch.addr_building = fd.newBuilding; newValue.addr_building = fd.newBuilding; }
+      if (fd.newStreet) { patch.addr_street = fd.newStreet; newValue.addr_street = fd.newStreet; }
+      if (fd.newDistrict) { patch.addr_district = fd.newDistrict; newValue.addr_district = fd.newDistrict; }
+      if (fd.newRegion) { patch.addr_region = fd.newRegion; newValue.addr_region = fd.newRegion; }
+      if (Object.keys(patch).length) changes.push({ type: 'address', patch, newValue });
+    } else if (t === 'name') {
+      const patch: Record<string, any> = {};
+      const newValue: Record<string, any> = {};
+      const fullEng = [fd.newNameSurname, fd.newNameOtherNames].filter(Boolean).join(' ').trim() || fd.newNameEnglish || '';
+      if (fullEng) { patch.name_english = fullEng; newValue.name_english = fullEng; }
+      if (fd.newNameChinese) { patch.name_chinese = fd.newNameChinese; newValue.name_chinese = fd.newNameChinese; }
+      if (fd.newAliasEnglish) { patch.alias_english = fd.newAliasEnglish; newValue.alias_english = fd.newAliasEnglish; }
+      if (fd.newAliasChinese) { patch.alias_chinese = fd.newAliasChinese; newValue.alias_chinese = fd.newAliasChinese; }
+      if (Object.keys(patch).length) changes.push({ type: 'name', patch, newValue });
+    } else if (t === 'id') {
+      if (fd.newIdNumber) changes.push({ type: 'id', patch: { id_number: fd.newIdNumber }, newValue: { id_number: fd.newIdNumber } });
+    } else if (t === 'contact' || t === 'other') {
+      if (fd.newEmail) changes.push({ type: 'contact', patch: { email: fd.newEmail }, newValue: { email: fd.newEmail } });
+    }
+  }
+  return changes;
 }
 
-/** NN7 寫回：按姓名/證件解析人員（找不到則建檔）→ 按 changeType 更新 persons → person_*_change 事件（related 'NN7'） */
+export function buildNN7Summary(fd: Nn7FormInput): WritebackSummaryItem[] {
+  const name = [fd.nameSurname, fd.nameOtherNames].filter(Boolean).join(' ') || fd.nameEnglish || fd.nameChinese || '(未填姓名)';
+  const ROLE_LABEL = fd.role === 'secretary' ? '公司秘書' : fd.role === 'alternate' ? '候補董事' : '董事';
+  const changes = buildNn7Changes(fd);
+  if (changes.length === 0) return [{ label: `更新${ROLE_LABEL}資料：${name}`, detail: '(無可寫入變更)' }];
+  return changes.map(c => ({
+    label: `更新${ROLE_LABEL}${NN7_CHANGE_LABEL[c.type] || c.type}：${name}`,
+    detail: isoToDDMMYYYY(fd.effectiveDate) || '今天',
+  }));
+}
+
+/** NN7 寫回：按姓名/證件解析人員（找不到則建檔）→ 按 changeTypes 更新 persons → person_*_change 事件（related 'NN7'） */
 export async function writebackNN7(companyId: string, fd: Nn7FormInput): Promise<string[]> {
   const labels: string[] = [];
   const fullName = [fd.nameSurname, fd.nameOtherNames].filter(Boolean).join(' ') || fd.nameEnglish || '';
+  const changes = buildNn7Changes(fd);
+  if (changes.length === 0) {
+    labels.push('⚠ 沒有可寫入的變更內容');
+    return labels;
+  }
   const changeDate = isoToDDMMYYYY(fd.effectiveDate) || todayDDMMYYYY();
   const personId = await upsertPersonFromForm({
     identity: fd.identity || 'natural',
@@ -806,48 +870,22 @@ export async function writebackNN7(companyId: string, fd: Nn7FormInput): Promise
   });
   const { data } = await supabase.from('persons').select('*').eq('id', personId).limit(1);
   const before = (data as any[])?.[0] || null;
-  const patch: Record<string, any> = {};
-  const newValue: Record<string, any> = {};
-  if (fd.changeType === 'address') {
-    if (fd.newFlat) { patch.addr_flat = fd.newFlat; newValue.addr_flat = fd.newFlat; }
-    if (fd.newBuilding) { patch.addr_building = fd.newBuilding; newValue.addr_building = fd.newBuilding; }
-    if (fd.newStreet) { patch.addr_street = fd.newStreet; newValue.addr_street = fd.newStreet; }
-    if (fd.newDistrict) { patch.addr_district = fd.newDistrict; newValue.addr_district = fd.newDistrict; }
-    if (fd.newRegion) { patch.addr_region = fd.newRegion; newValue.addr_region = fd.newRegion; }
-    if (fd.newEmail) { patch.email = fd.newEmail; newValue.email = fd.newEmail; }
-    if (fd.newPhone) { patch.phone = fd.newPhone; newValue.phone = fd.newPhone; }
-  } else if (fd.changeType === 'name') {
-    if (fd.newNameEnglish) { patch.name_english = fd.newNameEnglish; newValue.name_english = fd.newNameEnglish; }
-    if (fd.newNameChinese) { patch.name_chinese = fd.newNameChinese; newValue.name_chinese = fd.newNameChinese; }
-  } else if (fd.changeType === 'id') {
-    if (fd.newIdNumber) { patch.id_number = fd.newIdNumber; newValue.id_number = fd.newIdNumber; }
-  } else {
-    const desc = (fd.changeDescription || '').trim();
-    if (desc) {
-      patch.notes = before?.notes ? `${before.notes}\n${desc}` : desc;
-      newValue.notes = desc;
+  for (const c of changes) {
+    const evt = NN7_CHANGE_EVENT[c.type];
+    if (!evt) continue;
+    const { error } = await supabase.from('persons').update(c.patch as any).eq('id', personId);
+    if (error) {
+      labels.push(`⚠ 人員${NN7_CHANGE_LABEL[c.type]}更新失敗：${error.message}`);
+      continue;
     }
+    const oldValue: Record<string, any> = {};
+    for (const k of Object.keys(c.patch)) oldValue[k] = before?.[k] ?? '';
+    await recordFormEvent({
+      companyId, eventType: evt, personId, role: fd.role || '',
+      changeDate, relatedFormType: 'NN7', oldValue, newValue: c.newValue,
+    });
+    labels.push(`已更新人員${NN7_CHANGE_LABEL[c.type] || c.type}：${fullName || fd.nameChinese}`);
   }
-  if (Object.keys(patch).length === 0) {
-    labels.push('⚠ 沒有可寫入的變更內容');
-    return labels;
-  }
-  const { error } = await supabase.from('persons').update(patch as any).eq('id', personId);
-  if (error) {
-    labels.push(`⚠ 人員更新失敗：${error.message}`);
-    return labels;
-  }
-  const oldValue: Record<string, any> = {};
-  for (const k of Object.keys(patch)) oldValue[k] = before?.[k] ?? '';
-  const EVT: Record<string, string> = {
-    address: 'person_address_change', name: 'person_name_change', id: 'person_id_change', other: 'person_contact_change',
-  };
-  await recordFormEvent({
-    companyId, eventType: EVT[fd.changeType], personId, role: fd.role || '',
-    changeDate, relatedFormType: 'NN7', oldValue, newValue,
-  });
-  const TYPE_LABEL: Record<string, string> = { address: '地址', name: '姓名', id: '證件號碼', other: '其他詳情' };
-  labels.push(`已更新人員${TYPE_LABEL[fd.changeType]}：${fullName || fd.nameChinese}`);
   return labels;
 }
 

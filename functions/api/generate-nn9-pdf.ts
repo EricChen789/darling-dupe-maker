@@ -20,7 +20,7 @@
 //        fill_22=簽署人姓名, fill_23=簽署日期(DD/MM/YYYY 單框),
 //        Dropdown_1~4_P.2=身份（3 級：widget T=null → mid T='2' → grand T='Dropdown_N_P'）
 
-import { PDFDocument, PDFName, PDFHexString, PDFString, StandardFonts, rgb } from "pdf-lib";
+import { PDFDocument, PDFName, PDFHexString, PDFString, PDFArray, StandardFonts, rgb } from "pdf-lib";
 import { verifyAuthRequest, type Env } from './_auth';
 import {
   isAscii, decodePdfText,
@@ -118,12 +118,21 @@ function createFormHelpers(pdfDoc: PDFDocument) {
   enableNeedAppearances(pdfDoc);
   const fields = collectFormFields(pdfDoc);
 
-  const setText = (fieldName: string, value: string, align?: 'left' | 'center' | 'right'): boolean => {
+  const setText = (fieldName: string, value: string, align?: 'left' | 'center' | 'right', maxWidth?: number | 'auto'): boolean => {
     const v = (value ?? "").toString();
     const target = fields.get(fieldName);
     if (!target) {
       console.warn(`⚠ Missing field: ${fieldName}`);
       return false;
+    }
+    // 'auto'：从 widget /Rect 自取框宽做缩字号判断
+    if (maxWidth === 'auto') {
+      try {
+        const rect = target.widget.get(PDFName.of("Rect")) as PDFArray;
+        maxWidth = Math.abs(rect.get(2).asNumber() - rect.get(0).asNumber());
+      } catch {
+        maxWidth = undefined;
+      }
     }
     try {
       detachWidget(target.widget, target.field);
@@ -152,6 +161,18 @@ function createFormHelpers(pdfDoc: PDFDocument) {
         target.widget.set(PDFName.of("Q"), pdfDoc.context.obj(1));
       } else if (align === 'left') {
         target.widget.set(PDFName.of("Q"), pdfDoc.context.obj(0));
+      }
+      // 自动缩字号适配框宽（长文本如提交人=公司名/长地址，避免渲染视觉截断）
+      if (maxWidth && maxWidth > 0) {
+        const sizeMatch = da.match(/(\d+(?:\.\d+)?)\s+Tf/);
+        // fill_18_P.1 模板原始 DA 字号为 0（/PMingLiU 0 Tf），阅读器按 12 回退显示 → 0 时按 12 估宽
+        const baseSize = sizeMatch ? (parseFloat(sizeMatch[1]) || 12) : 12;
+        const estWidth = [...v].reduce((acc, ch) => acc + (ch.charCodeAt(0) < 128 ? 0.52 : 1.0), 0) * baseSize;
+        if (estWidth > maxWidth * 0.92) {
+          const newSize = Math.max(6, Math.floor((baseSize * maxWidth * 0.92) / estWidth * 10) / 10);
+          const curDa = decodePdfText(target.widget.get(PDFName.of("DA"))) || da;
+          target.widget.set(PDFName.of("DA"), PDFString.of(curDa.replace(/(\d+(?:\.\d+)?)\s+Tf/, `${newSize} Tf`)));
+        }
       }
       target.widget.delete(PDFName.of("AP"));
       return true;
@@ -324,8 +345,8 @@ function fillNN9(pdfDoc: PDFDocument, data: NN9Data) {
   const { setText, selectDropdown } = createFormHelpers(pdfDoc);
 
   const br8 = (data.brNumber || "").replace(/[^0-9A-Za-z]/g, "").slice(0, 8);
-  const setIf = (name: string, v?: string) => {
-    if (v && String(v).trim()) setText(name, String(v));
+  const setIf = (name: string, v?: string, maxWidth?: number | 'auto') => {
+    if (v && String(v).trim()) setText(name, String(v), undefined, maxWidth);
   };
   const fillDate = (dKey: string, mKey: string, yKey: string, dd: { d: string; m: string; y: string }) => {
     if (!dd.d && !dd.m && !dd.y) return;
@@ -373,9 +394,9 @@ function fillNN9(pdfDoc: PDFDocument, data: NN9Data) {
     fillDate('fill_15_P.1', 'fill_16_P.1', 'fill_17_P.1', phoneDate);
   }
 
-  // 提交人資料（6 框，DEFAULT_PRESENTER 保底）
-  setIf("fill_18_P.1", data.presentorName || DEFAULT_PRESENTER.name);
-  setIf("fill_19_P.1", data.presentorAddress || DEFAULT_PRESENTER.address);
+  // 提交人資料（6 框，DEFAULT_PRESENTER 保底；姓名/地址长文本按框宽自动缩字号）
+  setIf("fill_18_P.1", data.presentorName || DEFAULT_PRESENTER.name, 'auto');
+  setIf("fill_19_P.1", data.presentorAddress || DEFAULT_PRESENTER.address, 'auto');
   setIf("fill_20_P.1", data.presentorPhone || DEFAULT_PRESENTER.phone);
   setIf("fill_21_P.1", data.presentorFax || DEFAULT_PRESENTER.fax);
   setIf("fill_22_P.1", data.presentorEmail || DEFAULT_PRESENTER.email);

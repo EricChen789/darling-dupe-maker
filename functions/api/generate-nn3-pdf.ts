@@ -390,9 +390,10 @@ async function addDynamicContinuationSheet(
 }
 
 // ═══ P.8 簽署人身份勾選（4 個共享 parent 的 ComboBox）═══
-// parent /FT=/Ch、/V 默認 (Yes)、/Opt 兩項：idx0 顯示空白、idx1 顯示橫線 tick。
-// 打勾必須寫 parent 字段 /I=[1]（僅設 /V 視覺無效）；同時刪各 kid widget 的
-// 靜態 /AP，讓 NeedAppearances 重建外觀。selectDropdown() 對嵌套 /Opt 無效。
+// parent /FT=/Ch、/V 默認 (Yes)、/Opt 兩項：idx0 顯示空白、idx1 顯示橫線（FEFF 2500×22）。
+// 語義（同 NN6「保留選中項，其餘劃線刪去」）：選中身份 /I=[0] 保留不劃線，
+// 其餘三個身份 /I=[1] 顯示橫線劃去。打勾必須寫 parent 字段 /I（僅設 /V 視覺無效）；
+// 同時刪各 kid widget 的靜態 /AP，讓 NeedAppearances 重建外觀。selectDropdown() 對嵌套 /Opt 無效。
 
 const CAPACITY_DROPDOWN: Record<string, string> = {
   director: 'Dropdown1',
@@ -409,9 +410,9 @@ function tickSignerCapacity(pdfDoc: PDFDocument, helpers: ReturnType<typeof crea
     const entry = helpers.fields.get(key);
     if (!entry) continue;
     const field = entry.field;
-    const ticked = CAPACITY_DROPDOWN[capacity] === key;
+    const keep = CAPACITY_DROPDOWN[capacity] === key;  // 選中 → 保留（/I=[0] 空白）
     const arr = PDFArray.withContext(ctx);
-    arr.push(PDFNumber.of(ticked ? 1 : 0));
+    arr.push(PDFNumber.of(keep ? 0 : 1));              // 其餘 → /I=[1] 顯示橫線
     field.set(PDFName.of('I'), arr);
     // 記住 parent ref：kid widget 沒有 /FT，rebuildAcroFormFields 會把它們
     // 連同 parent 一起踢出 /Fields → 重建後要手動加回，否則 /I tick 失效
